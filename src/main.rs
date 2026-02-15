@@ -1,3 +1,5 @@
+mod logging;
+
 use std::cmp::max;
 
 use crossterm::event::{self, Event, KeyCode};
@@ -8,6 +10,7 @@ use ratatui::{
     text::{Line, Text},
     widgets::{Block, BorderType, Borders},
 };
+use std::io::Result;
 
 const APP_WIDTH_MIN: usize = 40;
 const APP_HEIGHT_MIN: usize = 40;
@@ -42,21 +45,34 @@ impl App {
     }
 }
 
-fn main() {
+fn main() -> Result<()> {
+    logging::initialize_logging()?;
+    trace_dbg!("start");
     let mut terminal = ratatui::init();
     let mut app = App {
         width: 80,
         height: 80,
     };
     loop {
-        terminal
-            .draw(|f| draw(f, &app))
-            .expect("failed to draw frame");
-        if !app.handle_key_event(event::read().expect("failed to read event")) {
-            break;
+        if let Some(e) = terminal.draw(|f| draw(f, &app)).err() {
+            trace_dbg!(level: tracing::Level::ERROR, "failed to draw frame");
+            return Err(e);
+        }
+        match event::read() {
+            Ok(event) => {
+                if !app.handle_key_event(event) {
+                    break;
+                }
+            }
+            Err(e) => {
+                trace_dbg!(level: tracing::Level::ERROR, "failed to read event");
+                return Err(e);
+            }
         }
     }
     ratatui::restore();
+    trace_dbg!("done");
+    Ok(())
 }
 
 fn draw(frame: &mut Frame, app: &App) {
