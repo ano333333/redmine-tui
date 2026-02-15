@@ -1052,20 +1052,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ratatui-hello-world"
-version = "0.1.0"
-dependencies = [
- "color-eyre",
- "crossterm",
- "directories",
- "lazy_static",
- "ratatui",
- "tracing",
- "tracing-error",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "ratatui-macros"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1102,6 +1088,20 @@ dependencies = [
  "time",
  "unicode-segmentation",
  "unicode-width",
+]
+
+[[package]]
+name = "redmine-tui-draft"
+version = "0.1.0"
+dependencies = [
+ "color-eyre",
+ "crossterm",
+ "directories",
+ "lazy_static",
+ "ratatui",
+ "tracing",
+ "tracing-error",
+ "tracing-subscriber",
 ]
 
 [[package]]
