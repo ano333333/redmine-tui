@@ -1,7 +1,7 @@
 mod components;
 mod logging;
 
-use std::cmp::max;
+use std::{cmp::max, fs};
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{self, Event, KeyCode};
@@ -88,6 +88,7 @@ fn issue_component() -> IssueComponent {
         let naive_datetime = naive.and_hms_opt(0, 0, 0).unwrap();
         Local.from_local_datetime(&naive_datetime).single().unwrap()
     }
+    let body = fs::read_to_string("datas/body.md").expect("failed to read datas/body.md");
     IssueComponent {
         id: 10000,
         title: "【タスク】Rails 3.2/vendor/plugins非推奨化対応oooooooooooooooooooooooooooooooooooooooooooooooooooo".into(),
@@ -105,6 +106,7 @@ fn issue_component() -> IssueComponent {
         resolve_way: None,
         component: "IDサーバ".to_string(),
         tags: Vec::<String>::new(),
+        body,
     }
 }
 

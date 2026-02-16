@@ -1,9 +1,9 @@
 use chrono::{DateTime, Local};
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Offset, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use super::Component;
 
@@ -24,16 +24,26 @@ pub struct IssueComponent {
     pub resolve_way: Option<String>,
     pub component: String,
     pub tags: Vec<String>,
+    pub body: String,
 }
 
 impl IssueComponent {
-    fn create_paragraph(&self) -> Paragraph<'_> {
+    fn create_paragraphs(&self) -> Vec<Paragraph> {
+        let mut paragraphs = Vec::<Paragraph>::new();
         let mut lines = Vec::<Line>::from([]);
         let mut header = self.create_header();
         lines.append(&mut header);
         let mut status_table = self.create_status_table();
         lines.append(&mut status_table);
-        Paragraph::new(lines).wrap(Wrap { trim: true })
+        paragraphs.push(
+            Paragraph::new(lines)
+                .wrap(Wrap { trim: true })
+                .block(Block::default()),
+        );
+        paragraphs.push(Paragraph::new("─".to_string().repeat(120)).style(Style::default().gray()));
+        paragraphs
+            .push(Paragraph::new(tui_markdown::from_str(&self.body)).wrap(Wrap { trim: true }));
+        paragraphs
     }
 
     fn create_header(&self) -> Vec<Line> {
@@ -109,12 +119,17 @@ impl IssueComponent {
 
 impl Component for IssueComponent {
     fn line_count(&self, width: u16) -> u16 {
-        // FIXME: widthから占有行数を計算する
-        let p = self.create_paragraph();
-        p.line_count(width) as u16
+        let paragraphs = self.create_paragraphs();
+        paragraphs
+            .iter()
+            .fold(0, |acc, p| acc + p.line_count(width) as u16)
     }
 
     fn render(&self, frame: &mut Frame, area: Rect) {
-        frame.render_widget(self.create_paragraph(), area);
+        let mut line: i32 = 0;
+        for p in self.create_paragraphs().iter() {
+            frame.render_widget(p, area.offset(Offset { x: 0, y: line }));
+            line += p.line_count(area.width) as i32;
+        }
     }
 }
