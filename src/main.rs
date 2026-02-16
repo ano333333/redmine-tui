@@ -1,3 +1,4 @@
+mod components;
 mod logging;
 
 use std::cmp::max;
@@ -11,6 +12,9 @@ use ratatui::{
     widgets::{Block, BorderType, Borders},
 };
 use std::io::Result;
+
+use self::components::Component;
+use self::components::IssueComponent;
 
 const APP_WIDTH_MIN: usize = 40;
 const APP_HEIGHT_MIN: usize = 40;
@@ -79,7 +83,7 @@ fn draw(frame: &mut Frame, app: &App) {
     let vert_layouts = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Max(3),
+            Constraint::Max(4),
             Constraint::Length(app.height as u16 + 2),
         ])
         .split(frame.area());
@@ -87,17 +91,26 @@ fn draw(frame: &mut Frame, app: &App) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(app.width as u16 + 2)])
         .split(vert_layouts[1]);
+    let issue_block = Block::default()
+        .border_style(Style::default().fg(Color::White))
+        .border_type(BorderType::Rounded)
+        .borders(Borders::ALL);
+    let issue_area = issue_block.inner(hor_layouts[0]);
 
+    let issue_component = IssueComponent {
+        id: 10000,
+        title: "【タスク】Rails 3.2/vendor/plugins非推奨化対応oooooooooooooooooooooooooooooooooooooooooooooooooooo".into(),
+    };
+    let line_count = issue_component.line_count(issue_area.width);
     let descriptions = Text::from(vec![
         Line::from(format!("横幅({})を縮める/広げる: ←/→", app.width)),
         Line::from(format!("縦幅({})を縮める/広げる: ↑/↓", app.height)),
         Line::from("終了: q"),
+        Line::from(format!("全体縦幅: {}", line_count)),
     ]);
     frame.render_widget(descriptions, vert_layouts[0]);
 
-    let body = Block::default()
-        .border_style(Style::default().fg(Color::White))
-        .border_type(BorderType::Rounded)
-        .borders(Borders::ALL);
-    frame.render_widget(body, hor_layouts[0]);
+    frame.render_widget(issue_block, hor_layouts[0]);
+
+    issue_component.render(frame, issue_area);
 }
