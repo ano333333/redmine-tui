@@ -1390,6 +1390,7 @@ dependencies = [
  "tracing-error",
  "tracing-subscriber",
  "tui-markdown",
+ "yaml-rust",
 ]
 
 [[package]]
