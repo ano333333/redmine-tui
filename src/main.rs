@@ -14,8 +14,8 @@ use ratatui::{
 };
 use std::io::Result;
 
-use self::components::Component;
 use self::components::IssueComponent;
+use self::components::{Component, IssueJournalComponent};
 
 const APP_WIDTH_MIN: usize = 40;
 const APP_HEIGHT_MIN: usize = 40;
@@ -89,6 +89,7 @@ fn issue_component() -> IssueComponent {
         Local.from_local_datetime(&naive_datetime).single().unwrap()
     }
     let body = fs::read_to_string("datas/body.md").expect("failed to read datas/body.md");
+    let articles_path = "datas/articles.yml".to_string();
     IssueComponent {
         id: 10000,
         title: "【タスク】Rails 3.2/vendor/plugins非推奨化対応oooooooooooooooooooooooooooooooooooooooooooooooooooo".into(),
@@ -107,6 +108,7 @@ fn issue_component() -> IssueComponent {
         component: "IDサーバ".to_string(),
         tags: Vec::<String>::new(),
         body,
+        journals: IssueJournalComponent::parse_yaml(&articles_path),
     }
 }
 
