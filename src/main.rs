@@ -3,6 +3,7 @@ mod logging;
 
 use std::cmp::max;
 
+use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
     Frame,
@@ -79,6 +80,34 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn issue_component() -> IssueComponent {
+    fn parse_as_local(str: String) -> DateTime<Local> {
+        let naive = NaiveDate::parse_from_str(str.as_str(), "%Y/%m/%d")
+            .expect(format!("failed to parse naive datetime: {}", str.as_str()).as_str());
+        // Local.from_local_datetime(&naive).single().unwrap()
+        let naive_datetime = naive.and_hms_opt(0, 0, 0).unwrap();
+        Local.from_local_datetime(&naive_datetime).single().unwrap()
+    }
+    IssueComponent {
+        id: 10000,
+        title: "【タスク】Rails 3.2/vendor/plugins非推奨化対応oooooooooooooooooooooooooooooooooooooooooooooooooooo".into(),
+        creator: "菊池 雅英".into(),
+        appended_at: parse_as_local("2026/02/04".into()),
+        updated_at: parse_as_local("2026/02/16".into()),
+        status: "進行中(accepted)".to_string(),
+        priority: "major".to_string(),
+        person_in_charge: Some("菊池 雅英".to_string()),
+        target_version: None,
+        start_date: Some(parse_as_local("2026/02/16".to_string())),
+        due: Some(parse_as_local("2026/02/17".to_string())),
+        progress: 0,
+        planned_hours: None,
+        resolve_way: None,
+        component: "IDサーバ".to_string(),
+        tags: Vec::<String>::new(),
+    }
+}
+
 fn draw(frame: &mut Frame, app: &App) {
     let vert_layouts = Layout::default()
         .direction(Direction::Vertical)
@@ -97,10 +126,7 @@ fn draw(frame: &mut Frame, app: &App) {
         .borders(Borders::ALL);
     let issue_area = issue_block.inner(hor_layouts[0]);
 
-    let issue_component = IssueComponent {
-        id: 10000,
-        title: "【タスク】Rails 3.2/vendor/plugins非推奨化対応oooooooooooooooooooooooooooooooooooooooooooooooooooo".into(),
-    };
+    let issue_component = issue_component();
     let line_count = issue_component.line_count(issue_area.width);
     let descriptions = Text::from(vec![
         Line::from(format!("横幅({})を縮める/広げる: ←/→", app.width)),

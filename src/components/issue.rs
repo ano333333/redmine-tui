@@ -1,7 +1,8 @@
+use chrono::{DateTime, Local};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 
 use super::Component;
@@ -9,16 +10,100 @@ use super::Component;
 pub struct IssueComponent {
     pub id: u16,
     pub title: String,
+    pub creator: String,
+    pub appended_at: DateTime<Local>,
+    pub updated_at: DateTime<Local>,
+    pub status: String,
+    pub priority: String,
+    pub person_in_charge: Option<String>,
+    pub target_version: Option<String>,
+    pub start_date: Option<DateTime<Local>>,
+    pub due: Option<DateTime<Local>>,
+    pub progress: u16,
+    pub planned_hours: Option<u16>,
+    pub resolve_way: Option<String>,
+    pub component: String,
+    pub tags: Vec<String>,
 }
 
 impl IssueComponent {
     fn create_paragraph(&self) -> Paragraph<'_> {
-        Paragraph::new(vec![
+        let mut lines = Vec::<Line>::from([]);
+        let mut header = self.create_header();
+        lines.append(&mut header);
+        let mut status_table = self.create_status_table();
+        lines.append(&mut status_table);
+        Paragraph::new(lines).wrap(Wrap { trim: true })
+    }
+
+    fn create_header(&self) -> Vec<Line> {
+        vec![
             Line::from(format!("#{}", self.id)),
             Line::from(""),
             Line::from(format!("# {}", self.title)).style(Style::default().bold()),
-        ])
-        .wrap(Wrap { trim: true })
+            Line::from("\n"),
+            Line::from(vec![
+                Span::from(self.creator.clone()).style(Style::default().blue()),
+                Span::from("が"),
+                Span::from(self.appended_at.format("%Y/%m/%d").to_string())
+                    .style(Style::default().blue()),
+                Span::from("に追加. "),
+                Span::from(self.updated_at.format("%Y/%m/%d").to_string())
+                    .style(Style::default().blue()),
+                Span::from("に更新."),
+            ]),
+            Line::from("\n\n"),
+        ]
+    }
+
+    fn create_status_table(&self) -> Vec<Line> {
+        let person = match &self.person_in_charge {
+            Some(s) => s.clone(),
+            None => "-".to_string(),
+        };
+        let target_version = match &self.target_version {
+            Some(s) => s.clone(),
+            None => "-".to_string(),
+        };
+        fn datetime_opt_to_str(date_opt: &Option<DateTime<Local>>) -> String {
+            match date_opt {
+                Some(d) => d.format("%Y/%m/%d").to_string(),
+                None => "-".to_string(),
+            }
+        }
+        let planned_hours = match self.planned_hours {
+            Some(p) => p.to_string(),
+            None => "".to_string(),
+        };
+        let resolve_way = match &self.resolve_way {
+            Some(r) => r.clone(),
+            None => "-".to_string(),
+        };
+        vec![
+            Line::from(vec![
+                Span::from("ステータス          ").style(Style::default().blue()),
+                Span::from(&self.status),
+            ]),
+            Line::from(format!("優先度              {}", &self.priority)),
+            Line::from(format!("担当者              {}", person)).style(Style::default().blue()),
+            Line::from(format!("対象バージョン      {}", target_version)),
+            Line::from(format!(
+                "開始日              {}",
+                datetime_opt_to_str(&self.start_date)
+            )),
+            Line::from(format!(
+                "期日                {}",
+                datetime_opt_to_str(&self.due)
+            )),
+            Line::from(vec![
+                Span::from("進捗率              ").style(Style::default().blue()),
+                Span::from(self.progress.to_string()),
+            ]),
+            Line::from(format!("予定工数            {}", planned_hours)),
+            Line::from(format!("解決方法            {}", resolve_way)),
+            Line::from(format!("コンポーネント      {}", &self.component)),
+            Line::from(format!("Tags                {}", self.tags.concat())),
+        ]
     }
 }
 
