@@ -2,7 +2,7 @@ use std::fs;
 
 use chrono::NaiveDate;
 use ratatui::Frame;
-use ratatui::layout::{Offset, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Wrap};
@@ -95,7 +95,7 @@ impl Component for JournalComponent {
         }
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect) {
+    fn render(&self, frame: &mut Frame, mut area: Rect) {
         match self {
             Self::Property {
                 creator,
@@ -142,8 +142,12 @@ impl Component for JournalComponent {
                 let mut body = tui_markdown::from_str(body);
                 body.lines.push(Line::from(""));
                 frame.render_widget(title, area);
-                frame.render_widget(hr, area.offset(Offset { x: 0, y: 1 }));
-                frame.render_widget(body, area.offset(Offset { x: 0, y: 2 }));
+                area.y += 1;
+                area.height = area.height.saturating_sub(1);
+                frame.render_widget(hr, area);
+                area.y += 2;
+                area.height = area.height.saturating_sub(2);
+                frame.render_widget(body, area);
             }
         }
     }

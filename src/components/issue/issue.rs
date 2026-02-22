@@ -139,11 +139,12 @@ impl Component for IssueComponent {
         paragraphs_line + 3 + relatives_line + 2 + journals_line
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect) {
-        let mut line: i32 = 0;
+    fn render(&self, frame: &mut Frame, mut area: Rect) {
         for p in self.create_paragraphs().iter() {
-            frame.render_widget(p, area.offset(Offset { x: 0, y: line }));
-            line += p.line_count(area.width) as i32;
+            frame.render_widget(p, area);
+            let l = p.line_count(area.width) as u16;
+            area.y += l;
+            area.height = area.height.saturating_sub(l);
         }
         let child_all_num = self.relatives.len();
         let child_complete_num = self.relatives.iter().filter(|c| c.complete).count();
@@ -161,23 +162,29 @@ impl Component for IssueComponent {
             child_header_title,
             Line::from(""),
         ]);
-        frame.render_widget(childs_header, area.offset(Offset { x: 0, y: line }));
-        line += 3;
+        frame.render_widget(childs_header, area);
+        area.y += 3;
+        area.height = area.height.saturating_sub(3);
         for c in self.relatives.iter() {
-            c.render(frame, area.offset(Offset { x: 0, y: line }));
-            line += c.line_count(area.width) as i32;
+            c.render(frame, area);
+            let l = c.line_count(area.width);
+            area.y += l;
+            area.height = area.height.saturating_sub(l);
         }
         frame.render_widget(
             Text::from(vec![
                 Line::from(""),
                 Line::from("-".to_string().repeat(120)),
             ]),
-            area.offset(Offset { x: 0, y: line }),
+            area,
         );
-        line += 2;
+        area.y += 2;
+        area.height = area.height.saturating_sub(2);
         for j in self.journals.iter() {
-            j.render(frame, area.offset(Offset { x: 0, y: line }));
-            line += j.line_count(area.width) as i32;
+            j.render(frame, area);
+            let l = j.line_count(area.width);
+            area.y += l;
+            area.height = area.height.saturating_sub(l);
         }
     }
 }
