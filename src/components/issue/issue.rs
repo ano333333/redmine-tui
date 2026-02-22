@@ -1,0 +1,183 @@
+use chrono::{DateTime, Local};
+use ratatui::Frame;
+use ratatui::layout::{Offset, Rect};
+use ratatui::style::{Style, Stylize};
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::{Block, Paragraph, Wrap};
+
+use crate::components::Component;
+
+use super::journal::IssueJournalComponent;
+use super::relative::IssueRelativeIssueComponent;
+
+pub struct IssueComponent {
+    pub id: u16,
+    pub title: String,
+    pub creator: String,
+    pub appended_at: DateTime<Local>,
+    pub updated_at: DateTime<Local>,
+    pub status: String,
+    pub priority: String,
+    pub person_in_charge: Option<String>,
+    pub target_version: Option<String>,
+    pub start_date: Option<DateTime<Local>>,
+    pub due: Option<DateTime<Local>>,
+    pub progress: u16,
+    pub planned_hours: Option<u16>,
+    pub resolve_way: Option<String>,
+    pub component: String,
+    pub tags: Vec<String>,
+    pub body: String,
+    pub relatives: Vec<IssueRelativeIssueComponent>,
+    pub journals: Vec<IssueJournalComponent>,
+}
+
+impl IssueComponent {
+    fn create_paragraphs(&self) -> Vec<Paragraph> {
+        let mut paragraphs = Vec::<Paragraph>::new();
+        let mut lines = Vec::<Line>::from([]);
+        let mut header = self.create_header();
+        lines.append(&mut header);
+        let mut status_table = self.create_status_table();
+        lines.append(&mut status_table);
+        paragraphs.push(
+            Paragraph::new(lines)
+                .wrap(Wrap { trim: true })
+                .block(Block::default()),
+        );
+        paragraphs.push(Paragraph::new("─".to_string().repeat(120)).style(Style::default().gray()));
+        paragraphs
+            .push(Paragraph::new(tui_markdown::from_str(&self.body)).wrap(Wrap { trim: true }));
+        paragraphs
+    }
+
+    fn create_header(&self) -> Vec<Line> {
+        vec![
+            Line::from(format!("#{}", self.id)),
+            Line::from(""),
+            Line::from(format!("# {}", self.title)).style(Style::default().bold()),
+            Line::from("\n"),
+            Line::from(vec![
+                Span::from(self.creator.clone()).style(Style::default().blue()),
+                Span::from("が"),
+                Span::from(self.appended_at.format("%Y/%m/%d").to_string())
+                    .style(Style::default().blue()),
+                Span::from("に追加. "),
+                Span::from(self.updated_at.format("%Y/%m/%d").to_string())
+                    .style(Style::default().blue()),
+                Span::from("に更新."),
+            ]),
+            Line::from("\n\n"),
+        ]
+    }
+
+    fn create_status_table(&self) -> Vec<Line> {
+        let person = match &self.person_in_charge {
+            Some(s) => s.clone(),
+            None => "-".to_string(),
+        };
+        let target_version = match &self.target_version {
+            Some(s) => s.clone(),
+            None => "-".to_string(),
+        };
+        fn datetime_opt_to_str(date_opt: &Option<DateTime<Local>>) -> String {
+            match date_opt {
+                Some(d) => d.format("%Y/%m/%d").to_string(),
+                None => "-".to_string(),
+            }
+        }
+        let planned_hours = match self.planned_hours {
+            Some(p) => p.to_string(),
+            None => "".to_string(),
+        };
+        let resolve_way = match &self.resolve_way {
+            Some(r) => r.clone(),
+            None => "-".to_string(),
+        };
+        vec![
+            Line::from(vec![
+                Span::from("ステータス          ").style(Style::default().blue()),
+                Span::from(&self.status),
+            ]),
+            Line::from(format!("優先度              {}", &self.priority)),
+            Line::from(format!("担当者              {}", person)).style(Style::default().blue()),
+            Line::from(format!("対象バージョン      {}", target_version)),
+            Line::from(format!(
+                "開始日              {}",
+                datetime_opt_to_str(&self.start_date)
+            )),
+            Line::from(format!(
+                "期日                {}",
+                datetime_opt_to_str(&self.due)
+            )),
+            Line::from(vec![
+                Span::from("進捗率              ").style(Style::default().blue()),
+                Span::from(self.progress.to_string()),
+            ]),
+            Line::from(format!("予定工数            {}", planned_hours)),
+            Line::from(format!("解決方法            {}", resolve_way)),
+            Line::from(format!("コンポーネント      {}", &self.component)),
+            Line::from(format!("Tags                {}", self.tags.concat())),
+        ]
+    }
+}
+
+impl Component for IssueComponent {
+    fn line_count(&self, width: u16) -> u16 {
+        let paragraphs = self.create_paragraphs();
+        let paragraphs_line = paragraphs
+            .iter()
+            .fold(0, |acc, p| acc + p.line_count(width) as u16);
+        let relatives_line = self
+            .relatives
+            .iter()
+            .fold(0, |acc, comp| acc + comp.line_count(width));
+        let journals_line = self
+            .journals
+            .iter()
+            .fold(0, |acc, comp| acc + comp.line_count(width));
+        paragraphs_line + 3 + relatives_line + 2 + journals_line
+    }
+
+    fn render(&self, frame: &mut Frame, area: Rect) {
+        let mut line: i32 = 0;
+        for p in self.create_paragraphs().iter() {
+            frame.render_widget(p, area.offset(Offset { x: 0, y: line }));
+            line += p.line_count(area.width) as i32;
+        }
+        let child_all_num = self.relatives.len();
+        let child_complete_num = self.relatives.iter().filter(|c| c.complete).count();
+        let child_imcomplete_num = child_all_num - child_complete_num;
+        let child_header_title = Line::from(vec![
+            Span::from("子チケット").bold(),
+            Span::from(" "),
+            Span::from(format!(
+                "{} ({}件未完了 - {}件完了)",
+                child_all_num, child_complete_num, child_imcomplete_num
+            )),
+        ]);
+        let childs_header = Text::from(vec![
+            Line::from("-".to_string().repeat(120)),
+            child_header_title,
+            Line::from(""),
+        ]);
+        frame.render_widget(childs_header, area.offset(Offset { x: 0, y: line }));
+        line += 3;
+        for c in self.relatives.iter() {
+            c.render(frame, area.offset(Offset { x: 0, y: line }));
+            line += c.line_count(area.width) as i32;
+        }
+        frame.render_widget(
+            Text::from(vec![
+                Line::from(""),
+                Line::from("-".to_string().repeat(120)),
+            ]),
+            area.offset(Offset { x: 0, y: line }),
+        );
+        line += 2;
+        for j in self.journals.iter() {
+            j.render(frame, area.offset(Offset { x: 0, y: line }));
+            line += j.line_count(area.width) as i32;
+        }
+    }
+}
