@@ -7,8 +7,8 @@ use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use crate::components::Component;
 
-use super::journal::IssueJournalComponent;
-use super::relative::IssueRelativeIssueComponent;
+use super::journal::JournalComponent;
+use super::relative::RelativeIssueComponent;
 
 pub struct IssueComponent {
     pub id: u16,
@@ -28,8 +28,8 @@ pub struct IssueComponent {
     pub component: String,
     pub tags: Vec<String>,
     pub body: String,
-    pub relatives: Vec<IssueRelativeIssueComponent>,
-    pub journals: Vec<IssueJournalComponent>,
+    pub relatives: Vec<RelativeIssueComponent>,
+    pub journals: Vec<JournalComponent>,
 }
 
 impl IssueComponent {

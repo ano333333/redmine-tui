@@ -10,7 +10,7 @@ use yaml_rust::YamlLoader;
 
 use crate::components::Component;
 
-pub enum IssueJournalComponent {
+pub enum JournalComponent {
     Property {
         creator: String,
         target: String,
@@ -25,9 +25,9 @@ pub enum IssueJournalComponent {
     },
 }
 
-impl IssueJournalComponent {
-    pub fn parse_yaml(path: &String) -> Vec<IssueJournalComponent> {
-        let mut comps = Vec::<IssueJournalComponent>::new();
+impl JournalComponent {
+    pub fn parse_yaml(path: &String) -> Vec<JournalComponent> {
+        let mut comps = Vec::<JournalComponent>::new();
         let yaml_row = fs::read_to_string(path).expect(format!("failed to read {}", path).as_str());
         let yaml = YamlLoader::load_from_str(&yaml_row)
             .expect(format!("failed to parse {}", path).as_str());
@@ -81,7 +81,7 @@ impl IssueJournalComponent {
     }
 }
 
-impl Component for IssueJournalComponent {
+impl Component for JournalComponent {
     fn line_count(&self, width: u16) -> u16 {
         match self {
             Self::Property { .. } => 4,

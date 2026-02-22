@@ -14,8 +14,8 @@ use ratatui::{
 };
 use std::io::Result;
 
-use self::components::{Component, IssueJournalComponent};
-use self::components::{IssueComponent, IssueRelativeIssueComponent};
+use self::components::{Component, JournalComponent};
+use self::components::{IssueComponent, RelativeIssueComponent};
 
 const APP_WIDTH_MIN: usize = 40;
 const APP_HEIGHT_MIN: usize = 40;
@@ -109,8 +109,8 @@ fn issue_component() -> IssueComponent {
         component: "IDサーバ".to_string(),
         tags: Vec::<String>::new(),
         body,
-        relatives: IssueRelativeIssueComponent::parse_yaml(&relatives_path),
-        journals: IssueJournalComponent::parse_yaml(&articles_path),
+        relatives: RelativeIssueComponent::parse_yaml(&relatives_path),
+        journals: JournalComponent::parse_yaml(&articles_path),
     }
 }
 

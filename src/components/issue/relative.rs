@@ -10,7 +10,7 @@ use yaml_rust::YamlLoader;
 
 use crate::components::Component;
 
-pub struct IssueRelativeIssueComponent {
+pub struct RelativeIssueComponent {
     pub id: u16,
     pub complete: bool,
     pub title: String,
@@ -21,12 +21,12 @@ pub struct IssueRelativeIssueComponent {
     pub progress: u16,
 }
 
-impl IssueRelativeIssueComponent {
-    pub fn parse_yaml(path: &String) -> Vec<IssueRelativeIssueComponent> {
+impl RelativeIssueComponent {
+    pub fn parse_yaml(path: &String) -> Vec<RelativeIssueComponent> {
         let yaml_row = fs::read_to_string(path).expect(format!("failed to read {}", path).as_str());
         let yaml = YamlLoader::load_from_str(&yaml_row)
             .expect(format!("failed to parse {}", path).as_str());
-        let mut comps = Vec::<IssueRelativeIssueComponent>::new();
+        let mut comps = Vec::<RelativeIssueComponent>::new();
         for doc in yaml {
             let id = doc["id"].as_i64().expect("no id") as u16;
             let id_inactive = doc["complete"].as_bool().expect("no complete");
@@ -47,7 +47,7 @@ impl IssueRelativeIssueComponent {
                 due = Some(NaiveDate::parse_from_str(d, "%Y/%m/%d").expect("parse error of due"));
             }
             let progress = doc["progress"].as_i64().expect("no progress") as u16;
-            comps.push(IssueRelativeIssueComponent {
+            comps.push(RelativeIssueComponent {
                 id,
                 complete: id_inactive,
                 title,
@@ -62,7 +62,7 @@ impl IssueRelativeIssueComponent {
     }
 }
 
-impl Component for IssueRelativeIssueComponent {
+impl Component for RelativeIssueComponent {
     fn line_count(&self, _: u16) -> u16 {
         1
     }
