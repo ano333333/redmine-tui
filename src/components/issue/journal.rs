@@ -110,7 +110,6 @@ impl Component for JournalComponent {
                     Span::from(updated_at.format("%Y/%m/%d").to_string()).blue(),
                     Span::from("に更新"),
                 ]);
-                let hr = Line::from("─".to_string().repeat(120)).gray();
                 let body = Line::from(vec![
                     Span::from("  ・ "),
                     Span::from(target).bold(),
@@ -123,7 +122,7 @@ impl Component for JournalComponent {
                 .gray();
                 let margin = Line::from("");
                 frame.render_widget(
-                    Paragraph::new(Text::from(vec![title, hr, body, margin])),
+                    Paragraph::new(Text::from(vec![title, Line::from(""), body, margin])),
                     area,
                 );
             }
@@ -138,15 +137,11 @@ impl Component for JournalComponent {
                     Span::from(updated_at.format("%Y/%m/%d").to_string()).blue(),
                     Span::from("に更新"),
                 ]);
-                let hr = Line::from("─".to_string().repeat(120)).gray();
+                area.y += 1;
+                area.height = area.height.saturating_sub(1);
                 let mut body = tui_markdown::from_str(body);
                 body.lines.push(Line::from(""));
                 frame.render_widget(title, area);
-                area.y += 1;
-                area.height = area.height.saturating_sub(1);
-                frame.render_widget(hr, area);
-                area.y += 2;
-                area.height = area.height.saturating_sub(2);
                 frame.render_widget(body, area);
             }
         }

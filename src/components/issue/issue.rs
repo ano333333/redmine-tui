@@ -6,6 +6,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use crate::components::Component;
+use crate::widgets::Hr;
 
 use super::journal::JournalComponent;
 use super::relative::RelativeIssueComponent;
@@ -33,26 +34,8 @@ pub struct IssueComponent {
 }
 
 impl IssueComponent {
-    fn create_paragraphs(&self) -> Vec<Paragraph> {
-        let mut paragraphs = Vec::<Paragraph>::new();
-        let mut lines = Vec::<Line>::from([]);
-        let mut header = self.create_header();
-        lines.append(&mut header);
-        let mut status_table = self.create_status_table();
-        lines.append(&mut status_table);
-        paragraphs.push(
-            Paragraph::new(lines)
-                .wrap(Wrap { trim: true })
-                .block(Block::default()),
-        );
-        paragraphs.push(Paragraph::new("─".to_string().repeat(120)).style(Style::default().gray()));
-        paragraphs
-            .push(Paragraph::new(tui_markdown::from_str(&self.body)).wrap(Wrap { trim: true }));
-        paragraphs
-    }
-
-    fn create_header(&self) -> Vec<Line> {
-        vec![
+    fn create_header(&self) -> Vec<Paragraph> {
+        vec![Paragraph::new(vec![
             Line::from(format!("#{}", self.id)),
             Line::from(""),
             Line::from(format!("# {}", self.title)).style(Style::default().bold()),
@@ -68,10 +51,10 @@ impl IssueComponent {
                 Span::from("に更新."),
             ]),
             Line::from("\n\n"),
-        ]
+        ])]
     }
 
-    fn create_status_table(&self) -> Vec<Line> {
+    fn create_status_table(&self) -> Vec<Paragraph> {
         let person = match &self.person_in_charge {
             Some(s) => s.clone(),
             None => "-".to_string(),
@@ -94,7 +77,7 @@ impl IssueComponent {
             Some(r) => r.clone(),
             None => "-".to_string(),
         };
-        vec![
+        vec![Paragraph::new(vec![
             Line::from(vec![
                 Span::from("ステータス          ").style(Style::default().blue()),
                 Span::from(&self.status),
@@ -118,14 +101,26 @@ impl IssueComponent {
             Line::from(format!("解決方法            {}", resolve_way)),
             Line::from(format!("コンポーネント      {}", &self.component)),
             Line::from(format!("Tags                {}", self.tags.concat())),
-        ]
+        ])]
+    }
+
+    fn create_body(&self) -> Vec<Paragraph> {
+        vec![Paragraph::new(tui_markdown::from_str(&self.body)).wrap(Wrap { trim: true })]
     }
 }
 
 impl Component for IssueComponent {
     fn line_count(&self, width: u16) -> u16 {
-        let paragraphs = self.create_paragraphs();
-        let paragraphs_line = paragraphs
+        let header_line = self
+            .create_header()
+            .iter()
+            .fold(0, |acc, p| acc + p.line_count(width) as u16);
+        let status_line = self
+            .create_status_table()
+            .iter()
+            .fold(0, |acc, p| acc + p.line_count(width) as u16);
+        let body_line = self
+            .create_body()
             .iter()
             .fold(0, |acc, p| acc + p.line_count(width) as u16);
         let relatives_line = self
@@ -136,11 +131,26 @@ impl Component for IssueComponent {
             .journals
             .iter()
             .fold(0, |acc, comp| acc + comp.line_count(width));
-        paragraphs_line + 3 + relatives_line + 2 + journals_line
+        header_line + status_line + 1 + body_line + 3 + relatives_line + 2 + journals_line
     }
 
     fn render(&self, frame: &mut Frame, mut area: Rect) {
-        for p in self.create_paragraphs().iter() {
+        for p in self.create_header().iter() {
+            frame.render_widget(p, area);
+            let l = p.line_count(area.width) as u16;
+            area.y += l;
+            area.height = area.height.saturating_sub(l);
+        }
+        for p in self.create_status_table().iter() {
+            frame.render_widget(p, area);
+            let l = p.line_count(area.width) as u16;
+            area.y += l;
+            area.height = area.height.saturating_sub(l);
+        }
+        frame.render_widget(Hr::default(), area);
+        area.y += 1;
+        area.height = area.height.saturating_sub(1);
+        for p in self.create_body().iter() {
             frame.render_widget(p, area);
             let l = p.line_count(area.width) as u16;
             area.y += l;
@@ -157,29 +167,24 @@ impl Component for IssueComponent {
                 child_all_num, child_complete_num, child_imcomplete_num
             )),
         ]);
-        let childs_header = Text::from(vec![
-            Line::from("-".to_string().repeat(120)),
-            child_header_title,
-            Line::from(""),
-        ]);
+        frame.render_widget(Hr::default(), area);
+        area.y += 1;
+        area.height = area.height.saturating_sub(1);
+        let childs_header = Text::from(vec![child_header_title, Line::from("")]);
         frame.render_widget(childs_header, area);
-        area.y += 3;
-        area.height = area.height.saturating_sub(3);
+        area.y += 2;
+        area.height = area.height.saturating_sub(2);
         for c in self.relatives.iter() {
             c.render(frame, area);
             let l = c.line_count(area.width);
             area.y += l;
             area.height = area.height.saturating_sub(l);
         }
-        frame.render_widget(
-            Text::from(vec![
-                Line::from(""),
-                Line::from("-".to_string().repeat(120)),
-            ]),
-            area,
-        );
-        area.y += 2;
-        area.height = area.height.saturating_sub(2);
+        area.y += 1;
+        area.height = area.height.saturating_sub(1);
+        frame.render_widget(Hr::default(), area);
+        area.y += 1;
+        area.height = area.height.saturating_sub(1);
         for j in self.journals.iter() {
             j.render(frame, area);
             let l = j.line_count(area.width);
