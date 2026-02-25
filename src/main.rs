@@ -1,5 +1,6 @@
 mod components;
 mod logging;
+mod widgets;
 
 use std::{cmp::max, fs};
 
@@ -19,12 +20,12 @@ use self::components::{IssueComponent, RelativeIssueComponent};
 
 const APP_WIDTH_MIN: usize = 40;
 const APP_HEIGHT_MIN: usize = 40;
-struct App {
+struct AppContainer {
     width: usize,
     height: usize,
 }
 
-impl App {
+impl AppContainer {
     pub fn handle_key_event(&mut self, event: Event) -> bool {
         if let Event::Key(key) = event {
             if key.code == KeyCode::Char('q') {
@@ -54,7 +55,7 @@ fn main() -> Result<()> {
     logging::initialize_logging()?;
     trace_dbg!("start");
     let mut terminal = ratatui::init();
-    let mut app = App {
+    let mut app = AppContainer {
         width: 80,
         height: 80,
     };
@@ -114,7 +115,7 @@ fn issue_component() -> IssueComponent {
     }
 }
 
-fn draw(frame: &mut Frame, app: &App) {
+fn draw(frame: &mut Frame, app: &AppContainer) {
     let vert_layouts = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
