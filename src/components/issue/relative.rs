@@ -8,6 +8,7 @@ use ratatui::text::Text;
 use ratatui::widgets::{Paragraph, Wrap};
 use yaml_rust::YamlLoader;
 
+use crate::app::Store;
 use crate::components::Component;
 
 pub struct RelativeIssueComponent {
@@ -67,7 +68,7 @@ impl Component for RelativeIssueComponent {
         1
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect) {
+    fn render(&self, _: &Store, frame: &mut Frame, area: Rect) {
         let row = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Max(1)])

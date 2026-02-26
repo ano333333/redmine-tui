@@ -8,6 +8,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Wrap};
 use yaml_rust::YamlLoader;
 
+use crate::app::Store;
 use crate::components::Component;
 
 pub enum JournalComponent {
@@ -95,7 +96,7 @@ impl Component for JournalComponent {
         }
     }
 
-    fn render(&self, frame: &mut Frame, mut area: Rect) {
+    fn render(&self, _: &Store, frame: &mut Frame, mut area: Rect) {
         match self {
             Self::Property {
                 creator,

@@ -5,6 +5,7 @@ use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Paragraph, Wrap};
 
+use crate::app::Store;
 use crate::components::Component;
 use crate::widgets::Hr;
 
@@ -134,7 +135,7 @@ impl Component for IssueComponent {
         header_line + status_line + 1 + body_line + 3 + relatives_line + 2 + journals_line
     }
 
-    fn render(&self, frame: &mut Frame, mut area: Rect) {
+    fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
         for p in self.create_header().iter() {
             frame.render_widget(p, area);
             let l = p.line_count(area.width) as u16;
@@ -175,7 +176,7 @@ impl Component for IssueComponent {
         area.y += 2;
         area.height = area.height.saturating_sub(2);
         for c in self.relatives.iter() {
-            c.render(frame, area);
+            c.render(store, frame, area);
             let l = c.line_count(area.width);
             area.y += l;
             area.height = area.height.saturating_sub(l);
@@ -186,7 +187,7 @@ impl Component for IssueComponent {
         area.y += 1;
         area.height = area.height.saturating_sub(1);
         for j in self.journals.iter() {
-            j.render(frame, area);
+            j.render(store, frame, area);
             let l = j.line_count(area.width);
             area.y += l;
             area.height = area.height.saturating_sub(l);

@@ -1,10 +1,10 @@
+mod app;
 mod components;
 mod logging;
 mod widgets;
 
-use std::{cmp::max, fs};
+use std::{cell::RefCell, cmp::max, rc::Rc};
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
     Frame,
@@ -15,17 +15,29 @@ use ratatui::{
 };
 use std::io::Result;
 
-use self::components::{Component, JournalComponent};
-use self::components::{IssueComponent, RelativeIssueComponent};
+use self::app::Dispatcher;
+use self::components::{AppComponent, Component};
 
 const APP_WIDTH_MIN: usize = 40;
 const APP_HEIGHT_MIN: usize = 40;
 struct AppContainer {
     width: usize,
     height: usize,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    app_component: AppComponent,
 }
 
 impl AppContainer {
+    fn new(width: usize, height: usize) -> Self {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        let app_component = AppComponent::new(dispatcher.clone());
+        AppContainer {
+            width,
+            height,
+            dispatcher,
+            app_component,
+        }
+    }
     pub fn handle_key_event(&mut self, event: Event) -> bool {
         if let Event::Key(key) = event {
             if key.code == KeyCode::Char('q') {
@@ -44,10 +56,15 @@ impl AppContainer {
                 KeyCode::Down => {
                     self.height = self.height.saturating_add(1);
                 }
-                _ => {}
+                _ => {
+                    self.app_component.process_event(event);
+                }
             }
+            true
+        } else {
+            self.app_component.process_event(event);
+            true
         }
-        true
     }
 }
 
@@ -55,13 +72,9 @@ fn main() -> Result<()> {
     logging::initialize_logging()?;
     trace_dbg!("start");
     let mut terminal = ratatui::init();
-    let mut app = AppContainer {
-        width: 80,
-        height: 80,
-    };
-    let issue_component = issue_component();
+    let mut app = AppContainer::new(80, 80);
     loop {
-        if let Some(e) = terminal.draw(|f| draw(f, &app, &issue_component)).err() {
+        if let Some(e) = terminal.draw(|f| draw(f, &app)).err() {
             trace_dbg!(level: tracing::Level::ERROR, "failed to draw frame");
             return Err(e);
         }
@@ -82,41 +95,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn issue_component() -> IssueComponent {
-    fn parse_as_local(str: String) -> DateTime<Local> {
-        let naive = NaiveDate::parse_from_str(str.as_str(), "%Y/%m/%d")
-            .expect(format!("failed to parse naive datetime: {}", str.as_str()).as_str());
-        // Local.from_local_datetime(&naive).single().unwrap()
-        let naive_datetime = naive.and_hms_opt(0, 0, 0).unwrap();
-        Local.from_local_datetime(&naive_datetime).single().unwrap()
-    }
-    let body = fs::read_to_string("datas/body.md").expect("failed to read datas/body.md");
-    let relatives_path = "datas/relatives.yml".to_string();
-    let articles_path = "datas/articles.yml".to_string();
-    IssueComponent {
-        id: 10000,
-        title: "【タスク】Rails 3.2/vendor/plugins非推奨化対応oooooooooooooooooooooooooooooooooooooooooooooooooooo".into(),
-        creator: "菊池 雅英".into(),
-        appended_at: parse_as_local("2026/02/04".into()),
-        updated_at: parse_as_local("2026/02/16".into()),
-        status: "進行中(accepted)".to_string(),
-        priority: "major".to_string(),
-        person_in_charge: Some("菊池 雅英".to_string()),
-        target_version: None,
-        start_date: Some(parse_as_local("2026/02/16".to_string())),
-        due: Some(parse_as_local("2026/02/17".to_string())),
-        progress: 0,
-        planned_hours: None,
-        resolve_way: None,
-        component: "IDサーバ".to_string(),
-        tags: Vec::<String>::new(),
-        body,
-        relatives: RelativeIssueComponent::parse_yaml(&relatives_path),
-        journals: JournalComponent::parse_yaml(&articles_path),
-    }
-}
-
-fn draw(frame: &mut Frame, app: &AppContainer, issue_component: &IssueComponent) {
+fn draw(frame: &mut Frame, app: &AppContainer) {
+    let app_component = &app.app_component;
     let vert_layouts = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -134,16 +114,20 @@ fn draw(frame: &mut Frame, app: &AppContainer, issue_component: &IssueComponent)
         .borders(Borders::ALL);
     let issue_area = issue_block.inner(hor_layouts[0]);
 
-    let line_count = issue_component.line_count(issue_area.width);
+    let line_count = app_component.line_count(issue_area.width);
     let descriptions = Text::from(vec![
         Line::from(format!("横幅({})を縮める/広げる: ←/→", app.width)),
         Line::from(format!("縦幅({})を縮める/広げる: ↑/↓", app.height)),
         Line::from("終了: q"),
-        Line::from(format!("全体縦幅: {}", line_count)),
+        Line::from(format!(
+            "全体縦幅: {}, store: {}",
+            line_count,
+            app.dispatcher.borrow().store().get_counter()
+        )),
     ]);
     frame.render_widget(descriptions, vert_layouts[0]);
 
     frame.render_widget(issue_block, hor_layouts[0]);
 
-    issue_component.render(frame, issue_area);
+    app_component.render(app.dispatcher.borrow().store(), frame, issue_area);
 }
