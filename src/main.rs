@@ -59,8 +59,9 @@ fn main() -> Result<()> {
         width: 80,
         height: 80,
     };
+    let issue_component = issue_component();
     loop {
-        if let Some(e) = terminal.draw(|f| draw(f, &app)).err() {
+        if let Some(e) = terminal.draw(|f| draw(f, &app, &issue_component)).err() {
             trace_dbg!(level: tracing::Level::ERROR, "failed to draw frame");
             return Err(e);
         }
@@ -115,7 +116,7 @@ fn issue_component() -> IssueComponent {
     }
 }
 
-fn draw(frame: &mut Frame, app: &AppContainer) {
+fn draw(frame: &mut Frame, app: &AppContainer, issue_component: &IssueComponent) {
     let vert_layouts = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -133,7 +134,6 @@ fn draw(frame: &mut Frame, app: &AppContainer) {
         .borders(Borders::ALL);
     let issue_area = issue_block.inner(hor_layouts[0]);
 
-    let issue_component = issue_component();
     let line_count = issue_component.line_count(issue_area.width);
     let descriptions = Text::from(vec![
         Line::from(format!("横幅({})を縮める/広げる: ←/→", app.width)),
