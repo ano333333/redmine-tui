@@ -1,5 +1,7 @@
 mod app;
 mod components;
+mod entities;
+mod libs;
 mod logging;
 mod widgets;
 
@@ -119,11 +121,7 @@ fn draw(frame: &mut Frame, app: &AppContainer) {
         Line::from(format!("横幅({})を縮める/広げる: ←/→", app.width)),
         Line::from(format!("縦幅({})を縮める/広げる: ↑/↓", app.height)),
         Line::from("終了: q"),
-        Line::from(format!(
-            "全体縦幅: {}, store: {}",
-            line_count,
-            app.dispatcher.borrow().store().get_counter()
-        )),
+        Line::from(format!("全体縦幅: {}", line_count)),
     ]);
     frame.render_widget(descriptions, vert_layouts[0]);
 

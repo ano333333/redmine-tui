@@ -1,0 +1,56 @@
+id: 3
+title: issue1(長ああああああああああああああああああああああああああああああああああああいタイトル)
+creator: user1
+appended_at: 2026/02/04
+updated_at: 2026/02/16
+status: 進行中(accepted)
+priority: major
+person_in_charge: user1
+start_date: 2026/02/16
+due: 2026/02/17
+progress: 0
+component: component1
+tags:
+relatives:
+  - 1
+  - 2
+journal_ids:
+  - 1
+  - 2
+  - 3
+body: |-
+  ### h3
+
+  #### h4
+
+  ##### h5
+
+  normal text
+
+  *italic text*
+
+  **bold text**
+
+  1. numbered list 1
+  1. numbered list 2
+  1. numbered list 3
+    1. inner numbered list 1
+    1. inner numbered list 2
+    1. inner numbered list 3
+
+  - itemized list 1
+  - itemized list 2
+  - itemized list 3
+    - itemized list 1
+    - itemized list 2
+    - itemized list 3
+
+  ~~canceled text~~
+
+  `code`
+
+  ```
+  code block
+  ```
+
+  > citation

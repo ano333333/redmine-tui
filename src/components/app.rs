@@ -24,17 +24,7 @@ impl AppComponent {
         }
     }
 
-    pub fn process_event(&self, event: Event) {
-        if let Event::Key(key) = event {
-            match key.code {
-                KeyCode::Char('p') => {
-                    let mut d = self.dispatcher.borrow_mut();
-                    d.dispatch(Action::Increment);
-                }
-                _ => {}
-            }
-        }
-    }
+    pub fn process_event(&self, event: Event) {}
 }
 
 impl Component for AppComponent {

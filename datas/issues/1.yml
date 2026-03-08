@@ -1,0 +1,15 @@
+id: 1
+title: issue1
+creator: user1
+appended_at: 2026/01/01
+updated_at: 2026/01/04
+status: 進行中(accepted)
+priority: major
+person_in_charge: user1
+start_date: 2025/12/09
+due: 2025/12/19
+progress: 100
+component: component1
+tags:
+relatives:
+body: ""

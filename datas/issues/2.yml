@@ -1,0 +1,15 @@
+id: 2
+title: issue2
+creator: user1
+appended_at: 2026/02/01
+updated_at: 2026/02/04
+status: 完了(closed)
+priority: major
+person_in_charge: user1
+start_date: 2025/12/09
+due: 2025/12/19
+progress: 100
+component: component1
+tags:
+relatives:
+body: ""
