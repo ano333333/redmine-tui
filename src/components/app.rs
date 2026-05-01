@@ -1,15 +1,13 @@
 use std::cell::RefCell;
-use std::fs;
 use std::rc::Rc;
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::Event;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 
-use crate::app::{Action, Dispatcher, Store};
+use crate::app::{Dispatcher, Store};
+use crate::components::Component;
 use crate::components::issue::IssueComponent;
-use crate::components::{Component, JournalComponent, RelativeIssueComponent};
 
 pub struct AppComponent {
     issue_component: IssueComponent,

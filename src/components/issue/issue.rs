@@ -2,10 +2,10 @@ use std::fs;
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use ratatui::Frame;
-use ratatui::layout::{Offset, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Paragraph, Wrap};
+use ratatui::widgets::{Paragraph, Wrap};
 use yaml_rust::{Yaml, YamlLoader};
 
 use crate::app::Store;
