@@ -22,7 +22,7 @@ impl AppComponent {
         }
     }
 
-    pub fn process_event(&self, event: Event) {}
+    pub fn process_event(&self, _event: Event) {}
 }
 
 impl Component for AppComponent {
