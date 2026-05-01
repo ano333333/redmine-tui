@@ -1,26 +1,24 @@
 id: 3
-subject: issue1(長ああああああああああああああああああああああああああああああああああああいタイトル)
-author_id: 1
-created_on: 2026/02/04
-updated_on: 2026/02/16
-project_id: 1
-tracker_id: 3
-status_id: 3
-priority_id: 1
-assigned_to_id: 1
+title: issue1(長ああああああああああああああああああああああああああああああああああああいタイトル)
+creator: user1
+appended_at: 2026/02/04
+updated_at: 2026/02/16
+status: 進行中(accepted)
+priority: major
+person_in_charge: user1
 start_date: 2026/02/16
-due_date: 2026/02/17
-done_ratio: 0
+due: 2026/02/17
+progress: 0
 component: component1
 tags:
-child_ids:
+relative_ids:
   - 1
   - 2
 journal_ids:
   - 1
   - 2
   - 3
-description: |-
+body: |-
   ### h3
 
   #### h4
