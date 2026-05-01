@@ -94,7 +94,7 @@ impl IssueComponent {
             journals: JournalComponent::parse_yaml(&articles_path),
         }
     }
-    fn create_header(&self) -> Vec<Paragraph> {
+    fn create_header(&self) -> Vec<Paragraph<'_>> {
         vec![Paragraph::new(vec![
             Line::from(format!("#{}", self.id)),
             Line::from(""),
@@ -114,7 +114,7 @@ impl IssueComponent {
         ])]
     }
 
-    fn create_status_table(&self) -> Vec<Paragraph> {
+    fn create_status_table(&self) -> Vec<Paragraph<'_>> {
         let person = match &self.person_in_charge {
             Some(s) => s.clone(),
             None => "-".to_string(),
@@ -164,7 +164,7 @@ impl IssueComponent {
         ])]
     }
 
-    fn create_body(&self) -> Vec<Paragraph> {
+    fn create_body(&self) -> Vec<Paragraph<'_>> {
         vec![Paragraph::new(tui_markdown::from_str(&self.body)).wrap(Wrap { trim: true })]
     }
 
