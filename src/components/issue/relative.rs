@@ -1,14 +1,14 @@
-use std::fs;
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use chrono::NaiveDate;
+use chrono::{DateTime, Local};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style, Stylize};
 use ratatui::text::Text;
 use ratatui::widgets::{Paragraph, Wrap};
-use yaml_rust::YamlLoader;
 
-use crate::app::Store;
+use crate::app::{Dispatcher, Store};
 use crate::components::Component;
 
 pub struct RelativeIssueComponent {
@@ -17,49 +17,29 @@ pub struct RelativeIssueComponent {
     pub title: String,
     pub status: String,
     pub person_in_charge: Option<String>,
-    pub start_date: Option<NaiveDate>,
-    pub due: Option<NaiveDate>,
+    pub start_date: Option<DateTime<Local>>,
+    pub due: Option<DateTime<Local>>,
     pub progress: u16,
 }
 
 impl RelativeIssueComponent {
-    pub fn parse_yaml(path: &String) -> Vec<RelativeIssueComponent> {
-        let yaml_row = fs::read_to_string(path).expect(format!("failed to read {}", path).as_str());
-        let yaml = YamlLoader::load_from_str(&yaml_row)
-            .expect(format!("failed to parse {}", path).as_str());
-        let mut comps = Vec::<RelativeIssueComponent>::new();
-        for doc in yaml {
-            let id = doc["id"].as_i64().expect("no id") as u16;
-            let id_inactive = doc["complete"].as_bool().expect("no complete");
-            let title = doc["title"].as_str().expect("no title").to_string();
-            let status = doc["status"].as_str().expect("no status").to_string();
-            let mut person_in_charge: Option<String> = None;
-            if let Some(s) = doc["person_in_charge"].as_str() {
-                person_in_charge = Some(s.to_string());
-            }
-            let mut start_date: Option<NaiveDate> = None;
-            if let Some(d) = doc["start_date"].as_str() {
-                start_date = Some(
-                    NaiveDate::parse_from_str(d, "%Y/%m/%d").expect("parse error of start_date"),
-                );
-            }
-            let mut due: Option<NaiveDate> = None;
-            if let Some(d) = doc["due"].as_str() {
-                due = Some(NaiveDate::parse_from_str(d, "%Y/%m/%d").expect("parse error of due"));
-            }
-            let progress = doc["progress"].as_i64().expect("no progress") as u16;
-            comps.push(RelativeIssueComponent {
-                id,
-                complete: id_inactive,
-                title,
-                status,
-                person_in_charge,
-                start_date,
-                due,
-                progress,
-            })
+    pub fn new(dispatcher: Rc<RefCell<Dispatcher>>, issue_id: u16) -> Self {
+        let dispatcher = dispatcher.borrow();
+        let issue = dispatcher.store().get_issue(issue_id);
+        if issue.is_none() {
+            panic!();
         }
-        comps
+        let issue = issue.unwrap();
+        RelativeIssueComponent {
+            id: issue_id,
+            complete: issue.status == "完了",
+            title: issue.title.clone(),
+            status: issue.status.clone(),
+            person_in_charge: issue.person_in_charge.clone(),
+            start_date: issue.start_date,
+            due: issue.due,
+            progress: issue.progress,
+        }
     }
 }
 

@@ -32,6 +32,16 @@ struct AppContainer {
 impl AppContainer {
     fn new(width: usize, height: usize) -> Self {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        {
+            let mut d = dispatcher.borrow_mut();
+            d.dispatch(app::Action::LoadIssue { id: 1 });
+            d.dispatch(app::Action::LoadIssue { id: 2 });
+            d.dispatch(app::Action::LoadIssue { id: 3 });
+            d.dispatch(app::Action::LoadJournal { id: 1 });
+            d.dispatch(app::Action::LoadJournal { id: 2 });
+            d.dispatch(app::Action::LoadJournal { id: 3 });
+            d.consume_actions();
+        }
         let app_component = AppComponent::new(dispatcher.clone());
         AppContainer {
             width,

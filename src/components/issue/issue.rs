@@ -1,14 +1,14 @@
-use std::fs;
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, Local};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Wrap};
-use yaml_rust::{Yaml, YamlLoader};
 
-use crate::app::Store;
+use crate::app::{Dispatcher, Store};
 use crate::components::Component;
 use crate::widgets::Hr;
 
@@ -38,60 +38,43 @@ pub struct IssueComponent {
 }
 
 impl IssueComponent {
-    pub fn parse_yaml() -> Self {
-        let path = "datas/issue.yml";
-        let yaml_raw = fs::read_to_string(path).expect(format!("failed to read {}", path).as_str());
-        let yaml = YamlLoader::load_from_str(yaml_raw.as_str())
-            .expect(format!("failed to parse {}", path).as_str());
-        let yaml = &yaml[0];
-        let id = yaml["id"].as_i64().expect("no id").try_into().unwrap_or(0);
-        let title = yaml["title"].as_str().expect("no title").to_string();
-        let creator = yaml["creator"].as_str().expect("no creator").to_string();
-        let appended_at = yaml["appended_at"].as_str().expect("no appended_at");
-        let appended_at = Self::parse_as_local(appended_at);
-        let updated_at = yaml["updated_at"].as_str().expect("no updated_at");
-        let updated_at = Self::parse_as_local(updated_at);
-        let status = yaml["status"].as_str().expect("no status").to_string();
-        let priority = yaml["priority"].as_str().expect("no priority").to_string();
-        let person_in_charge = Self::parse_as_option_str(&yaml, "person_in_charge");
-        let target_version = Self::parse_as_option_str(&yaml, "target_version");
-        let start_date = Self::parse_as_option_datetime(&yaml, "due");
-        let due = Self::parse_as_option_datetime(&yaml, "due");
-        let progress = yaml["progress"]
-            .as_i64()
-            .expect("no progress")
-            .try_into()
-            .unwrap_or(0);
-        let planned_hours = Self::parse_as_option_u16(&yaml, "planned_hours");
-        let resolve_way = Self::parse_as_option_str(&yaml, "resolve_way");
-        let component = yaml["component"]
-            .as_str()
-            .expect("no component")
-            .to_string();
-        let tags = Self::parse_as_string_array(&yaml, "tags");
-        let body = yaml["body"].as_str().expect("no body").to_string();
-        let relatives_path = "datas/relatives.yml".to_string();
-        let articles_path = "datas/articles.yml".to_string();
+    pub fn new(dispatcher: Rc<RefCell<Dispatcher>>, issue_id: u16) -> Self {
+        let d = dispatcher.borrow();
+        let issue = d.store().get_issue(issue_id);
+        if issue.is_none() {
+            panic!();
+        }
+        let issue = issue.unwrap();
+        let relatives = issue
+            .relative_ids
+            .iter()
+            .map(|i| RelativeIssueComponent::new(dispatcher.clone(), *i))
+            .collect();
+        let journals = issue
+            .journal_ids
+            .iter()
+            .map(|i| JournalComponent::new(dispatcher.clone(), *i))
+            .collect();
         IssueComponent {
-            id,
-            title,
-            creator,
-            appended_at,
-            updated_at,
-            status,
-            priority,
-            person_in_charge,
-            target_version,
-            start_date,
-            due,
-            progress,
-            planned_hours,
-            resolve_way,
-            component,
-            tags,
-            body,
-            relatives: RelativeIssueComponent::parse_yaml(&relatives_path),
-            journals: JournalComponent::parse_yaml(&articles_path),
+            id: issue_id,
+            title: issue.title.clone(),
+            creator: issue.creator.clone(),
+            appended_at: issue.appended_at,
+            updated_at: issue.updated_at,
+            status: issue.status.clone(),
+            priority: issue.priority.clone(),
+            person_in_charge: issue.person_in_charge.clone(),
+            target_version: issue.target_version.clone(),
+            start_date: issue.start_date,
+            due: issue.due,
+            progress: issue.progress,
+            planned_hours: issue.planned_hours,
+            resolve_way: issue.resolve_way.clone(),
+            component: issue.component.clone(),
+            tags: issue.tags.clone(),
+            body: issue.body.clone(),
+            relatives,
+            journals,
         }
     }
     fn create_header(&self) -> Vec<Paragraph<'_>> {
@@ -166,45 +149,6 @@ impl IssueComponent {
 
     fn create_body(&self) -> Vec<Paragraph<'_>> {
         vec![Paragraph::new(tui_markdown::from_str(&self.body)).wrap(Wrap { trim: true })]
-    }
-
-    fn parse_as_local(str: &str) -> DateTime<Local> {
-        let naive = NaiveDate::parse_from_str(str, "%Y/%m/%d")
-            .expect(format!("failed to parse naive datetime: {}", str).as_str());
-        let naive_datetime = naive.and_hms_opt(0, 0, 0).unwrap();
-        Local.from_local_datetime(&naive_datetime).single().unwrap()
-    }
-    fn parse_as_option_str(yaml: &Yaml, key: &str) -> Option<String> {
-        if let Some(c) = yaml[key].as_str() {
-            Some(c.to_string())
-        } else {
-            None
-        }
-    }
-    fn parse_as_option_datetime(yaml: &Yaml, key: &str) -> Option<DateTime<Local>> {
-        if let Some(c) = yaml[key].as_str() {
-            Some(Self::parse_as_local(c))
-        } else {
-            None
-        }
-    }
-    fn parse_as_option_u16(yaml: &Yaml, key: &str) -> Option<u16> {
-        if let Some(c) = yaml[key].as_i64() {
-            Some(c.try_into().unwrap_or(0))
-        } else {
-            None
-        }
-    }
-    fn parse_as_string_array(yaml: &Yaml, key: &str) -> Vec<String> {
-        if let Some(arr) = yaml[key].as_vec() {
-            let mut res = Vec::<String>::new();
-            for s in arr {
-                res.push(s.as_str().unwrap().to_string());
-            }
-            res
-        } else {
-            Vec::<String>::new()
-        }
     }
 }
 

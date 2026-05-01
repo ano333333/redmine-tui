@@ -17,7 +17,7 @@ pub struct AppComponent {
 impl AppComponent {
     pub fn new(dispatcher: Rc<RefCell<Dispatcher>>) -> Self {
         AppComponent {
-            issue_component: IssueComponent::parse_yaml(),
+            issue_component: IssueComponent::new(dispatcher.clone(), 3),
             dispatcher,
         }
     }
