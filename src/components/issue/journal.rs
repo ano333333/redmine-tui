@@ -11,74 +11,67 @@ use ratatui::widgets::{Paragraph, Wrap};
 use crate::app::{Dispatcher, Store};
 use crate::components::Component;
 
-pub struct JournalComponent<'a> {
+pub struct JournalComponent {
     id: u16,
-    property_widgets: Option<PropertyWidgets<'a>>,
-    comment_widgets: Option<CommentWidgets<'a>>,
 }
 
-impl<'a> JournalComponent<'a> {
+impl JournalComponent {
     pub fn new(_: Rc<RefCell<Dispatcher>>, journal_id: u16) -> Self {
-        Self {
-            id: journal_id,
-            property_widgets: None,
-            comment_widgets: None,
-        }
+        Self { id: journal_id }
     }
 
-    pub fn line_count(&self, width: u16) -> u16 {
-        if let Some(_) = &self.property_widgets {
+    pub fn line_count(&self, store: &Store, width: u16) -> u16 {
+        let journal = store.get_journal(self.id);
+        if let Some(crate::entities::Journal::Property {
+            id,
+            creator,
+            target,
+            old,
+            new,
+            updated_at,
+        }) = journal
+        {
             4
-        } else if let Some(comment) = &self.comment_widgets {
-            comment.line_count(width)
+        } else if let Some(crate::entities::Journal::Comment {
+            id,
+            creator,
+            updated_at,
+            body,
+        }) = journal
+        {
+            let widgets = CommentWidgets::new(creator, updated_at, body);
+            widgets.line_count(width)
         } else {
             1
         }
     }
 }
 
-impl<'a> Component for JournalComponent<'a> {
-    fn update(&mut self, _: Rc<RefCell<Dispatcher>>, store: &Store) {
-        let journal = store.get_journal(self.id);
-        match journal {
-            Some(journal) => match journal {
-                crate::entities::Journal::Property {
-                    id,
-                    creator,
-                    target,
-                    old,
-                    new,
-                    updated_at,
-                } => {
-                    self.property_widgets = Some(PropertyWidgets::<'a>::new(
-                        &creator,
-                        &target,
-                        &old,
-                        &new,
-                        &updated_at,
-                    ));
-                    self.comment_widgets = None;
-                }
-                crate::entities::Journal::Comment {
-                    id,
-                    creator,
-                    updated_at,
-                    body,
-                } => {
-                    self.comment_widgets =
-                        Some(CommentWidgets::<'a>::new(creator, updated_at, body));
-                    self.property_widgets = None;
-                }
-            },
-            _ => {}
-        }
-    }
+impl Component for JournalComponent {
+    fn update(&mut self, _: Rc<RefCell<Dispatcher>>, _: &Store) {}
 
-    fn render(&self, _: &Store, frame: &mut Frame, mut area: Rect) {
-        if let Some(property) = &self.property_widgets {
-            frame.render_widget(&property.paragraph, area);
-        } else if let Some(comment) = &self.comment_widgets {
-            comment.render(frame, &mut area);
+    fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
+        let journal = store.get_journal(self.id);
+        if let Some(crate::entities::Journal::Property {
+            id,
+            creator,
+            target,
+            old,
+            new,
+            updated_at,
+        }) = journal
+        {
+            let widgets = PropertyWidgets::new(creator, target, old, new, updated_at);
+            frame.render_widget(&widgets.paragraph, area);
+        } else if let Some(crate::entities::Journal::Comment {
+            id,
+            creator,
+            updated_at,
+            body,
+        }) = journal
+        {
+            let widgets = CommentWidgets::new(creator, updated_at, body);
+            widgets.render(frame, &mut area);
         }
     }
 }
@@ -127,12 +120,12 @@ impl PropertyWidgets<'_> {
     }
 }
 
-struct CommentWidgets<'a> {
-    pub title: Line<'a>,
+struct CommentWidgets {
+    pub title: Line<'static>,
     body: String,
 }
 
-impl<'a> CommentWidgets<'a> {
+impl CommentWidgets {
     pub fn new(creator: &String, updated_at: &DateTime<Local>, body: &String) -> Self {
         Self {
             title: Self::create_title(creator, updated_at),

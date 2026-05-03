@@ -11,91 +11,76 @@ use ratatui::widgets::{Paragraph, Wrap};
 use crate::app::{Dispatcher, Store};
 use crate::components::Component;
 
-pub struct RelativeIssueComponent<'a> {
+pub struct RelativeIssueComponent {
     pub id: u16,
-    widgets: Option<RelativeIssueComponentWidgets<'a>>,
 }
 
-impl RelativeIssueComponent<'_> {
+impl RelativeIssueComponent {
     pub fn new(_: Rc<RefCell<Dispatcher>>, issue_id: u16) -> Self {
-        RelativeIssueComponent {
-            id: issue_id,
-            widgets: None,
-        }
+        RelativeIssueComponent { id: issue_id }
     }
 }
 
-impl Component for RelativeIssueComponent<'_> {
-    fn update(&mut self, _: Rc<RefCell<Dispatcher>>, store: &Store) {
+impl Component for RelativeIssueComponent {
+    fn update(&mut self, _: Rc<RefCell<Dispatcher>>, _: &Store) {}
+
+    fn render(&self, store: &Store, frame: &mut Frame, area: Rect) {
         let issue = store.get_issue(self.id);
-        match issue {
-            Some(issue) => {
-                // FIXME: 差分更新
-                self.widgets = Some(RelativeIssueComponentWidgets::new(
-                    issue.id,
-                    &issue.status,
-                    &issue.title,
-                    &issue.person_in_charge,
-                    &issue.start_date,
-                    &issue.due,
-                    issue.progress,
-                ));
-            }
-            None => {
-                self.widgets = None;
-            }
-        }
-    }
+        if let Some(issue) = issue {
+            let widgets = RelativeIssueComponentWidgets::new(
+                issue.id,
+                &issue.status,
+                &issue.title,
+                &issue.person_in_charge,
+                &issue.start_date,
+                &issue.due,
+                issue.progress,
+            );
+            let row = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Max(1)])
+                .split(area)[0];
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Length(7), // ID
+                    Constraint::Length(1),
+                    Constraint::Fill(1), // title
+                    Constraint::Length(1),
+                    Constraint::Length(7), // status
+                    Constraint::Length(1),
+                    Constraint::Length(12), // person_in_charge
+                    Constraint::Length(1),
+                    Constraint::Length(10), // created_at
+                    Constraint::Length(1),
+                    Constraint::Length(10), // due
+                    Constraint::Length(1),
+                    Constraint::Length(4), // progress
+                ])
+                .split(row);
 
-    fn render(&self, _: &Store, frame: &mut Frame, area: Rect) {
-        match &self.widgets {
-            Some(widgets) => {
-                let row = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Max(1)])
-                    .split(area)[0];
-                let cols = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([
-                        Constraint::Length(7), // ID
-                        Constraint::Length(1),
-                        Constraint::Fill(1), // title
-                        Constraint::Length(1),
-                        Constraint::Length(7), // status
-                        Constraint::Length(1),
-                        Constraint::Length(12), // person_in_charge
-                        Constraint::Length(1),
-                        Constraint::Length(10), // created_at
-                        Constraint::Length(1),
-                        Constraint::Length(10), // due
-                        Constraint::Length(1),
-                        Constraint::Length(4), // progress
-                    ])
-                    .split(row);
-
-                frame.render_widget(&widgets.id, cols[0]);
-                frame.render_widget(&widgets.title, cols[2]);
-                frame.render_widget(&widgets.status, cols[4]);
-                frame.render_widget(&widgets.person_in_charge, cols[6]);
-                frame.render_widget(&widgets.start_date, cols[8]);
-                frame.render_widget(&widgets.due, cols[10]);
-                frame.render_widget(&widgets.progress, cols[12]);
-            }
-            _ => {}
+            frame.render_widget(&widgets.id, cols[0]);
+            frame.render_widget(&widgets.title, cols[2]);
+            frame.render_widget(&widgets.status, cols[4]);
+            frame.render_widget(&widgets.person_in_charge, cols[6]);
+            frame.render_widget(&widgets.start_date, cols[8]);
+            frame.render_widget(&widgets.due, cols[10]);
+            frame.render_widget(&widgets.progress, cols[12]);
         }
     }
 }
 
-struct RelativeIssueComponentWidgets<'a> {
-    pub id: Paragraph<'a>,
-    pub title: Paragraph<'a>,
-    pub status: Paragraph<'a>,
-    pub person_in_charge: Paragraph<'a>,
-    pub start_date: Paragraph<'a>,
-    pub due: Paragraph<'a>,
-    pub progress: Paragraph<'a>,
+struct RelativeIssueComponentWidgets {
+    pub id: Paragraph<'static>,
+    pub title: Paragraph<'static>,
+    pub status: Paragraph<'static>,
+    pub person_in_charge: Paragraph<'static>,
+    pub start_date: Paragraph<'static>,
+    pub due: Paragraph<'static>,
+    pub progress: Paragraph<'static>,
 }
-impl RelativeIssueComponentWidgets<'_> {
+
+impl RelativeIssueComponentWidgets {
     pub fn new(
         id: u16,
         status: &String,

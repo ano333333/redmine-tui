@@ -15,32 +15,29 @@ use crate::widgets::Hr;
 use super::journal::JournalComponent;
 use super::relative::RelativeIssueComponent;
 
-pub struct IssueComponent<'a> {
+pub struct IssueComponent {
     pub id: u16,
-    pub relatives: Vec<RelativeIssueComponent<'a>>,
-    pub journals: Vec<JournalComponent<'a>>,
-    widgets: Option<IssueComponentWidgets<'a>>,
+    pub relatives: Vec<RelativeIssueComponent>,
+    pub journals: Vec<JournalComponent>,
 }
 
-impl<'a> IssueComponent<'a> {
+impl IssueComponent {
     pub fn new(_: Rc<RefCell<Dispatcher>>, issue_id: u16) -> Self {
         IssueComponent {
             id: issue_id,
             relatives: vec![],
             journals: vec![],
-            widgets: None,
         }
     }
 }
 
-impl<'a> Component for IssueComponent<'a> {
+impl Component for IssueComponent {
     fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
         let issue = store.get_issue(self.id);
         match issue {
             None => {
                 self.relatives = vec![];
                 self.journals = vec![];
-                self.widgets = None;
             }
             Some(issue) => {
                 // FIXME: 差分更新
@@ -60,6 +57,14 @@ impl<'a> Component for IssueComponent<'a> {
                 self.journals
                     .iter_mut()
                     .for_each(|journal| journal.update(dispatcher.clone(), store));
+            }
+        }
+    }
+
+    fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
+        let issue = store.get_issue(self.id);
+        match issue {
+            Some(issue) => {
                 let child_all_num = issue.relative_ids.len() as u16;
                 let child_complete_num = issue
                     .relative_ids
@@ -74,7 +79,7 @@ impl<'a> Component for IssueComponent<'a> {
                     })
                     .count() as u16;
                 let child_imcomplete_num = child_all_num - child_complete_num;
-                self.widgets = Some(IssueComponentWidgets::new(
+                let widgets = IssueComponentWidgets::new(
                     self.id,
                     &issue.title,
                     &issue.creator,
@@ -95,15 +100,7 @@ impl<'a> Component for IssueComponent<'a> {
                     child_all_num,
                     child_complete_num,
                     child_imcomplete_num,
-                ));
-            }
-        }
-    }
-
-    fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
-        match &self.widgets {
-            None => {}
-            Some(widgets) => {
+                );
                 widgets.render(store, frame, &mut area);
                 for c in self.relatives.iter() {
                     c.render(store, frame, area);
@@ -117,23 +114,24 @@ impl<'a> Component for IssueComponent<'a> {
                 area.height = area.height.saturating_sub(1);
                 for j in self.journals.iter() {
                     j.render(store, frame, area);
-                    let l = j.line_count(area.width);
+                    let l = j.line_count(store, area.width);
                     area.y += l;
                     area.height = area.height.saturating_sub(l);
                 }
             }
+            None => {}
         }
     }
 }
 
-struct IssueComponentWidgets<'a> {
-    pub header: Vec<Paragraph<'a>>,
-    pub status_table: Vec<Paragraph<'a>>,
+struct IssueComponentWidgets {
+    pub header: Vec<Paragraph<'static>>,
+    pub status_table: Vec<Paragraph<'static>>,
     body: String,
-    pub childs_header: Text<'a>,
+    pub childs_header: Text<'static>,
 }
 
-impl<'a> IssueComponentWidgets<'a> {
+impl IssueComponentWidgets {
     pub fn new(
         id: u16,
         title: &String,

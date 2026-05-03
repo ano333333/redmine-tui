@@ -22,14 +22,14 @@ use self::components::{AppComponent, Component};
 
 const APP_WIDTH_MIN: usize = 40;
 const APP_HEIGHT_MIN: usize = 40;
-struct AppContainer<'a> {
+struct AppContainer {
     width: usize,
     height: usize,
     dispatcher: Rc<RefCell<Dispatcher>>,
-    app_component: AppComponent<'a>,
+    app_component: AppComponent,
 }
 
-impl<'a> AppContainer<'a> {
+impl AppContainer {
     fn new(width: usize, height: usize) -> Self {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {

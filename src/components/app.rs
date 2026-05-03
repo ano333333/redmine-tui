@@ -9,12 +9,12 @@ use crate::app::{Dispatcher, Store};
 use crate::components::Component;
 use crate::components::issue::IssueComponent;
 
-pub struct AppComponent<'a> {
-    issue_component: IssueComponent<'a>,
+pub struct AppComponent {
+    issue_component: IssueComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
 }
 
-impl<'a> AppComponent<'a> {
+impl AppComponent {
     pub fn new(dispatcher: Rc<RefCell<Dispatcher>>) -> Self {
         AppComponent {
             issue_component: IssueComponent::new(dispatcher.clone(), 3),
@@ -25,7 +25,7 @@ impl<'a> AppComponent<'a> {
     pub fn process_event(&self, _event: Event) {}
 }
 
-impl<'a> Component for AppComponent<'a> {
+impl Component for AppComponent {
     fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
         self.issue_component.update(dispatcher, store);
     }
