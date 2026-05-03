@@ -66,6 +66,9 @@ impl Component for JournalComponent {
             widgets.render(frame, &mut area);
         }
     }
+
+    fn process_event(&mut self, _: crossterm::event::Event, _: Rc<RefCell<Dispatcher>>, _: &Store) {
+    }
 }
 
 struct PropertyWidgets<'a> {

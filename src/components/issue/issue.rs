@@ -2,12 +2,14 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use chrono::{DateTime, Local};
+use crossterm::event::{Event, KeyCode};
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Wrap};
 
+use crate::AppContainer;
 use crate::app::{Dispatcher, Store};
 use crate::components::Component;
 use crate::widgets::Hr;
@@ -19,6 +21,7 @@ pub struct IssueComponent {
     pub id: u16,
     pub relatives: Vec<RelativeIssueComponent>,
     pub journals: Vec<JournalComponent>,
+    cursor_position: Position,
 }
 
 impl IssueComponent {
@@ -27,6 +30,7 @@ impl IssueComponent {
             id: issue_id,
             relatives: vec![],
             journals: vec![],
+            cursor_position: Default::default(),
         }
     }
 }
@@ -120,6 +124,36 @@ impl Component for IssueComponent {
                 }
             }
             None => {}
+        }
+        AppContainer::set_cursor_position(frame, self.cursor_position);
+    }
+
+    fn process_event(
+        &mut self,
+        event: crossterm::event::Event,
+        _: Rc<RefCell<Dispatcher>>,
+        _: &Store,
+    ) {
+        if let Event::Key(key) = event {
+            match key.code {
+                KeyCode::Char('h') => {
+                    if self.cursor_position.x > 0 {
+                        self.cursor_position.x -= 1;
+                    }
+                }
+                KeyCode::Char('l') => {
+                    self.cursor_position.x += 1;
+                }
+                KeyCode::Char('k') => {
+                    if self.cursor_position.y > 0 {
+                        self.cursor_position.y -= 1;
+                    }
+                }
+                KeyCode::Char('j') => {
+                    self.cursor_position.y += 1;
+                }
+                _ => {}
+            }
         }
     }
 }

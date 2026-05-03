@@ -68,6 +68,9 @@ impl Component for RelativeIssueComponent {
             frame.render_widget(&widgets.progress, cols[12]);
         }
     }
+
+    fn process_event(&mut self, _: crossterm::event::Event, _: Rc<RefCell<Dispatcher>>, _: &Store) {
+    }
 }
 
 struct RelativeIssueComponentWidgets {

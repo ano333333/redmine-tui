@@ -10,7 +10,7 @@ use std::{cell::RefCell, cmp::max, rc::Rc};
 use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Position},
     style::{Color, Style},
     text::{Line, Text},
     widgets::{Block, BorderType, Borders},
@@ -22,6 +22,10 @@ use self::components::{AppComponent, Component};
 
 const APP_WIDTH_MIN: usize = 40;
 const APP_HEIGHT_MIN: usize = 40;
+
+const APP_COMPONENT_OFFSET_X: usize = 1;
+const APP_COMPONENT_OFFSET_Y: usize = 5;
+
 struct AppContainer {
     width: usize,
     height: usize,
@@ -81,6 +85,12 @@ impl AppContainer {
     pub fn update(&mut self) {
         self.app_component
             .update(self.dispatcher.clone(), self.dispatcher.borrow().store());
+    }
+    // AppContainer内とターミナル全体の原点座標の差を緩衝するメソッド
+    pub fn set_cursor_position(frame: &mut Frame, position: Position) {
+        let x = position.x + APP_COMPONENT_OFFSET_X as u16;
+        let y = position.y + APP_COMPONENT_OFFSET_Y as u16;
+        frame.set_cursor_position(Position { x, y });
     }
 }
 

@@ -21,8 +21,13 @@ impl AppComponent {
             dispatcher,
         }
     }
-
-    pub fn process_event(&self, _event: Event) {}
+    pub fn process_event(&mut self, event: Event) {
+        self.issue_component.process_event(
+            event,
+            self.dispatcher.clone(),
+            self.dispatcher.borrow().store(),
+        );
+    }
 }
 
 impl Component for AppComponent {
@@ -32,5 +37,9 @@ impl Component for AppComponent {
 
     fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
         self.issue_component.render(store, frame, area);
+    }
+
+    fn process_event(&mut self, event: Event, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
+        self.issue_component.process_event(event, dispatcher, store);
     }
 }
