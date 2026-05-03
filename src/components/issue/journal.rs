@@ -140,6 +140,9 @@ impl CommentWidgets {
             Span::from("に更新"),
         ])
     }
+    // FIXME:
+    // tui_markdownのレンダリングを、Widget単位ではなくレンダリング結果単位で永続化する方法を考える
+    // Bufferの永続化？
     fn create_body(&self) -> Text {
         let mut text = tui_markdown::from_str(&self.body);
         text.lines.push(Line::from(""));

@@ -293,6 +293,9 @@ impl IssueComponentWidgets {
         ])]
     }
 
+    // FIXME:
+    // tui_markdownのレンダリングを、Widget単位ではなくレンダリング結果単位で永続化する方法を考える
+    // Bufferの永続化？
     fn create_body(&self) -> Vec<Paragraph<'_>> {
         vec![Paragraph::new(tui_markdown::from_str(&self.body)).wrap(Wrap { trim: true })]
     }
