@@ -30,10 +30,6 @@ impl<'a> Component for AppComponent<'a> {
         self.issue_component.update(dispatcher, store);
     }
 
-    fn line_count(&self, width: u16) -> u16 {
-        self.issue_component.line_count(width)
-    }
-
     fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
         self.issue_component.render(store, frame, area);
     }

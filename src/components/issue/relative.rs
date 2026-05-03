@@ -47,10 +47,6 @@ impl Component for RelativeIssueComponent<'_> {
         }
     }
 
-    fn line_count(&self, _: u16) -> u16 {
-        1
-    }
-
     fn render(&self, _: &Store, frame: &mut Frame, area: Rect) {
         match &self.widgets {
             Some(widgets) => {

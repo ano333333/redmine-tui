@@ -131,12 +131,10 @@ fn draw(frame: &mut Frame, app: &AppContainer) {
         .borders(Borders::ALL);
     let issue_area = issue_block.inner(hor_layouts[0]);
 
-    let line_count = app_component.line_count(issue_area.width);
     let descriptions = Text::from(vec![
         Line::from(format!("横幅({})を縮める/広げる: ←/→", app.width)),
         Line::from(format!("縦幅({})を縮める/広げる: ↑/↓", app.height)),
         Line::from("終了: q"),
-        Line::from(format!("全体縦幅: {}", line_count)),
     ]);
     frame.render_widget(descriptions, vert_layouts[0]);
 

@@ -100,22 +100,6 @@ impl<'a> Component for IssueComponent<'a> {
         }
     }
 
-    fn line_count(&self, width: u16) -> u16 {
-        let widgets = match &self.widgets {
-            Some(widgets) => widgets.line_count(width),
-            None => 0,
-        };
-        let relatives_line = self
-            .relatives
-            .iter()
-            .fold(0, |acc, comp| acc + comp.line_count(width));
-        let journals_line = self
-            .journals
-            .iter()
-            .fold(0, |acc, comp| acc + comp.line_count(width));
-        widgets + relatives_line + 2 + journals_line
-    }
-
     fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
         match &self.widgets {
             None => {}
@@ -123,9 +107,8 @@ impl<'a> Component for IssueComponent<'a> {
                 widgets.render(store, frame, &mut area);
                 for c in self.relatives.iter() {
                     c.render(store, frame, area);
-                    let l = c.line_count(area.width);
-                    area.y += l;
-                    area.height = area.height.saturating_sub(l);
+                    area.y += 1;
+                    area.height = area.height.saturating_sub(1);
                 }
                 area.y += 1;
                 area.height = area.height.saturating_sub(1);
@@ -195,22 +178,6 @@ impl<'a> IssueComponentWidgets<'a> {
                 child_imcomplete_num,
             ),
         }
-    }
-
-    pub fn line_count(&self, width: u16) -> u16 {
-        let header_line = self
-            .header
-            .iter()
-            .fold(0, |acc, p| acc + p.line_count(width) as u16);
-        let status_line = self
-            .status_table
-            .iter()
-            .fold(0, |acc, p| acc + p.line_count(width) as u16);
-        let body_line = self
-            .create_body()
-            .iter()
-            .fold(0, |acc, p| acc + p.line_count(width) as u16);
-        header_line + status_line + 1 + body_line + 3
     }
 
     pub fn render(&self, _: &Store, frame: &mut Frame, area: &mut Rect) {

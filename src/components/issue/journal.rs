@@ -25,6 +25,16 @@ impl<'a> JournalComponent<'a> {
             comment_widgets: None,
         }
     }
+
+    pub fn line_count(&self, width: u16) -> u16 {
+        if let Some(_) = &self.property_widgets {
+            4
+        } else if let Some(comment) = &self.comment_widgets {
+            comment.line_count(width)
+        } else {
+            1
+        }
+    }
 }
 
 impl<'a> Component for JournalComponent<'a> {
@@ -61,16 +71,6 @@ impl<'a> Component for JournalComponent<'a> {
                 }
             },
             _ => {}
-        }
-    }
-
-    fn line_count(&self, width: u16) -> u16 {
-        if let Some(_) = &self.property_widgets {
-            4
-        } else if let Some(comment) = &self.comment_widgets {
-            comment.line_count(width)
-        } else {
-            1
         }
     }
 
