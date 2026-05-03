@@ -101,22 +101,22 @@ fn parse_journal_yaml(id: u16) -> Journal {
         let target = as_string(&yaml, "target");
         let old = as_string(&yaml, "old");
         let new = as_string(&yaml, "new");
-        return Journal::Property {
+        Journal::Property {
             id,
             creator,
             target,
             old,
             new,
             updated_at,
-        };
+        }
     } else if journal_type == "comment" {
         let body = as_string(&yaml, "body");
-        return Journal::Comment {
+        Journal::Comment {
             id,
             creator,
             updated_at,
             body,
-        };
+        }
     } else {
         panic!("no matching journal type");
     }
