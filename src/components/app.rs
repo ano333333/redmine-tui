@@ -10,7 +10,7 @@ use crate::components::Component;
 use crate::components::issue::IssueComponent;
 
 pub struct AppComponent {
-    issue_component: Rc<RefCell<IssueComponent>>,
+    issue_component: IssueComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
 }
 
@@ -27,10 +27,10 @@ impl AppComponent {
 
 impl Component for AppComponent {
     fn line_count(&self, width: u16) -> u16 {
-        self.issue_component.borrow().line_count(width)
+        self.issue_component.line_count(width)
     }
 
     fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
-        self.issue_component.borrow().render(store, frame, area);
+        self.issue_component.render(store, frame, area);
     }
 }

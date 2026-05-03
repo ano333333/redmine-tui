@@ -10,7 +10,6 @@ use ratatui::widgets::{Paragraph, Wrap};
 
 use crate::app::{Dispatcher, Store};
 use crate::components::Component;
-use crate::entities::Issue;
 
 pub struct RelativeIssueComponent {
     pub id: u16,
@@ -21,20 +20,17 @@ pub struct RelativeIssueComponent {
     pub start_date: Option<DateTime<Local>>,
     pub due: Option<DateTime<Local>>,
     pub progress: u16,
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    observer_id: u16,
 }
 
 impl RelativeIssueComponent {
-    pub fn new(dispatcher: Rc<RefCell<Dispatcher>>, issue_id: u16) -> Rc<RefCell<Self>> {
-        let mut d = dispatcher.borrow_mut();
-        let observer_id = d.issue_observer_id();
-        let issue = d.store().get_issue(issue_id);
+    pub fn new(dispatcher: Rc<RefCell<Dispatcher>>, issue_id: u16) -> Self {
+        let dispatcher = dispatcher.borrow();
+        let issue = dispatcher.store().get_issue(issue_id);
         if issue.is_none() {
             panic!();
         }
         let issue = issue.unwrap();
-        let rc = Rc::new(RefCell::new(RelativeIssueComponent {
+        RelativeIssueComponent {
             id: issue_id,
             complete: issue.status == "完了",
             title: issue.title.clone(),
@@ -43,39 +39,7 @@ impl RelativeIssueComponent {
             start_date: issue.start_date,
             due: issue.due,
             progress: issue.progress,
-            dispatcher: dispatcher.clone(),
-            observer_id,
-        }));
-        let weak = Rc::downgrade(&rc);
-        d.dispatch(crate::app::Action::AppendIssueObserver {
-            issue_id,
-            observer_id,
-            observer: Box::new(move |issue| {
-                if let Some(component) = weak.upgrade() {
-                    component.borrow_mut().update(issue);
-                }
-            }),
-        });
-        rc
-    }
-    fn update(&mut self, issue: &Issue) {
-        self.complete = issue.status == "完了";
-        self.title = issue.title.clone();
-        self.status = issue.status.clone();
-        self.person_in_charge = issue.person_in_charge.clone();
-        self.start_date = issue.start_date;
-        self.due = issue.due;
-        self.progress = issue.progress;
-    }
-}
-
-impl Drop for RelativeIssueComponent {
-    fn drop(&mut self) {
-        let mut d = self.dispatcher.borrow_mut();
-        d.dispatch(crate::app::Action::RemoveIssueObserver {
-            issue_id: self.id,
-            observer_id: self.observer_id,
-        });
+        }
     }
 }
 

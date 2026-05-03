@@ -10,7 +10,6 @@ use crate::libs::{
 pub struct Dispatcher {
     store: Store,
     actions: VecDeque<Action>,
-    observer_id: u16,
 }
 
 impl Dispatcher {
@@ -18,7 +17,6 @@ impl Dispatcher {
         Dispatcher {
             store: Store::new(),
             actions: VecDeque::new(),
-            observer_id: 0,
         }
     }
     pub fn store(&self) -> &Store {
@@ -32,17 +30,15 @@ impl Dispatcher {
             self.store.consume_action(action);
         }
     }
-    pub fn issue_observer_id(&mut self) -> u16 {
-        self.observer_id += 1;
-        self.observer_id
-    }
 }
 
 pub struct Store {
     issues: HashMap<u16, Issue>,
     issue_observers: HashMap<u16, HashMap<u16, Box<dyn Fn(&Issue)>>>,
+    issue_observers_key: u16,
     journals: HashMap<u16, Journal>,
     journal_observers: HashMap<u16, HashMap<u16, Box<dyn Fn(&Journal)>>>,
+    journal_observers_key: u16,
 }
 
 impl Store {
@@ -50,8 +46,10 @@ impl Store {
         Self {
             issues: HashMap::new(),
             issue_observers: HashMap::new(),
+            issue_observers_key: 0,
             journals: HashMap::new(),
             journal_observers: HashMap::new(),
+            journal_observers_key: 0,
         }
     }
 
@@ -69,19 +67,6 @@ impl Store {
                         observer(&issue);
                     }
                 }
-            }
-            Action::AppendIssueObserver {
-                issue_id,
-                observer_id,
-                observer,
-            } => {
-                self.append_issue_observer(issue_id, observer_id, observer);
-            }
-            Action::RemoveIssueObserver {
-                issue_id,
-                observer_id,
-            } => {
-                self.remove_issue_observer(issue_id, observer_id);
             }
             Action::LoadJournal { id } => {
                 if self.journals.get(&id).is_none() {
@@ -101,19 +86,6 @@ impl Store {
                     }
                 }
             }
-            Action::AppendJournalObserver {
-                journal_id,
-                observer_id,
-                observer,
-            } => {
-                self.append_journal_observer(journal_id, observer_id, observer);
-            }
-            Action::RemoveJournalObserver {
-                journal_id,
-                observer_id,
-            } => {
-                self.remove_journal_observer(journal_id, observer_id);
-            }
         }
     }
 
@@ -121,20 +93,13 @@ impl Store {
         self.issues.get(&issue_id)
     }
 
-    pub fn append_issue_observer(
-        &mut self,
-        issue_id: u16,
-        observer_id: u16,
-        observer: Box<dyn Fn(&Issue)>,
-    ) {
+    pub fn append_issue_observer(&mut self, issue_id: u16, observer: Box<dyn Fn(&Issue)>) {
         if self.issue_observers.get(&issue_id).is_none() {
             self.issue_observers.insert(issue_id, HashMap::new());
         }
         if let Some(observers) = self.issue_observers.get_mut(&issue_id) {
-            if observers.get(&observer_id).is_some() {
-                panic!("duplicated observer id as issue observer");
-            }
-            observers.insert(observer_id, observer);
+            observers.insert(self.issue_observers_key, observer);
+            self.issue_observers_key += 1;
         }
     }
 
@@ -148,20 +113,13 @@ impl Store {
         self.journals.get(&journal_id)
     }
 
-    pub fn append_journal_observer(
-        &mut self,
-        journal_id: u16,
-        observer_id: u16,
-        observer: Box<dyn Fn(&Journal)>,
-    ) {
+    pub fn append_journal_observer(&mut self, journal_id: u16, observer: Box<dyn Fn(&Journal)>) {
         if self.journal_observers.get(&journal_id).is_none() {
             self.journal_observers.insert(journal_id, HashMap::new());
         }
         if let Some(observers) = self.journal_observers.get_mut(&journal_id) {
-            if observers.get(&observer_id).is_some() {
-                panic!("duplicatd observer id as journal observer");
-            }
-            observers.insert(observer_id, observer);
+            observers.insert(self.journal_observers_key, observer);
+            self.journal_observers_key += 1;
         }
     }
 
@@ -173,38 +131,10 @@ impl Store {
 }
 
 pub enum Action {
-    LoadIssue {
-        id: u16,
-    },
-    UpdateIssue {
-        id: u16,
-        body: String,
-    },
-    AppendIssueObserver {
-        issue_id: u16,
-        observer_id: u16,
-        observer: Box<dyn Fn(&Issue)>,
-    },
-    RemoveIssueObserver {
-        issue_id: u16,
-        observer_id: u16,
-    },
-    LoadJournal {
-        id: u16,
-    },
-    UpdateJournal {
-        id: u16,
-        body: String,
-    },
-    AppendJournalObserver {
-        journal_id: u16,
-        observer_id: u16,
-        observer: Box<dyn Fn(&Journal)>,
-    },
-    RemoveJournalObserver {
-        journal_id: u16,
-        observer_id: u16,
-    },
+    LoadIssue { id: u16 },
+    UpdateIssue { id: u16, body: String },
+    LoadJournal { id: u16 },
+    UpdateJournal { id: u16, body: String },
 }
 
 fn parse_journal_yaml(id: u16) -> Journal {

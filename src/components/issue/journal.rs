@@ -20,20 +20,16 @@ pub enum JournalComponent {
         updated_at: DateTime<Local>,
     },
     Comment {
-        id: u16,
         creator: String,
         updated_at: DateTime<Local>,
         body: String,
-        dispatcher: Rc<RefCell<Dispatcher>>,
-        observer_id: u16,
     },
 }
 
 impl JournalComponent {
-    pub fn new(dispatcher: Rc<RefCell<Dispatcher>>, journal_id: u16) -> Rc<RefCell<Self>> {
-        let mut d = dispatcher.borrow_mut();
-        let observer_id = d.issue_observer_id();
-        let journal = d.store().get_journal(journal_id);
+    pub fn new(dispatcher: Rc<RefCell<Dispatcher>>, journal_id: u16) -> Self {
+        let dispatcher = dispatcher.borrow();
+        let journal = dispatcher.store().get_journal(journal_id);
         if journal.is_none() {
             panic!();
         }
@@ -46,48 +42,23 @@ impl JournalComponent {
                 old,
                 new,
                 updated_at,
-            } => Rc::new(RefCell::new(JournalComponent::Property {
+            } => JournalComponent::Property {
                 creator: creator.clone(),
                 target: target.clone(),
                 old: old.clone(),
                 new: new.clone(),
                 updated_at: updated_at.clone(),
-            })),
+            },
             crate::entities::Journal::Comment {
                 id,
                 creator,
                 updated_at,
                 body,
-            } => Rc::new(RefCell::new(JournalComponent::Comment {
-                id: *id,
+            } => JournalComponent::Comment {
                 creator: creator.clone(),
                 updated_at: updated_at.clone(),
                 body: body.clone(),
-                dispatcher: dispatcher.clone(),
-                observer_id,
-            })),
-        }
-    }
-}
-
-impl Drop for JournalComponent {
-    fn drop(&mut self) {
-        match self {
-            Self::Comment {
-                id,
-                creator,
-                updated_at,
-                body,
-                dispatcher,
-                observer_id,
-            } => {
-                let mut d = dispatcher.borrow_mut();
-                d.dispatch(crate::app::Action::RemoveJournalObserver {
-                    journal_id: *id,
-                    observer_id: *observer_id,
-                });
-            }
-            _ => {}
+            },
         }
     }
 }
@@ -138,12 +109,9 @@ impl Component for JournalComponent {
                 );
             }
             Self::Comment {
-                id,
                 creator,
                 updated_at,
                 body,
-                dispatcher,
-                observer_id,
             } => {
                 let title = Line::from(vec![
                     Span::from(creator).blue(),
