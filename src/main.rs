@@ -20,21 +20,21 @@ use std::io::Result;
 use self::app::Dispatcher;
 use self::components::{AppComponent, Component};
 
-const APP_WIDTH_MIN: usize = 40;
-const APP_HEIGHT_MIN: usize = 40;
+const APP_WIDTH_MIN: u16 = 40;
+const APP_HEIGHT_MIN: u16 = 40;
 
-const APP_COMPONENT_OFFSET_X: usize = 1;
-const APP_COMPONENT_OFFSET_Y: usize = 5;
+const APP_COMPONENT_OFFSET_X: u16 = 1;
+const APP_COMPONENT_OFFSET_Y: u16 = 5;
 
 struct AppContainer {
-    width: usize,
-    height: usize,
+    width: u16,
+    height: u16,
     dispatcher: Rc<RefCell<Dispatcher>>,
     app_component: AppComponent,
 }
 
 impl AppContainer {
-    fn new(width: usize, height: usize) -> Self {
+    fn new(width: u16, height: u16) -> Self {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
             let mut d = dispatcher.borrow_mut();
@@ -88,8 +88,8 @@ impl AppContainer {
     }
     // AppContainer内とターミナル全体の原点座標の差を緩衝するメソッド
     pub fn set_cursor_position(frame: &mut Frame, position: Position) {
-        let x = position.x + APP_COMPONENT_OFFSET_X as u16;
-        let y = position.y + APP_COMPONENT_OFFSET_Y as u16;
+        let x = position.x + APP_COMPONENT_OFFSET_X;
+        let y = position.y + APP_COMPONENT_OFFSET_Y;
         frame.set_cursor_position(Position { x, y });
     }
 }
@@ -126,14 +126,11 @@ fn draw(frame: &mut Frame, app: &AppContainer) {
     let app_component = &app.app_component;
     let vert_layouts = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Max(4),
-            Constraint::Length(app.height as u16 + 2),
-        ])
+        .constraints([Constraint::Max(4), Constraint::Length(app.height + 2)])
         .split(frame.area());
     let hor_layouts = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(app.width as u16 + 2)])
+        .constraints([Constraint::Length(app.width + 2)])
         .split(vert_layouts[1]);
     let issue_block = Block::default()
         .border_style(Style::default().fg(Color::White))
