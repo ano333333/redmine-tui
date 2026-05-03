@@ -20,6 +20,9 @@ use std::io::Result;
 use self::app::Dispatcher;
 use self::components::{AppComponent, Component};
 
+const APP_INITIAL_WIDTH: u16 = 80;
+const APP_INITIAL_HEIGHT: u16 = 80;
+
 const APP_WIDTH_MIN: u16 = 40;
 const APP_HEIGHT_MIN: u16 = 40;
 
@@ -62,15 +65,24 @@ impl AppContainer {
             match key.code {
                 KeyCode::Left => {
                     self.width = max(self.width - 1, APP_WIDTH_MIN);
+                    // ターミナルからのリサイズイベントに偽装する
+                    self.app_component
+                        .process_event(Event::Resize(self.width, self.height));
                 }
                 KeyCode::Right => {
                     self.width = self.width.saturating_add(1);
+                    self.app_component
+                        .process_event(Event::Resize(self.width, self.height));
                 }
                 KeyCode::Up => {
                     self.height = max(self.height - 1, APP_HEIGHT_MIN);
+                    self.app_component
+                        .process_event(Event::Resize(self.width, self.height));
                 }
                 KeyCode::Down => {
                     self.height = self.height.saturating_add(1);
+                    self.app_component
+                        .process_event(Event::Resize(self.width, self.height));
                 }
                 _ => {
                     self.app_component.process_event(event);
@@ -92,13 +104,18 @@ impl AppContainer {
         let y = position.y + APP_COMPONENT_OFFSET_Y;
         frame.set_cursor_position(Position { x, y });
     }
+    // AppContainerとターミナル全体のサイズの差を緩衝するメソッド
+    // 現在はIssueComponentの初期化時に一回呼ばれるので、それ専用に定数で妥協
+    pub fn size() -> Result<(u16, u16)> {
+        Ok((APP_INITIAL_HEIGHT, APP_INITIAL_HEIGHT))
+    }
 }
 
 fn main() -> Result<()> {
     logging::initialize_logging()?;
     trace_dbg!("start");
     let mut terminal = ratatui::init();
-    let mut app = AppContainer::new(80, 80);
+    let mut app = AppContainer::new(APP_INITIAL_WIDTH, APP_INITIAL_HEIGHT);
     loop {
         app.update();
         if let Some(e) = terminal.draw(|f| draw(f, &app)).err() {

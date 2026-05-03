@@ -22,15 +22,23 @@ pub struct IssueComponent {
     pub relatives: Vec<RelativeIssueComponent>,
     pub journals: Vec<JournalComponent>,
     cursor_position: Position,
+    width: u16,
+    height: u16,
 }
 
 impl IssueComponent {
     pub fn new(_: Rc<RefCell<Dispatcher>>, issue_id: u16) -> Self {
-        IssueComponent {
-            id: issue_id,
-            relatives: vec![],
-            journals: vec![],
-            cursor_position: Default::default(),
+        let size = AppContainer::size();
+        match size {
+            Ok((width, height)) => IssueComponent {
+                id: issue_id,
+                relatives: vec![],
+                journals: vec![],
+                cursor_position: Default::default(),
+                width,
+                height,
+            },
+            Err(_) => panic!(),
         }
     }
 }
@@ -143,6 +151,9 @@ impl Component for IssueComponent {
                 }
                 KeyCode::Char('l') => {
                     self.cursor_position.x += 1;
+                    if self.cursor_position.x >= self.width {
+                        self.cursor_position.x = self.width - 1;
+                    }
                 }
                 KeyCode::Char('k') => {
                     if self.cursor_position.y > 0 {
@@ -151,8 +162,20 @@ impl Component for IssueComponent {
                 }
                 KeyCode::Char('j') => {
                     self.cursor_position.y += 1;
+                    if self.cursor_position.y >= self.height {
+                        self.cursor_position.y = self.height - 1;
+                    }
                 }
                 _ => {}
+            }
+        } else if let Event::Resize(rows, cols) = event {
+            self.width = rows;
+            self.height = cols;
+            if self.cursor_position.x >= rows {
+                self.cursor_position.x = rows - 1;
+            }
+            if self.cursor_position.y >= cols {
+                self.cursor_position.y = cols - 1;
             }
         }
     }
