@@ -22,14 +22,14 @@ use self::components::{AppComponent, Component};
 
 const APP_WIDTH_MIN: usize = 40;
 const APP_HEIGHT_MIN: usize = 40;
-struct AppContainer {
+struct AppContainer<'a> {
     width: usize,
     height: usize,
     dispatcher: Rc<RefCell<Dispatcher>>,
-    app_component: AppComponent,
+    app_component: AppComponent<'a>,
 }
 
-impl AppContainer {
+impl<'a> AppContainer<'a> {
     fn new(width: usize, height: usize) -> Self {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
@@ -78,6 +78,10 @@ impl AppContainer {
             true
         }
     }
+    pub fn update(&mut self) {
+        self.app_component
+            .update(self.dispatcher.clone(), self.dispatcher.borrow().store());
+    }
 }
 
 fn main() -> Result<()> {
@@ -86,6 +90,7 @@ fn main() -> Result<()> {
     let mut terminal = ratatui::init();
     let mut app = AppContainer::new(80, 80);
     loop {
+        app.update();
         if let Some(e) = terminal.draw(|f| draw(f, &app)).err() {
             trace_dbg!(level: tracing::Level::ERROR, "failed to draw frame");
             return Err(e);
