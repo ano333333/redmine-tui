@@ -22,21 +22,13 @@ impl JournalComponent {
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
         let journal = store.get_journal(self.id);
-        if let Some(crate::entities::Journal::Property {
-            id,
-            creator,
-            target,
-            old,
-            new,
-            updated_at,
-        }) = journal
-        {
+        if let Some(crate::entities::Journal::Property { .. }) = journal {
             4
         } else if let Some(crate::entities::Journal::Comment {
-            id,
             creator,
             updated_at,
             body,
+            ..
         }) = journal
         {
             let widgets = CommentWidgets::new(creator, updated_at, body);
@@ -53,21 +45,21 @@ impl Component for JournalComponent {
     fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
         let journal = store.get_journal(self.id);
         if let Some(crate::entities::Journal::Property {
-            id,
             creator,
             target,
             old,
             new,
             updated_at,
+            ..
         }) = journal
         {
             let widgets = PropertyWidgets::new(creator, target, old, new, updated_at);
             frame.render_widget(&widgets.paragraph, area);
         } else if let Some(crate::entities::Journal::Comment {
-            id,
             creator,
             updated_at,
             body,
+            ..
         }) = journal
         {
             let widgets = CommentWidgets::new(creator, updated_at, body);
