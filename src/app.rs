@@ -34,22 +34,14 @@ impl Dispatcher {
 
 pub struct Store {
     issues: HashMap<u16, Issue>,
-    issue_observers: HashMap<u16, HashMap<u16, Box<dyn Fn(&Issue)>>>,
-    issue_observers_key: u16,
     journals: HashMap<u16, Journal>,
-    journal_observers: HashMap<u16, HashMap<u16, Box<dyn Fn(&Journal)>>>,
-    journal_observers_key: u16,
 }
 
 impl Store {
     pub fn new() -> Self {
         Self {
             issues: HashMap::new(),
-            issue_observers: HashMap::new(),
-            issue_observers_key: 0,
             journals: HashMap::new(),
-            journal_observers: HashMap::new(),
-            journal_observers_key: 0,
         }
     }
 
@@ -63,9 +55,6 @@ impl Store {
             Action::UpdateIssue { id, body } => {
                 if let Some(issue) = self.issues.get_mut(&id) {
                     issue.body = body;
-                    for (_, observer) in self.issue_observers.get(&id).unwrap() {
-                        observer(&issue);
-                    }
                 }
             }
             Action::LoadJournal { id } => {
@@ -80,9 +69,6 @@ impl Store {
                     } = journal
                     {
                         *comment_body = body;
-                        for (_, observer) in self.journal_observers.get(&id).unwrap() {
-                            observer(journal);
-                        }
                     }
                 }
             }
@@ -93,40 +79,8 @@ impl Store {
         self.issues.get(&issue_id)
     }
 
-    pub fn append_issue_observer(&mut self, issue_id: u16, observer: Box<dyn Fn(&Issue)>) {
-        if self.issue_observers.get(&issue_id).is_none() {
-            self.issue_observers.insert(issue_id, HashMap::new());
-        }
-        if let Some(observers) = self.issue_observers.get_mut(&issue_id) {
-            observers.insert(self.issue_observers_key, observer);
-            self.issue_observers_key += 1;
-        }
-    }
-
-    pub fn remove_issue_observer(&mut self, issue_id: u16, observer_id: u16) {
-        if let Some(observers) = self.issue_observers.get_mut(&issue_id) {
-            observers.remove(&observer_id);
-        }
-    }
-
     pub fn get_journal(&self, journal_id: u16) -> Option<&Journal> {
         self.journals.get(&journal_id)
-    }
-
-    pub fn append_journal_observer(&mut self, journal_id: u16, observer: Box<dyn Fn(&Journal)>) {
-        if self.journal_observers.get(&journal_id).is_none() {
-            self.journal_observers.insert(journal_id, HashMap::new());
-        }
-        if let Some(observers) = self.journal_observers.get_mut(&journal_id) {
-            observers.insert(self.journal_observers_key, observer);
-            self.journal_observers_key += 1;
-        }
-    }
-
-    pub fn remove_journal_observer(&mut self, journal_id: u16, observer_id: u16) {
-        if let Some(observers) = self.journal_observers.get_mut(&journal_id) {
-            observers.remove(&observer_id);
-        }
     }
 }
 
