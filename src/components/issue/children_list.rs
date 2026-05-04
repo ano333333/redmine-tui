@@ -24,13 +24,7 @@ impl IssueChildrenListComponent {
                 .child_ids
                 .iter()
                 .map(|id| store.get_issue(*id))
-                .filter(|issue| {
-                    if let Some(issue) = issue {
-                        issue.status == "完了"
-                    } else {
-                        false
-                    }
-                })
+                .filter(|issue| issue.is_some_and(|issue| issue.is_completed()))
                 .count() as u16;
             let child_imcomplete_num = child_all_num - child_complete_num;
             let header_widgets =

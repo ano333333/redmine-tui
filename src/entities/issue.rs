@@ -21,3 +21,9 @@ pub struct Issue {
     pub child_ids: Vec<u16>,
     pub journal_ids: Vec<u16>,
 }
+
+impl Issue {
+    pub fn is_completed(&self) -> bool {
+        self.status == "完了(closed)"
+    }
+}
