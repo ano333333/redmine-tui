@@ -18,6 +18,6 @@ pub struct Issue {
     pub component: String,
     pub tags: Vec<String>,
     pub body: String,
-    pub relative_ids: Vec<u16>,
+    pub child_ids: Vec<u16>,
     pub journal_ids: Vec<u16>,
 }

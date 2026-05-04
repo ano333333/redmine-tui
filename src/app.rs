@@ -142,7 +142,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let component = as_string(&yaml, "component");
     let tags = as_string_array(&yaml, "tags");
     let body = as_string(&yaml, "body");
-    let relative_ids = as_u16_array(&yaml, "relative_ids");
+    let child_ids = as_u16_array(&yaml, "child_ids");
     let journal_ids = as_u16_array(&yaml, "journal_ids");
     Issue {
         id,
@@ -162,7 +162,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
         component,
         tags,
         body,
-        relative_ids,
+        child_ids,
         journal_ids,
     }
 }

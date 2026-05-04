@@ -19,9 +19,9 @@ impl IssueChildrenListComponent {
     pub fn render(&self, store: &Store, frame: &mut Frame, area: &mut Rect) {
         let issue = store.get_issue(self.id);
         if let Some(issue) = issue {
-            let child_all_num = issue.relative_ids.len() as u16;
+            let child_all_num = issue.child_ids.len() as u16;
             let child_complete_num = issue
-                .relative_ids
+                .child_ids
                 .iter()
                 .map(|id| store.get_issue(*id))
                 .filter(|issue| {
@@ -39,7 +39,7 @@ impl IssueChildrenListComponent {
             area.y += 2;
             area.height = area.height.saturating_sub(2);
 
-            for child in &issue.relative_ids {
+            for child in &issue.child_ids {
                 if let Some(child) = store.get_issue(*child) {
                     render_children_issue(child, frame, area);
                     area.y += 1;
