@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use crossterm::event::{Event, KeyCode};
 use ratatui::Frame;
+use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 
 use crate::AppContainer;
@@ -67,30 +68,54 @@ impl IssueDetailComponent {
     }
 
     pub fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
-        self.header.render(store, frame, &mut area);
-        self.property.render(store, frame, &mut area);
+        if area.height > 0
+            && let Some(buffer) = self.header.render(store, area.width, area.height)
+        {
+            render_buffer_to_frame(frame, &mut area, &buffer);
+        }
 
-        frame.render_widget(Hr::default(), area);
-        area.y += 1;
-        area.height = area.height.saturating_sub(1);
+        if area.height > 0
+            && let Some(buffer) = self.property.render(store, area.width, area.height)
+        {
+            render_buffer_to_frame(frame, &mut area, &buffer);
+        }
 
-        self.body.render(store, frame, &mut area);
+        if area.height > 0 {
+            frame.render_widget(Hr::default(), area);
+            area.y += 1;
+            area.height -= 1;
+        }
 
-        frame.render_widget(Hr::default(), area);
-        area.y += 1;
-        area.height = area.height.saturating_sub(1);
+        if area.height > 0
+            && let Some(buffer) = self.body.render(store, area.width, area.height)
+        {
+            render_buffer_to_frame(frame, &mut area, &buffer);
+        }
 
-        self.children_list.render(store, frame, &mut area);
+        if area.height > 0 {
+            frame.render_widget(Hr::default(), area);
+            area.y += 1;
+            area.height -= 1;
+        }
 
-        frame.render_widget(Hr::default(), area);
-        area.y += 1;
-        area.height = area.height.saturating_sub(1);
+        if area.height > 0
+            && let Some(buffer) = self.children_list.render(store, area.width, area.height)
+        {
+            render_buffer_to_frame(frame, &mut area, &buffer);
+        }
+
+        if area.height > 0 {
+            frame.render_widget(Hr::default(), area);
+            area.y += 1;
+            area.height -= 1;
+        }
 
         for j in self.journals.iter() {
-            j.render(store, frame, area);
-            let l = j.line_count(store, area.width);
-            area.y += l;
-            area.height = area.height.saturating_sub(l);
+            if area.height > 0
+                && let Some(buffer) = j.render(store, area.width, area.height)
+            {
+                render_buffer_to_frame(frame, &mut area, &buffer);
+            }
         }
 
         AppContainer::set_cursor_position(frame, self.cursor_position);
@@ -139,4 +164,26 @@ impl IssueDetailComponent {
             }
         }
     }
+}
+
+fn render_buffer_to_frame(frame: &mut Frame, area: &mut Rect, buffer: &Buffer) {
+    let width = area.width.min(buffer.area.width);
+    let height = area.height.min(buffer.area.height);
+
+    let frame_buffer = frame.buffer_mut();
+    for y in 0..height {
+        for x in 0..width {
+            let Some(src_cell) = buffer.cell((x, y)).cloned() else {
+                continue;
+            };
+            let dst_x = area.x + x;
+            let dst_y = area.y + y;
+            if let Some(dst_cell) = frame_buffer.cell_mut((dst_x, dst_y)) {
+                *dst_cell = src_cell;
+            }
+        }
+    }
+
+    area.y += height;
+    area.height -= height;
 }

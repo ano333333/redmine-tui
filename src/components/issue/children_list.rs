@@ -1,9 +1,11 @@
+use std::cmp::min;
+
 use chrono::{DateTime, Local};
-use ratatui::Frame;
+use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use crate::app::Store;
 use crate::entities::Issue;
@@ -16,7 +18,7 @@ impl IssueChildrenListComponent {
     pub fn new(id: u16) -> Self {
         Self { id }
     }
-    pub fn render(&self, store: &Store, frame: &mut Frame, area: &mut Rect) {
+    pub fn render(&self, store: &Store, max_width: u16, max_height: u16) -> Option<Buffer> {
         let issue = store.get_issue(self.id);
         if let Some(issue) = issue {
             let child_all_num = issue.child_ids.len() as u16;
@@ -27,22 +29,32 @@ impl IssueChildrenListComponent {
                 .filter(|issue| issue.is_some_and(|issue| issue.is_completed()))
                 .count() as u16;
             let child_imcomplete_num = child_all_num - child_complete_num;
-            let header_widgets =
+
+            let mut area = Rect::new(
+                0,
+                0,
+                max_width,
+                min(2 + (issue.child_ids.len() as u16) + 1, max_height),
+            );
+            let mut buffer = Buffer::empty(area);
+
+            let header_text =
                 create_header_widget(child_all_num, child_complete_num, child_imcomplete_num);
-            frame.render_widget(header_widgets, *area);
+            header_text.render(area, &mut buffer);
             area.y += 2;
             area.height = area.height.saturating_sub(2);
 
             for child in &issue.child_ids {
                 if let Some(child) = store.get_issue(*child) {
-                    render_children_issue(child, frame, area);
+                    render_children_issue(child, area, &mut buffer);
                     area.y += 1;
                     area.height = area.height.saturating_sub(1);
                 }
             }
 
-            area.y += 1;
-            area.height = area.height.saturating_sub(1);
+            Some(buffer)
+        } else {
+            None
         }
     }
 }
@@ -63,11 +75,11 @@ fn create_header_widget(
     Text::from(vec![child_header_title, Line::from("")])
 }
 
-fn render_children_issue(issue: &Issue, frame: &mut Frame, area: &mut Rect) {
+fn render_children_issue(issue: &Issue, area: Rect, buffer: &mut Buffer) {
     let row = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Max(1)])
-        .split(*area)[0];
+        .split(area)[0];
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -86,17 +98,13 @@ fn render_children_issue(issue: &Issue, frame: &mut Frame, area: &mut Rect) {
             Constraint::Length(4), // progress
         ])
         .split(row);
-
-    frame.render_widget(create_id_widget(issue.id, &issue.status), cols[0]);
-    frame.render_widget(create_title_widget(&issue.title), cols[2]);
-    frame.render_widget(create_status_widget(&issue.status), cols[4]);
-    frame.render_widget(
-        create_person_in_charge_widgte(&issue.person_in_charge),
-        cols[6],
-    );
-    frame.render_widget(create_start_date_widget(&issue.start_date), cols[8]);
-    frame.render_widget(create_due_widget(&issue.due), cols[10]);
-    frame.render_widget(create_progress_widget(issue.progress), cols[12]);
+    create_id_widget(issue.id, &issue.status).render(cols[0], buffer);
+    create_title_widget(&issue.title).render(cols[2], buffer);
+    create_status_widget(&issue.status).render(cols[4], buffer);
+    create_person_in_charge_widgte(&issue.person_in_charge).render(cols[6], buffer);
+    create_start_date_widget(&issue.start_date).render(cols[8], buffer);
+    create_due_widget(&issue.due).render(cols[10], buffer);
+    create_progress_widget(issue.progress).render(cols[12], buffer);
 }
 
 fn create_id_widget(id: u16, status: &String) -> Paragraph<'static> {

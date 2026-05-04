@@ -1,12 +1,13 @@
 use std::cell::RefCell;
+use std::cmp::min;
 use std::rc::Rc;
 
 use chrono::{DateTime, Local};
-use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use crate::app::{Dispatcher, Store};
 
@@ -19,27 +20,9 @@ impl JournalComponent {
         Self { id: journal_id }
     }
 
-    pub fn line_count(&self, store: &Store, width: u16) -> u16 {
-        let journal = store.get_journal(self.id);
-        if let Some(crate::entities::Journal::Property { .. }) = journal {
-            4
-        } else if let Some(crate::entities::Journal::Comment {
-            creator,
-            updated_at,
-            body,
-            ..
-        }) = journal
-        {
-            let widgets = CommentWidgets::new(creator, updated_at, body);
-            widgets.line_count(width)
-        } else {
-            1
-        }
-    }
-
     pub fn update(&mut self, _: Rc<RefCell<Dispatcher>>, _: &Store) {}
 
-    pub fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
+    pub fn render(&self, store: &Store, max_width: u16, max_height: u16) -> Option<Buffer> {
         let journal = store.get_journal(self.id);
         if let Some(crate::entities::Journal::Property {
             creator,
@@ -51,7 +34,10 @@ impl JournalComponent {
         }) = journal
         {
             let widgets = PropertyWidgets::new(creator, target, old, new, updated_at);
-            frame.render_widget(&widgets.paragraph, area);
+            let area = Rect::new(0, 0, max_width, min(4, max_height));
+            let mut buffer = Buffer::empty(area);
+            widgets.paragraph.render(area, &mut buffer);
+            Some(buffer)
         } else if let Some(crate::entities::Journal::Comment {
             creator,
             updated_at,
@@ -59,8 +45,20 @@ impl JournalComponent {
             ..
         }) = journal
         {
-            let widgets = CommentWidgets::new(creator, updated_at, body);
-            widgets.render(frame, &mut area);
+            let header = create_comment_header(creator, updated_at);
+            let body = Paragraph::new(tui_markdown::from_str(body)).wrap(Wrap { trim: true });
+            let line_count = 2 + body.line_count(max_width) as u16;
+            let area = Rect::new(0, 0, max_width, min(line_count, max_height));
+            let mut buffer = Buffer::empty(area);
+            let area = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(2), Constraint::Fill(1)])
+                .split(area);
+            header.render(area[0], &mut buffer);
+            body.render(area[1], &mut buffer);
+            Some(buffer)
+        } else {
+            None
         }
     }
 }
@@ -109,47 +107,11 @@ impl PropertyWidgets<'_> {
     }
 }
 
-struct CommentWidgets {
-    pub title: Line<'static>,
-    body: String,
-}
-
-impl CommentWidgets {
-    pub fn new(creator: &String, updated_at: &DateTime<Local>, body: &String) -> Self {
-        Self {
-            title: Self::create_title(creator, updated_at),
-            body: body.clone(),
-        }
-    }
-    fn create_title(creator: &String, updated_at: &DateTime<Local>) -> Line<'static> {
-        Line::from(vec![
-            Span::from(creator.clone()).blue(),
-            Span::from("が"),
-            Span::from(updated_at.format("%Y/%m/%d").to_string()).blue(),
-            Span::from("に更新"),
-        ])
-    }
-    // FIXME:
-    // tui_markdownのレンダリングを、Widget単位ではなくレンダリング結果単位で永続化する方法を考える
-    // Bufferの永続化？
-    fn create_body(&self) -> Text {
-        let mut text = tui_markdown::from_str(&self.body);
-        text.lines.push(Line::from(""));
-        text
-    }
-    fn line_count(&self, width: u16) -> u16 {
-        let body_text = self.create_body();
-        Paragraph::new(body_text)
-            .wrap(Wrap { trim: true })
-            .line_count(width) as u16
-            + 3
-    }
-    pub fn render(&self, frame: &mut Frame, area: &mut Rect) {
-        frame.render_widget(&self.title, *area);
-        area.y += 2;
-        area.height = area.height.saturating_sub(2);
-        let mut body = self.create_body();
-        body.lines.push(Line::from(""));
-        frame.render_widget(body, *area);
-    }
+fn create_comment_header(creator: &String, updated_at: &DateTime<Local>) -> Line<'static> {
+    Line::from(vec![
+        Span::from(creator.clone()).blue(),
+        Span::from("が"),
+        Span::from(updated_at.format("%Y/%m/%d").to_string()).blue(),
+        Span::from("に更新"),
+    ])
 }

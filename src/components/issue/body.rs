@@ -1,6 +1,8 @@
-use ratatui::Frame;
+use std::cmp::min;
+
+use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use crate::app::Store;
 use crate::entities::Issue;
@@ -13,13 +15,20 @@ impl IssueBodyComponent {
     pub fn new(id: u16) -> Self {
         Self { id }
     }
-    pub fn render(&self, store: &Store, frame: &mut Frame, area: &mut Rect) {
+    pub fn render(&self, store: &Store, max_width: u16, max_height: u16) -> Option<Buffer> {
         if let Some(issue) = store.get_issue(self.id) {
             let body = create_widgets(issue);
-            frame.render_widget(&body, *area);
-            let l = body.line_count(area.width) as u16;
-            area.y += l;
-            area.height = area.height.saturating_sub(l);
+            let area = Rect::new(
+                0,
+                0,
+                max_width,
+                min(body.line_count(max_width) as u16, max_height),
+            );
+            let mut buffer = Buffer::empty(area);
+            body.render(area, &mut buffer);
+            Some(buffer)
+        } else {
+            None
         }
     }
 }

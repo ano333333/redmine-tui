@@ -1,9 +1,11 @@
+use std::cmp::min;
+
 use chrono::{DateTime, Local};
-use ratatui::Frame;
+use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Paragraph, Widget};
 
 use crate::app::Store;
 use crate::entities::Issue;
@@ -16,16 +18,20 @@ impl IssuePropertyComponent {
     pub fn new(id: u16) -> Self {
         Self { id }
     }
-    pub fn render(&self, store: &Store, frame: &mut Frame, area: &mut Rect) {
+    pub fn render(&self, store: &Store, max_width: u16, max_height: u16) -> Option<Buffer> {
         if let Some(issue) = store.get_issue(self.id) {
+            let mut area = Rect::new(0, 0, max_width, min(11, max_height));
+            let mut buffer = Buffer::empty(area);
             let paragraphs = create_widgets(issue);
             for p in paragraphs.iter() {
-                frame.render_widget(p, *area);
+                p.render(area, &mut buffer);
                 let l = p.line_count(area.width) as u16;
                 area.y += l;
                 area.height = area.height.saturating_sub(l);
             }
+            return Some(buffer);
         }
+        None
     }
 }
 
