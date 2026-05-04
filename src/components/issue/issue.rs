@@ -75,63 +75,60 @@ impl Component for IssueComponent {
 
     fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
         let issue = store.get_issue(self.id);
-        match issue {
-            Some(issue) => {
-                let child_all_num = issue.relative_ids.len() as u16;
-                let child_complete_num = issue
-                    .relative_ids
-                    .iter()
-                    .map(|id| store.get_issue(*id))
-                    .filter(|issue| {
-                        if let Some(issue) = issue {
-                            issue.status == "完了"
-                        } else {
-                            false
-                        }
-                    })
-                    .count() as u16;
-                let child_imcomplete_num = child_all_num - child_complete_num;
-                let widgets = IssueComponentWidgets::new(
-                    self.id,
-                    &issue.title,
-                    &issue.creator,
-                    &issue.appended_at,
-                    &issue.updated_at,
-                    &issue.status,
-                    &issue.priority,
-                    &issue.person_in_charge,
-                    &issue.target_version,
-                    &issue.start_date,
-                    &issue.due,
-                    issue.progress,
-                    issue.planned_hours,
-                    &issue.resolve_way,
-                    &issue.component,
-                    &issue.tags,
-                    &issue.body,
-                    child_all_num,
-                    child_complete_num,
-                    child_imcomplete_num,
-                );
-                widgets.render(store, frame, &mut area);
-                for c in self.relatives.iter() {
-                    c.render(store, frame, area);
-                    area.y += 1;
-                    area.height = area.height.saturating_sub(1);
-                }
+        if let Some(issue) = issue {
+            let child_all_num = issue.relative_ids.len() as u16;
+            let child_complete_num = issue
+                .relative_ids
+                .iter()
+                .map(|id| store.get_issue(*id))
+                .filter(|issue| {
+                    if let Some(issue) = issue {
+                        issue.status == "完了"
+                    } else {
+                        false
+                    }
+                })
+                .count() as u16;
+            let child_imcomplete_num = child_all_num - child_complete_num;
+            let widgets = IssueComponentWidgets::new(
+                self.id,
+                &issue.title,
+                &issue.creator,
+                &issue.appended_at,
+                &issue.updated_at,
+                &issue.status,
+                &issue.priority,
+                &issue.person_in_charge,
+                &issue.target_version,
+                &issue.start_date,
+                &issue.due,
+                issue.progress,
+                issue.planned_hours,
+                &issue.resolve_way,
+                &issue.component,
+                &issue.tags,
+                &issue.body,
+                child_all_num,
+                child_complete_num,
+                child_imcomplete_num,
+            );
+            widgets.render(store, frame, &mut area);
+            for c in self.relatives.iter() {
+                c.render(store, frame, area);
                 area.y += 1;
                 area.height = area.height.saturating_sub(1);
-                frame.render_widget(Hr::default(), area);
-                area.y += 1;
-                area.height = area.height.saturating_sub(1);
-                for j in self.journals.iter() {
-                    j.render(store, frame, area);
-                    let l = j.line_count(store, area.width);
-                    area.y += l;
-                    area.height = area.height.saturating_sub(l);
-                }
             }
-            None => {}
+            area.y += 1;
+            area.height = area.height.saturating_sub(1);
+            frame.render_widget(Hr::default(), area);
+            area.y += 1;
+            area.height = area.height.saturating_sub(1);
+            for j in self.journals.iter() {
+                j.render(store, frame, area);
+                let l = j.line_count(store, area.width);
+                area.y += l;
+                area.height = area.height.saturating_sub(l);
+            }
         }
         AppContainer::set_cursor_position(frame, self.cursor_position);
     }
