@@ -4,25 +4,23 @@ use std::rc::Rc;
 use crossterm::event::{Event, KeyCode};
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
-use ratatui::style::Stylize;
-use ratatui::text::{Line, Span, Text};
 
 use crate::AppContainer;
 use crate::app::{Dispatcher, Store};
 use crate::widgets::Hr;
 
 use super::body::IssueBodyComponent;
+use super::children_list::IssueChildrenListComponent;
 use super::header::IssueHeaderComponent;
 use super::journal::JournalComponent;
 use super::property::IssuePropertyComponent;
-use super::relative::RelativeIssueComponent;
 
 pub struct IssueDetailComponent {
     pub id: u16,
     header: IssueHeaderComponent,
     property: IssuePropertyComponent,
     body: IssueBodyComponent,
-    pub relatives: Vec<RelativeIssueComponent>,
+    children_list: IssueChildrenListComponent,
     pub journals: Vec<JournalComponent>,
     cursor_position: Position,
     width: u16,
@@ -38,7 +36,7 @@ impl IssueDetailComponent {
                 header: IssueHeaderComponent::new(issue_id),
                 property: IssuePropertyComponent::new(issue_id),
                 body: IssueBodyComponent::new(issue_id),
-                relatives: vec![],
+                children_list: IssueChildrenListComponent::new(issue_id),
                 journals: vec![],
                 cursor_position: Default::default(),
                 width,
@@ -52,19 +50,10 @@ impl IssueDetailComponent {
         let issue = store.get_issue(self.id);
         match issue {
             None => {
-                self.relatives = vec![];
                 self.journals = vec![];
             }
             Some(issue) => {
                 // FIXME: 差分更新
-                self.relatives = issue
-                    .relative_ids
-                    .iter()
-                    .map(|i| RelativeIssueComponent::new(dispatcher.clone(), *i))
-                    .collect();
-                self.relatives
-                    .iter_mut()
-                    .for_each(|relative| relative.update(dispatcher.clone(), store));
                 self.journals = issue
                     .journal_ids
                     .iter()
@@ -78,55 +67,32 @@ impl IssueDetailComponent {
     }
 
     pub fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
-        let issue = store.get_issue(self.id);
-        if let Some(issue) = issue {
-            let child_all_num = issue.relative_ids.len() as u16;
-            let child_complete_num = issue
-                .relative_ids
-                .iter()
-                .map(|id| store.get_issue(*id))
-                .filter(|issue| {
-                    if let Some(issue) = issue {
-                        issue.status == "完了"
-                    } else {
-                        false
-                    }
-                })
-                .count() as u16;
-            let child_imcomplete_num = child_all_num - child_complete_num;
-            self.header.render(store, frame, &mut area);
-            self.property.render(store, frame, &mut area);
+        self.header.render(store, frame, &mut area);
+        self.property.render(store, frame, &mut area);
 
-            frame.render_widget(Hr::default(), area);
-            area.y += 1;
-            area.height = area.height.saturating_sub(1);
+        frame.render_widget(Hr::default(), area);
+        area.y += 1;
+        area.height = area.height.saturating_sub(1);
 
-            self.body.render(store, frame, &mut area);
+        self.body.render(store, frame, &mut area);
 
-            frame.render_widget(Hr::default(), area);
-            area.y += 1;
-            area.height = area.height.saturating_sub(1);
+        frame.render_widget(Hr::default(), area);
+        area.y += 1;
+        area.height = area.height.saturating_sub(1);
 
-            let widgets =
-                IssueComponentWidgets::new(child_all_num, child_complete_num, child_imcomplete_num);
-            widgets.render(store, frame, &mut area);
-            for c in self.relatives.iter() {
-                c.render(store, frame, area);
-                area.y += 1;
-                area.height = area.height.saturating_sub(1);
-            }
-            area.y += 1;
-            area.height = area.height.saturating_sub(1);
-            frame.render_widget(Hr::default(), area);
-            area.y += 1;
-            area.height = area.height.saturating_sub(1);
-            for j in self.journals.iter() {
-                j.render(store, frame, area);
-                let l = j.line_count(store, area.width);
-                area.y += l;
-                area.height = area.height.saturating_sub(l);
-            }
+        self.children_list.render(store, frame, &mut area);
+
+        frame.render_widget(Hr::default(), area);
+        area.y += 1;
+        area.height = area.height.saturating_sub(1);
+
+        for j in self.journals.iter() {
+            j.render(store, frame, area);
+            let l = j.line_count(store, area.width);
+            area.y += l;
+            area.height = area.height.saturating_sub(l);
         }
+
         AppContainer::set_cursor_position(frame, self.cursor_position);
     }
 
@@ -172,43 +138,5 @@ impl IssueDetailComponent {
                 self.cursor_position.y = cols - 1;
             }
         }
-    }
-}
-
-struct IssueComponentWidgets {
-    pub childs_header: Text<'static>,
-}
-
-impl IssueComponentWidgets {
-    pub fn new(child_all_num: u16, child_complete_num: u16, child_imcomplete_num: u16) -> Self {
-        Self {
-            childs_header: Self::create_childs_header(
-                child_all_num,
-                child_complete_num,
-                child_imcomplete_num,
-            ),
-        }
-    }
-
-    pub fn render(&self, _: &Store, frame: &mut Frame, area: &mut Rect) {
-        frame.render_widget(&self.childs_header, *area);
-        area.y += 2;
-        area.height = area.height.saturating_sub(2);
-    }
-
-    fn create_childs_header(
-        child_all_num: u16,
-        child_complete_num: u16,
-        child_imcomplete_num: u16,
-    ) -> Text<'static> {
-        let child_header_title = Line::from(vec![
-            Span::from("子チケット").bold(),
-            Span::from(" "),
-            Span::from(format!(
-                "{} ({}件未完了 - {}件完了)",
-                child_all_num, child_complete_num, child_imcomplete_num
-            )),
-        ]);
-        Text::from(vec![child_header_title, Line::from("")])
     }
 }
