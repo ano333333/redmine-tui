@@ -16,12 +16,12 @@ use super::journal::JournalComponent;
 use super::property::IssuePropertyComponent;
 
 pub struct IssueDetailComponent {
-    pub id: u16,
+    id: u16,
     header: IssueHeaderComponent,
     property: IssuePropertyComponent,
     body: IssueBodyComponent,
     children_list: IssueChildrenListComponent,
-    pub journals: Vec<JournalComponent>,
+    journals: Vec<JournalComponent>,
     cursor_position: Position,
     width: u16,
     height: u16,
