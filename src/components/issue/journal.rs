@@ -9,7 +9,6 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Wrap};
 
 use crate::app::{Dispatcher, Store};
-use crate::components::Component;
 
 pub struct JournalComponent {
     id: u16,
@@ -37,12 +36,10 @@ impl JournalComponent {
             1
         }
     }
-}
 
-impl Component for JournalComponent {
-    fn update(&mut self, _: Rc<RefCell<Dispatcher>>, _: &Store) {}
+    pub fn update(&mut self, _: Rc<RefCell<Dispatcher>>, _: &Store) {}
 
-    fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
+    pub fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
         let journal = store.get_journal(self.id);
         if let Some(crate::entities::Journal::Property {
             creator,
@@ -65,9 +62,6 @@ impl Component for JournalComponent {
             let widgets = CommentWidgets::new(creator, updated_at, body);
             widgets.render(frame, &mut area);
         }
-    }
-
-    fn process_event(&mut self, _: crossterm::event::Event, _: Rc<RefCell<Dispatcher>>, _: &Store) {
     }
 }
 

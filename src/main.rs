@@ -18,7 +18,7 @@ use ratatui::{
 use std::io::Result;
 
 use self::app::Dispatcher;
-use self::components::{AppComponent, Component};
+use self::components::AppComponent;
 
 const APP_INITIAL_WIDTH: u16 = 80;
 const APP_INITIAL_HEIGHT: u16 = 80;

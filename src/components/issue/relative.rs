@@ -9,7 +9,6 @@ use ratatui::text::Text;
 use ratatui::widgets::{Paragraph, Wrap};
 
 use crate::app::{Dispatcher, Store};
-use crate::components::Component;
 
 pub struct RelativeIssueComponent {
     pub id: u16,
@@ -19,12 +18,10 @@ impl RelativeIssueComponent {
     pub fn new(_: Rc<RefCell<Dispatcher>>, issue_id: u16) -> Self {
         RelativeIssueComponent { id: issue_id }
     }
-}
 
-impl Component for RelativeIssueComponent {
-    fn update(&mut self, _: Rc<RefCell<Dispatcher>>, _: &Store) {}
+    pub fn update(&mut self, _: Rc<RefCell<Dispatcher>>, _: &Store) {}
 
-    fn render(&self, store: &Store, frame: &mut Frame, area: Rect) {
+    pub fn render(&self, store: &Store, frame: &mut Frame, area: Rect) {
         let issue = store.get_issue(self.id);
         if let Some(issue) = issue {
             let widgets = RelativeIssueComponentWidgets::new(
@@ -67,9 +64,6 @@ impl Component for RelativeIssueComponent {
             frame.render_widget(&widgets.due, cols[10]);
             frame.render_widget(&widgets.progress, cols[12]);
         }
-    }
-
-    fn process_event(&mut self, _: crossterm::event::Event, _: Rc<RefCell<Dispatcher>>, _: &Store) {
     }
 }
 

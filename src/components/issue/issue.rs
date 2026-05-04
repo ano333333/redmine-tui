@@ -11,7 +11,6 @@ use ratatui::widgets::{Paragraph, Wrap};
 
 use crate::AppContainer;
 use crate::app::{Dispatcher, Store};
-use crate::components::Component;
 use crate::widgets::Hr;
 
 use super::journal::JournalComponent;
@@ -41,10 +40,8 @@ impl IssueComponent {
             Err(_) => panic!(),
         }
     }
-}
 
-impl Component for IssueComponent {
-    fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
+    pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
         let issue = store.get_issue(self.id);
         match issue {
             None => {
@@ -73,7 +70,7 @@ impl Component for IssueComponent {
         }
     }
 
-    fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
+    pub fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
         let issue = store.get_issue(self.id);
         if let Some(issue) = issue {
             let child_all_num = issue.relative_ids.len() as u16;
@@ -133,7 +130,7 @@ impl Component for IssueComponent {
         AppContainer::set_cursor_position(frame, self.cursor_position);
     }
 
-    fn process_event(
+    pub fn process_event(
         &mut self,
         event: crossterm::event::Event,
         _: Rc<RefCell<Dispatcher>>,

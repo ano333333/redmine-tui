@@ -6,7 +6,6 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::app::{Dispatcher, Store};
-use crate::components::Component;
 use crate::components::issue::IssueComponent;
 
 pub struct AppComponent {
@@ -28,18 +27,11 @@ impl AppComponent {
             self.dispatcher.borrow().store(),
         );
     }
-}
-
-impl Component for AppComponent {
-    fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
+    pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
         self.issue_component.update(dispatcher, store);
     }
 
-    fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
+    pub fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
         self.issue_component.render(store, frame, area);
-    }
-
-    fn process_event(&mut self, event: Event, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
-        self.issue_component.process_event(event, dispatcher, store);
     }
 }
