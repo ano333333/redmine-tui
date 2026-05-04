@@ -6,17 +6,17 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::app::{Dispatcher, Store};
-use crate::components::issue::IssueComponent;
+use crate::components::issue::IssueDetailComponent;
 
 pub struct AppComponent {
-    issue_component: IssueComponent,
+    issue_component: IssueDetailComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
 }
 
 impl AppComponent {
     pub fn new(dispatcher: Rc<RefCell<Dispatcher>>) -> Self {
         AppComponent {
-            issue_component: IssueComponent::new(dispatcher.clone(), 3),
+            issue_component: IssueDetailComponent::new(dispatcher.clone(), 3),
             dispatcher,
         }
     }

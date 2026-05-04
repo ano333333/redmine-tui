@@ -16,7 +16,7 @@ use crate::widgets::Hr;
 use super::journal::JournalComponent;
 use super::relative::RelativeIssueComponent;
 
-pub struct IssueComponent {
+pub struct IssueDetailComponent {
     pub id: u16,
     pub relatives: Vec<RelativeIssueComponent>,
     pub journals: Vec<JournalComponent>,
@@ -25,11 +25,11 @@ pub struct IssueComponent {
     height: u16,
 }
 
-impl IssueComponent {
+impl IssueDetailComponent {
     pub fn new(_: Rc<RefCell<Dispatcher>>, issue_id: u16) -> Self {
         let size = AppContainer::size();
         match size {
-            Ok((width, height)) => IssueComponent {
+            Ok((width, height)) => IssueDetailComponent {
                 id: issue_id,
                 relatives: vec![],
                 journals: vec![],
