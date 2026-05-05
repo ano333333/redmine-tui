@@ -26,6 +26,7 @@ pub struct IssueDetailComponent {
     cursor_position: Position,
     width: u16,
     height: u16,
+    render_offset_y: u16,
 }
 
 impl IssueDetailComponent {
@@ -42,6 +43,7 @@ impl IssueDetailComponent {
                 cursor_position: Default::default(),
                 width,
                 height,
+                render_offset_y: 0,
             },
             Err(_) => panic!(),
         }
@@ -65,60 +67,144 @@ impl IssueDetailComponent {
                     .for_each(|journal| journal.update(dispatcher.clone(), store));
             }
         }
+
+        self.update_offset_y(store, self.height);
     }
 
-    pub fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
-        if area.height > 0
-            && let Some(buffer) = self.header.render(store, area.width, area.height)
+    pub fn render(&self, store: &Store, frame: &mut Frame, mut frame_area: Rect) {
+        let mut line_count_sum: u16 = 0;
+        let height = frame_area.height;
+        let width = frame_area.width;
+        let offset_y = self.render_offset_y;
+
+        let line_count = self.header.line_count(store);
+        if line_count_sum + line_count >= offset_y
+            && line_count_sum < offset_y + height
+            && frame_area.height > 0
+            && let Some(buffer) = self
+                .header
+                .render(store, frame_area.width, frame_area.height)
         {
-            render_buffer_to_frame(frame, &mut area, &buffer);
+            let buffer_area = Rect::new(
+                0,
+                offset_y.saturating_sub(line_count_sum),
+                buffer.area.width,
+                line_count.saturating_sub(offset_y.saturating_sub(line_count_sum)),
+            );
+            render_buffer_to_frame(frame, &mut frame_area, &buffer, buffer_area);
         }
+        line_count_sum += line_count;
 
-        if area.height > 0
-            && let Some(buffer) = self.property.render(store, area.width, area.height)
+        let line_count = self.property.line_count(store, width);
+        if line_count_sum + line_count >= offset_y
+            && line_count_sum < offset_y + height
+            && frame_area.height > 0
+            && let Some(buffer) = self
+                .property
+                .render(store, frame_area.width, frame_area.height)
         {
-            render_buffer_to_frame(frame, &mut area, &buffer);
+            let buffer_area = Rect::new(
+                0,
+                offset_y.saturating_sub(line_count_sum),
+                buffer.area.width,
+                line_count.saturating_sub(offset_y.saturating_sub(line_count_sum)),
+            );
+            render_buffer_to_frame(frame, &mut frame_area, &buffer, buffer_area);
         }
+        line_count_sum += line_count;
 
-        if area.height > 0 {
-            frame.render_widget(Hr::default(), area);
-            area.y += 1;
-            area.height -= 1;
-        }
-
-        if area.height > 0
-            && let Some(buffer) = self.body.render(store, area.width, area.height)
+        let line_count: u16 = 1;
+        if line_count_sum + line_count >= offset_y
+            && line_count_sum < offset_y + height
+            && frame_area.height > 0
         {
-            render_buffer_to_frame(frame, &mut area, &buffer);
+            frame.render_widget(Hr::default(), frame_area);
+            frame_area.y += 1;
+            frame_area.height -= 1;
         }
+        line_count_sum += line_count;
 
-        if area.height > 0 {
-            frame.render_widget(Hr::default(), area);
-            area.y += 1;
-            area.height -= 1;
-        }
-
-        if area.height > 0
-            && let Some(buffer) = self.children_list.render(store, area.width, area.height)
+        let line_count = self.body.line_count(store, width);
+        if line_count_sum + line_count >= offset_y
+            && line_count_sum < offset_y + height
+            && frame_area.height > 0
+            && let Some(buffer) = self.body.render(store, frame_area.width, frame_area.height)
         {
-            render_buffer_to_frame(frame, &mut area, &buffer);
+            let buffer_area = Rect::new(
+                0,
+                offset_y.saturating_sub(line_count_sum),
+                buffer.area.width,
+                line_count.saturating_sub(offset_y.saturating_sub(line_count_sum)),
+            );
+            render_buffer_to_frame(frame, &mut frame_area, &buffer, buffer_area);
         }
+        line_count_sum += line_count;
 
-        if area.height > 0 {
-            frame.render_widget(Hr::default(), area);
-            area.y += 1;
-            area.height -= 1;
+        let line_count: u16 = 1;
+        if line_count_sum + line_count >= offset_y
+            && line_count_sum < offset_y + height
+            && frame_area.height > 0
+        {
+            frame.render_widget(Hr::default(), frame_area);
+            frame_area.y += 1;
+            frame_area.height -= 1;
         }
+        line_count_sum += line_count;
+
+        let line_count = self.children_list.line_count(store);
+        if line_count_sum + line_count >= offset_y
+            && line_count_sum < offset_y + height
+            && frame_area.height > 0
+            && let Some(buffer) =
+                self.children_list
+                    .render(store, frame_area.width, frame_area.height)
+        {
+            let buffer_area = Rect::new(
+                0,
+                offset_y.saturating_sub(line_count_sum),
+                buffer.area.width,
+                line_count.saturating_sub(offset_y.saturating_sub(line_count_sum)),
+            );
+            render_buffer_to_frame(frame, &mut frame_area, &buffer, buffer_area);
+        }
+        line_count_sum += line_count;
+
+        let line_count: u16 = 1;
+        if line_count_sum + line_count >= offset_y
+            && line_count_sum < offset_y + height
+            && frame_area.height > 0
+        {
+            frame.render_widget(Hr::default(), frame_area);
+            frame_area.y += 1;
+            frame_area.height -= 1;
+        }
+        line_count_sum += line_count;
 
         for j in self.journals.iter() {
-            if area.height > 0
-                && let Some(buffer) = j.render(store, area.width, area.height)
+            let line_count = j.line_count(store, width);
+            if line_count_sum + line_count >= offset_y
+                && line_count_sum < offset_y + height
+                && frame_area.height > 0
+                && let Some(buffer) = j.render(store, frame_area.width, frame_area.height)
             {
-                render_buffer_to_frame(frame, &mut area, &buffer);
+                let buffer_area = Rect::new(
+                    0,
+                    offset_y.saturating_sub(line_count_sum),
+                    buffer.area.width,
+                    line_count.saturating_sub(offset_y.saturating_sub(line_count_sum)),
+                );
+                render_buffer_to_frame(frame, &mut frame_area, &buffer, buffer_area);
             }
+            line_count_sum += line_count;
         }
 
-        AppContainer::set_cursor_position(frame, self.cursor_position);
+        AppContainer::set_cursor_position(
+            frame,
+            Position {
+                x: self.cursor_position.x,
+                y: self.cursor_position.y.saturating_sub(self.render_offset_y),
+            },
+        );
     }
 
     pub fn process_event(
@@ -147,9 +233,8 @@ impl IssueDetailComponent {
                 }
                 KeyCode::Char('j') => {
                     self.cursor_position.y += 1;
-                    if self.cursor_position.y >= self.height {
-                        self.cursor_position.y = self.height - 1;
-                    }
+                    // FIXME:
+                    // cursor_position_yの上限設定(各componentのline_countを取得しないと上限が分からない)
                 }
                 _ => {}
             }
@@ -159,31 +244,54 @@ impl IssueDetailComponent {
             if self.cursor_position.x >= rows {
                 self.cursor_position.x = rows - 1;
             }
-            if self.cursor_position.y >= cols {
-                self.cursor_position.y = cols - 1;
-            }
+        }
+    }
+
+    fn update_offset_y(&mut self, store: &Store, area_height: u16) {
+        let cursor_y: u16 = self.cursor_position.y;
+
+        if cursor_y < self.render_offset_y {
+            self.render_offset_y = cursor_y;
+        }
+
+        if cursor_y >= self.render_offset_y + area_height {
+            self.render_offset_y = (cursor_y + 1).saturating_sub(area_height);
         }
     }
 }
 
-fn render_buffer_to_frame(frame: &mut Frame, area: &mut Rect, buffer: &Buffer) {
-    let width = area.width.min(buffer.area.width);
-    let height = area.height.min(buffer.area.height);
+/// BufferをFrame先頭にコピーし、コピー先の書き込んだ領域を切り詰める
+///
+/// # Arguments
+///
+/// * `frame` - コピー先のFrame
+/// * `frame_area` - `frame`の領域
+/// * `buffer` - コピー元のBuffer
+/// * `buffer_area` - `buffer`の領域
+fn render_buffer_to_frame(
+    frame: &mut Frame,
+    frame_area: &mut Rect,
+    buffer: &Buffer,
+    buffer_area: Rect,
+) {
+    let width = frame_area.width.min(buffer_area.width);
+    let height = frame_area.height.min(buffer_area.height);
 
     let frame_buffer = frame.buffer_mut();
     for y in 0..height {
         for x in 0..width {
-            let Some(src_cell) = buffer.cell((x, y)).cloned() else {
+            let Some(src_cell) = buffer.cell((buffer_area.x + x, buffer_area.y + y)).cloned()
+            else {
                 continue;
             };
-            let dst_x = area.x + x;
-            let dst_y = area.y + y;
+            let dst_x = frame_area.x + x;
+            let dst_y = frame_area.y + y;
             if let Some(dst_cell) = frame_buffer.cell_mut((dst_x, dst_y)) {
                 *dst_cell = src_cell;
             }
         }
     }
 
-    area.y += height;
-    area.height -= height;
+    frame_area.y += height;
+    frame_area.height -= height;
 }
