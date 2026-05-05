@@ -68,6 +68,23 @@ impl IssueDetailComponent {
             }
         }
 
+        if self.cursor_position.x >= self.width {
+            self.cursor_position.x = self.width - 1;
+        }
+        let line_count = self.header.line_count(store)
+            + self.property.line_count(store, self.width)
+            + 1
+            + self.body.line_count(store, self.width)
+            + 1
+            + self.children_list.line_count(store)
+            + 1
+            + self.journals.iter().fold(0, |acc, journal| {
+                acc + journal.line_count(store, self.width)
+            });
+        if self.cursor_position.y >= line_count {
+            self.cursor_position.y = line_count - 1;
+        }
+
         self.update_offset_y(store, self.height);
     }
 
@@ -222,9 +239,6 @@ impl IssueDetailComponent {
                 }
                 KeyCode::Char('l') => {
                     self.cursor_position.x += 1;
-                    if self.cursor_position.x >= self.width {
-                        self.cursor_position.x = self.width - 1;
-                    }
                 }
                 KeyCode::Char('k') => {
                     if self.cursor_position.y > 0 {
@@ -233,17 +247,12 @@ impl IssueDetailComponent {
                 }
                 KeyCode::Char('j') => {
                     self.cursor_position.y += 1;
-                    // FIXME:
-                    // cursor_position_yの上限設定(各componentのline_countを取得しないと上限が分からない)
                 }
                 _ => {}
             }
         } else if let Event::Resize(rows, cols) = event {
             self.width = rows;
             self.height = cols;
-            if self.cursor_position.x >= rows {
-                self.cursor_position.x = rows - 1;
-            }
         }
     }
 
