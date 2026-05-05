@@ -33,6 +33,16 @@ impl IssuePropertyComponent {
         }
         None
     }
+    pub fn line_count(&self, store: &Store, width: u16) -> u16 {
+        if let Some(issue) = store.get_issue(self.id) {
+            let paragraphs = create_widgets(issue);
+            paragraphs
+                .iter()
+                .fold(0, |acc, iter| acc + iter.line_count(width) as u16)
+        } else {
+            0
+        }
+    }
 }
 
 fn create_widgets(issue: &Issue) -> Vec<Paragraph<'static>> {

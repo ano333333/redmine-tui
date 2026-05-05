@@ -61,6 +61,17 @@ impl JournalComponent {
             None
         }
     }
+    pub fn line_count(&self, store: &Store, width: u16) -> u16 {
+        let journal = store.get_journal(self.id);
+        if let Some(crate::entities::Journal::Property { .. }) = journal {
+            4
+        } else if let Some(crate::entities::Journal::Comment { body, .. }) = journal {
+            let body = Paragraph::new(tui_markdown::from_str(body)).wrap(Wrap { trim: true });
+            2 + body.line_count(width) as u16
+        } else {
+            0
+        }
+    }
 }
 
 struct PropertyWidgets<'a> {

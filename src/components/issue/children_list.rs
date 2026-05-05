@@ -19,8 +19,7 @@ impl IssueChildrenListComponent {
         Self { id }
     }
     pub fn render(&self, store: &Store, max_width: u16, max_height: u16) -> Option<Buffer> {
-        let issue = store.get_issue(self.id);
-        if let Some(issue) = issue {
+        if let Some(issue) = store.get_issue(self.id) {
             let child_all_num = issue.child_ids.len() as u16;
             let child_complete_num = issue
                 .child_ids
@@ -55,6 +54,13 @@ impl IssueChildrenListComponent {
             Some(buffer)
         } else {
             None
+        }
+    }
+    pub fn line_count(&self, store: &Store) -> u16 {
+        if let Some(issue) = store.get_issue(self.id) {
+            2 + (issue.child_ids.len() as u16) + 1
+        } else {
+            0
         }
     }
 }

@@ -17,6 +17,7 @@ impl IssueHeaderComponent {
     pub fn new(id: u16) -> Self {
         Self { id }
     }
+
     pub fn render(&self, store: &Store, max_width: u16, max_height: u16) -> Option<Buffer> {
         if let Some(issue) = store.get_issue(self.id) {
             let text = create_widgets(issue);
@@ -26,6 +27,15 @@ impl IssueHeaderComponent {
             return Some(buffer);
         }
         None
+    }
+
+    // TODO: 描画・line_countをWidgetに切り分けて、CompnoentがWidgetを持つ形にした方が良いかも？
+    pub fn line_count(&self, store: &Store) -> u16 {
+        if store.get_issue(self.id).is_some() {
+            6
+        } else {
+            0
+        }
     }
 }
 

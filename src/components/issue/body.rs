@@ -15,6 +15,7 @@ impl IssueBodyComponent {
     pub fn new(id: u16) -> Self {
         Self { id }
     }
+
     pub fn render(&self, store: &Store, max_width: u16, max_height: u16) -> Option<Buffer> {
         if let Some(issue) = store.get_issue(self.id) {
             let body = create_widgets(issue);
@@ -29,6 +30,15 @@ impl IssueBodyComponent {
             Some(buffer)
         } else {
             None
+        }
+    }
+
+    pub fn line_count(&self, store: &Store, width: u16) -> u16 {
+        if let Some(issue) = store.get_issue(self.id) {
+            let body = create_widgets(issue);
+            body.line_count(width) as u16
+        } else {
+            0
         }
     }
 }
