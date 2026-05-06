@@ -1,7 +1,8 @@
 use std::cmp::min;
 
+use crossterm::event::{Event, KeyCode};
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
@@ -11,11 +12,26 @@ use crate::entities::Issue;
 
 pub struct IssueHeaderComponent {
     id: u16,
+    focused: bool,
+}
+
+pub enum FocusEvent {
+    Focused,
+    Unfocused,
+    CursorEnteredFromBelow,
+}
+
+pub enum EventProcessResult {
+    CursorLeavedFromBelow,
 }
 
 impl IssueHeaderComponent {
     pub fn new(id: u16) -> Self {
-        Self { id }
+        Self { id, focused: false }
+    }
+
+    pub fn get_cursor_position(&self) -> Position {
+        Position { x: 2, y: 2 }
     }
 
     pub fn render(&self, store: &Store, max_width: u16, max_height: u16) -> Option<Buffer> {
@@ -36,6 +52,28 @@ impl IssueHeaderComponent {
         } else {
             0
         }
+    }
+    pub fn focus_event(&mut self, event: FocusEvent) {
+        match event {
+            FocusEvent::CursorEnteredFromBelow => {
+                self.focused = true;
+            }
+            FocusEvent::Focused { .. } => {
+                self.focused = true;
+            }
+            FocusEvent::Unfocused => {
+                self.focused = false;
+            }
+        }
+    }
+    pub fn process_event(&mut self, event: &crossterm::event::Event) -> Option<EventProcessResult> {
+        if self.focused
+            && let Event::Key(key) = event
+            && key.code == KeyCode::Char('j')
+        {
+            return Some(EventProcessResult::CursorLeavedFromBelow);
+        }
+        None
     }
 }
 

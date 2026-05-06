@@ -98,12 +98,6 @@ impl AppContainer {
         self.app_component
             .update(self.dispatcher.clone(), self.dispatcher.borrow().store());
     }
-    // AppContainer内とターミナル全体の原点座標の差を緩衝するメソッド
-    pub fn set_cursor_position(frame: &mut Frame, position: Position) {
-        let x = position.x + APP_COMPONENT_OFFSET_X;
-        let y = position.y + APP_COMPONENT_OFFSET_Y;
-        frame.set_cursor_position(Position { x, y });
-    }
     // AppContainerとターミナル全体のサイズの差を緩衝するメソッド
     // 現在はIssueComponentの初期化時に一回呼ばれるので、それ専用に定数で妥協
     pub fn size() -> Result<(u16, u16)> {

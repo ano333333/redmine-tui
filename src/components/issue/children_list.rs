@@ -1,8 +1,9 @@
 use std::cmp::min;
 
 use chrono::{DateTime, Local};
+use crossterm::event::{Event, KeyCode};
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
@@ -12,12 +13,36 @@ use crate::entities::Issue;
 
 pub struct IssueChildrenListComponent {
     id: u16,
+    list_len: usize,
+    focused_index: Option<usize>,
+}
+
+pub enum FocusEvent {
+    Unfocused,
+    CursorEnteredFromAbove,
+    CursorEnteredFromBelow,
+}
+
+pub enum EventProcessResult {
+    CursorLeavedFromAbove,
+    CursorLeavedFromBelow,
 }
 
 impl IssueChildrenListComponent {
     pub fn new(id: u16) -> Self {
-        Self { id }
+        Self {
+            id,
+            list_len: 0,
+            focused_index: None,
+        }
     }
+
+    pub fn update(&mut self, store: &Store) {
+        if let Some(issue) = store.get_issue(self.id) {
+            self.list_len = issue.child_ids.len();
+        }
+    }
+
     pub fn render(&self, store: &Store, max_width: u16, max_height: u16) -> Option<Buffer> {
         if let Some(issue) = store.get_issue(self.id) {
             let child_all_num = issue.child_ids.len() as u16;
@@ -56,11 +81,56 @@ impl IssueChildrenListComponent {
             None
         }
     }
+
     pub fn line_count(&self, store: &Store) -> u16 {
         if let Some(issue) = store.get_issue(self.id) {
             2 + (issue.child_ids.len() as u16) + 1
         } else {
             0
+        }
+    }
+
+    pub fn focus_event(&mut self, event: FocusEvent) {
+        match event {
+            FocusEvent::Unfocused => {
+                self.focused_index = None;
+            }
+            FocusEvent::CursorEnteredFromAbove => {
+                self.focused_index = Some(0);
+            }
+            FocusEvent::CursorEnteredFromBelow => {
+                self.focused_index = Some(self.list_len - 1);
+            }
+        }
+    }
+
+    pub fn process_event(&mut self, event: &Event) -> Option<EventProcessResult> {
+        if let Some(focused_index) = self.focused_index
+            && let Event::Key(key) = event
+        {
+            match key.code {
+                KeyCode::Char('j') => {
+                    if focused_index + 1 == self.list_len {
+                        return Some(EventProcessResult::CursorLeavedFromBelow);
+                    }
+                    self.focused_index = Some(focused_index + 1);
+                }
+                KeyCode::Char('k') => {
+                    if focused_index == 0 {
+                        return Some(EventProcessResult::CursorLeavedFromAbove);
+                    }
+                    self.focused_index = Some(focused_index - 1);
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    pub fn get_cursor_position(&self) -> Position {
+        Position {
+            x: 0,
+            y: self.focused_index.unwrap() as u16 + 2,
         }
     }
 }

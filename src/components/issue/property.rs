@@ -1,8 +1,9 @@
 use std::cmp::min;
 
 use chrono::{DateTime, Local};
+use crossterm::event::{Event, KeyCode};
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
@@ -12,11 +13,26 @@ use crate::entities::Issue;
 
 pub struct IssuePropertyComponent {
     id: u16,
+    focused_y: Option<u16>,
+}
+
+pub enum FocusTransitionEvent {
+    Unfocused,
+    CursorEnteredFromAbove,
+    CursorEnteredFromBelow,
+}
+
+pub enum EventProcessResult {
+    CursorLeavedFromAbove,
+    CursorLeavedFromBelow,
 }
 
 impl IssuePropertyComponent {
     pub fn new(id: u16) -> Self {
-        Self { id }
+        Self {
+            id,
+            focused_y: None,
+        }
     }
     pub fn render(&self, store: &Store, max_width: u16, max_height: u16) -> Option<Buffer> {
         if let Some(issue) = store.get_issue(self.id) {
@@ -41,6 +57,46 @@ impl IssuePropertyComponent {
                 .fold(0, |acc, iter| acc + iter.line_count(width) as u16)
         } else {
             0
+        }
+    }
+    pub fn focus_event(&mut self, event: FocusTransitionEvent) {
+        match event {
+            FocusTransitionEvent::Unfocused => {
+                self.focused_y = None;
+            }
+            FocusTransitionEvent::CursorEnteredFromAbove => {
+                self.focused_y = Some(0);
+            }
+            FocusTransitionEvent::CursorEnteredFromBelow => {
+                self.focused_y = Some(10);
+            }
+        }
+    }
+    pub fn process_event(&mut self, event: &Event) -> Option<EventProcessResult> {
+        let focused_y = self.focused_y.unwrap();
+        if let Event::Key(key) = event {
+            match key.code {
+                KeyCode::Char('j') => {
+                    if focused_y + 1 == 11 {
+                        return Some(EventProcessResult::CursorLeavedFromBelow);
+                    }
+                    self.focused_y = Some(focused_y + 1);
+                }
+                KeyCode::Char('k') => {
+                    if focused_y == 0 {
+                        return Some(EventProcessResult::CursorLeavedFromAbove);
+                    }
+                    self.focused_y = Some(focused_y - 1);
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+    pub fn get_cursor_position(&self) -> Position {
+        Position {
+            x: 20,
+            y: self.focused_y.unwrap(),
         }
     }
 }
