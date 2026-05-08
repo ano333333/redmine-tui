@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use crossterm::event::Event;
@@ -19,6 +20,8 @@ use super::children_list::IssueChildrenListComponent;
 use super::header::EventProcessResult as HeaderEventProcessResult;
 use super::header::FocusEvent as HeaderFocusEvent;
 use super::header::IssueHeaderComponent;
+use super::journal::EventProcessResult as JournalEventProcessResult;
+use super::journal::FocusEvent as JournalFocusEvent;
 use super::journal::JournalComponent;
 use super::property::EventProcessResult as PropertyEventProcessResult;
 use super::property::FocusTransitionEvent as PropertyFocusTransitionEvent;
@@ -30,6 +33,7 @@ enum FocusedComponent {
     Property,
     Body,
     ChildrenList,
+    Journal { index: usize },
 }
 
 pub struct IssueDetailComponent {
@@ -72,6 +76,147 @@ impl IssueDetailComponent {
         }
     }
 
+    /// crosstermの同期イベントを処理する。updateとrenderがこの順で後続する
+    pub fn process_event(
+        &mut self,
+        event: crossterm::event::Event,
+        _: Rc<RefCell<Dispatcher>>,
+        store: &Store,
+    ) {
+        // FIXME:
+        // process_eventでComponentのprocess_event呼び出しからその結果に基づくフォーカス処理を行っているが、
+        // Storeの更新契機で子componentからイベントが来る可能性を踏まえ、updateがフォーカス関連を含めたイベントを返すようにしたい
+        // ActionとしてStoreに流すか？(直接の親子関係があるComponent同士のイベント受け渡しにStoreを使いたくないが)
+        match self.focused_component {
+            FocusedComponent::Header => {
+                let result = self.header.process_event(&event);
+                if let Some(HeaderEventProcessResult::CursorLeavedFromBelow) = result {
+                    self.header.focus_event(HeaderFocusEvent::Unfocused);
+                    self.focused_component = FocusedComponent::Property;
+                    self.property
+                        .focus_event(PropertyFocusTransitionEvent::CursorEnteredFromAbove);
+                }
+            }
+            FocusedComponent::Property => {
+                let result = self.property.process_event(&event);
+                match result {
+                    Some(PropertyEventProcessResult::CursorLeavedFromAbove) => {
+                        self.property
+                            .focus_event(PropertyFocusTransitionEvent::Unfocused);
+                        self.focused_component = FocusedComponent::Header;
+                        self.header
+                            .focus_event(HeaderFocusEvent::CursorEnteredFromBelow);
+                    }
+                    Some(PropertyEventProcessResult::CursorLeavedFromBelow) => {
+                        self.property
+                            .focus_event(PropertyFocusTransitionEvent::Unfocused);
+                        self.focused_component = FocusedComponent::Body;
+                        self.body.focus_event(
+                            BodyFocusEvent::CursorEnteredFromAbove { x: 0 },
+                            store,
+                            self.width,
+                        );
+                    }
+                    None => {}
+                }
+            }
+            FocusedComponent::Body => {
+                // FIXME: widthの受け渡し方、StoreにIssueDetailCompnent用の子Storeを作成？
+                let result = self.body.process_event(&event, store, self.width);
+                match result {
+                    Some(BodyEventProcessResult::CursorLeavedFromAbove { .. }) => {
+                        self.body
+                            .focus_event(BodyFocusEvent::Unfocused, store, self.width);
+                        self.focused_component = FocusedComponent::Property;
+                        self.property
+                            .focus_event(PropertyFocusTransitionEvent::CursorEnteredFromBelow);
+                    }
+                    Some(BodyEventProcessResult::CursorLeavedFromBelow { .. }) => {
+                        self.body
+                            .focus_event(BodyFocusEvent::Unfocused, store, self.width);
+                        self.focused_component = FocusedComponent::ChildrenList;
+                        self.children_list
+                            .focus_event(ChildrenListFocusEvent::CursorEnteredFromAbove);
+                    }
+                    None => {}
+                }
+            }
+            FocusedComponent::ChildrenList => {
+                let result = self.children_list.process_event(&event);
+                match result {
+                    Some(ChildrenListEventProcessResult::CursorLeavedFromAbove) => {
+                        self.children_list
+                            .focus_event(ChildrenListFocusEvent::Unfocused);
+                        self.focused_component = FocusedComponent::Body;
+                        self.body.focus_event(
+                            BodyFocusEvent::CursorEnteredFromBelow { x: 0 },
+                            store,
+                            self.width,
+                        );
+                    }
+                    Some(ChildrenListEventProcessResult::CursorLeavedFromBelow) => {
+                        if self.journals.len() > 0 {
+                            self.children_list
+                                .focus_event(ChildrenListFocusEvent::Unfocused);
+                            self.focused_component = FocusedComponent::Journal { index: 0 };
+                            self.journals[0].focus_event(
+                                store,
+                                JournalFocusEvent::CursorEnteredFromAbove,
+                                self.width,
+                            );
+                        }
+                    }
+                    None => {}
+                }
+            }
+            FocusedComponent::Journal { index } => {
+                let result = self.journals[index].process_event(&event, store, self.width);
+                match result {
+                    Some(JournalEventProcessResult::CursorLeavedFromBelow) => {
+                        if index + 1 < self.journals.len() {
+                            self.journals[index].focus_event(
+                                store,
+                                JournalFocusEvent::Unfocused,
+                                self.width,
+                            );
+                            self.focused_component = FocusedComponent::Journal { index: index + 1 };
+                            self.journals[index + 1].focus_event(
+                                store,
+                                JournalFocusEvent::CursorEnteredFromAbove,
+                                self.width,
+                            );
+                        }
+                    }
+                    Some(JournalEventProcessResult::CursorLeavedFromAbove) => {
+                        self.journals[index].focus_event(
+                            store,
+                            JournalFocusEvent::Unfocused,
+                            self.width,
+                        );
+                        if index == 0 {
+                            self.focused_component = FocusedComponent::ChildrenList;
+                            self.children_list
+                                .focus_event(ChildrenListFocusEvent::CursorEnteredFromBelow);
+                        } else {
+                            self.focused_component = FocusedComponent::Journal { index: index - 1 };
+                            self.journals[index - 1].focus_event(
+                                store,
+                                JournalFocusEvent::CursorEnteredFromBelow { x: 0 },
+                                self.width,
+                            );
+                        }
+                    }
+                    None => {}
+                }
+            }
+        }
+        if let Event::Resize(rows, cols) = event {
+            self.width = rows;
+            self.height = cols;
+        }
+    }
+
+    /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
         let issue = store.get_issue(self.id);
         match issue {
@@ -81,15 +226,74 @@ impl IssueDetailComponent {
             Some(issue) => {
                 self.body.update(store, self.width);
                 self.children_list.update(store);
-                // FIXME: 差分更新
-                self.journals = issue
-                    .journal_ids
-                    .iter()
-                    .map(|i| JournalComponent::new(dispatcher.clone(), *i))
-                    .collect();
+
+                for journal in &mut self.journals {
+                    journal.update(dispatcher.clone(), store, self.width);
+                }
+
+                let mut journal_ids = HashSet::<u16>::new();
+                for id in &issue.journal_ids {
+                    journal_ids.insert(*id);
+                }
+
+                let mut focused: Option<u16> = None;
+                if let FocusedComponent::Journal { index } = self.focused_component {
+                    focused = Some(self.journals[index].id);
+                    if journal_ids.get(&self.journals[index].id).is_none() {
+                        self.journals[index].focus_event(
+                            store,
+                            JournalFocusEvent::Unfocused,
+                            self.width,
+                        );
+                    }
+                }
                 self.journals
-                    .iter_mut()
-                    .for_each(|journal| journal.update(dispatcher.clone(), store));
+                    .retain(|journal| journal_ids.get(&journal.id).is_some());
+
+                for index in 0..issue.journal_ids.len() {
+                    if index >= self.journals.len()
+                        || self.journals[index].id != issue.journal_ids[index]
+                    {
+                        self.journals.insert(
+                            index,
+                            JournalComponent::new(dispatcher.clone(), issue.journal_ids[index]),
+                        );
+                    }
+                }
+
+                if let FocusedComponent::Journal { index } = &mut self.focused_component {
+                    if self.journals.len() == 0 {
+                        self.children_list
+                            .focus_event(ChildrenListFocusEvent::CursorEnteredFromBelow);
+                    } else {
+                        if *index >= self.journals.len() {
+                            *index = self.journals.len() - 1;
+                        }
+                        if let Some(focused) = focused
+                            && self.journals[*index].id != focused
+                        {
+                            if let Some(focused) = self
+                                .journals
+                                .iter_mut()
+                                .filter(|journal| journal.id == focused)
+                                .next()
+                            {
+                                focused.focus_event(
+                                    store,
+                                    JournalFocusEvent::Unfocused,
+                                    self.width,
+                                );
+                            }
+                            self.journals[*index].focus_event(
+                                store,
+                                JournalFocusEvent::Focused {
+                                    position: Position::default(),
+                                },
+                                self.width,
+                            );
+                        }
+                    }
+                }
             }
         }
 
@@ -104,6 +308,7 @@ impl IssueDetailComponent {
         }
     }
 
+    /// Componentをframeのarea範囲内に描画する。
     pub fn render(&self, store: &Store, frame: &mut Frame, mut frame_area: Rect) {
         let mut line_count_sum: u16 = 0;
         let height = frame_area.height;
@@ -240,97 +445,6 @@ impl IssueDetailComponent {
         frame.set_cursor_position(cursor_position);
     }
 
-    pub fn process_event(
-        &mut self,
-        event: crossterm::event::Event,
-        _: Rc<RefCell<Dispatcher>>,
-        store: &Store,
-    ) {
-        // FIXME:
-        // process_eventでComponentのprocess_event呼び出しからその結果に基づくフォーカス処理を行っているが、
-        // Storeの更新契機で子componentからイベントが来る可能性を踏まえ、updateがフォーカス関連を含めたイベントを返すようにしたい
-        // ActionとしてStoreに流すか？(直接の親子関係があるComponent同士のイベント受け渡しにStoreを使いたくないが)
-        match self.focused_component {
-            FocusedComponent::Header => {
-                let result = self.header.process_event(&event);
-                if let Some(HeaderEventProcessResult::CursorLeavedFromBelow) = result {
-                    self.header.focus_event(HeaderFocusEvent::Unfocused);
-                    self.focused_component = FocusedComponent::Property;
-                    self.property
-                        .focus_event(PropertyFocusTransitionEvent::CursorEnteredFromAbove);
-                }
-            }
-            FocusedComponent::Property => {
-                let result = self.property.process_event(&event);
-                match result {
-                    Some(PropertyEventProcessResult::CursorLeavedFromAbove) => {
-                        self.property
-                            .focus_event(PropertyFocusTransitionEvent::Unfocused);
-                        self.focused_component = FocusedComponent::Header;
-                        self.header
-                            .focus_event(HeaderFocusEvent::CursorEnteredFromBelow);
-                    }
-                    Some(PropertyEventProcessResult::CursorLeavedFromBelow) => {
-                        self.property
-                            .focus_event(PropertyFocusTransitionEvent::Unfocused);
-                        self.focused_component = FocusedComponent::Body;
-                        self.body.focus_event(
-                            BodyFocusEvent::CursorEnteredFromAbove { x: 0 },
-                            store,
-                            self.width,
-                        );
-                    }
-                    None => {}
-                }
-            }
-            FocusedComponent::Body => {
-                // FIXME: widthの受け渡し方、StoreにIssueDetailCompnent用の子Storeを作成？
-                let result = self.body.process_event(&event, store, self.width);
-                match result {
-                    Some(BodyEventProcessResult::CursorLeavedFromAbove { .. }) => {
-                        self.body
-                            .focus_event(BodyFocusEvent::Unfocused, store, self.width);
-                        self.focused_component = FocusedComponent::Property;
-                        self.property
-                            .focus_event(PropertyFocusTransitionEvent::CursorEnteredFromBelow);
-                    }
-                    Some(BodyEventProcessResult::CursorLeavedFromBelow { .. }) => {
-                        self.body
-                            .focus_event(BodyFocusEvent::Unfocused, store, self.width);
-                        self.focused_component = FocusedComponent::ChildrenList;
-                        self.children_list
-                            .focus_event(ChildrenListFocusEvent::CursorEnteredFromAbove);
-                    }
-                    None => {}
-                }
-            }
-            FocusedComponent::ChildrenList => {
-                let result = self.children_list.process_event(&event);
-                match result {
-                    Some(ChildrenListEventProcessResult::CursorLeavedFromAbove) => {
-                        self.children_list
-                            .focus_event(ChildrenListFocusEvent::Unfocused);
-                        self.focused_component = FocusedComponent::Body;
-                        self.body.focus_event(
-                            BodyFocusEvent::CursorEnteredFromBelow { x: 0 },
-                            store,
-                            self.width,
-                        );
-                    }
-                    Some(ChildrenListEventProcessResult::CursorLeavedFromBelow) => {
-                        // FIXME:
-                        // journalsへのイベント受け渡し(self.journalsを差分更新するようにしないとフォーカス情報が消える、Propertyにカーソルが来た時どうするか？)
-                    }
-                    None => {}
-                }
-            }
-        }
-        if let Event::Resize(rows, cols) = event {
-            self.width = rows;
-            self.height = cols;
-        }
-    }
-
     /// IssueDetailComponentの全体から見たカーソル位置を計算する
     /// render時にクライアント座標への変換とFrame描画位置への加算を行うこと
     fn calc_cursor_global_position(&self, store: &Store) -> Position {
@@ -354,9 +468,18 @@ impl IssueDetailComponent {
         if self.focused_component == FocusedComponent::ChildrenList {
             return self.children_list.get_cursor_position() + offset;
         }
-        offset.y += self.children_list.line_count(store) as i32;
+        offset.y += self.children_list.line_count(store) as i32 + 1;
 
-        // FIXME: コンポーネント追加(jorunals)
+        if let FocusedComponent::Journal { index } = self.focused_component {
+            for i in 0..index {
+                offset.y += self.journals[i].line_count(store, self.width) as i32;
+            }
+            return self.journals[index].get_cursor_position() + offset;
+        }
+        for journal in &self.journals {
+            offset.y += journal.line_count(store, self.width) as i32;
+        }
+
         Position { x: 0, y: 0 }
     }
 }
