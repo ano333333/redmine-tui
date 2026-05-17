@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::HashSet;
 use std::rc::Rc;
 
 use crossterm::event::Event;
@@ -20,9 +19,9 @@ use super::children_list::IssueChildrenListComponent;
 use super::header::EventProcessResult as HeaderEventProcessResult;
 use super::header::FocusEvent as HeaderFocusEvent;
 use super::header::IssueHeaderComponent;
-use super::journal::EventProcessResult as JournalEventProcessResult;
-use super::journal::FocusEvent as JournalFocusEvent;
-use super::journal::JournalComponent;
+use super::journals_list::EventProcessResult as JournalsListEventProcessResult;
+use super::journals_list::FocusEvent as JournalsListFocusEvent;
+use super::journals_list::JournalsListComponent;
 use super::property::EventProcessResult as PropertyEventProcessResult;
 use super::property::FocusTransitionEvent as PropertyFocusTransitionEvent;
 use super::property::IssuePropertyComponent;
@@ -33,7 +32,7 @@ enum FocusedComponent {
     Property,
     Body,
     ChildrenList,
-    Journal { index: usize },
+    JournalsList,
 }
 
 pub struct IssueDetailComponent {
@@ -42,7 +41,7 @@ pub struct IssueDetailComponent {
     property: IssuePropertyComponent,
     body: IssueBodyComponent,
     children_list: IssueChildrenListComponent,
-    journals: Vec<JournalComponent>,
+    journals_list: JournalsListComponent,
     /// 描画横幅(render時のフレーム描画領域のwidthと一致)
     width: u16,
     /// 描画縦幅(render時のフレーム描画領域のheightと一致)
@@ -53,6 +52,7 @@ pub struct IssueDetailComponent {
 }
 
 impl IssueDetailComponent {
+    // TODO: journalsをJournalListComponentに置き換え
     pub fn new(_: Rc<RefCell<Dispatcher>>, issue_id: u16) -> Self {
         let size = AppContainer::size();
         match size {
@@ -63,7 +63,7 @@ impl IssueDetailComponent {
                     property: IssuePropertyComponent::new(issue_id),
                     body: IssueBodyComponent::new(issue_id),
                     children_list: IssueChildrenListComponent::new(issue_id),
-                    journals: vec![],
+                    journals_list: JournalsListComponent::new(issue_id),
                     width,
                     height,
                     render_offset_y: 0,
@@ -155,56 +155,31 @@ impl IssueDetailComponent {
                         );
                     }
                     Some(ChildrenListEventProcessResult::CursorLeavedFromBelow) => {
-                        if self.journals.len() > 0 {
-                            self.children_list
-                                .focus_event(ChildrenListFocusEvent::Unfocused);
-                            self.focused_component = FocusedComponent::Journal { index: 0 };
-                            self.journals[0].focus_event(
-                                store,
-                                JournalFocusEvent::CursorEnteredFromAbove,
-                                self.width,
-                            );
-                        }
+                        self.children_list
+                            .focus_event(ChildrenListFocusEvent::Unfocused);
+                        self.focused_component = FocusedComponent::JournalsList;
+                        self.journals_list.focus_event(
+                            store,
+                            JournalsListFocusEvent::CursorEnteredFromAbove,
+                            self.width,
+                        );
                     }
                     None => {}
                 }
             }
-            FocusedComponent::Journal { index } => {
-                let result = self.journals[index].process_event(&event, store, self.width);
+            FocusedComponent::JournalsList => {
+                let result = self.journals_list.process_event(&event, store, self.width);
                 match result {
-                    Some(JournalEventProcessResult::CursorLeavedFromBelow) => {
-                        if index + 1 < self.journals.len() {
-                            self.journals[index].focus_event(
-                                store,
-                                JournalFocusEvent::Unfocused,
-                                self.width,
-                            );
-                            self.focused_component = FocusedComponent::Journal { index: index + 1 };
-                            self.journals[index + 1].focus_event(
-                                store,
-                                JournalFocusEvent::CursorEnteredFromAbove,
-                                self.width,
-                            );
-                        }
-                    }
-                    Some(JournalEventProcessResult::CursorLeavedFromAbove) => {
-                        self.journals[index].focus_event(
+                    Some(JournalsListEventProcessResult::CursorLeavedFromBelow) => {}
+                    Some(JournalsListEventProcessResult::CursorLeavedFromAbove) => {
+                        self.journals_list.focus_event(
                             store,
-                            JournalFocusEvent::Unfocused,
+                            JournalsListFocusEvent::Unfocused,
                             self.width,
                         );
-                        if index == 0 {
-                            self.focused_component = FocusedComponent::ChildrenList;
-                            self.children_list
-                                .focus_event(ChildrenListFocusEvent::CursorEnteredFromBelow);
-                        } else {
-                            self.focused_component = FocusedComponent::Journal { index: index - 1 };
-                            self.journals[index - 1].focus_event(
-                                store,
-                                JournalFocusEvent::CursorEnteredFromBelow { x: 0 },
-                                self.width,
-                            );
-                        }
+                        self.focused_component = FocusedComponent::ChildrenList;
+                        self.children_list
+                            .focus_event(ChildrenListFocusEvent::CursorEnteredFromBelow);
                     }
                     None => {}
                 }
@@ -218,83 +193,11 @@ impl IssueDetailComponent {
 
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
-        let issue = store.get_issue(self.id);
-        match issue {
-            None => {
-                self.journals = vec![];
-            }
-            Some(issue) => {
-                self.body.update(store, self.width);
-                self.children_list.update(store);
+        if store.get_issue(self.id).is_some() {
+            self.body.update(store, self.width);
+            self.children_list.update(store);
 
-                for journal in &mut self.journals {
-                    journal.update(dispatcher.clone(), store, self.width);
-                }
-
-                let mut journal_ids = HashSet::<u16>::new();
-                for id in &issue.journal_ids {
-                    journal_ids.insert(*id);
-                }
-
-                let mut focused: Option<u16> = None;
-                if let FocusedComponent::Journal { index } = self.focused_component {
-                    focused = Some(self.journals[index].id);
-                    if journal_ids.get(&self.journals[index].id).is_none() {
-                        self.journals[index].focus_event(
-                            store,
-                            JournalFocusEvent::Unfocused,
-                            self.width,
-                        );
-                    }
-                }
-                self.journals
-                    .retain(|journal| journal_ids.get(&journal.id).is_some());
-
-                for index in 0..issue.journal_ids.len() {
-                    if index >= self.journals.len()
-                        || self.journals[index].id != issue.journal_ids[index]
-                    {
-                        self.journals.insert(
-                            index,
-                            JournalComponent::new(dispatcher.clone(), issue.journal_ids[index]),
-                        );
-                    }
-                }
-
-                if let FocusedComponent::Journal { index } = &mut self.focused_component {
-                    if self.journals.len() == 0 {
-                        self.children_list
-                            .focus_event(ChildrenListFocusEvent::CursorEnteredFromBelow);
-                    } else {
-                        if *index >= self.journals.len() {
-                            *index = self.journals.len() - 1;
-                        }
-                        if let Some(focused) = focused
-                            && self.journals[*index].id != focused
-                        {
-                            if let Some(focused) = self
-                                .journals
-                                .iter_mut()
-                                .filter(|journal| journal.id == focused)
-                                .next()
-                            {
-                                focused.focus_event(
-                                    store,
-                                    JournalFocusEvent::Unfocused,
-                                    self.width,
-                                );
-                            }
-                            self.journals[*index].focus_event(
-                                store,
-                                JournalFocusEvent::Focused {
-                                    position: Position::default(),
-                                },
-                                self.width,
-                            );
-                        }
-                    }
-                }
-            }
+            self.journals_list.update(store, self.width);
         }
 
         let Position { y: cursor_y, .. } = self.calc_cursor_global_position(store);
@@ -423,22 +326,21 @@ impl IssueDetailComponent {
         }
         line_count_sum += line_count;
 
-        for j in self.journals.iter() {
-            let line_count = j.line_count(store, width);
-            if line_count_sum + line_count >= offset_y
-                && line_count_sum < offset_y + height
-                && frame_area.height > 0
-                && let Some(buffer) = j.render(store, frame_area.width, frame_area.height)
-            {
-                let buffer_area = Rect::new(
-                    0,
-                    offset_y.saturating_sub(line_count_sum),
-                    buffer.area.width,
-                    line_count.saturating_sub(offset_y.saturating_sub(line_count_sum)),
-                );
-                render_buffer_to_frame(frame, &mut frame_area, &buffer, buffer_area);
-            }
-            line_count_sum += line_count;
+        let line_count = self.journals_list.line_count(store, self.width);
+        if line_count_sum + line_count >= offset_y
+            && line_count_sum < offset_y + height
+            && frame_area.height > 0
+            && let Some(buffer) =
+                self.journals_list
+                    .render(store, frame_area.width, frame_area.height)
+        {
+            let buffer_area = Rect::new(
+                0,
+                offset_y.saturating_sub(line_count_sum),
+                buffer.area.width,
+                line_count.saturating_sub(offset_y.saturating_sub(line_count_sum)),
+            );
+            render_buffer_to_frame(frame, &mut frame_area, &buffer, buffer_area);
         }
 
         cursor_position.y -= self.render_offset_y;
@@ -470,15 +372,10 @@ impl IssueDetailComponent {
         }
         offset.y += self.children_list.line_count(store) as i32 + 1;
 
-        if let FocusedComponent::Journal { index } = self.focused_component {
-            for i in 0..index {
-                offset.y += self.journals[i].line_count(store, self.width) as i32;
-            }
-            return self.journals[index].get_cursor_position() + offset;
+        if self.focused_component == FocusedComponent::JournalsList {
+            return self.journals_list.get_cursor_position(store, self.width) + offset;
         }
-        for journal in &self.journals {
-            offset.y += journal.line_count(store, self.width) as i32;
-        }
+        offset.y += self.journals_list.line_count(store, self.width) as i32 + 2;
 
         Position { x: 0, y: 0 }
     }
