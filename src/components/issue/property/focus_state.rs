@@ -1,0 +1,67 @@
+use crossterm::event::{Event, KeyCode};
+use ratatui::layout::Position;
+
+pub enum FocusEvent {
+    Unfocused,
+    CursorEnteredFromAbove,
+    CursorEnteredFromBelow,
+}
+
+pub enum EventProcessResult {
+    CursorLeavedFromAbove,
+    CursorLeavedFromBelow,
+}
+
+pub struct FocusState {
+    focused_y: Option<u16>,
+}
+
+impl FocusState {
+    pub fn new() -> Self {
+        Self { focused_y: None }
+    }
+
+    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
+        if let Event::Key(key) = event
+            && let Some(focused_y) = &mut self.focused_y
+        {
+            match key.code {
+                KeyCode::Char('j') => {
+                    if *focused_y + 1 == 11 {
+                        return Some(EventProcessResult::CursorLeavedFromBelow);
+                    }
+                    *focused_y += 1;
+                }
+                KeyCode::Char('k') => {
+                    if *focused_y == 0 {
+                        return Some(EventProcessResult::CursorLeavedFromAbove);
+                    }
+                    *focused_y -= 1;
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    pub fn focus_event(&mut self, event: FocusEvent) {
+        match event {
+            FocusEvent::Unfocused => {
+                self.focused_y = None;
+            }
+            FocusEvent::CursorEnteredFromAbove => {
+                self.focused_y = Some(0);
+            }
+            FocusEvent::CursorEnteredFromBelow => {
+                self.focused_y = Some(10);
+            }
+        }
+    }
+
+    pub fn get_cursor_position(&self) -> Position {
+        Position {
+            x: 20,
+            y: self.focused_y.unwrap_or(0),
+        }
+    }
+}

@@ -24,8 +24,8 @@ use super::journals_list::EventProcessResult as JournalsListEventProcessResult;
 use super::journals_list::FocusEvent as JournalsListFocusEvent;
 use super::journals_list::JournalsListComponent;
 use super::property::EventProcessResult as PropertyEventProcessResult;
-use super::property::FocusTransitionEvent as PropertyFocusTransitionEvent;
-use super::property::IssuePropertyComponent;
+use super::property::FocusEvent as PropertyFocusTransitionEvent;
+use super::property::PropertyComponent;
 
 #[derive(PartialEq)]
 enum FocusedComponent {
@@ -39,7 +39,7 @@ enum FocusedComponent {
 pub struct IssueDetailComponent {
     id: u16,
     header: HeaderComponent,
-    property: IssuePropertyComponent,
+    property: PropertyComponent,
     body: IssueBodyComponent,
     children_list: IssueChildrenListComponent,
     journals_list: JournalsListComponent,
@@ -61,7 +61,7 @@ impl IssueDetailComponent {
                 let mut i = IssueDetailComponent {
                     id: issue_id,
                     header: HeaderComponent::new(issue_id),
-                    property: IssuePropertyComponent::new(issue_id),
+                    property: PropertyComponent::new(issue_id),
                     body: IssueBodyComponent::new(issue_id),
                     children_list: IssueChildrenListComponent::new(issue_id),
                     journals_list: JournalsListComponent::new(issue_id),
@@ -99,7 +99,7 @@ impl IssueDetailComponent {
                 }
             }
             FocusedComponent::Property => {
-                let result = self.property.process_event(&event);
+                let result = self.property.process_event(event.clone());
                 match result {
                     Some(PropertyEventProcessResult::CursorLeavedFromAbove) => {
                         self.property
@@ -244,17 +244,15 @@ impl IssueDetailComponent {
         if line_count_sum + line_count >= offset_y
             && line_count_sum < offset_y + height
             && frame_area.height > 0
-            && let Some(buffer) = self
-                .property
-                .render(store, frame_area.width, frame_area.height)
         {
-            let buffer_area = Rect::new(
-                0,
-                offset_y.saturating_sub(line_count_sum),
-                buffer.area.width,
-                line_count.saturating_sub(offset_y.saturating_sub(line_count_sum)),
-            );
-            render_buffer_to_frame(frame, &mut frame_area, &buffer, buffer_area);
+            render_property_component_to_frame(
+                store,
+                frame,
+                &mut frame_area,
+                &self.property,
+                line_count_sum,
+                offset_y,
+            )
         }
         line_count_sum += line_count;
 
@@ -488,6 +486,49 @@ fn render_header_component_to_frame(
         component.render(store, buffer_area, &mut buffer);
 
         // 一時Bufferの、グローバル空間でy=offset_yに位置する部分から後ろをframeに転写
+        let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
+        for y in 0..overlapping_height {
+            for x in 0..frame_area.width {
+                let buffer_x = x;
+                let buffer_y = offset_y - line_count_sum + y;
+                let frame_x = frame_area.x + x;
+                let frame_y = frame_area.y + y;
+                let Some(buffer_cell) = buffer.cell((buffer_x, buffer_y)).cloned() else {
+                    continue;
+                };
+                if let Some(frame_cell) = frame.buffer_mut().cell_mut((frame_x, frame_y)) {
+                    *frame_cell = buffer_cell;
+                }
+            }
+        }
+
+        frame_area.y += overlapping_height;
+        frame_area.height -= overlapping_height;
+    }
+}
+
+/// PropertyComponentをFrameに描画し、書き込んだ領域を切り詰める
+/// 詳しい説明はrender_header_component_to_frameを参照。
+fn render_property_component_to_frame(
+    store: &Store,
+    frame: &mut Frame,
+    frame_area: &mut Rect,
+    component: &PropertyComponent,
+    line_count_sum: u16,
+    offset_y: u16,
+) {
+    // FIXME:子componentのtrait等による共通化ができていないので、render_*_component_to_frameを毎度定義する必要がある。
+    if offset_y <= line_count_sum {
+        component.render(store, *frame_area, frame.buffer_mut());
+        let line_count = component.line_count(store, frame_area.width);
+        frame_area.y += min(line_count, frame_area.height);
+        frame_area.height = frame_area.height.saturating_sub(line_count);
+    } else {
+        let line_count = component.line_count(store, frame_area.width);
+        let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
+        let mut buffer = Buffer::empty(buffer_area);
+        component.render(store, buffer_area, &mut buffer);
+
         let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
         for y in 0..overlapping_height {
             for x in 0..frame_area.width {
