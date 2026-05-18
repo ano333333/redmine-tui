@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::cmp::min;
 use std::rc::Rc;
 
 use crossterm::event::Event;
@@ -18,7 +19,7 @@ use super::children_list::FocusEvent as ChildrenListFocusEvent;
 use super::children_list::IssueChildrenListComponent;
 use super::header::EventProcessResult as HeaderEventProcessResult;
 use super::header::FocusEvent as HeaderFocusEvent;
-use super::header::IssueHeaderComponent;
+use super::header::HeaderComponent;
 use super::journals_list::EventProcessResult as JournalsListEventProcessResult;
 use super::journals_list::FocusEvent as JournalsListFocusEvent;
 use super::journals_list::JournalsListComponent;
@@ -37,7 +38,7 @@ enum FocusedComponent {
 
 pub struct IssueDetailComponent {
     id: u16,
-    header: IssueHeaderComponent,
+    header: HeaderComponent,
     property: IssuePropertyComponent,
     body: IssueBodyComponent,
     children_list: IssueChildrenListComponent,
@@ -59,7 +60,7 @@ impl IssueDetailComponent {
             Ok((width, height)) => {
                 let mut i = IssueDetailComponent {
                     id: issue_id,
-                    header: IssueHeaderComponent::new(issue_id),
+                    header: HeaderComponent::new(issue_id),
                     property: IssuePropertyComponent::new(issue_id),
                     body: IssueBodyComponent::new(issue_id),
                     children_list: IssueChildrenListComponent::new(issue_id),
@@ -89,7 +90,7 @@ impl IssueDetailComponent {
         // ActionとしてStoreに流すか？(直接の親子関係があるComponent同士のイベント受け渡しにStoreを使いたくないが)
         match self.focused_component {
             FocusedComponent::Header => {
-                let result = self.header.process_event(&event);
+                let result = self.header.process_event(event.clone());
                 if let Some(HeaderEventProcessResult::CursorLeavedFromBelow) = result {
                     self.header.focus_event(HeaderFocusEvent::Unfocused);
                     self.focused_component = FocusedComponent::Property;
@@ -223,21 +224,19 @@ impl IssueDetailComponent {
         cursor_position.y += frame_area.y;
 
         // TODO: ここのスクロール関係の描画処理を、もっとこう。。。
-        let line_count = self.header.line_count(store);
+        let line_count = self.header.line_count(store, width);
         if line_count_sum + line_count >= offset_y
             && line_count_sum < offset_y + height
             && frame_area.height > 0
-            && let Some(buffer) = self
-                .header
-                .render(store, frame_area.width, frame_area.height)
         {
-            let buffer_area = Rect::new(
-                0,
-                offset_y.saturating_sub(line_count_sum),
-                buffer.area.width,
-                line_count.saturating_sub(offset_y.saturating_sub(line_count_sum)),
+            render_header_component_to_frame(
+                store,
+                frame,
+                &mut frame_area,
+                &self.header,
+                line_count_sum,
+                offset_y,
             );
-            render_buffer_to_frame(frame, &mut frame_area, &buffer, buffer_area);
         }
         line_count_sum += line_count;
 
@@ -355,7 +354,7 @@ impl IssueDetailComponent {
         if self.focused_component == FocusedComponent::Header {
             return self.header.get_cursor_position() + offset;
         }
-        offset.y += self.header.line_count(store) as i32;
+        offset.y += self.header.line_count(store, self.width) as i32;
 
         if self.focused_component == FocusedComponent::Property {
             return self.property.get_cursor_position() + offset;
@@ -415,4 +414,97 @@ fn render_buffer_to_frame(
 
     frame_area.y += height;
     frame_area.height -= height;
+}
+
+/// HeaderComponentをFrameに描画し、書き込んだ領域を切り詰める
+/// # Arguments
+///
+/// * `store` - Store
+/// * `frame` - 描画先のFrame
+/// * `frame_area` - `frame`の描画領域
+/// * `component` - 描画するHeaderComponent
+/// * `line_count_sum` - ここまでに書き込んだComponentの行数(line_count)の和
+/// * `offset_y` - グローバル空間のどのy(行数)から書き始めるか
+fn render_header_component_to_frame(
+    store: &Store,
+    frame: &mut Frame,
+    frame_area: &mut Rect,
+    component: &HeaderComponent,
+    line_count_sum: u16,
+    offset_y: u16,
+) {
+    // グローバル y 座標で見ると、
+    // HeaderComponent は [line_count_sum, line_count_sum + line_count) を占める。
+    // ここから、今回表示したい範囲 [offset_y, +inf) との重なりだけを描画する。
+
+    // Case 1: Header の先頭から描ける場合
+    //
+    //     global y
+    //        v
+    //
+    //     offset_y                                  +
+    //                                               |
+    //                                               |
+    //   line_count_sum     +------------------+     | visible
+    //                      |      Header      |     |
+    //                      |                  |     |
+    //                      |                  |     +
+    //                      |                  |
+    //                      +------------------+
+    //
+    //   offset_y <= line_count_sum
+    //   -> Header の先頭は表示範囲内にあるので、
+    //      Header を先頭からそのまま Frame に描ける
+    if offset_y <= line_count_sum {
+        component.render(store, *frame_area, frame.buffer_mut());
+        let line_count = component.line_count(store, frame_area.width);
+        frame_area.y += min(line_count, frame_area.height);
+        frame_area.height = frame_area.height.saturating_sub(line_count);
+    }
+    // Case 2: Header の先頭が表示範囲より上にある場合
+    //
+    //     global y
+    //        v
+    //
+    //   line_count_sum     +------------------+
+    //                      |      Header      |
+    //                      |                  |
+    //   offset_y           |                  |    +
+    //                      |                  |    |
+    //                      +------------------+    |
+    //                                              | visible
+    //                                              |
+    //                                              +
+    //
+    //   line_count_sum < offset_y < line_count_sum + line_count
+    //   -> Header 上部は画面外に切れるので、
+    //      一時 Buffer に描いてから
+    //      (offset_y - line_count_sum) 行目以降だけを Frame に転写する
+    else {
+        // componentを一時Bufferに書き出す必要がある
+        let line_count = component.line_count(store, frame_area.width);
+        let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
+        let mut buffer = Buffer::empty(buffer_area);
+        component.render(store, buffer_area, &mut buffer);
+
+        // 一時Bufferの、グローバル空間でy=offset_yに位置する部分から後ろをframeに転写
+        let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
+        for y in 0..overlapping_height {
+            for x in 0..frame_area.width {
+                let buffer_x = x;
+                let buffer_y = offset_y - line_count_sum + y;
+                let frame_x = frame_area.x + x;
+                let frame_y = frame_area.y + y;
+                let Some(buffer_cell) = buffer.cell((buffer_x, buffer_y)).cloned() else {
+                    continue;
+                };
+                if let Some(frame_cell) = frame.buffer_mut().cell_mut((frame_x, frame_y)) {
+                    *frame_cell = buffer_cell;
+                }
+            }
+        }
+
+        frame_area.y += overlapping_height;
+        frame_area.height -= overlapping_height;
+    }
 }
