@@ -259,7 +259,7 @@ impl IssueDetailComponent {
         }
         line_count_sum += line_count;
 
-        let line_count = self.body.line_count(store, width);
+        let line_count = self.body.line_count(width);
         if line_count_sum + line_count >= offset_y
             && line_count_sum < offset_y + height
             && frame_area.height > 0
@@ -354,7 +354,7 @@ impl IssueDetailComponent {
         if self.focused_component == FocusedComponent::Body {
             return self.body.get_cursor_position() + offset;
         }
-        offset.y += self.body.line_count(store, self.width) as i32 + 1;
+        offset.y += self.body.line_count(self.width) as i32 + 1;
 
         if self.focused_component == FocusedComponent::ChildrenList {
             return self.children_list.get_cursor_position() + offset;
@@ -554,15 +554,15 @@ fn render_body_component_to_frame(
 ) {
     // FIXME:子componentのtrait等による共通化ができていないので、render_*_component_to_frameを毎度定義する必要がある。
     if offset_y <= line_count_sum {
-        component.render(store, *frame_area, frame.buffer_mut());
-        let line_count = component.line_count(store, frame_area.width);
+        component.render(*frame_area, frame.buffer_mut());
+        let line_count = component.line_count(frame_area.width);
         frame_area.y += min(line_count, frame_area.height);
         frame_area.height = frame_area.height.saturating_sub(line_count);
     } else {
-        let line_count = component.line_count(store, frame_area.width);
+        let line_count = component.line_count(frame_area.width);
         let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
         let mut buffer = Buffer::empty(buffer_area);
-        component.render(store, buffer_area, &mut buffer);
+        component.render(buffer_area, &mut buffer);
 
         let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
         for y in 0..overlapping_height {
