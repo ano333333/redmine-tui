@@ -14,9 +14,9 @@ use crate::widgets::Hr;
 use super::body::BodyComponent;
 use super::body::EventProcessResult as BodyEventProcessResult;
 use super::body::FocusEvent as BodyFocusEvent;
+use super::children_list::ChildrenListComponent;
 use super::children_list::EventProcessResult as ChildrenListEventProcessResult;
 use super::children_list::FocusEvent as ChildrenListFocusEvent;
-use super::children_list::IssueChildrenListComponent;
 use super::header::EventProcessResult as HeaderEventProcessResult;
 use super::header::FocusEvent as HeaderFocusEvent;
 use super::header::HeaderComponent;
@@ -41,7 +41,7 @@ pub struct IssueDetailComponent {
     header: HeaderComponent,
     property: PropertyComponent,
     body: BodyComponent,
-    children_list: IssueChildrenListComponent,
+    children_list: ChildrenListComponent,
     journals_list: JournalsListComponent,
     /// 描画横幅(render時のフレーム描画領域のwidthと一致)
     width: u16,
@@ -63,7 +63,7 @@ impl IssueDetailComponent {
                     header: HeaderComponent::new(issue_id),
                     property: PropertyComponent::new(issue_id),
                     body: BodyComponent::new(issue_id, width, height),
-                    children_list: IssueChildrenListComponent::new(issue_id),
+                    children_list: ChildrenListComponent::new(issue_id),
                     journals_list: JournalsListComponent::new(issue_id),
                     width,
                     height,
@@ -290,17 +290,15 @@ impl IssueDetailComponent {
         if line_count_sum + line_count >= offset_y
             && line_count_sum < offset_y + height
             && frame_area.height > 0
-            && let Some(buffer) =
-                self.children_list
-                    .render(store, frame_area.width, frame_area.height)
         {
-            let buffer_area = Rect::new(
-                0,
-                offset_y.saturating_sub(line_count_sum),
-                buffer.area.width,
-                line_count.saturating_sub(offset_y.saturating_sub(line_count_sum)),
+            render_children_component_to_frame(
+                store,
+                frame,
+                &mut frame_area,
+                &self.children_list,
+                line_count_sum,
+                offset_y,
             );
-            render_buffer_to_frame(frame, &mut frame_area, &buffer, buffer_area);
         }
         line_count_sum += line_count;
 
@@ -367,6 +365,47 @@ impl IssueDetailComponent {
         offset.y += self.journals_list.line_count(store, self.width) as i32 + 2;
 
         Position { x: 0, y: 0 }
+    }
+}
+
+/// ChildrenListComponentをFrameに描画し、書き込んだ領域を切り詰める
+/// 詳しい説明はrender_header_component_to_frameを参照。
+fn render_children_component_to_frame(
+    store: &Store,
+    frame: &mut Frame,
+    frame_area: &mut Rect,
+    component: &ChildrenListComponent,
+    line_count_sum: u16,
+    offset_y: u16,
+) {
+    if offset_y <= line_count_sum {
+        component.render(store, *frame_area, frame.buffer_mut());
+        let line_count = component.line_count(store);
+        frame_area.y += min(line_count, frame_area.height);
+        frame_area.height = frame_area.height.saturating_sub(line_count);
+    } else {
+        let line_count = component.line_count(store);
+        let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
+        let mut buffer = Buffer::empty(buffer_area);
+        component.render(store, buffer_area, &mut buffer);
+
+        let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
+        for y in 0..overlapping_height {
+            for x in 0..frame_area.width {
+                let buffer_y = offset_y - line_count_sum + y;
+                let frame_x = frame_area.x + x;
+                let frame_y = frame_area.y + y;
+                let Some(buffer_cell) = buffer.cell((x, buffer_y)).cloned() else {
+                    continue;
+                };
+                if let Some(frame_cell) = frame.buffer_mut().cell_mut((frame_x, frame_y)) {
+                    *frame_cell = buffer_cell;
+                }
+            }
+        }
+
+        frame_area.y += overlapping_height;
+        frame_area.height -= overlapping_height;
     }
 }
 
