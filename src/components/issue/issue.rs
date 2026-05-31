@@ -11,9 +11,9 @@ use crate::AppContainer;
 use crate::app::{Dispatcher, Store};
 use crate::widgets::Hr;
 
+use super::body::BodyComponent;
 use super::body::EventProcessResult as BodyEventProcessResult;
 use super::body::FocusEvent as BodyFocusEvent;
-use super::body::IssueBodyComponent;
 use super::children_list::EventProcessResult as ChildrenListEventProcessResult;
 use super::children_list::FocusEvent as ChildrenListFocusEvent;
 use super::children_list::IssueChildrenListComponent;
@@ -40,7 +40,7 @@ pub struct IssueDetailComponent {
     id: u16,
     header: HeaderComponent,
     property: PropertyComponent,
-    body: IssueBodyComponent,
+    body: BodyComponent,
     children_list: IssueChildrenListComponent,
     journals_list: JournalsListComponent,
     /// 描画横幅(render時のフレーム描画領域のwidthと一致)
@@ -62,7 +62,7 @@ impl IssueDetailComponent {
                     id: issue_id,
                     header: HeaderComponent::new(issue_id),
                     property: PropertyComponent::new(issue_id),
-                    body: IssueBodyComponent::new(issue_id),
+                    body: BodyComponent::new(issue_id, width, height),
                     children_list: IssueChildrenListComponent::new(issue_id),
                     journals_list: JournalsListComponent::new(issue_id),
                     width,
@@ -112,29 +112,24 @@ impl IssueDetailComponent {
                         self.property
                             .focus_event(PropertyFocusTransitionEvent::Unfocused);
                         self.focused_component = FocusedComponent::Body;
-                        self.body.focus_event(
-                            BodyFocusEvent::CursorEnteredFromAbove { x: 0 },
-                            store,
-                            self.width,
-                        );
+                        self.body
+                            .focus_event(BodyFocusEvent::CursorEnteredFromAbove { x: 0 });
                     }
                     None => {}
                 }
             }
             FocusedComponent::Body => {
                 // FIXME: widthの受け渡し方、StoreにIssueDetailCompnent用の子Storeを作成？
-                let result = self.body.process_event(&event, store, self.width);
+                let result = self.body.process_event(event.clone());
                 match result {
                     Some(BodyEventProcessResult::CursorLeavedFromAbove { .. }) => {
-                        self.body
-                            .focus_event(BodyFocusEvent::Unfocused, store, self.width);
+                        self.body.focus_event(BodyFocusEvent::Unfocused);
                         self.focused_component = FocusedComponent::Property;
                         self.property
                             .focus_event(PropertyFocusTransitionEvent::CursorEnteredFromBelow);
                     }
                     Some(BodyEventProcessResult::CursorLeavedFromBelow { .. }) => {
-                        self.body
-                            .focus_event(BodyFocusEvent::Unfocused, store, self.width);
+                        self.body.focus_event(BodyFocusEvent::Unfocused);
                         self.focused_component = FocusedComponent::ChildrenList;
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::CursorEnteredFromAbove);
@@ -149,11 +144,8 @@ impl IssueDetailComponent {
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::Unfocused);
                         self.focused_component = FocusedComponent::Body;
-                        self.body.focus_event(
-                            BodyFocusEvent::CursorEnteredFromBelow { x: 0 },
-                            store,
-                            self.width,
-                        );
+                        self.body
+                            .focus_event(BodyFocusEvent::CursorEnteredFromBelow { x: 0 });
                     }
                     Some(ChildrenListEventProcessResult::CursorLeavedFromBelow) => {
                         self.children_list
@@ -271,15 +263,15 @@ impl IssueDetailComponent {
         if line_count_sum + line_count >= offset_y
             && line_count_sum < offset_y + height
             && frame_area.height > 0
-            && let Some(buffer) = self.body.render(store, frame_area.width, frame_area.height)
         {
-            let buffer_area = Rect::new(
-                0,
-                offset_y.saturating_sub(line_count_sum),
-                buffer.area.width,
-                line_count.saturating_sub(offset_y.saturating_sub(line_count_sum)),
+            render_body_component_to_frame(
+                store,
+                frame,
+                &mut frame_area,
+                &self.body,
+                line_count_sum,
+                offset_y,
             );
-            render_buffer_to_frame(frame, &mut frame_area, &buffer, buffer_area);
         }
         line_count_sum += line_count;
 
@@ -514,6 +506,49 @@ fn render_property_component_to_frame(
     frame: &mut Frame,
     frame_area: &mut Rect,
     component: &PropertyComponent,
+    line_count_sum: u16,
+    offset_y: u16,
+) {
+    // FIXME:子componentのtrait等による共通化ができていないので、render_*_component_to_frameを毎度定義する必要がある。
+    if offset_y <= line_count_sum {
+        component.render(store, *frame_area, frame.buffer_mut());
+        let line_count = component.line_count(store, frame_area.width);
+        frame_area.y += min(line_count, frame_area.height);
+        frame_area.height = frame_area.height.saturating_sub(line_count);
+    } else {
+        let line_count = component.line_count(store, frame_area.width);
+        let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
+        let mut buffer = Buffer::empty(buffer_area);
+        component.render(store, buffer_area, &mut buffer);
+
+        let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
+        for y in 0..overlapping_height {
+            for x in 0..frame_area.width {
+                let buffer_x = x;
+                let buffer_y = offset_y - line_count_sum + y;
+                let frame_x = frame_area.x + x;
+                let frame_y = frame_area.y + y;
+                let Some(buffer_cell) = buffer.cell((buffer_x, buffer_y)).cloned() else {
+                    continue;
+                };
+                if let Some(frame_cell) = frame.buffer_mut().cell_mut((frame_x, frame_y)) {
+                    *frame_cell = buffer_cell;
+                }
+            }
+        }
+
+        frame_area.y += overlapping_height;
+        frame_area.height -= overlapping_height;
+    }
+}
+
+/// BodyComponentをFrameに描画し、書き込んだ領域を切り詰める
+/// 詳しい説明はrender_header_component_to_frameを参照。
+fn render_body_component_to_frame(
+    store: &Store,
+    frame: &mut Frame,
+    frame_area: &mut Rect,
+    component: &BodyComponent,
     line_count_sum: u16,
     offset_y: u16,
 ) {
