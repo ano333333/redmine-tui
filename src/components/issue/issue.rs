@@ -317,17 +317,15 @@ impl IssueDetailComponent {
         if line_count_sum + line_count >= offset_y
             && line_count_sum < offset_y + height
             && frame_area.height > 0
-            && let Some(buffer) =
-                self.journals_list
-                    .render(store, frame_area.width, frame_area.height)
         {
-            let buffer_area = Rect::new(
-                0,
-                offset_y.saturating_sub(line_count_sum),
-                buffer.area.width,
-                line_count.saturating_sub(offset_y.saturating_sub(line_count_sum)),
+            render_journals_list_component_to_frame(
+                store,
+                frame,
+                &mut frame_area,
+                &self.journals_list,
+                line_count_sum,
+                offset_y,
             );
-            render_buffer_to_frame(frame, &mut frame_area, &buffer, buffer_area);
         }
 
         cursor_position.y -= self.render_offset_y;
@@ -385,6 +383,45 @@ fn render_children_component_to_frame(
         frame_area.height = frame_area.height.saturating_sub(line_count);
     } else {
         let line_count = component.line_count(store);
+        let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
+        let mut buffer = Buffer::empty(buffer_area);
+        component.render(store, buffer_area, &mut buffer);
+
+        let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
+        for y in 0..overlapping_height {
+            for x in 0..frame_area.width {
+                let buffer_y = offset_y - line_count_sum + y;
+                let frame_x = frame_area.x + x;
+                let frame_y = frame_area.y + y;
+                let Some(buffer_cell) = buffer.cell((x, buffer_y)).cloned() else {
+                    continue;
+                };
+                if let Some(frame_cell) = frame.buffer_mut().cell_mut((frame_x, frame_y)) {
+                    *frame_cell = buffer_cell;
+                }
+            }
+        }
+
+        frame_area.y += overlapping_height;
+        frame_area.height -= overlapping_height;
+    }
+}
+
+fn render_journals_list_component_to_frame(
+    store: &Store,
+    frame: &mut Frame,
+    frame_area: &mut Rect,
+    component: &JournalsListComponent,
+    line_count_sum: u16,
+    offset_y: u16,
+) {
+    if offset_y <= line_count_sum {
+        component.render(store, *frame_area, frame.buffer_mut());
+        let line_count = component.line_count(store, frame_area.width);
+        frame_area.y += min(line_count, frame_area.height);
+        frame_area.height = frame_area.height.saturating_sub(line_count);
+    } else {
+        let line_count = component.line_count(store, frame_area.width);
         let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
         let mut buffer = Buffer::empty(buffer_area);
         component.render(store, buffer_area, &mut buffer);
