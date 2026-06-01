@@ -446,42 +446,6 @@ fn render_journals_list_component_to_frame(
     }
 }
 
-/// BufferをFrame先頭にコピーし、コピー先の書き込んだ領域を切り詰める
-///
-/// # Arguments
-///
-/// * `frame` - コピー先のFrame
-/// * `frame_area` - `frame`の領域
-/// * `buffer` - コピー元のBuffer
-/// * `buffer_area` - `buffer`の領域
-fn render_buffer_to_frame(
-    frame: &mut Frame,
-    frame_area: &mut Rect,
-    buffer: &Buffer,
-    buffer_area: Rect,
-) {
-    let width = frame_area.width.min(buffer_area.width);
-    let height = frame_area.height.min(buffer_area.height);
-
-    let frame_buffer = frame.buffer_mut();
-    for y in 0..height {
-        for x in 0..width {
-            let Some(src_cell) = buffer.cell((buffer_area.x + x, buffer_area.y + y)).cloned()
-            else {
-                continue;
-            };
-            let dst_x = frame_area.x + x;
-            let dst_y = frame_area.y + y;
-            if let Some(dst_cell) = frame_buffer.cell_mut((dst_x, dst_y)) {
-                *dst_cell = src_cell;
-            }
-        }
-    }
-
-    frame_area.y += height;
-    frame_area.height -= height;
-}
-
 /// HeaderComponentをFrameに描画し、書き込んだ領域を切り詰める
 /// # Arguments
 ///
