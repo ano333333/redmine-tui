@@ -10,7 +10,7 @@ use std::{cell::RefCell, cmp::max, rc::Rc};
 use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Position},
+    layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::{Line, Text},
     widgets::{Block, BorderType, Borders},
