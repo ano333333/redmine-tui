@@ -119,3 +119,62 @@ fn create_comment_header(creator: &String, updated_at: &DateTime<Local>) -> Line
         Span::from("に更新"),
     ])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{local_datetime, render_snapshot};
+
+    #[test]
+    fn snapshot_comment_journal_markdown_wrap() {
+        let creator = "alice".to_string();
+        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
+        let body =
+            "comment body with **bold**, *italic*, and [link](https://example.com) that wraps."
+                .to_string();
+        let mut state = CommentJournalWidgetState::new();
+        state.update(20, &creator, &updated_at, &body);
+        render_snapshot(
+            "comment_journal_markdown_wrap",
+            20,
+            state.line_count(20),
+            CommentJournalWidget::new(&state),
+        );
+    }
+
+    #[test]
+    fn line_count_comment_journal_current_values() {
+        let creator = "alice".to_string();
+        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
+        let body = "comment body with **markdown** and a second sentence that wraps.".to_string();
+        let mut state = CommentJournalWidgetState::new();
+        state.update(20, &creator, &updated_at, &body);
+        let widget = CommentJournalWidget::new(&state);
+        assert_eq!(widget.body_line_count(20), 4);
+        assert_eq!(widget.line_count(20), 6);
+    }
+
+    #[test]
+    fn line_count_comment_journal_changes_with_width_and_body() {
+        let creator = "alice".to_string();
+        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
+        let short_body =
+            "Comment with enough words to wrap in a narrow area.".to_string();
+        let long_body =
+            "Comment with enough words to wrap in a narrow area and then continue for additional wrapped lines."
+                .to_string();
+        let mut state = CommentJournalWidgetState::new();
+
+        state.update(32, &creator, &updated_at, &short_body);
+        let wide_short = CommentJournalWidget::new(&state).line_count(32);
+
+        state.update(18, &creator, &updated_at, &short_body);
+        let narrow_short = CommentJournalWidget::new(&state).line_count(18);
+
+        state.update(18, &creator, &updated_at, &long_body);
+        let narrow_long = CommentJournalWidget::new(&state).line_count(18);
+
+        assert!(wide_short < narrow_short);
+        assert!(narrow_short < narrow_long);
+    }
+}

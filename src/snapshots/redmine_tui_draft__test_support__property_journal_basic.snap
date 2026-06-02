@@ -1,0 +1,10 @@
+---
+source: src/test_support.rs
+assertion_line: 28
+expression: describe_buffer(terminal.backend().buffer())
+---
+area=Rect { x: 0, y: 0, width: 32, height: 4 }
+00: "aliceが 2026/01/15に 更 新          " | 0:"a" fg=Blue bg=Reset mod=NONE, 1:"l" fg=Blue bg=Reset mod=NONE, 2:"i" fg=Blue bg=Reset mod=NONE, 3:"c" fg=Blue bg=Reset mod=NONE, 4:"e" fg=Blue bg=Reset mod=NONE, 5:"が" fg=Reset bg=Reset mod=NONE, 7:"2" fg=Blue bg=Reset mod=NONE, 8:"0" fg=Blue bg=Reset mod=NONE, 9:"2" fg=Blue bg=Reset mod=NONE, 10:"6" fg=Blue bg=Reset mod=NONE, 11:"/" fg=Blue bg=Reset mod=NONE, 12:"0" fg=Blue bg=Reset mod=NONE, 13:"1" fg=Blue bg=Reset mod=NONE, 14:"/" fg=Blue bg=Reset mod=NONE, 15:"1" fg=Blue bg=Reset mod=NONE, 16:"5" fg=Blue bg=Reset mod=NONE, 17:"に" fg=Reset bg=Reset mod=NONE, 19:"更" fg=Reset bg=Reset mod=NONE, 21:"新" fg=Reset bg=Reset mod=NONE
+01: "                                "
+02: "  ・  ス テ ー タ ス  を  新 規  か ら  進  " | 0:" " fg=Gray bg=Reset mod=NONE, 1:" " fg=Gray bg=Reset mod=NONE, 2:"・" fg=Gray bg=Reset mod=NONE, 4:" " fg=Gray bg=Reset mod=NONE, 5:"ス" fg=Gray bg=Reset mod=BOLD, 7:"テ" fg=Gray bg=Reset mod=BOLD, 9:"ー" fg=Gray bg=Reset mod=BOLD, 11:"タ" fg=Gray bg=Reset mod=BOLD, 13:"ス" fg=Gray bg=Reset mod=BOLD, 15:" " fg=Gray bg=Reset mod=NONE, 16:"を" fg=Gray bg=Reset mod=NONE, 18:" " fg=Gray bg=Reset mod=NONE, 19:"新" fg=Gray bg=Reset mod=ITALIC, 21:"規" fg=Gray bg=Reset mod=ITALIC, 23:" " fg=Gray bg=Reset mod=NONE, 24:"か" fg=Gray bg=Reset mod=NONE, 26:"ら" fg=Gray bg=Reset mod=NONE, 28:" " fg=Gray bg=Reset mod=NONE, 29:"進" fg=Gray bg=Reset mod=ITALIC
+03: "                                "

@@ -43,3 +43,59 @@ impl<'a> HeaderWidget<'a> {
         6
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{local_datetime, render_snapshot};
+
+    #[test]
+    fn snapshot_header_wide_short_title() {
+        let title = "Widget snapshot baseline".to_string();
+        let creator = "alice".to_string();
+        render_snapshot(
+            "header_wide_short_title",
+            40,
+            6,
+            HeaderWidget {
+                id: 42,
+                title: &title,
+                creator: &creator,
+                appended_at: local_datetime("2026-01-10T00:00:00+09:00"),
+                updated_at: local_datetime("2026-01-15T00:00:00+09:00"),
+            },
+        );
+    }
+
+    #[test]
+    fn snapshot_header_narrow_long_title_no_wrap() {
+        let title = "A very long title for observing current paragraph behavior".to_string();
+        let creator = "alice".to_string();
+        render_snapshot(
+            "header_narrow_long_title_no_wrap",
+            18,
+            6,
+            HeaderWidget {
+                id: 42,
+                title: &title,
+                creator: &creator,
+                appended_at: local_datetime("2026-01-10T00:00:00+09:00"),
+                updated_at: local_datetime("2026-01-15T00:00:00+09:00"),
+            },
+        );
+    }
+
+    #[test]
+    fn line_count_header_is_fixed_6() {
+        let title = "A very long title for observing current paragraph behavior".to_string();
+        let creator = "alice".to_string();
+        let widget = HeaderWidget {
+            id: 42,
+            title: &title,
+            creator: &creator,
+            appended_at: local_datetime("2026-01-10T00:00:00+09:00"),
+            updated_at: local_datetime("2026-01-15T00:00:00+09:00"),
+        };
+        assert_eq!(widget.line_count(18), 6);
+    }
+}

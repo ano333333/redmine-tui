@@ -1,0 +1,12 @@
+---
+source: src/test_support.rs
+assertion_line: 28
+expression: describe_buffer(terminal.backend().buffer())
+---
+area=Rect { x: 0, y: 0, width: 18, height: 6 }
+00: "#42               " | 0:"#" fg=Reset bg=Reset mod=NONE, 1:"4" fg=Reset bg=Reset mod=NONE, 2:"2" fg=Reset bg=Reset mod=NONE
+01: "                  "
+02: "# A very long titl" | 0:"#" fg=Reset bg=Reset mod=BOLD, 1:" " fg=Reset bg=Reset mod=BOLD, 2:"A" fg=Reset bg=Reset mod=BOLD, 3:" " fg=Reset bg=Reset mod=BOLD, 4:"v" fg=Reset bg=Reset mod=BOLD, 5:"e" fg=Reset bg=Reset mod=BOLD, 6:"r" fg=Reset bg=Reset mod=BOLD, 7:"y" fg=Reset bg=Reset mod=BOLD, 8:" " fg=Reset bg=Reset mod=BOLD, 9:"l" fg=Reset bg=Reset mod=BOLD, 10:"o" fg=Reset bg=Reset mod=BOLD, 11:"n" fg=Reset bg=Reset mod=BOLD, 12:"g" fg=Reset bg=Reset mod=BOLD, 13:" " fg=Reset bg=Reset mod=BOLD, 14:"t" fg=Reset bg=Reset mod=BOLD, 15:"i" fg=Reset bg=Reset mod=BOLD, 16:"t" fg=Reset bg=Reset mod=BOLD, 17:"l" fg=Reset bg=Reset mod=BOLD
+03: "                  "
+04: "aliceが 2026/01/10 " | 0:"a" fg=Blue bg=Reset mod=NONE, 1:"l" fg=Blue bg=Reset mod=NONE, 2:"i" fg=Blue bg=Reset mod=NONE, 3:"c" fg=Blue bg=Reset mod=NONE, 4:"e" fg=Blue bg=Reset mod=NONE, 5:"が" fg=Reset bg=Reset mod=NONE, 7:"2" fg=Blue bg=Reset mod=NONE, 8:"0" fg=Blue bg=Reset mod=NONE, 9:"2" fg=Blue bg=Reset mod=NONE, 10:"6" fg=Blue bg=Reset mod=NONE, 11:"/" fg=Blue bg=Reset mod=NONE, 12:"0" fg=Blue bg=Reset mod=NONE, 13:"1" fg=Blue bg=Reset mod=NONE, 14:"/" fg=Blue bg=Reset mod=NONE, 15:"1" fg=Blue bg=Reset mod=NONE, 16:"0" fg=Blue bg=Reset mod=NONE
+05: "                  "

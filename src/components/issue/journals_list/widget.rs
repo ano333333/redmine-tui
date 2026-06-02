@@ -66,3 +66,110 @@ impl JournalItemWidget<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        components::issue::journals_list::{
+            comment_journal::widget::{CommentJournalWidget, CommentJournalWidgetState},
+            property_journal::widget::PropertyJournalWidget,
+        },
+        test_support::{local_datetime, render_snapshot},
+    };
+
+    #[test]
+    fn snapshot_journals_list_mixed_entries() {
+        let creator = "alice".to_string();
+        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
+        let target = "担当者".to_string();
+        let old = "(なし)".to_string();
+        let new = "bob".to_string();
+        let comment = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
+
+        let mut comment_state = CommentJournalWidgetState::new();
+        comment_state.update(24, &creator, &updated_at, &comment);
+
+        let property_widget = PropertyJournalWidget::new(&creator, &target, &old, &new, &updated_at);
+        let comment_widget = CommentJournalWidget::new(&comment_state);
+        let journals = [
+            JournalItemWidget::Property(property_widget),
+            JournalItemWidget::Comment(comment_widget),
+        ];
+
+        render_snapshot(
+            "journals_list_mixed_entries",
+            24,
+            JournalsListWidget::new(&journals).line_count(24),
+            JournalsListWidget::new(&journals),
+        );
+    }
+
+    #[test]
+    fn line_count_journals_list_current_values() {
+        let creator = "alice".to_string();
+        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
+        let target = "担当者".to_string();
+        let old = "(なし)".to_string();
+        let new = "bob".to_string();
+        let comment = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
+
+        let mut comment_state = CommentJournalWidgetState::new();
+        comment_state.update(24, &creator, &updated_at, &comment);
+
+        let property_widget = PropertyJournalWidget::new(&creator, &target, &old, &new, &updated_at);
+        let comment_widget = CommentJournalWidget::new(&comment_state);
+        let journals = [
+            JournalItemWidget::Property(property_widget),
+            JournalItemWidget::Comment(comment_widget),
+        ];
+        let widget = JournalsListWidget::new(&journals);
+        assert_eq!(widget.line_count(24), 10);
+    }
+
+    #[test]
+    fn line_count_journals_list_changes_with_child_comment_height() {
+        let creator = "alice".to_string();
+        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
+        let target = "担当者".to_string();
+        let old = "(なし)".to_string();
+        let new = "bob".to_string();
+        let short_comment = "first paragraph with enough words to wrap".to_string();
+        let long_comment =
+            "first paragraph\n\nsecond paragraph with wrapping words that expands the comment"
+                .to_string();
+
+        let mut comment_state = CommentJournalWidgetState::new();
+        let property_widget = PropertyJournalWidget::new(&creator, &target, &old, &new, &updated_at);
+
+        comment_state.update(32, &creator, &updated_at, &short_comment);
+        let wide_short = {
+            let journals = [
+                JournalItemWidget::Property(property_widget.clone()),
+                JournalItemWidget::Comment(CommentJournalWidget::new(&comment_state)),
+            ];
+            JournalsListWidget::new(&journals).line_count(32)
+        };
+
+        comment_state.update(18, &creator, &updated_at, &short_comment);
+        let narrow_short = {
+            let journals = [
+                JournalItemWidget::Property(property_widget.clone()),
+                JournalItemWidget::Comment(CommentJournalWidget::new(&comment_state)),
+            ];
+            JournalsListWidget::new(&journals).line_count(18)
+        };
+
+        comment_state.update(18, &creator, &updated_at, &long_comment);
+        let narrow_long = {
+            let journals = [
+                JournalItemWidget::Property(property_widget),
+                JournalItemWidget::Comment(CommentJournalWidget::new(&comment_state)),
+            ];
+            JournalsListWidget::new(&journals).line_count(18)
+        };
+
+        assert!(wide_short < narrow_short);
+        assert!(narrow_short < narrow_long);
+    }
+}

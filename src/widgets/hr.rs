@@ -26,3 +26,14 @@ impl Widget for Hr {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::render_snapshot;
+
+    #[test]
+    fn snapshot_hr_width_8() {
+        render_snapshot("hr_width_8", 8, 1, Hr::default());
+    }
+}

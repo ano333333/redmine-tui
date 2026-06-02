@@ -83,3 +83,122 @@ impl<'a> PropertyWidget<'a> {
         ])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{local_datetime, render_snapshot};
+
+    #[test]
+    fn snapshot_property_full_values_wide() {
+        let status = "In Progress".to_string();
+        let priority = "Urgent".to_string();
+        let person_in_charge = Some("alice".to_string());
+        let target_version = Some("2026 Spring".to_string());
+        let resolve_way = Some("Patch".to_string());
+        let component = "Admin UI".to_string();
+        let tags = vec!["frontend".to_string(), "triage".to_string()];
+        render_snapshot(
+            "property_full_values_wide",
+            40,
+            11,
+            PropertyWidget {
+                id: 1,
+                status: &status,
+                priority: &priority,
+                person_in_charge: &person_in_charge,
+                target_version: &target_version,
+                start_date: Some(local_datetime("2026-01-10T00:00:00+09:00")),
+                due: Some(local_datetime("2026-01-20T00:00:00+09:00")),
+                progress: 65,
+                planned_hours: Some(13),
+                resolve_way: &resolve_way,
+                component: &component,
+                tags: &tags,
+            },
+        );
+    }
+
+    #[test]
+    fn snapshot_property_all_optional_none() {
+        let status = "Waiting for external review".to_string();
+        let priority = "Very high".to_string();
+        let person_in_charge = None;
+        let target_version = None;
+        let resolve_way = None;
+        let component = "Operations Integration".to_string();
+        let tags = vec!["frontend".to_string(), "needs-review".to_string()];
+        render_snapshot(
+            "property_all_optional_none",
+            22,
+            16,
+            PropertyWidget {
+                id: 1,
+                status: &status,
+                priority: &priority,
+                person_in_charge: &person_in_charge,
+                target_version: &target_version,
+                start_date: None,
+                due: None,
+                progress: 0,
+                planned_hours: None,
+                resolve_way: &resolve_way,
+                component: &component,
+                tags: &tags,
+            },
+        );
+    }
+
+    #[test]
+    fn line_count_property_current_values() {
+        let status = "Waiting for external review".to_string();
+        let priority = "Very high".to_string();
+        let person_in_charge = None;
+        let target_version = None;
+        let resolve_way = None;
+        let component = "Operations Integration".to_string();
+        let tags = vec!["frontend".to_string(), "needs-review".to_string()];
+        let widget = PropertyWidget {
+            id: 1,
+            status: &status,
+            priority: &priority,
+            person_in_charge: &person_in_charge,
+            target_version: &target_version,
+            start_date: None,
+            due: None,
+            progress: 0,
+            planned_hours: None,
+            resolve_way: &resolve_way,
+            component: &component,
+            tags: &tags,
+        };
+        assert_eq!(widget.line_count(40), 11);
+        assert_eq!(widget.line_count(22), 11);
+    }
+
+    #[test]
+    fn line_count_property_is_stable_without_wrap() {
+        let status = "Waiting for external review".to_string();
+        let priority = "Very high".to_string();
+        let person_in_charge = None;
+        let target_version = None;
+        let resolve_way = None;
+        let component = "Operations Integration".to_string();
+        let tags = vec!["frontend".to_string(), "needs-review".to_string()];
+        let widget = PropertyWidget {
+            id: 1,
+            status: &status,
+            priority: &priority,
+            person_in_charge: &person_in_charge,
+            target_version: &target_version,
+            start_date: None,
+            due: None,
+            progress: 0,
+            planned_hours: None,
+            resolve_way: &resolve_way,
+            component: &component,
+            tags: &tags,
+        };
+        assert_eq!(widget.line_count(40), widget.line_count(22));
+    }
+}

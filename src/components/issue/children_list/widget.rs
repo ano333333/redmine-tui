@@ -130,3 +130,55 @@ fn create_due_widget(due: &Option<DateTime<Local>>) -> Paragraph<'static> {
 fn create_progress_widget(progress: u16) -> Paragraph<'static> {
     Paragraph::new(Text::from(format!("{:>3}%", progress.to_string())))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{render_snapshot, sample_issue};
+
+    #[test]
+    fn snapshot_children_mixed_option_and_status_display() {
+        let done = sample_issue(
+            7,
+            "Done child",
+            "完了",
+            Some("alice"),
+            Some("2026-01-10T00:00:00+09:00"),
+            Some("2026-01-15T00:00:00+09:00"),
+            100,
+        );
+        let open = sample_issue(
+            8,
+            "Open child without assignee and dates",
+            "進行中",
+            None,
+            None,
+            None,
+            35,
+        );
+        render_snapshot(
+            "children_mixed_option_and_status_display",
+            64,
+            5,
+            ChildrenListWidget {
+                child_all_num: 2,
+                child_complete_num: 1,
+                child_incomplete_num: 1,
+                children: vec![&done, &open],
+            },
+        );
+    }
+
+    #[test]
+    fn line_count_children_current_values() {
+        let child_a = sample_issue(7, "Done child", "完了", Some("alice"), None, None, 100);
+        let child_b = sample_issue(8, "Open child", "進行中", None, None, None, 35);
+        let widget = ChildrenListWidget {
+            child_all_num: 2,
+            child_complete_num: 1,
+            child_incomplete_num: 1,
+            children: vec![&child_a, &child_b],
+        };
+        assert_eq!(widget.line_count(), 5);
+    }
+}

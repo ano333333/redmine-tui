@@ -79,3 +79,58 @@ impl<'a> BodyWidget<'a> {
         self.state.line_count(width)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::render_snapshot;
+
+    #[test]
+    fn snapshot_body_markdown_wide() {
+        let mut state = BodyWidgetState::new();
+        let body = "# Heading\n\n- first item with **bold**\n- second item with *italic*\n\nParagraph with [link](https://example.com).".to_string();
+        state.update(32, &body);
+        render_snapshot("body_markdown_wide", 32, 8, BodyWidget::new(&state));
+    }
+
+    #[test]
+    fn snapshot_body_markdown_narrow_wrap() {
+        let mut state = BodyWidgetState::new();
+        let body = "# Heading\n\n- first item with **bold**\n- second item with *italic*\n\nParagraph text with [link](https://example.com) that should wrap.".to_string();
+        state.update(18, &body);
+        render_snapshot("body_markdown_narrow_wrap", 18, 10, BodyWidget::new(&state));
+    }
+
+    #[test]
+    fn line_count_body_current_values() {
+        let mut state = BodyWidgetState::new();
+        let body =
+            "# Heading\n\n- first item\n- second item\n\nParagraph text that should wrap."
+                .to_string();
+        state.update(32, &body);
+        assert_eq!(BodyWidget::new(&state).line_count(32), 6);
+
+        state.update(18, &body);
+        assert_eq!(BodyWidget::new(&state).line_count(18), 7);
+    }
+
+    #[test]
+    fn line_count_body_changes_with_width_and_body() {
+        let mut state = BodyWidgetState::new();
+        let short_body =
+            "Paragraph with enough words to wrap once in a narrow area.".to_string();
+        let long_body = "Paragraph with enough words to wrap once in a narrow area, then expand into several additional wrapped lines for height growth.".to_string();
+
+        state.update(32, &short_body);
+        let wide_short = BodyWidget::new(&state).line_count(32);
+
+        state.update(16, &short_body);
+        let narrow_short = BodyWidget::new(&state).line_count(16);
+
+        state.update(16, &long_body);
+        let narrow_long = BodyWidget::new(&state).line_count(16);
+
+        assert!(wide_short < narrow_short);
+        assert!(narrow_short < narrow_long);
+    }
+}

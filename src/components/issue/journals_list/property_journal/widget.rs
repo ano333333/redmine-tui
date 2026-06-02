@@ -61,3 +61,35 @@ impl Widget for PropertyJournalWidget<'_> {
         self.create_paragraph().render(area, buf);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{local_datetime, render_snapshot};
+
+    #[test]
+    fn snapshot_property_journal_basic() {
+        let creator = "alice".to_string();
+        let target = "ステータス".to_string();
+        let old = "新規".to_string();
+        let new = "進行中".to_string();
+        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
+        render_snapshot(
+            "property_journal_basic",
+            32,
+            4,
+            PropertyJournalWidget::new(&creator, &target, &old, &new, &updated_at),
+        );
+    }
+
+    #[test]
+    fn line_count_property_journal_is_fixed_4() {
+        let creator = "alice".to_string();
+        let target = "ステータス".to_string();
+        let old = "新規".to_string();
+        let new = "進行中".to_string();
+        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
+        let widget = PropertyJournalWidget::new(&creator, &target, &old, &new, &updated_at);
+        assert_eq!(widget.line_count(20), 4);
+    }
+}

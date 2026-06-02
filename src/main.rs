@@ -3,6 +3,8 @@ mod components;
 mod entities;
 mod libs;
 mod logging;
+#[cfg(test)]
+mod test_support;
 mod widgets;
 
 use std::{cell::RefCell, cmp::max, rc::Rc};
