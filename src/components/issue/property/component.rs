@@ -33,7 +33,7 @@ impl PropertyComponent {
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
         if let Some(issue) = store.get_issue(self.id) {
-            let paragraph = create_property_widget(issue);
+            let paragraph = create_property_widget(issue, None);
             paragraph.line_count(width) as u16
         } else {
             0
@@ -42,7 +42,7 @@ impl PropertyComponent {
 
     pub fn render(&self, store: &Store, area: Rect, buf: &mut Buffer) {
         if let Some(issue) = store.get_issue(self.id) {
-            let widget = create_property_widget(&issue);
+            let widget = create_property_widget(&issue, self.focus_state.focused_y());
             widget.render(area, buf);
         }
     }
@@ -52,19 +52,20 @@ impl PropertyComponent {
     }
 }
 
-fn create_property_widget<'a>(issue: &'a Issue) -> PropertyWidget<'a> {
-    PropertyWidget {
-        id: issue.id,
-        status: &issue.status,
-        priority: &issue.priority,
-        person_in_charge: &issue.person_in_charge,
-        target_version: &issue.target_version,
-        start_date: issue.start_date,
-        due: issue.due,
-        progress: issue.progress,
-        planned_hours: issue.planned_hours,
-        resolve_way: &issue.resolve_way,
-        component: &issue.component,
-        tags: &issue.tags,
-    }
+fn create_property_widget<'a>(issue: &'a Issue, focused_y: Option<u16>) -> PropertyWidget<'a> {
+    PropertyWidget::new(
+        issue.id,
+        &issue.status,
+        &issue.priority,
+        &issue.person_in_charge,
+        &issue.target_version,
+        issue.start_date,
+        issue.due,
+        issue.progress,
+        issue.planned_hours,
+        &issue.resolve_way,
+        &issue.component,
+        &issue.tags,
+        focused_y,
+    )
 }

@@ -201,6 +201,10 @@ impl FocusState {
             .sum();
         self.items[index].focus_state.get_cursor_position() + Offset { x: 0, y: offset_y }
     }
+
+    pub fn is_item_focused(&self, id: u16) -> bool {
+        self.focused_id == Some(id)
+    }
 }
 
 impl ItemFocusState {

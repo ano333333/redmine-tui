@@ -113,4 +113,8 @@ impl FocusState {
     pub fn get_cursor_position(&self) -> Position {
         self.cursor_position.unwrap()
     }
+
+    pub fn is_focused(&self) -> bool {
+        self.cursor_position.is_some()
+    }
 }

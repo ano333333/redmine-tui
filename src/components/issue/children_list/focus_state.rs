@@ -99,4 +99,9 @@ impl FocusState {
             y: index as u16 + 2,
         }
     }
+
+    pub fn focused_index(&self) -> Option<usize> {
+        let focused_id = self.focused_id?;
+        self.ids.iter().position(|&id| id == focused_id)
+    }
 }

@@ -4,8 +4,12 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use chrono::{DateTime, Local};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::style::Color;
 use ratatui::prelude::{Line, Span, Stylize};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
+
+// TODO: Extract this focus background color into one shared constant for all widgets.
+const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 
 pub struct CommentJournalWidgetState {
     buffer: Buffer,
@@ -39,7 +43,7 @@ impl CommentJournalWidgetState {
         }
     }
 
-    pub fn render(&self, area: Rect, buf: &mut Buffer) {
+    pub fn render(&self, area: Rect, buf: &mut Buffer, focused: bool) {
         let width = min(self.buffer.area.width, area.width);
         let height = min(self.buffer.area.height, area.height);
 
@@ -52,6 +56,16 @@ impl CommentJournalWidgetState {
                 let dst_y = area.y + y;
                 if let Some(dst_cell) = buf.cell_mut((dst_x, dst_y)) {
                     *dst_cell = src_cell;
+                }
+            }
+        }
+
+        if focused {
+            for y in 0..height {
+                for x in 0..width {
+                    if let Some(cell) = buf.cell_mut((area.x + x, area.y + y)) {
+                        cell.set_bg(FOCUS_BG);
+                    }
                 }
             }
         }
@@ -89,11 +103,12 @@ impl CommentJournalWidgetState {
 #[derive(Clone)]
 pub struct CommentJournalWidget<'a> {
     state: &'a CommentJournalWidgetState,
+    focused: bool,
 }
 
 impl<'a> CommentJournalWidget<'a> {
-    pub fn new(state: &'a CommentJournalWidgetState) -> Self {
-        Self { state }
+    pub fn new(state: &'a CommentJournalWidgetState, focused: bool) -> Self {
+        Self { state, focused }
     }
 
     pub fn line_count(&self, width: u16) -> u16 {
@@ -107,7 +122,7 @@ impl<'a> CommentJournalWidget<'a> {
 
 impl Widget for CommentJournalWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        self.state.render(area, buf);
+        self.state.render(area, buf, self.focused);
     }
 }
 
@@ -138,7 +153,7 @@ mod tests {
             "comment_journal_markdown_wrap",
             20,
             state.line_count(20),
-            CommentJournalWidget::new(&state),
+            CommentJournalWidget::new(&state, true),
         );
     }
 
@@ -149,7 +164,7 @@ mod tests {
         let body = "comment body with **markdown** and a second sentence that wraps.".to_string();
         let mut state = CommentJournalWidgetState::new();
         state.update(20, &creator, &updated_at, &body);
-        let widget = CommentJournalWidget::new(&state);
+        let widget = CommentJournalWidget::new(&state, false);
         assert_eq!(widget.body_line_count(20), 4);
         assert_eq!(widget.line_count(20), 6);
     }
@@ -166,13 +181,13 @@ mod tests {
         let mut state = CommentJournalWidgetState::new();
 
         state.update(32, &creator, &updated_at, &short_body);
-        let wide_short = CommentJournalWidget::new(&state).line_count(32);
+        let wide_short = CommentJournalWidget::new(&state, false).line_count(32);
 
         state.update(18, &creator, &updated_at, &short_body);
-        let narrow_short = CommentJournalWidget::new(&state).line_count(18);
+        let narrow_short = CommentJournalWidget::new(&state, false).line_count(18);
 
         state.update(18, &creator, &updated_at, &long_body);
-        let narrow_long = CommentJournalWidget::new(&state).line_count(18);
+        let narrow_long = CommentJournalWidget::new(&state, false).line_count(18);
 
         assert!(wide_short < narrow_short);
         assert!(narrow_short < narrow_long);

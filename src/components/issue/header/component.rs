@@ -32,13 +32,14 @@ impl HeaderComponent {
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
         if let Some(issue) = store.get_issue(self.id) {
-            let widget = HeaderWidget {
-                id: self.id,
-                title: &issue.title,
-                creator: &issue.creator,
-                appended_at: issue.appended_at,
-                updated_at: issue.updated_at,
-            };
+            let widget = HeaderWidget::new(
+                self.id,
+                &issue.title,
+                &issue.creator,
+                issue.appended_at,
+                issue.updated_at,
+                self.focus_state.is_focused(),
+            );
             widget.line_count(width) as u16
         } else {
             0
@@ -47,13 +48,14 @@ impl HeaderComponent {
 
     pub fn render(&self, store: &Store, area: Rect, buf: &mut Buffer) {
         if let Some(issue) = store.get_issue(self.id) {
-            let widget = HeaderWidget {
-                id: self.id,
-                title: &issue.title,
-                creator: &issue.creator,
-                appended_at: issue.appended_at,
-                updated_at: issue.updated_at,
-            };
+            let widget = HeaderWidget::new(
+                self.id,
+                &issue.title,
+                &issue.creator,
+                issue.appended_at,
+                issue.updated_at,
+                self.focus_state.is_focused(),
+            );
             widget.render(area, buf);
         }
     }

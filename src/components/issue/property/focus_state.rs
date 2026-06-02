@@ -64,4 +64,8 @@ impl FocusState {
             y: self.focused_y.unwrap_or(0),
         }
     }
+
+    pub fn focused_y(&self) -> Option<u16> {
+        self.focused_y
+    }
 }

@@ -90,7 +90,8 @@ impl JournalsListComponent {
                     updated_at,
                     ..
                 } => {
-                    let widget = PropertyJournalWidget::new(creator, target, old, new, updated_at);
+                    let widget =
+                        PropertyJournalWidget::new(creator, target, old, new, updated_at, false);
                     let line_count = widget.line_count(width);
                     let mut focus_state = PropertyFocusState::new();
                     focus_state.update(line_count);
@@ -135,21 +136,31 @@ impl JournalsListComponent {
             .filter_map(|id| {
                 let journal = store.get_journal(*id)?;
                 match journal {
-                    Journal::Comment {
-                        ..
-                    } => self
-                        .comment_widget_states
-                        .get(id)
-                        .map(|state| JournalItemWidget::Comment(CommentJournalWidget::new(state))),
-                    Journal::Property {
-                        creator,
-                        target,
+                Journal::Comment {
+                    ..
+                } => self
+                    .comment_widget_states
+                    .get(id)
+                    .map(|state| {
+                        JournalItemWidget::Comment(CommentJournalWidget::new(
+                            state,
+                            self.focus_state.is_item_focused(*id),
+                        ))
+                    }),
+                Journal::Property {
+                    creator,
+                    target,
                         old,
                         new,
                         updated_at,
                         ..
                     } => Some(JournalItemWidget::Property(PropertyJournalWidget::new(
-                        creator, target, old, new, updated_at,
+                        creator,
+                        target,
+                        old,
+                        new,
+                        updated_at,
+                        self.focus_state.is_item_focused(*id),
                     ))),
                 }
             })

@@ -20,6 +20,8 @@ impl AppComponent {
             dispatcher,
         }
     }
+
+    /// crosstermの同期イベントを処理する。updateとrenderがこの順で後続する
     pub fn process_event(&mut self, event: Event) {
         self.issue_component.process_event(
             event,
@@ -27,10 +29,13 @@ impl AppComponent {
             self.dispatcher.borrow().store(),
         );
     }
+
+    /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
         self.issue_component.update(dispatcher, store);
     }
 
+    /// Componentをframeのarea範囲内に描画する。
     pub fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
         self.issue_component.render(store, frame, area);
     }

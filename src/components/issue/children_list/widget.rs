@@ -7,11 +7,15 @@ use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use crate::entities::Issue;
 
+// TODO: Extract this focus background color into one shared constant for all widgets.
+const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
+
 pub struct ChildrenListWidget<'a> {
-    pub child_all_num: u16,
-    pub child_complete_num: u16,
-    pub child_incomplete_num: u16,
-    pub children: Vec<&'a Issue>,
+    child_all_num: u16,
+    child_complete_num: u16,
+    child_incomplete_num: u16,
+    children: Vec<&'a Issue>,
+    focused_index: Option<usize>,
 }
 
 impl<'a> Widget for ChildrenListWidget<'a> {
@@ -25,8 +29,9 @@ impl<'a> Widget for ChildrenListWidget<'a> {
         area.y += 2;
         area.height = area.height.saturating_sub(2);
 
-        for child in &self.children {
-            render_children_issue(child, area, buf);
+        let focused_index = self.focused_index;
+        for (index, child) in self.children.iter().enumerate() {
+            render_children_issue(child, area, buf, focused_index == Some(index));
             area.y += 1;
             area.height = area.height.saturating_sub(1);
         }
@@ -34,6 +39,22 @@ impl<'a> Widget for ChildrenListWidget<'a> {
 }
 
 impl<'a> ChildrenListWidget<'a> {
+    pub fn new(
+        child_all_num: u16,
+        child_complete_num: u16,
+        child_incomplete_num: u16,
+        children: Vec<&'a Issue>,
+        focused_index: Option<usize>,
+    ) -> Self {
+        Self {
+            child_all_num,
+            child_complete_num,
+            child_incomplete_num,
+            children,
+            focused_index,
+        }
+    }
+
     pub fn line_count(&self) -> u16 {
         2 + self.child_all_num + 1
     }
@@ -55,7 +76,7 @@ fn create_header_text(
     Text::from(vec![child_header_title, Line::from("")])
 }
 
-fn render_children_issue(issue: &Issue, area: Rect, buffer: &mut Buffer) {
+fn render_children_issue(issue: &Issue, area: Rect, buffer: &mut Buffer, focused: bool) {
     let row = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Max(1)])
@@ -85,6 +106,14 @@ fn render_children_issue(issue: &Issue, area: Rect, buffer: &mut Buffer) {
     create_start_date_widget(&issue.start_date).render(cols[8], buffer);
     create_due_widget(&issue.due).render(cols[10], buffer);
     create_progress_widget(issue.progress).render(cols[12], buffer);
+
+    if focused {
+        for x in 0..row.width {
+            if let Some(cell) = buffer.cell_mut((row.x + x, row.y)) {
+                cell.set_bg(FOCUS_BG);
+            }
+        }
+    }
 }
 
 fn create_id_widget(id: u16, status: &String) -> Paragraph<'static> {
@@ -160,12 +189,7 @@ mod tests {
             "children_mixed_option_and_status_display",
             64,
             5,
-            ChildrenListWidget {
-                child_all_num: 2,
-                child_complete_num: 1,
-                child_incomplete_num: 1,
-                children: vec![&done, &open],
-            },
+            ChildrenListWidget::new(2, 1, 1, vec![&done, &open], Some(1)),
         );
     }
 
@@ -173,12 +197,7 @@ mod tests {
     fn line_count_children_current_values() {
         let child_a = sample_issue(7, "Done child", "完了", Some("alice"), None, None, 100);
         let child_b = sample_issue(8, "Open child", "進行中", None, None, None, 35);
-        let widget = ChildrenListWidget {
-            child_all_num: 2,
-            child_complete_num: 1,
-            child_incomplete_num: 1,
-            children: vec![&child_a, &child_b],
-        };
+        let widget = ChildrenListWidget::new(2, 1, 1, vec![&child_a, &child_b], None);
         assert_eq!(widget.line_count(), 5);
     }
 }

@@ -43,7 +43,7 @@ impl BodyComponent {
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer) {
-        let widget = BodyWidget::new(&self.widget_state);
+        let widget = BodyWidget::new(&self.widget_state, self.focus_state.is_focused());
         widget.render(area, buf);
     }
 

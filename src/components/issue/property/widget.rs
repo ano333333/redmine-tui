@@ -1,33 +1,74 @@
 use chrono::{DateTime, Local};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
+// TODO: Extract this focus background color into one shared constant for all widgets.
+const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
+
 pub struct PropertyWidget<'a> {
-    pub id: u16,
-    pub status: &'a String,
-    pub priority: &'a String,
-    pub person_in_charge: &'a Option<String>,
-    pub target_version: &'a Option<String>,
-    pub start_date: Option<DateTime<Local>>,
-    pub due: Option<DateTime<Local>>,
-    pub progress: u16,
-    pub planned_hours: Option<u16>,
-    pub resolve_way: &'a Option<String>,
-    pub component: &'a String,
-    pub tags: &'a Vec<String>,
+    id: u16,
+    status: &'a String,
+    priority: &'a String,
+    person_in_charge: &'a Option<String>,
+    target_version: &'a Option<String>,
+    start_date: Option<DateTime<Local>>,
+    due: Option<DateTime<Local>>,
+    progress: u16,
+    planned_hours: Option<u16>,
+    resolve_way: &'a Option<String>,
+    component: &'a String,
+    tags: &'a Vec<String>,
+    focused_y: Option<u16>,
 }
 
 impl<'a> Widget for PropertyWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        let focused_y = self.focused_y;
         let paragraph = self.create_paragraph();
         paragraph.render(area, buf);
+        if let Some(row) = focused_y {
+            apply_background_to_row(buf, area, row);
+        }
     }
 }
 
 impl<'a> PropertyWidget<'a> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        id: u16,
+        status: &'a String,
+        priority: &'a String,
+        person_in_charge: &'a Option<String>,
+        target_version: &'a Option<String>,
+        start_date: Option<DateTime<Local>>,
+        due: Option<DateTime<Local>>,
+        progress: u16,
+        planned_hours: Option<u16>,
+        resolve_way: &'a Option<String>,
+        component: &'a String,
+        tags: &'a Vec<String>,
+        focused_y: Option<u16>,
+    ) -> Self {
+        Self {
+            id,
+            status,
+            priority,
+            person_in_charge,
+            target_version,
+            start_date,
+            due,
+            progress,
+            planned_hours,
+            resolve_way,
+            component,
+            tags,
+            focused_y,
+        }
+    }
+
     pub fn line_count(&self, width: u16) -> usize {
         let paragraph = self.create_paragraph();
         paragraph.line_count(width)
@@ -84,6 +125,18 @@ impl<'a> PropertyWidget<'a> {
     }
 }
 
+fn apply_background_to_row(buf: &mut Buffer, area: Rect, row: u16) {
+    if row >= area.height {
+        return;
+    }
+
+    for x in 0..area.width {
+        if let Some(cell) = buf.cell_mut((area.x + x, area.y + row)) {
+            cell.set_bg(FOCUS_BG);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,20 +155,21 @@ mod tests {
             "property_full_values_wide",
             40,
             11,
-            PropertyWidget {
-                id: 1,
-                status: &status,
-                priority: &priority,
-                person_in_charge: &person_in_charge,
-                target_version: &target_version,
-                start_date: Some(local_datetime("2026-01-10T00:00:00+09:00")),
-                due: Some(local_datetime("2026-01-20T00:00:00+09:00")),
-                progress: 65,
-                planned_hours: Some(13),
-                resolve_way: &resolve_way,
-                component: &component,
-                tags: &tags,
-            },
+            PropertyWidget::new(
+                1,
+                &status,
+                &priority,
+                &person_in_charge,
+                &target_version,
+                Some(local_datetime("2026-01-10T00:00:00+09:00")),
+                Some(local_datetime("2026-01-20T00:00:00+09:00")),
+                65,
+                Some(13),
+                &resolve_way,
+                &component,
+                &tags,
+                Some(2),
+            ),
         );
     }
 
@@ -132,20 +186,21 @@ mod tests {
             "property_all_optional_none",
             22,
             16,
-            PropertyWidget {
-                id: 1,
-                status: &status,
-                priority: &priority,
-                person_in_charge: &person_in_charge,
-                target_version: &target_version,
-                start_date: None,
-                due: None,
-                progress: 0,
-                planned_hours: None,
-                resolve_way: &resolve_way,
-                component: &component,
-                tags: &tags,
-            },
+            PropertyWidget::new(
+                1,
+                &status,
+                &priority,
+                &person_in_charge,
+                &target_version,
+                None,
+                None,
+                0,
+                None,
+                &resolve_way,
+                &component,
+                &tags,
+                None,
+            ),
         );
     }
 
@@ -158,20 +213,21 @@ mod tests {
         let resolve_way = None;
         let component = "Operations Integration".to_string();
         let tags = vec!["frontend".to_string(), "needs-review".to_string()];
-        let widget = PropertyWidget {
-            id: 1,
-            status: &status,
-            priority: &priority,
-            person_in_charge: &person_in_charge,
-            target_version: &target_version,
-            start_date: None,
-            due: None,
-            progress: 0,
-            planned_hours: None,
-            resolve_way: &resolve_way,
-            component: &component,
-            tags: &tags,
-        };
+        let widget = PropertyWidget::new(
+            1,
+            &status,
+            &priority,
+            &person_in_charge,
+            &target_version,
+            None,
+            None,
+            0,
+            None,
+            &resolve_way,
+            &component,
+            &tags,
+            None,
+        );
         assert_eq!(widget.line_count(40), 11);
         assert_eq!(widget.line_count(22), 11);
     }
@@ -185,20 +241,21 @@ mod tests {
         let resolve_way = None;
         let component = "Operations Integration".to_string();
         let tags = vec!["frontend".to_string(), "needs-review".to_string()];
-        let widget = PropertyWidget {
-            id: 1,
-            status: &status,
-            priority: &priority,
-            person_in_charge: &person_in_charge,
-            target_version: &target_version,
-            start_date: None,
-            due: None,
-            progress: 0,
-            planned_hours: None,
-            resolve_way: &resolve_way,
-            component: &component,
-            tags: &tags,
-        };
+        let widget = PropertyWidget::new(
+            1,
+            &status,
+            &priority,
+            &person_in_charge,
+            &target_version,
+            None,
+            None,
+            0,
+            None,
+            &resolve_way,
+            &component,
+            &tags,
+            None,
+        );
         assert_eq!(widget.line_count(40), widget.line_count(22));
     }
 }

@@ -47,12 +47,13 @@ impl ChildrenListComponent {
             .filter_map(|id| store.get_issue(*id))
             .collect();
 
-        ChildrenListWidget {
+        ChildrenListWidget::new(
             child_all_num,
             child_complete_num,
             child_incomplete_num,
             children,
-        }
+            self.focus_state.focused_index(),
+        )
         .render(area, buf);
     }
 

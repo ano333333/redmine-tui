@@ -90,8 +90,9 @@ mod tests {
         let mut comment_state = CommentJournalWidgetState::new();
         comment_state.update(24, &creator, &updated_at, &comment);
 
-        let property_widget = PropertyJournalWidget::new(&creator, &target, &old, &new, &updated_at);
-        let comment_widget = CommentJournalWidget::new(&comment_state);
+        let property_widget =
+            PropertyJournalWidget::new(&creator, &target, &old, &new, &updated_at, true);
+        let comment_widget = CommentJournalWidget::new(&comment_state, false);
         let journals = [
             JournalItemWidget::Property(property_widget),
             JournalItemWidget::Comment(comment_widget),
@@ -117,8 +118,9 @@ mod tests {
         let mut comment_state = CommentJournalWidgetState::new();
         comment_state.update(24, &creator, &updated_at, &comment);
 
-        let property_widget = PropertyJournalWidget::new(&creator, &target, &old, &new, &updated_at);
-        let comment_widget = CommentJournalWidget::new(&comment_state);
+        let property_widget =
+            PropertyJournalWidget::new(&creator, &target, &old, &new, &updated_at, false);
+        let comment_widget = CommentJournalWidget::new(&comment_state, false);
         let journals = [
             JournalItemWidget::Property(property_widget),
             JournalItemWidget::Comment(comment_widget),
@@ -140,13 +142,14 @@ mod tests {
                 .to_string();
 
         let mut comment_state = CommentJournalWidgetState::new();
-        let property_widget = PropertyJournalWidget::new(&creator, &target, &old, &new, &updated_at);
+        let property_widget =
+            PropertyJournalWidget::new(&creator, &target, &old, &new, &updated_at, false);
 
         comment_state.update(32, &creator, &updated_at, &short_comment);
         let wide_short = {
             let journals = [
                 JournalItemWidget::Property(property_widget.clone()),
-                JournalItemWidget::Comment(CommentJournalWidget::new(&comment_state)),
+                JournalItemWidget::Comment(CommentJournalWidget::new(&comment_state, false)),
             ];
             JournalsListWidget::new(&journals).line_count(32)
         };
@@ -155,7 +158,7 @@ mod tests {
         let narrow_short = {
             let journals = [
                 JournalItemWidget::Property(property_widget.clone()),
-                JournalItemWidget::Comment(CommentJournalWidget::new(&comment_state)),
+                JournalItemWidget::Comment(CommentJournalWidget::new(&comment_state, false)),
             ];
             JournalsListWidget::new(&journals).line_count(18)
         };
@@ -164,7 +167,7 @@ mod tests {
         let narrow_long = {
             let journals = [
                 JournalItemWidget::Property(property_widget),
-                JournalItemWidget::Comment(CommentJournalWidget::new(&comment_state)),
+                JournalItemWidget::Comment(CommentJournalWidget::new(&comment_state, false)),
             ];
             JournalsListWidget::new(&journals).line_count(18)
         };
