@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::widgets::Widget;
@@ -6,7 +8,7 @@ use crate::app::Store;
 use crate::entities::Journal;
 
 use super::comment_journal::focus_state::FocusState as CommentFocusState;
-use super::comment_journal::widget::CommentJournalWidget;
+use super::comment_journal::widget::{CommentJournalWidget, CommentJournalWidgetState};
 use super::focus_state::{
     EventProcessResult, FocusEvent, FocusState, ItemFocusState, ItemMetrics, ItemUpdate,
 };
@@ -17,6 +19,7 @@ use super::widget::{JournalItemWidget, JournalsListWidget};
 pub struct JournalsListComponent {
     id: u16,
     focus_state: FocusState,
+    comment_widget_states: HashMap<u16, CommentJournalWidgetState>,
 }
 
 impl JournalsListComponent {
@@ -24,6 +27,7 @@ impl JournalsListComponent {
         Self {
             id: issue_id,
             focus_state: FocusState::new(),
+            comment_widget_states: HashMap::new(),
         }
     }
 
@@ -45,6 +49,7 @@ impl JournalsListComponent {
             return None;
         };
 
+        let mut active_comment_ids = Vec::new();
         let mut items = Vec::with_capacity(issue.journal_ids.len());
         for id in &issue.journal_ids {
             let Some(journal) = store.get_journal(*id) else {
@@ -57,9 +62,13 @@ impl JournalsListComponent {
                     body,
                     ..
                 } => {
-                    let widget = CommentJournalWidget::new(creator, updated_at, body);
-                    let body_line_count = widget.body_line_count(width);
-                    let line_count = widget.line_count(width);
+                    let widget_state = self
+                        .comment_widget_states
+                        .entry(*id)
+                        .or_insert_with(CommentJournalWidgetState::new);
+                    widget_state.update(width, creator, updated_at, body);
+                    let body_line_count = widget_state.body_line_count(width);
+                    let line_count = widget_state.line_count(width);
                     let mut focus_state = CommentFocusState::new();
                     focus_state.update(width, body_line_count);
                     items.push(ItemUpdate {
@@ -71,6 +80,7 @@ impl JournalsListComponent {
                         },
                         focus_state: ItemFocusState::Comment(focus_state),
                     });
+                    active_comment_ids.push(*id);
                 }
                 Journal::Property {
                     creator,
@@ -94,6 +104,8 @@ impl JournalsListComponent {
             }
         }
 
+        self.comment_widget_states
+            .retain(|id, _| active_comment_ids.contains(id));
         self.focus_state.update(items);
         None
     }
@@ -112,7 +124,7 @@ impl JournalsListComponent {
         self.focus_state.get_cursor_position()
     }
 
-    fn create_widgets<'a>(&self, store: &'a Store) -> Vec<JournalItemWidget<'a>> {
+    fn create_widgets<'a>(&'a self, store: &'a Store) -> Vec<JournalItemWidget<'a>> {
         let Some(issue) = store.get_issue(self.id) else {
             return vec![];
         };
@@ -124,13 +136,11 @@ impl JournalsListComponent {
                 let journal = store.get_journal(*id)?;
                 match journal {
                     Journal::Comment {
-                        creator,
-                        updated_at,
-                        body,
                         ..
-                    } => Some(JournalItemWidget::Comment(CommentJournalWidget::new(
-                        creator, updated_at, body,
-                    ))),
+                    } => self
+                        .comment_widget_states
+                        .get(id)
+                        .map(|state| JournalItemWidget::Comment(CommentJournalWidget::new(state))),
                     Journal::Property {
                         creator,
                         target,
