@@ -1,8 +1,6 @@
-pub mod comment_journal;
 pub mod component;
-pub mod focus_state;
-pub mod property_journal;
+pub mod journals_list_item;
 pub mod widget;
 
-pub use component::JournalsListComponent;
-pub use focus_state::{EventProcessResult, FocusEvent};
+pub use component::{EventProcessResult, FocusEvent, JournalsListComponent};
+pub use widget::JournalsListWidget;

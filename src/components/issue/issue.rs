@@ -6,9 +6,11 @@ use crossterm::event::Event;
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Offset, Position, Rect};
+use ratatui::widgets::Widget;
 
 use crate::AppContainer;
 use crate::app::{Dispatcher, Store};
+use crate::entities::Journal;
 use crate::widgets::Hr;
 
 use super::body::BodyComponent;
@@ -64,7 +66,7 @@ impl IssueDetailComponent {
                     property: PropertyComponent::new(issue_id),
                     body: BodyComponent::new(issue_id, width, height),
                     children_list: ChildrenListComponent::new(issue_id),
-                    journals_list: JournalsListComponent::new(issue_id),
+                    journals_list: JournalsListComponent::new(),
                     width,
                     height,
                     render_offset_y: 0,
@@ -78,12 +80,7 @@ impl IssueDetailComponent {
     }
 
     /// crosstermの同期イベントを処理する。updateとrenderがこの順で後続する
-    pub fn process_event(
-        &mut self,
-        event: crossterm::event::Event,
-        _: Rc<RefCell<Dispatcher>>,
-        store: &Store,
-    ) {
+    pub fn process_event(&mut self, event: crossterm::event::Event, _: Rc<RefCell<Dispatcher>>) {
         // FIXME:
         // process_eventでComponentのprocess_event呼び出しからその結果に基づくフォーカス処理を行っているが、
         // Storeの更新契機で子componentからイベントが来る可能性を踏まえ、updateがフォーカス関連を含めたイベントを返すようにしたい
@@ -151,25 +148,19 @@ impl IssueDetailComponent {
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::Unfocused);
                         self.focused_component = FocusedComponent::JournalsList;
-                        self.journals_list.focus_event(
-                            store,
-                            JournalsListFocusEvent::CursorEnteredFromAbove,
-                            self.width,
-                        );
+                        self.journals_list
+                            .focus_event(JournalsListFocusEvent::CursorEnteredFromAbove { x: 0 });
                     }
                     None => {}
                 }
             }
             FocusedComponent::JournalsList => {
-                let result = self.journals_list.process_event(&event, store, self.width);
+                let result = self.journals_list.process_event(event.clone());
                 match result {
                     Some(JournalsListEventProcessResult::CursorLeavedFromBelow) => {}
                     Some(JournalsListEventProcessResult::CursorLeavedFromAbove) => {
-                        self.journals_list.focus_event(
-                            store,
-                            JournalsListFocusEvent::Unfocused,
-                            self.width,
-                        );
+                        self.journals_list
+                            .focus_event(JournalsListFocusEvent::Unfocused);
                         self.focused_component = FocusedComponent::ChildrenList;
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::CursorEnteredFromBelow);
@@ -178,19 +169,27 @@ impl IssueDetailComponent {
                 }
             }
         }
-        if let Event::Resize(rows, cols) = event {
-            self.width = rows;
-            self.height = cols;
+        if let Event::Resize(cols, rows) = event {
+            self.width = cols;
+            self.height = rows;
         }
     }
 
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
-        if store.get_issue(self.id).is_some() {
+        if let Some(issue) = store.get_issue(self.id) {
             self.body.update(store, self.width);
             self.children_list.update(store);
 
-            self.journals_list.update(store, self.width);
+            let journals = issue
+                .journal_ids
+                .iter()
+                .map(|id| store.get_journal(*id))
+                .filter(|journal| journal.is_some())
+                .map(|journal| journal.unwrap())
+                .collect::<Vec<&Journal>>();
+
+            self.journals_list.update(journals, self.width);
         }
 
         let Position { y: cursor_y, .. } = self.calc_cursor_global_position(store);
@@ -313,7 +312,7 @@ impl IssueDetailComponent {
         }
         line_count_sum += line_count;
 
-        let line_count = self.journals_list.line_count(store, self.width);
+        let line_count = self.journals_list.line_count(self.width);
         if line_count_sum + line_count >= offset_y
             && line_count_sum < offset_y + height
             && frame_area.height > 0
@@ -358,9 +357,9 @@ impl IssueDetailComponent {
         offset.y += self.children_list.line_count(store) as i32 + 1;
 
         if self.focused_component == FocusedComponent::JournalsList {
-            return self.journals_list.get_cursor_position(store, self.width) + offset;
+            return self.journals_list.get_cursor_position(self.width) + offset;
         }
-        offset.y += self.journals_list.line_count(store, self.width) as i32 + 2;
+        offset.y += self.journals_list.line_count(self.width) as i32 + 2;
 
         Position { x: 0, y: 0 }
     }
@@ -408,23 +407,24 @@ fn render_children_component_to_frame(
 }
 
 fn render_journals_list_component_to_frame(
-    store: &Store,
+    _: &Store,
     frame: &mut Frame,
     frame_area: &mut Rect,
     component: &JournalsListComponent,
     line_count_sum: u16,
     offset_y: u16,
 ) {
+    let widget = component.create_widget();
     if offset_y <= line_count_sum {
-        component.render(store, *frame_area, frame.buffer_mut());
-        let line_count = component.line_count(store, frame_area.width);
+        widget.render(*frame_area, frame.buffer_mut());
+        let line_count = component.line_count(frame_area.width);
         frame_area.y += min(line_count, frame_area.height);
         frame_area.height = frame_area.height.saturating_sub(line_count);
     } else {
-        let line_count = component.line_count(store, frame_area.width);
+        let line_count = component.line_count(frame_area.width);
         let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
         let mut buffer = Buffer::empty(buffer_area);
-        component.render(store, buffer_area, &mut buffer);
+        widget.render(buffer_area, &mut buffer);
 
         let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
         for y in 0..overlapping_height {

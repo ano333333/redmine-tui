@@ -23,11 +23,8 @@ impl AppComponent {
 
     /// crosstermの同期イベントを処理する。updateとrenderがこの順で後続する
     pub fn process_event(&mut self, event: Event) {
-        self.issue_component.process_event(
-            event,
-            self.dispatcher.clone(),
-            self.dispatcher.borrow().store(),
-        );
+        self.issue_component
+            .process_event(event, self.dispatcher.clone());
     }
 
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use crate::entities::{Issue, Journal};
+use crate::entities::{Issue, Journal, JournalPropertyChange};
 use crate::libs::yaml::as_u16_array;
 use crate::libs::{
     as_local_datetime, as_local_datetime_option, as_string, as_string_array, as_string_option,
@@ -64,12 +64,7 @@ impl Store {
             }
             Action::UpdateJournal { id, body } => {
                 if let Some(journal) = self.journals.get_mut(&id) {
-                    if let Journal::Comment {
-                        body: comment_body, ..
-                    } = journal
-                    {
-                        *comment_body = body;
-                    }
+                    journal.comment = Some(body);
                 }
             }
         }
@@ -94,31 +89,39 @@ pub enum Action {
 fn parse_journal_yaml(id: u16) -> Journal {
     let path = format!("datas/journals/{}.yml", id);
     let yaml = read_yaml(path.as_str());
-    let journal_type = as_string(&yaml, "type");
     let creator = as_string(&yaml, "creator");
     let updated_at = as_local_datetime(&yaml, "updated_at");
-    if journal_type == "property" {
-        let target = as_string(&yaml, "target");
-        let old = as_string(&yaml, "old");
-        let new = as_string(&yaml, "new");
-        Journal::Property {
-            id,
-            creator,
-            target,
-            old,
-            new,
-            updated_at,
-        }
-    } else if journal_type == "comment" {
-        let body = as_string(&yaml, "body");
-        Journal::Comment {
-            id,
-            creator,
-            updated_at,
-            body,
-        }
+    let journal_type = yaml["type"].as_str();
+    let properties = if let Some(entries) = yaml["properties"].as_vec() {
+        entries
+            .iter()
+            .map(|entry| JournalPropertyChange {
+                target: entry["target"].as_str().expect("no target").to_string(),
+                old: entry["old"].as_str().expect("no old").to_string(),
+                new: entry["new"].as_str().expect("no new").to_string(),
+            })
+            .collect()
+    } else if journal_type == Some("property") {
+        vec![JournalPropertyChange {
+            target: as_string(&yaml, "target"),
+            old: as_string(&yaml, "old"),
+            new: as_string(&yaml, "new"),
+        }]
     } else {
-        panic!("no matching journal type");
+        vec![]
+    };
+    let comment = yaml["body"].as_str().map(|body| body.to_string());
+
+    if properties.is_empty() && comment.is_none() {
+        panic!("no matching journal content");
+    }
+
+    Journal {
+        id,
+        creator,
+        updated_at,
+        properties,
+        comment,
     }
 }
 
