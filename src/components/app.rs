@@ -36,7 +36,7 @@ impl AppComponent {
     }
 
     /// Componentをframeのarea範囲内に描画する。
-    pub fn render(&self, store: &Store, frame: &mut Frame, mut area: Rect) {
+    pub fn render(&self, store: &Store, frame: &mut Frame, area: Rect) {
         self.issue_component.render(store, frame, area);
     }
 }

@@ -103,7 +103,7 @@ impl AppContainer {
     // AppContainerとターミナル全体のサイズの差を緩衝するメソッド
     // 現在はIssueComponentの初期化時に一回呼ばれるので、それ専用に定数で妥協
     pub fn size() -> Result<(u16, u16)> {
-        Ok((APP_INITIAL_HEIGHT, APP_INITIAL_HEIGHT))
+        Ok((APP_INITIAL_WIDTH, APP_INITIAL_HEIGHT))
     }
 }
 
