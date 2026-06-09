@@ -1,17 +1,14 @@
 use std::cell::RefCell;
-use std::cmp::min;
 use std::rc::Rc;
 
 use crossterm::event::Event;
 use ratatui::Frame;
-use ratatui::buffer::Buffer;
 use ratatui::layout::{Offset, Position, Rect};
 use ratatui::widgets::Widget;
 
 use crate::AppContainer;
 use crate::app::{Dispatcher, Store};
 use crate::entities::Journal;
-use crate::widgets::Hr;
 
 use super::body::BodyComponent;
 use super::body::EventProcessResult as BodyEventProcessResult;
@@ -28,6 +25,7 @@ use super::journals_list::JournalsListComponent;
 use super::property::EventProcessResult as PropertyEventProcessResult;
 use super::property::FocusEvent as PropertyFocusTransitionEvent;
 use super::property::PropertyComponent;
+use super::{IssueDetailWidget, IssueDetailWidgetState};
 
 #[derive(PartialEq)]
 enum FocusedComponent {
@@ -45,17 +43,15 @@ pub struct IssueDetailComponent {
     body: BodyComponent,
     children_list: ChildrenListComponent,
     journals_list: JournalsListComponent,
+    widget_state: IssueDetailWidgetState,
     /// 描画横幅(render時のフレーム描画領域のwidthと一致)
     width: u16,
     /// 描画縦幅(render時のフレーム描画領域のheightと一致)
     height: u16,
-    /// グローバル座標のどのyから描画を始めるか
-    render_offset_y: u16,
     focused_component: FocusedComponent,
 }
 
 impl IssueDetailComponent {
-    // TODO: journalsをJournalListComponentに置き換え
     pub fn new(_: Rc<RefCell<Dispatcher>>, issue_id: u16) -> Self {
         let size = AppContainer::size();
         match size {
@@ -67,9 +63,9 @@ impl IssueDetailComponent {
                     body: BodyComponent::new(issue_id, width, height),
                     children_list: ChildrenListComponent::new(issue_id),
                     journals_list: JournalsListComponent::new(),
+                    widget_state: IssueDetailWidgetState::new(),
                     width,
                     height,
-                    render_offset_y: 0,
                     focused_component: FocusedComponent::Header,
                 };
                 i.header.focus_event(HeaderFocusEvent::Focused);
@@ -176,7 +172,7 @@ impl IssueDetailComponent {
     }
 
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
-    pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store) {
+    pub fn update(&mut self, _: Rc<RefCell<Dispatcher>>, store: &Store) {
         if let Some(issue) = store.get_issue(self.id) {
             self.body.update(store, self.width);
             self.children_list.update(store);
@@ -192,142 +188,25 @@ impl IssueDetailComponent {
             self.journals_list.update(journals, self.width);
         }
 
-        let Position { y: cursor_y, .. } = self.calc_cursor_global_position(store);
-
-        if cursor_y < self.render_offset_y {
-            self.render_offset_y = cursor_y;
-        }
-
-        if cursor_y >= self.render_offset_y + self.height {
-            self.render_offset_y = (cursor_y + 1).saturating_sub(self.height);
-        }
+        self.widget_state
+            .update(self.calc_cursor_global_position(store), self.height);
     }
 
     /// Componentをframeのarea範囲内に描画する。
-    pub fn render(&self, store: &Store, frame: &mut Frame, mut frame_area: Rect) {
-        let mut line_count_sum: u16 = 0;
-        let height = frame_area.height;
-        let width = frame_area.width;
-        let offset_y = self.render_offset_y;
+    pub fn render(&self, store: &Store, frame: &mut Frame, frame_area: Rect) {
+        let widget = IssueDetailWidget::new(
+            self.header.create_widget(store),
+            self.property.create_widget(store),
+            self.body.create_widget(),
+            self.children_list.create_widget(store),
+            self.journals_list.create_widget(),
+            &self.widget_state,
+        );
+        widget.render(frame_area, frame.buffer_mut());
 
-        let mut cursor_position = self.calc_cursor_global_position(store);
-        cursor_position.x += frame_area.x;
-        cursor_position.y += frame_area.y;
-
-        // TODO: ここのスクロール関係の描画処理を、もっとこう。。。
-        let line_count = self.header.line_count(store, width);
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && frame_area.height > 0
-        {
-            render_header_component_to_frame(
-                store,
-                frame,
-                &mut frame_area,
-                &self.header,
-                line_count_sum,
-                offset_y,
-            );
-        }
-        line_count_sum += line_count;
-
-        let line_count = self.property.line_count(store, width);
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && frame_area.height > 0
-        {
-            render_property_component_to_frame(
-                store,
-                frame,
-                &mut frame_area,
-                &self.property,
-                line_count_sum,
-                offset_y,
-            )
-        }
-        line_count_sum += line_count;
-
-        let line_count: u16 = 1;
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && frame_area.height > 0
-        {
-            frame.render_widget(Hr::default(), frame_area);
-            frame_area.y += 1;
-            frame_area.height -= 1;
-        }
-        line_count_sum += line_count;
-
-        let line_count = self.body.line_count(width);
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && frame_area.height > 0
-        {
-            render_body_component_to_frame(
-                store,
-                frame,
-                &mut frame_area,
-                &self.body,
-                line_count_sum,
-                offset_y,
-            );
-        }
-        line_count_sum += line_count;
-
-        let line_count: u16 = 1;
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && frame_area.height > 0
-        {
-            frame.render_widget(Hr::default(), frame_area);
-            frame_area.y += 1;
-            frame_area.height -= 1;
-        }
-        line_count_sum += line_count;
-
-        let line_count = self.children_list.line_count(store);
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && frame_area.height > 0
-        {
-            render_children_component_to_frame(
-                store,
-                frame,
-                &mut frame_area,
-                &self.children_list,
-                line_count_sum,
-                offset_y,
-            );
-        }
-        line_count_sum += line_count;
-
-        let line_count: u16 = 1;
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && frame_area.height > 0
-        {
-            frame.render_widget(Hr::default(), frame_area);
-            frame_area.y += 1;
-            frame_area.height -= 1;
-        }
-        line_count_sum += line_count;
-
-        let line_count = self.journals_list.line_count(self.width);
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && frame_area.height > 0
-        {
-            render_journals_list_component_to_frame(
-                store,
-                frame,
-                &mut frame_area,
-                &self.journals_list,
-                line_count_sum,
-                offset_y,
-            );
-        }
-
-        cursor_position.y -= self.render_offset_y;
+        let cursor_position = self
+            .widget_state
+            .calc_cursor_area_position(self.calc_cursor_global_position(store), frame_area);
         frame.set_cursor_position(cursor_position);
     }
 
@@ -362,265 +241,5 @@ impl IssueDetailComponent {
         offset.y += self.journals_list.line_count(self.width) as i32 + 2;
 
         Position { x: 0, y: 0 }
-    }
-}
-
-/// ChildrenListComponentをFrameに描画し、書き込んだ領域を切り詰める
-/// 詳しい説明はrender_header_component_to_frameを参照。
-fn render_children_component_to_frame(
-    store: &Store,
-    frame: &mut Frame,
-    frame_area: &mut Rect,
-    component: &ChildrenListComponent,
-    line_count_sum: u16,
-    offset_y: u16,
-) {
-    if offset_y <= line_count_sum {
-        component.render(store, *frame_area, frame.buffer_mut());
-        let line_count = component.line_count(store);
-        frame_area.y += min(line_count, frame_area.height);
-        frame_area.height = frame_area.height.saturating_sub(line_count);
-    } else {
-        let line_count = component.line_count(store);
-        let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
-        let mut buffer = Buffer::empty(buffer_area);
-        component.render(store, buffer_area, &mut buffer);
-
-        let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
-        for y in 0..overlapping_height {
-            for x in 0..frame_area.width {
-                let buffer_y = offset_y - line_count_sum + y;
-                let frame_x = frame_area.x + x;
-                let frame_y = frame_area.y + y;
-                let Some(buffer_cell) = buffer.cell((x, buffer_y)).cloned() else {
-                    continue;
-                };
-                if let Some(frame_cell) = frame.buffer_mut().cell_mut((frame_x, frame_y)) {
-                    *frame_cell = buffer_cell;
-                }
-            }
-        }
-
-        frame_area.y += overlapping_height;
-        frame_area.height -= overlapping_height;
-    }
-}
-
-fn render_journals_list_component_to_frame(
-    _: &Store,
-    frame: &mut Frame,
-    frame_area: &mut Rect,
-    component: &JournalsListComponent,
-    line_count_sum: u16,
-    offset_y: u16,
-) {
-    let widget = component.create_widget();
-    if offset_y <= line_count_sum {
-        widget.render(*frame_area, frame.buffer_mut());
-        let line_count = component.line_count(frame_area.width);
-        frame_area.y += min(line_count, frame_area.height);
-        frame_area.height = frame_area.height.saturating_sub(line_count);
-    } else {
-        let line_count = component.line_count(frame_area.width);
-        let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
-        let mut buffer = Buffer::empty(buffer_area);
-        widget.render(buffer_area, &mut buffer);
-
-        let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
-        for y in 0..overlapping_height {
-            for x in 0..frame_area.width {
-                let buffer_y = offset_y - line_count_sum + y;
-                let frame_x = frame_area.x + x;
-                let frame_y = frame_area.y + y;
-                let Some(buffer_cell) = buffer.cell((x, buffer_y)).cloned() else {
-                    continue;
-                };
-                if let Some(frame_cell) = frame.buffer_mut().cell_mut((frame_x, frame_y)) {
-                    *frame_cell = buffer_cell;
-                }
-            }
-        }
-
-        frame_area.y += overlapping_height;
-        frame_area.height -= overlapping_height;
-    }
-}
-
-/// HeaderComponentをFrameに描画し、書き込んだ領域を切り詰める
-/// # Arguments
-///
-/// * `store` - Store
-/// * `frame` - 描画先のFrame
-/// * `frame_area` - `frame`の描画領域
-/// * `component` - 描画するHeaderComponent
-/// * `line_count_sum` - ここまでに書き込んだComponentの行数(line_count)の和
-/// * `offset_y` - グローバル空間のどのy(行数)から書き始めるか
-fn render_header_component_to_frame(
-    store: &Store,
-    frame: &mut Frame,
-    frame_area: &mut Rect,
-    component: &HeaderComponent,
-    line_count_sum: u16,
-    offset_y: u16,
-) {
-    // グローバル y 座標で見ると、
-    // HeaderComponent は [line_count_sum, line_count_sum + line_count) を占める。
-    // ここから、今回表示したい範囲 [offset_y, +inf) との重なりだけを描画する。
-
-    // Case 1: Header の先頭から描ける場合
-    //
-    //     global y
-    //        v
-    //
-    //     offset_y                                  +
-    //                                               |
-    //                                               |
-    //   line_count_sum     +------------------+     | visible
-    //                      |      Header      |     |
-    //                      |                  |     |
-    //                      |                  |     +
-    //                      |                  |
-    //                      +------------------+
-    //
-    //   offset_y <= line_count_sum
-    //   -> Header の先頭は表示範囲内にあるので、
-    //      Header を先頭からそのまま Frame に描ける
-    if offset_y <= line_count_sum {
-        component.render(store, *frame_area, frame.buffer_mut());
-        let line_count = component.line_count(store, frame_area.width);
-        frame_area.y += min(line_count, frame_area.height);
-        frame_area.height = frame_area.height.saturating_sub(line_count);
-    }
-    // Case 2: Header の先頭が表示範囲より上にある場合
-    //
-    //     global y
-    //        v
-    //
-    //   line_count_sum     +------------------+
-    //                      |      Header      |
-    //                      |                  |
-    //   offset_y           |                  |    +
-    //                      |                  |    |
-    //                      +------------------+    |
-    //                                              | visible
-    //                                              |
-    //                                              +
-    //
-    //   line_count_sum < offset_y < line_count_sum + line_count
-    //   -> Header 上部は画面外に切れるので、
-    //      一時 Buffer に描いてから
-    //      (offset_y - line_count_sum) 行目以降だけを Frame に転写する
-    else {
-        // componentを一時Bufferに書き出す必要がある
-        let line_count = component.line_count(store, frame_area.width);
-        let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
-        let mut buffer = Buffer::empty(buffer_area);
-        component.render(store, buffer_area, &mut buffer);
-
-        // 一時Bufferの、グローバル空間でy=offset_yに位置する部分から後ろをframeに転写
-        let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
-        for y in 0..overlapping_height {
-            for x in 0..frame_area.width {
-                let buffer_x = x;
-                let buffer_y = offset_y - line_count_sum + y;
-                let frame_x = frame_area.x + x;
-                let frame_y = frame_area.y + y;
-                let Some(buffer_cell) = buffer.cell((buffer_x, buffer_y)).cloned() else {
-                    continue;
-                };
-                if let Some(frame_cell) = frame.buffer_mut().cell_mut((frame_x, frame_y)) {
-                    *frame_cell = buffer_cell;
-                }
-            }
-        }
-
-        frame_area.y += overlapping_height;
-        frame_area.height -= overlapping_height;
-    }
-}
-
-/// PropertyComponentをFrameに描画し、書き込んだ領域を切り詰める
-/// 詳しい説明はrender_header_component_to_frameを参照。
-fn render_property_component_to_frame(
-    store: &Store,
-    frame: &mut Frame,
-    frame_area: &mut Rect,
-    component: &PropertyComponent,
-    line_count_sum: u16,
-    offset_y: u16,
-) {
-    // FIXME:子componentのtrait等による共通化ができていないので、render_*_component_to_frameを毎度定義する必要がある。
-    if offset_y <= line_count_sum {
-        component.render(store, *frame_area, frame.buffer_mut());
-        let line_count = component.line_count(store, frame_area.width);
-        frame_area.y += min(line_count, frame_area.height);
-        frame_area.height = frame_area.height.saturating_sub(line_count);
-    } else {
-        let line_count = component.line_count(store, frame_area.width);
-        let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
-        let mut buffer = Buffer::empty(buffer_area);
-        component.render(store, buffer_area, &mut buffer);
-
-        let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
-        for y in 0..overlapping_height {
-            for x in 0..frame_area.width {
-                let buffer_x = x;
-                let buffer_y = offset_y - line_count_sum + y;
-                let frame_x = frame_area.x + x;
-                let frame_y = frame_area.y + y;
-                let Some(buffer_cell) = buffer.cell((buffer_x, buffer_y)).cloned() else {
-                    continue;
-                };
-                if let Some(frame_cell) = frame.buffer_mut().cell_mut((frame_x, frame_y)) {
-                    *frame_cell = buffer_cell;
-                }
-            }
-        }
-
-        frame_area.y += overlapping_height;
-        frame_area.height -= overlapping_height;
-    }
-}
-
-/// BodyComponentをFrameに描画し、書き込んだ領域を切り詰める
-/// 詳しい説明はrender_header_component_to_frameを参照。
-fn render_body_component_to_frame(
-    store: &Store,
-    frame: &mut Frame,
-    frame_area: &mut Rect,
-    component: &BodyComponent,
-    line_count_sum: u16,
-    offset_y: u16,
-) {
-    // FIXME:子componentのtrait等による共通化ができていないので、render_*_component_to_frameを毎度定義する必要がある。
-    if offset_y <= line_count_sum {
-        component.render(*frame_area, frame.buffer_mut());
-        let line_count = component.line_count(frame_area.width);
-        frame_area.y += min(line_count, frame_area.height);
-        frame_area.height = frame_area.height.saturating_sub(line_count);
-    } else {
-        let line_count = component.line_count(frame_area.width);
-        let buffer_area = Rect::new(0, 0, frame_area.width, line_count);
-        let mut buffer = Buffer::empty(buffer_area);
-        component.render(buffer_area, &mut buffer);
-
-        let overlapping_height = min(line_count_sum + line_count - offset_y, frame_area.height);
-        for y in 0..overlapping_height {
-            for x in 0..frame_area.width {
-                let buffer_x = x;
-                let buffer_y = offset_y - line_count_sum + y;
-                let frame_x = frame_area.x + x;
-                let frame_y = frame_area.y + y;
-                let Some(buffer_cell) = buffer.cell((buffer_x, buffer_y)).cloned() else {
-                    continue;
-                };
-                if let Some(frame_cell) = frame.buffer_mut().cell_mut((frame_x, frame_y)) {
-                    *frame_cell = buffer_cell;
-                }
-            }
-        }
-
-        frame_area.y += overlapping_height;
-        frame_area.height -= overlapping_height;
     }
 }

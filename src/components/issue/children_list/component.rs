@@ -1,7 +1,5 @@
 use crossterm::event::Event;
-use ratatui::buffer::Buffer;
-use ratatui::layout::{Position, Rect};
-use ratatui::widgets::Widget;
+use ratatui::layout::Position;
 
 use crate::app::Store;
 
@@ -27,10 +25,8 @@ impl ChildrenListComponent {
         }
     }
 
-    pub fn render(&self, store: &Store, area: Rect, buf: &mut Buffer) {
-        let Some(issue) = store.get_issue(self.id) else {
-            return;
-        };
+    pub fn create_widget<'a>(&self, store: &'a Store) -> ChildrenListWidget<'a> {
+        let issue = store.get_issue(self.id).unwrap();
 
         let child_all_num = issue.child_ids.len() as u16;
         let child_complete_num = issue
@@ -54,7 +50,6 @@ impl ChildrenListComponent {
             children,
             self.focus_state.focused_index(),
         )
-        .render(area, buf);
     }
 
     pub fn line_count(&self, store: &Store) -> u16 {

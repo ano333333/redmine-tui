@@ -1,9 +1,7 @@
 use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
 use super::widget::PropertyWidget;
 use crossterm::event::Event;
-use ratatui::buffer::Buffer;
-use ratatui::layout::{Position, Rect};
-use ratatui::widgets::Widget;
+use ratatui::layout::Position;
 
 use crate::app::Store;
 use crate::entities::Issue;
@@ -40,11 +38,9 @@ impl PropertyComponent {
         }
     }
 
-    pub fn render(&self, store: &Store, area: Rect, buf: &mut Buffer) {
-        if let Some(issue) = store.get_issue(self.id) {
-            let widget = create_property_widget(&issue, self.focus_state.focused_y());
-            widget.render(area, buf);
-        }
+    pub fn create_widget<'a>(&self, store: &'a Store) -> PropertyWidget<'a> {
+        let issue = store.get_issue(self.id).unwrap();
+        create_property_widget(&issue, self.focus_state.focused_y())
     }
 
     pub fn get_cursor_position(&self) -> Position {

@@ -1,9 +1,7 @@
 use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
 use super::widget::{BodyWidget, BodyWidgetState};
 use crossterm::event::Event;
-use ratatui::buffer::Buffer;
-use ratatui::layout::{Position, Rect};
-use ratatui::widgets::Widget;
+use ratatui::layout::Position;
 
 use crate::app::Store;
 
@@ -42,9 +40,8 @@ impl BodyComponent {
         self.widget_state.line_count(width) as u16
     }
 
-    pub fn render(&self, area: Rect, buf: &mut Buffer) {
-        let widget = BodyWidget::new(&self.widget_state, self.focus_state.is_focused());
-        widget.render(area, buf);
+    pub fn create_widget<'a>(&'a self) -> BodyWidget<'a> {
+        BodyWidget::new(&self.widget_state, self.focus_state.is_focused())
     }
 
     pub fn get_cursor_position(&self) -> Position {
