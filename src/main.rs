@@ -36,7 +36,7 @@ fn main() -> Result<()> {
         }
         match event::read() {
             Ok(event) => {
-                if !app.handle_key_event(event) {
+                if !app.handle_key_event(event, &mut terminal) {
                     break;
                 }
             }

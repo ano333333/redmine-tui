@@ -27,6 +27,10 @@ use super::property::FocusEvent as PropertyFocusTransitionEvent;
 use super::property::PropertyComponent;
 use super::{IssueDetailWidget, IssueDetailWidgetState};
 
+pub enum EventProcessResult {
+    EditIssueBodyRequested { id: u16, body: String },
+}
+
 #[derive(PartialEq)]
 enum FocusedComponent {
     Header,
@@ -76,7 +80,11 @@ impl IssueDetailComponent {
     }
 
     /// crosstermの同期イベントを処理する。updateとrenderがこの順で後続する
-    pub fn process_event(&mut self, event: crossterm::event::Event, _: Rc<RefCell<Dispatcher>>) {
+    pub fn process_event(
+        &mut self,
+        event: crossterm::event::Event,
+        _: Rc<RefCell<Dispatcher>>,
+    ) -> Option<EventProcessResult> {
         // FIXME:
         // process_eventでComponentのprocess_event呼び出しからその結果に基づくフォーカス処理を行っているが、
         // Storeの更新契機で子componentからイベントが来る可能性を踏まえ、updateがフォーカス関連を含めたイベントを返すようにしたい
@@ -127,6 +135,9 @@ impl IssueDetailComponent {
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::CursorEnteredFromAbove);
                     }
+                    Some(BodyEventProcessResult::EditRequested { id, body }) => {
+                        return Some(EventProcessResult::EditIssueBodyRequested { id, body });
+                    }
                     None => {}
                 }
             }
@@ -169,6 +180,7 @@ impl IssueDetailComponent {
             self.width = cols;
             self.height = rows;
         }
+        None
     }
 
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。

@@ -6,5 +6,5 @@ pub mod journals_list;
 pub mod property;
 pub mod widget;
 
-pub use issue::IssueDetailComponent;
+pub use issue::{EventProcessResult, IssueDetailComponent};
 pub use widget::{IssueDetailWidget, IssueDetailWidgetState};

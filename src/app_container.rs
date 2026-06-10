@@ -1,12 +1,26 @@
 use std::{cell::RefCell, cmp::max, rc::Rc};
 
-use crossterm::event::{Event, KeyCode};
-use ratatui::{Frame, layout::Rect};
+use crossterm::{
+    event::{Event, KeyCode},
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
+use ratatui::{DefaultTerminal, Frame, layout::Rect};
 use std::io::Result;
+use std::{
+    env,
+    fs,
+    path::PathBuf,
+    process::Command,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::{
     app::{Action, Dispatcher},
-    components::AppComponent,
+    components::{
+        AppComponent,
+        app::{AppEffect, EditorRequest, EditorResponse},
+    },
 };
 
 const APP_INITIAL_WIDTH: u16 = 80;
@@ -47,7 +61,7 @@ impl AppContainer {
         }
     }
 
-    pub fn handle_key_event(&mut self, event: Event) -> bool {
+    pub fn handle_key_event(&mut self, event: Event, terminal: &mut DefaultTerminal) -> bool {
         if let Event::Key(key) = event {
             if key.code == KeyCode::Char('q') {
                 return false;
@@ -81,6 +95,16 @@ impl AppContainer {
         }
         self.app_component
             .update(self.dispatcher.clone(), self.dispatcher.borrow().store());
+        if let Some(effect) = self.app_component.take_effect() {
+            if let Err(err) = self.handle_app_effect(effect, terminal) {
+                tracing::event!(
+                    target: module_path!(),
+                    tracing::Level::ERROR,
+                    error = %err,
+                    "failed to handle app effect"
+                );
+            }
+        }
         true
     }
 
@@ -105,5 +129,62 @@ impl AppContainer {
 
     pub fn size_of(&self) -> (u16, u16) {
         (self.width, self.height)
+    }
+
+    fn handle_app_effect(
+        &mut self,
+        effect: AppEffect,
+        terminal: &mut DefaultTerminal,
+    ) -> Result<()> {
+        match effect {
+            AppEffect::OpenEditor(request) => {
+                let response = self.run_editor(terminal, request)?;
+                self.app_component.handle_editor_response(response);
+                self.app_component
+                    .update(self.dispatcher.clone(), self.dispatcher.borrow().store());
+            }
+        }
+        Ok(())
+    }
+
+    fn run_editor(
+        &mut self,
+        terminal: &mut DefaultTerminal,
+        request: EditorRequest,
+    ) -> Result<EditorResponse> {
+        let path = Self::create_editor_tmpfile(&request.initial_text)?;
+        let editor = env::var("VISUAL")
+            .ok()
+            .filter(|value| !value.is_empty())
+            .or_else(|| env::var("EDITOR").ok().filter(|value| !value.is_empty()))
+            .unwrap_or_else(|| "nvim".to_string());
+
+        disable_raw_mode()?;
+        execute!(std::io::stdout(), LeaveAlternateScreen)?;
+        let status = Command::new(&editor).arg(&path).status();
+        let reenter_result = execute!(std::io::stdout(), EnterAlternateScreen);
+        let raw_mode_result = enable_raw_mode();
+        terminal.clear()?;
+
+        reenter_result?;
+        raw_mode_result?;
+        status?;
+
+        let edited = fs::read_to_string(&path)?;
+        let _ = fs::remove_file(&path);
+        Ok(EditorResponse { edited_text: edited })
+    }
+
+    fn create_editor_tmpfile(initial_text: &str) -> Result<PathBuf> {
+        let filename = format!(
+            "redmine-tui-editor-{}.md",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        );
+        let path = env::temp_dir().join(filename);
+        fs::write(&path, initial_text)?;
+        Ok(path)
     }
 }

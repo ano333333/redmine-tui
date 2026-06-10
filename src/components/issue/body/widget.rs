@@ -1,5 +1,4 @@
 use std::cmp::min;
-use std::hash::{DefaultHasher, Hash, Hasher};
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -11,14 +10,12 @@ const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 
 pub struct BodyWidgetState {
     buffer: Buffer,
-    hash: u64,
 }
 
 impl BodyWidgetState {
     pub fn new() -> Self {
         Self {
             buffer: Buffer::empty(Rect::new(0, 0, 0, 0)),
-            hash: 0,
         }
     }
 
@@ -55,15 +52,7 @@ impl BodyWidgetState {
     }
 
     pub fn update(&mut self, width: u16, body: &String) {
-        if self.buffer.area.width != width {
-            self.buffer = Self::render_in_buffer(body, width);
-            return;
-        }
-        let mut hasher = DefaultHasher::new();
-        body.hash(&mut hasher);
-        if self.hash != hasher.finish() {
-            self.buffer = Self::render_in_buffer(body, width);
-        }
+        self.buffer = Self::render_in_buffer(body, width);
     }
 
     fn render_in_buffer(body: &String, width: u16) -> Buffer {

@@ -2,6 +2,7 @@ use super::widget::{BodyWidget, BodyWidgetState};
 use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
 use std::cmp::min;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::entities::Issue;
 
@@ -15,13 +16,16 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromBelow { x: u16 },
     CursorLeavedFromAbove { x: u16 },
+    EditRequested { id: u16, body: String },
 }
 
 pub struct BodyComponent {
     id: u16,
     width: u16,
     height: u16,
+    body_hash: u64,
     cursor_position: Option<Position>,
+    body: String,
     widget_state: BodyWidgetState,
 }
 
@@ -31,7 +35,9 @@ impl BodyComponent {
             id,
             width,
             height,
+            body_hash: 0,
             cursor_position: None,
+            body: String::new(),
             widget_state: BodyWidgetState::new(),
         }
     }
@@ -73,6 +79,12 @@ impl BodyComponent {
                         y: cursor.y - 1,
                     });
                 }
+                KeyCode::Char('e') => {
+                    return Some(EventProcessResult::EditRequested {
+                        id: self.id,
+                        body: self.body.clone(),
+                    });
+                }
                 _ => {}
             }
         }
@@ -108,7 +120,14 @@ impl BodyComponent {
     }
 
     pub fn update(&mut self, issue: &Issue, width: u16) {
-        self.widget_state.update(width, &issue.body);
+        let mut hasher = DefaultHasher::new();
+        issue.body.hash(&mut hasher);
+        let body_hash = hasher.finish();
+        if self.width != width || self.body_hash != body_hash {
+            self.body = issue.body.clone();
+            self.body_hash = body_hash;
+            self.widget_state.update(width, &self.body);
+        }
         self.width = width;
         self.height = self.widget_state.line_count(width) as u16;
         if let Some(cursor_position) = &mut self.cursor_position {
