@@ -49,9 +49,12 @@ impl AppContainer {
             d.dispatch(app::Action::LoadJournal { id: 1 });
             d.dispatch(app::Action::LoadJournal { id: 2 });
             d.dispatch(app::Action::LoadJournal { id: 3 });
-            d.consume_actions();
+            while d.consume_actinos_len() > 0 {
+                d.consume_action();
+            }
         }
-        let app_component = AppComponent::new(dispatcher.clone());
+        let mut app_component = AppComponent::new(dispatcher.clone());
+        app_component.update(dispatcher.clone(), dispatcher.borrow().store());
         AppContainer {
             width,
             height,
@@ -90,15 +93,17 @@ impl AppContainer {
                     self.app_component.process_event(event);
                 }
             }
-            true
-        } else {
-            self.app_component.process_event(event);
-            true
         }
-    }
-    pub fn update(&mut self) {
         self.app_component
             .update(self.dispatcher.clone(), self.dispatcher.borrow().store());
+        true
+    }
+    pub fn update(&mut self) {
+        while self.dispatcher.borrow().consume_actinos_len() > 0 {
+            self.dispatcher.borrow_mut().consume_action();
+            self.app_component
+                .update(self.dispatcher.clone(), self.dispatcher.borrow().store());
+        }
     }
     // AppContainerとターミナル全体のサイズの差を緩衝するメソッド
     // 現在はIssueComponentの初期化時に一回呼ばれるので、それ専用に定数で妥協

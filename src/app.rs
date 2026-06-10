@@ -25,8 +25,11 @@ impl Dispatcher {
     pub fn dispatch(&mut self, action: Action) {
         self.actions.push_back(action);
     }
-    pub fn consume_actions(&mut self) {
-        while let Some(action) = self.actions.pop_front() {
+    pub fn consume_actinos_len(&self) -> usize {
+        self.actions.len()
+    }
+    pub fn consume_action(&mut self) {
+        if let Some(action) = self.actions.pop_front() {
             self.store.consume_action(action);
         }
     }
