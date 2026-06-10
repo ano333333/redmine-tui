@@ -174,7 +174,7 @@ impl IssueDetailComponent {
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, _: Rc<RefCell<Dispatcher>>, store: &Store) {
         if let Some(issue) = store.get_issue(self.id) {
-            self.body.update(store, self.width);
+            self.body.update(issue, self.width);
             self.children_list.update(store);
 
             let journals = issue

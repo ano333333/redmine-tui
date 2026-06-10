@@ -3,7 +3,7 @@ use super::widget::{BodyWidget, BodyWidgetState};
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::app::Store;
+use crate::entities::Issue;
 
 pub struct BodyComponent {
     id: u16,
@@ -28,12 +28,10 @@ impl BodyComponent {
         self.focus_state.focus_event(event);
     }
 
-    pub fn update(&mut self, store: &Store, width: u16) {
-        if let Some(issue) = store.get_issue(self.id) {
-            self.widget_state.update(width, &issue.body);
-            let height = self.widget_state.line_count(width) as u16;
-            self.focus_state.update(width, height);
-        }
+    pub fn update(&mut self, issue: &Issue, width: u16) {
+        self.widget_state.update(width, &issue.body);
+        let height = self.widget_state.line_count(width) as u16;
+        self.focus_state.update(width, height);
     }
 
     pub fn line_count(&self, width: u16) -> u16 {
