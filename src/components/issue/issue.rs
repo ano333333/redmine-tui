@@ -185,7 +185,7 @@ impl IssueDetailComponent {
 
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, _: Rc<RefCell<Dispatcher>>, store: &Store) {
-        if let Some(issue) = store.get_issue(self.id) {
+        if let Some((issue, _)) = store.get_issue(self.id) {
             self.body.update(issue, self.width);
             self.children_list.update(store);
 
@@ -193,8 +193,9 @@ impl IssueDetailComponent {
                 .journal_ids
                 .iter()
                 .map(|id| store.get_journal(*id))
-                .filter(|journal| journal.is_some())
-                .map(|journal| journal.unwrap())
+                .filter(|journal_state| journal_state.is_some())
+                .map(|journal_state| journal_state.unwrap())
+                .map(|(journal, _)| journal)
                 .collect::<Vec<&Journal>>();
 
             self.journals_list.update(journals, self.width);

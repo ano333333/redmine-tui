@@ -20,20 +20,20 @@ impl ChildrenListComponent {
     }
 
     pub fn update(&mut self, store: &Store) {
-        if let Some(issue) = store.get_issue(self.id) {
+        if let Some((issue, _)) = store.get_issue(self.id) {
             self.focus_state.update(&issue.child_ids);
         }
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> ChildrenListWidget<'a> {
-        let issue = store.get_issue(self.id).unwrap();
+        let (issue, _) = store.get_issue(self.id).unwrap();
 
         let child_all_num = issue.child_ids.len() as u16;
         let child_complete_num = issue
             .child_ids
             .iter()
             .map(|id| store.get_issue(*id))
-            .filter(|issue| issue.is_some_and(|issue| issue.is_completed()))
+            .filter(|issue| issue.is_some_and(|(issue, _)| issue.is_completed()))
             .count() as u16;
         let child_incomplete_num = child_all_num - child_complete_num;
 
@@ -41,6 +41,7 @@ impl ChildrenListComponent {
             .child_ids
             .iter()
             .filter_map(|id| store.get_issue(*id))
+            .map(|(issue, _)| issue)
             .collect();
 
         ChildrenListWidget::new(
@@ -53,7 +54,7 @@ impl ChildrenListComponent {
     }
 
     pub fn line_count(&self, store: &Store) -> u16 {
-        if let Some(issue) = store.get_issue(self.id) {
+        if let Some((issue, _)) = store.get_issue(self.id) {
             2 + (issue.child_ids.len() as u16) + 1
         } else {
             0

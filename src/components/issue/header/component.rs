@@ -29,7 +29,7 @@ impl HeaderComponent {
     pub fn update(&mut self) {}
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
-        if let Some(issue) = store.get_issue(self.id) {
+        if let Some((issue, _)) = store.get_issue(self.id) {
             let widget = HeaderWidget::new(
                 self.id,
                 &issue.title,
@@ -45,7 +45,7 @@ impl HeaderComponent {
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> HeaderWidget<'a> {
-        let issue = store.get_issue(self.id).unwrap();
+        let (issue, _) = store.get_issue(self.id).unwrap();
         HeaderWidget::new(
             self.id,
             &issue.title,

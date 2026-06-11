@@ -35,9 +35,19 @@ impl Dispatcher {
     }
 }
 
+pub enum IssueState {
+    Synced,
+    Updated,
+}
+
+pub enum JournalState {
+    Synced,
+    Updated,
+}
+
 pub struct Store {
-    issues: HashMap<u16, Issue>,
-    journals: HashMap<u16, Journal>,
+    issues: HashMap<u16, (Issue, IssueState)>,
+    journals: HashMap<u16, (Journal, JournalState)>,
 }
 
 impl Store {
@@ -52,32 +62,36 @@ impl Store {
         match action {
             Action::LoadIssue { id } => {
                 if self.issues.get(&id).is_none() {
-                    self.issues.insert(id, parse_issue_yaml(id));
+                    self.issues
+                        .insert(id, (parse_issue_yaml(id), IssueState::Synced));
                 }
             }
             Action::UpdateIssue { id, body } => {
-                if let Some(issue) = self.issues.get_mut(&id) {
+                if let Some((issue, state)) = self.issues.get_mut(&id) {
                     issue.body = body;
+                    *state = IssueState::Updated;
                 }
             }
             Action::LoadJournal { id } => {
                 if self.journals.get(&id).is_none() {
-                    self.journals.insert(id, parse_journal_yaml(id));
+                    self.journals
+                        .insert(id, (parse_journal_yaml(id), JournalState::Synced));
                 }
             }
             Action::UpdateJournal { id, body } => {
-                if let Some(journal) = self.journals.get_mut(&id) {
+                if let Some((journal, state)) = self.journals.get_mut(&id) {
                     journal.comment = Some(body);
+                    *state = JournalState::Updated;
                 }
             }
         }
     }
 
-    pub fn get_issue(&self, issue_id: u16) -> Option<&Issue> {
+    pub fn get_issue(&self, issue_id: u16) -> Option<&(Issue, IssueState)> {
         self.issues.get(&issue_id)
     }
 
-    pub fn get_journal(&self, journal_id: u16) -> Option<&Journal> {
+    pub fn get_journal(&self, journal_id: u16) -> Option<&(Journal, JournalState)> {
         self.journals.get(&journal_id)
     }
 }

@@ -30,7 +30,7 @@ impl PropertyComponent {
     pub fn update(&mut self, _: &Store) {}
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
-        if let Some(issue) = store.get_issue(self.id) {
+        if let Some((issue, _)) = store.get_issue(self.id) {
             let paragraph = create_property_widget(issue, None);
             paragraph.line_count(width) as u16
         } else {
@@ -39,8 +39,8 @@ impl PropertyComponent {
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> PropertyWidget<'a> {
-        let issue = store.get_issue(self.id).unwrap();
-        create_property_widget(&issue, self.focus_state.focused_y())
+        let (issue, _) = store.get_issue(self.id).unwrap();
+        create_property_widget(issue, self.focus_state.focused_y())
     }
 
     pub fn get_cursor_position(&self) -> Position {
