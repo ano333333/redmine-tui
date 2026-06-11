@@ -41,6 +41,7 @@ impl AppContainer {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
             let mut d = dispatcher.borrow_mut();
+            d.dispatch(Action::LoadIssueStatuses);
             d.dispatch(Action::LoadIssue { id: 1 });
             d.dispatch(Action::LoadIssue { id: 2 });
             d.dispatch(Action::LoadIssue { id: 3 });

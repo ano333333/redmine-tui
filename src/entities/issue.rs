@@ -6,7 +6,7 @@ pub struct Issue {
     pub creator: String,
     pub appended_at: DateTime<Local>,
     pub updated_at: DateTime<Local>,
-    pub status: String,
+    pub issue_status_id: u16,
     pub priority: String,
     pub person_in_charge: Option<String>,
     pub target_version: Option<String>,
@@ -20,10 +20,4 @@ pub struct Issue {
     pub body: String,
     pub child_ids: Vec<u16>,
     pub journal_ids: Vec<u16>,
-}
-
-impl Issue {
-    pub fn is_completed(&self) -> bool {
-        self.status == "完了(closed)"
-    }
 }

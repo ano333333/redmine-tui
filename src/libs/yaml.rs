@@ -24,6 +24,10 @@ pub fn as_string(yaml: &Yaml, key: &str) -> String {
         .to_string()
 }
 
+pub fn as_bool(yaml: &Yaml, key: &str) -> bool {
+    yaml[key].as_bool().expect(format!("no {}", key).as_str())
+}
+
 pub fn as_local_datetime(yaml: &Yaml, key: &str) -> DateTime<Local> {
     let str = yaml[key].as_str().expect(format!("no {}", key).as_str());
     let naive_date = NaiveDate::parse_from_str(str, "%Y/%m/%d")

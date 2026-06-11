@@ -2,12 +2,7 @@
 
 use chrono::{DateTime, Local};
 use insta::assert_snapshot;
-use ratatui::{
-    Terminal,
-    backend::TestBackend,
-    buffer::Buffer,
-    widgets::Widget,
-};
+use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
 use crate::entities::Issue;
 
@@ -54,10 +49,7 @@ fn describe_buffer(buffer: &Buffer) -> String {
         if styled_cells.is_empty() {
             lines.push(format!("{y:02}: \"{text}\""));
         } else {
-            lines.push(format!(
-                "{y:02}: \"{text}\" | {}",
-                styled_cells.join(", ")
-            ));
+            lines.push(format!("{y:02}: \"{text}\" | {}", styled_cells.join(", ")));
         }
     }
 
@@ -67,7 +59,7 @@ fn describe_buffer(buffer: &Buffer) -> String {
 pub fn sample_issue(
     id: u16,
     title: &str,
-    status: &str,
+    issue_status_id: u16,
     person_in_charge: Option<&str>,
     start_date: Option<&str>,
     due: Option<&str>,
@@ -79,7 +71,7 @@ pub fn sample_issue(
         creator: "alice".to_string(),
         appended_at: local_datetime("2026-01-10T00:00:00+09:00"),
         updated_at: local_datetime("2026-01-15T00:00:00+09:00"),
-        status: status.to_string(),
+        issue_status_id,
         priority: "High".to_string(),
         person_in_charge: person_in_charge.map(str::to_string),
         target_version: Some("v1.2.3".to_string()),

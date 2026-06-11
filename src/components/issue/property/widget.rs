@@ -10,7 +10,7 @@ const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 
 pub struct PropertyWidget<'a> {
     id: u16,
-    status: &'a String,
+    status: &'a str,
     priority: &'a String,
     person_in_charge: &'a Option<String>,
     target_version: &'a Option<String>,
@@ -39,7 +39,7 @@ impl<'a> PropertyWidget<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: u16,
-        status: &'a String,
+        status: &'a str,
         priority: &'a String,
         person_in_charge: &'a Option<String>,
         target_version: &'a Option<String>,
@@ -74,7 +74,7 @@ impl<'a> PropertyWidget<'a> {
         paragraph.line_count(width)
     }
 
-    fn create_paragraph(&self) -> Paragraph {
+    fn create_paragraph(&self) -> Paragraph<'_> {
         let person = match self.person_in_charge {
             Some(s) => s.clone(),
             None => "-".to_string(),
@@ -100,7 +100,7 @@ impl<'a> PropertyWidget<'a> {
         Paragraph::new(vec![
             Line::from(vec![
                 Span::from("ステータス          ").style(Style::default().blue()),
-                Span::from(self.status.clone()),
+                Span::from(self.status.to_string()),
             ]),
             Line::from(format!("優先度              {}", self.priority.clone())),
             Line::from(format!("担当者              {}", person)).style(Style::default().blue()),
@@ -157,7 +157,7 @@ mod tests {
             11,
             PropertyWidget::new(
                 1,
-                &status,
+                status.as_str(),
                 &priority,
                 &person_in_charge,
                 &target_version,
@@ -188,7 +188,7 @@ mod tests {
             16,
             PropertyWidget::new(
                 1,
-                &status,
+                status.as_str(),
                 &priority,
                 &person_in_charge,
                 &target_version,
@@ -215,7 +215,7 @@ mod tests {
         let tags = vec!["frontend".to_string(), "needs-review".to_string()];
         let widget = PropertyWidget::new(
             1,
-            &status,
+            status.as_str(),
             &priority,
             &person_in_charge,
             &target_version,
@@ -243,7 +243,7 @@ mod tests {
         let tags = vec!["frontend".to_string(), "needs-review".to_string()];
         let widget = PropertyWidget::new(
             1,
-            &status,
+            status.as_str(),
             &priority,
             &person_in_charge,
             &target_version,

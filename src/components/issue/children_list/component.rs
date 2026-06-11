@@ -4,7 +4,7 @@ use ratatui::layout::Position;
 use crate::app::Store;
 
 use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
-use super::widget::ChildrenListWidget;
+use super::widget::{ChildIssueRow, ChildrenListWidget};
 
 pub struct ChildrenListComponent {
     id: u16,
@@ -29,25 +29,32 @@ impl ChildrenListComponent {
         let (issue, _) = store.get_issue(self.id).unwrap();
 
         let child_all_num = issue.child_ids.len() as u16;
-        let child_complete_num = issue
+        let child_closed_num = issue
             .child_ids
             .iter()
-            .map(|id| store.get_issue(*id))
-            .filter(|issue| issue.is_some_and(|(issue, _)| issue.is_completed()))
+            .filter(|id| {
+                store.get_issue(**id).is_some_and(|(issue, _)| {
+                    let (issue_status, _) = store.get_issue_status(issue.issue_status_id);
+                    issue_status.is_closed
+                })
+            })
             .count() as u16;
-        let child_incomplete_num = child_all_num - child_complete_num;
+        let child_opened_num = child_all_num - child_closed_num;
 
         let children: Vec<_> = issue
             .child_ids
             .iter()
             .filter_map(|id| store.get_issue(*id))
-            .map(|(issue, _)| issue)
+            .map(|(issue, _)| ChildIssueRow {
+                issue,
+                issue_status: store.get_issue_status(issue.issue_status_id),
+            })
             .collect();
 
         ChildrenListWidget::new(
             child_all_num,
-            child_complete_num,
-            child_incomplete_num,
+            child_closed_num,
+            child_opened_num,
             children,
             self.focus_state.focused_index(),
         )

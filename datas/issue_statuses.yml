@@ -1,0 +1,19 @@
+issue_statuses:
+  - id: 1
+    name: "新規(new)"
+    is_closed: false
+  - id: 2
+    name: "割り当て(assigned)"
+    is_closed: false
+  - id: 3
+    name: "進行中(accepted)"
+    is_closed: false
+  - id: 4
+    name: "レビュー(review)"
+    is_closed: false
+  - id: 5
+    name: "完了(closed)"
+    is_closed: true
+  - id: 6
+    name: "改修確認待ち"
+    is_closed: false
