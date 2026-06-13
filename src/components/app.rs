@@ -6,7 +6,11 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 
 use crate::app::{Dispatcher, Store};
-use crate::components::issue::{EventProcessResult as IssueEventProcessResult, IssueDetailComponent};
+use crate::components::issue::{
+    EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
+};
+
+use super::select_box_popup::SelectBoxPopupComponent;
 
 pub struct EditorRequest {
     pub initial_text: String,
@@ -26,6 +30,7 @@ enum PendingEditorContext {
 
 pub struct AppComponent {
     issue_component: IssueDetailComponent,
+    popup: Option<SelectBoxPopupComponent>,
     dispatcher: Rc<RefCell<Dispatcher>>,
     pending_effect: Option<AppEffect>,
     pending_editor_context: Option<PendingEditorContext>,
@@ -35,6 +40,7 @@ impl AppComponent {
     pub fn new(dispatcher: Rc<RefCell<Dispatcher>>) -> Self {
         AppComponent {
             issue_component: IssueDetailComponent::new(dispatcher.clone(), 3),
+            popup: None,
             dispatcher,
             pending_effect: None,
             pending_editor_context: None,
@@ -73,10 +79,12 @@ impl AppComponent {
     pub fn handle_editor_response(&mut self, response: EditorResponse) {
         match self.pending_editor_context.take() {
             Some(PendingEditorContext::IssueBody { id }) => {
-                self.dispatcher.borrow_mut().dispatch(crate::app::Action::UpdateIssue {
-                    id,
-                    body: response.edited_text,
-                });
+                self.dispatcher
+                    .borrow_mut()
+                    .dispatch(crate::app::Action::UpdateIssue {
+                        id,
+                        body: response.edited_text,
+                    });
             }
             None => {}
         }
