@@ -29,6 +29,7 @@ use super::{IssueDetailWidget, IssueDetailWidgetState};
 
 pub enum EventProcessResult {
     EditIssueBodyRequested { id: u16, body: String },
+    OpenIssueStatusPopup,
 }
 
 #[derive(PartialEq)]
@@ -41,7 +42,7 @@ enum FocusedComponent {
 }
 
 pub struct IssueDetailComponent {
-    id: u16,
+    pub id: u16,
     header: HeaderComponent,
     property: PropertyComponent,
     body: BodyComponent,
@@ -115,6 +116,9 @@ impl IssueDetailComponent {
                         self.focused_component = FocusedComponent::Body;
                         self.body
                             .focus_event(BodyFocusEvent::CursorEnteredFromAbove { x: 0 });
+                    }
+                    Some(PropertyEventProcessResult::OpenIssueStatusPopup) => {
+                        return Some(EventProcessResult::OpenIssueStatusPopup);
                     }
                     None => {}
                 }

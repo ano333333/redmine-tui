@@ -8,8 +8,7 @@ use crossterm::{
 use ratatui::{DefaultTerminal, Frame, layout::Rect};
 use std::io::Result;
 use std::{
-    env,
-    fs,
+    env, fs,
     path::PathBuf,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
@@ -71,26 +70,35 @@ impl AppContainer {
                 KeyCode::Left => {
                     self.width = max(self.width - 1, APP_WIDTH_MIN);
                     // ターミナルからのリサイズイベントに偽装する
-                    self.app_component
-                        .process_event(Event::Resize(self.width, self.height));
+                    self.app_component.process_event(
+                        Event::Resize(self.width, self.height),
+                        self.dispatcher.clone(),
+                    );
                 }
                 KeyCode::Right => {
                     self.width = self.width.saturating_add(1);
-                    self.app_component
-                        .process_event(Event::Resize(self.width, self.height));
+                    self.app_component.process_event(
+                        Event::Resize(self.width, self.height),
+                        self.dispatcher.clone(),
+                    );
                 }
                 KeyCode::Up => {
                     self.height = max(self.height - 1, APP_HEIGHT_MIN);
-                    self.app_component
-                        .process_event(Event::Resize(self.width, self.height));
+                    self.app_component.process_event(
+                        Event::Resize(self.width, self.height),
+                        self.dispatcher.clone(),
+                    );
                 }
                 KeyCode::Down => {
                     self.height = self.height.saturating_add(1);
-                    self.app_component
-                        .process_event(Event::Resize(self.width, self.height));
+                    self.app_component.process_event(
+                        Event::Resize(self.width, self.height),
+                        self.dispatcher.clone(),
+                    );
                 }
                 _ => {
-                    self.app_component.process_event(event);
+                    self.app_component
+                        .process_event(event, self.dispatcher.clone());
                 }
             }
         }
@@ -173,7 +181,9 @@ impl AppContainer {
 
         let edited = fs::read_to_string(&path)?;
         let _ = fs::remove_file(&path);
-        Ok(EditorResponse { edited_text: edited })
+        Ok(EditorResponse {
+            edited_text: edited,
+        })
     }
 
     fn create_editor_tmpfile(initial_text: &str) -> Result<PathBuf> {

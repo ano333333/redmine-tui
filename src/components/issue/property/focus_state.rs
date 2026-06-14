@@ -10,6 +10,7 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromAbove,
     CursorLeavedFromBelow,
+    OpenIssueStatusPopup,
 }
 
 pub struct FocusState {
@@ -37,6 +38,11 @@ impl FocusState {
                         return Some(EventProcessResult::CursorLeavedFromAbove);
                     }
                     *focused_y -= 1;
+                }
+                KeyCode::Char('e') => {
+                    if *focused_y == 0 {
+                        return Some(EventProcessResult::OpenIssueStatusPopup);
+                    }
                 }
                 _ => {}
             }

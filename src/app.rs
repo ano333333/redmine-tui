@@ -45,6 +45,7 @@ pub enum JournalState {
     Updated,
 }
 
+#[derive(PartialEq, Eq)]
 pub enum IssueStatusState {
     Existing,
     Deleted,
@@ -82,6 +83,11 @@ impl Store {
                 if let Some((issue, state)) = self.issues.get_mut(&id) {
                     issue.body = body;
                     *state = IssueState::Updated;
+                }
+            }
+            Action::UpdateIssueStatus { id, status_id } => {
+                if let Some((issue, state)) = self.issues.get_mut(&id) {
+                    issue.issue_status_id = status_id
                 }
             }
             Action::LoadJournal { id } => {
@@ -122,6 +128,7 @@ pub enum Action {
     LoadIssueStatuses,
     LoadIssue { id: u16 },
     UpdateIssue { id: u16, body: String },
+    UpdateIssueStatus { id: u16, status_id: u16 },
     LoadJournal { id: u16 },
     UpdateJournal { id: u16, body: String },
 }
