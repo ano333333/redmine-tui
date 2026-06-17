@@ -48,39 +48,38 @@ mod tests {
     use super::*;
     use crate::components::issue::journals_list::journals_list_item::JournalItemWidgetState;
     use crate::{
-        entities::{Journal, JournalPropertyChange},
+        entities::{Journal, JournalDetail, JournalDetailAttr},
         test_support::{local_datetime, render_snapshot},
     };
 
     fn create_journal(
-        creator: String,
-        updated_at: DateTime<Local>,
-        properties: Vec<JournalPropertyChange>,
-        comment: Option<String>,
+        user: String,
+        updated_on: DateTime<Local>,
+        details: Vec<JournalDetail>,
+        notes: &String,
     ) -> Journal {
         Journal {
             id: 1,
-            creator,
-            updated_at,
-            properties,
-            comment,
+            user,
+            updated_on,
+            details,
+            notes: notes.clone(),
         }
     }
 
     #[test]
     fn snapshot_journals_list_mixed_entries() {
-        let creator = "alice".to_string();
-        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
-        let properties = vec![JournalPropertyChange {
-            target: "担当者".to_string(),
-            old: "(なし)".to_string(),
-            new: "bob".to_string(),
-        }];
-        let comment = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
+        let user = "alice".to_string();
+        let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
+        let details = vec![JournalDetail::Attr(JournalDetailAttr::AssignedTo {
+            old: None,
+            new: Some("bob".to_string()),
+        })];
+        let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
 
         let mut state = JournalItemWidgetState::new();
-        state.update(24, &creator, &updated_at, &Some(comment.clone()));
-        let journal = create_journal(creator, updated_at, properties, Some(comment));
+        state.update(24, &user, &updated_on, &notes);
+        let journal = create_journal(user, updated_on, details, &notes);
         let journals = vec![JournalItemWidget::new(&journal, &state, true)];
         let line_count = JournalsListWidget::new(journals).line_count(24);
         let journals = vec![JournalItemWidget::new(&journal, &state, true)];
@@ -95,18 +94,17 @@ mod tests {
 
     #[test]
     fn snapshot_journals_list_clips_without_relayout_when_height_is_short() {
-        let creator = "alice".to_string();
-        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
-        let properties = vec![JournalPropertyChange {
-            target: "担当者".to_string(),
-            old: "(なし)".to_string(),
-            new: "bob".to_string(),
-        }];
-        let comment = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
+        let user = "alice".to_string();
+        let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
+        let details = vec![JournalDetail::Attr(JournalDetailAttr::AssignedTo {
+            old: None,
+            new: Some("bob".to_string()),
+        })];
+        let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
 
         let mut state = JournalItemWidgetState::new();
-        state.update(24, &creator, &updated_at, &Some(comment.clone()));
-        let journal = create_journal(creator, updated_at, properties, Some(comment));
+        state.update(24, &user, &updated_on, &notes);
+        let journal = create_journal(user, updated_on, details, &notes);
         let journals = vec![JournalItemWidget::new(&journal, &state, true)];
 
         render_snapshot(
@@ -119,18 +117,17 @@ mod tests {
 
     #[test]
     fn line_count_journals_list_current_values() {
-        let creator = "alice".to_string();
-        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
-        let properties = vec![JournalPropertyChange {
-            target: "担当者".to_string(),
-            old: "(なし)".to_string(),
-            new: "bob".to_string(),
-        }];
-        let comment = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
+        let user = "alice".to_string();
+        let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
+        let details = vec![JournalDetail::Attr(JournalDetailAttr::AssignedTo {
+            old: None,
+            new: Some("bob".to_string()),
+        })];
+        let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
 
         let mut state = JournalItemWidgetState::new();
-        state.update(24, &creator, &updated_at, &Some(comment.clone()));
-        let journal = create_journal(creator, updated_at, properties, Some(comment));
+        state.update(24, &user, &updated_on, &notes);
+        let journal = create_journal(user, updated_on, details, &notes);
         let journals = vec![JournalItemWidget::new(&journal, &state, false)];
         let widget = JournalsListWidget::new(journals);
         assert_eq!(widget.line_count(24), 9);
@@ -138,53 +135,37 @@ mod tests {
 
     #[test]
     fn line_count_journals_list_changes_with_child_comment_height() {
-        let creator = "alice".to_string();
-        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
-        let properties = vec![JournalPropertyChange {
-            target: "担当者".to_string(),
-            old: "(なし)".to_string(),
-            new: "bob".to_string(),
-        }];
-        let short_comment = "first paragraph with enough words to wrap".to_string();
-        let long_comment =
+        let user = "alice".to_string();
+        let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
+        let details = vec![JournalDetail::Attr(JournalDetailAttr::AssignedTo {
+            old: None,
+            new: Some("bob".to_string()),
+        })];
+        let short_notes = "first paragraph with enough words to wrap".to_string();
+        let long_notes =
             "first paragraph\n\nsecond paragraph with wrapping words that expands the comment"
                 .to_string();
 
         let wide_short = {
             let mut state = JournalItemWidgetState::new();
-            state.update(32, &creator, &updated_at, &Some(short_comment.clone()));
-            let journal = create_journal(
-                creator.clone(),
-                updated_at,
-                properties.clone(),
-                Some(short_comment.clone()),
-            );
+            state.update(32, &user, &updated_on, &short_notes);
+            let journal = create_journal(user.clone(), updated_on, details.clone(), &short_notes);
             let journals = vec![JournalItemWidget::new(&journal, &state, false)];
             JournalsListWidget::new(journals).line_count(32)
         };
 
         let narrow_short = {
             let mut state = JournalItemWidgetState::new();
-            state.update(18, &creator, &updated_at, &Some(short_comment.clone()));
-            let journal = create_journal(
-                creator.clone(),
-                updated_at,
-                properties.clone(),
-                Some(short_comment.clone()),
-            );
+            state.update(18, &user, &updated_on, &short_notes);
+            let journal = create_journal(user.clone(), updated_on, details.clone(), &short_notes);
             let journals = vec![JournalItemWidget::new(&journal, &state, false)];
             JournalsListWidget::new(journals).line_count(18)
         };
 
         let narrow_long = {
             let mut state = JournalItemWidgetState::new();
-            state.update(18, &creator, &updated_at, &Some(long_comment.clone()));
-            let journal = create_journal(
-                creator.clone(),
-                updated_at,
-                properties.clone(),
-                Some(long_comment.clone()),
-            );
+            state.update(18, &user, &updated_on, &long_notes);
+            let journal = create_journal(user.clone(), updated_on, details.clone(), &long_notes);
             let journals = vec![JournalItemWidget::new(&journal, &state, false)];
             JournalsListWidget::new(journals).line_count(18)
         };
@@ -195,22 +176,20 @@ mod tests {
 
     #[test]
     fn line_count_property_only_increases_with_property_count() {
-        let creator = "alice".to_string();
-        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
-        let properties = vec![
-            JournalPropertyChange {
-                target: "ステータス".to_string(),
+        let user = "alice".to_string();
+        let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
+        let details = vec![
+            JournalDetail::Attr(JournalDetailAttr::StatusId {
                 old: "新規".to_string(),
                 new: "進行中".to_string(),
-            },
-            JournalPropertyChange {
-                target: "担当者".to_string(),
-                old: "(なし)".to_string(),
-                new: "bob".to_string(),
-            },
+            }),
+            JournalDetail::Attr(JournalDetailAttr::AssignedTo {
+                old: None,
+                new: Some("bob".to_string()),
+            }),
         ];
 
-        let journal = create_journal(creator, updated_at, properties, None);
+        let journal = create_journal(user, updated_on, details, &"".to_string());
         let state = JournalItemWidgetState::new();
         let widget = JournalItemWidget::new(&journal, &state, false);
         assert_eq!(widget.line_count(20), 6);

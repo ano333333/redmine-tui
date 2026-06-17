@@ -1,8 +1,7 @@
 id: 3
-creator: user1
-type: comment
-updated_at: 2026/02/16
-body: |-
+user: user1
+updated_on: 2026/02/16
+notes: |-
   ### h3
 
   #### h4
@@ -38,3 +37,4 @@ body: |-
   ```
 
   > citation
+details: []

@@ -55,7 +55,7 @@ impl JournalsListItemComponent {
         match key.code {
             KeyCode::Char('j') => {
                 if let Some(FocusedPosition::Property(index)) = &mut self.focused_position {
-                    if *index + 1 < self.journal.properties.len() {
+                    if *index + 1 < self.journal.details.len() {
                         *index += 1;
                     } else if self.comment_line_count > 0 {
                         self.focused_position =
@@ -83,9 +83,9 @@ impl JournalsListItemComponent {
                 {
                     if position.y > 0 {
                         position.y -= 1;
-                    } else if self.journal.properties.len() > 0 {
+                    } else if self.journal.details.len() > 0 {
                         self.focused_position =
-                            Some(FocusedPosition::Property(self.journal.properties.len() - 1));
+                            Some(FocusedPosition::Property(self.journal.details.len() - 1));
                     } else {
                         return Some(EventProcessResult::CursorLeavedFromAbove { x: position.x });
                     }
@@ -111,7 +111,7 @@ impl JournalsListItemComponent {
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
-        let property_count = self.journal.properties.len();
+        let property_count = self.journal.details.len();
         match event {
             FocusEvent::Focused { position } => {
                 if position.y < property_count as u16 + 2 {
@@ -156,14 +156,10 @@ impl JournalsListItemComponent {
     pub fn update(&mut self, journal: &Journal, width: u16) {
         self.width = width;
         self.journal = journal.clone();
-        self.widget_state.update(
-            width,
-            &journal.creator,
-            &journal.updated_at,
-            &journal.comment,
-        );
+        self.widget_state
+            .update(width, &journal.user, &journal.updated_on, &journal.notes);
         self.comment_line_count = self.widget_state.comment_line_count();
-        let property_count = self.journal.properties.len();
+        let property_count = self.journal.details.len();
         match &mut self.focused_position {
             None => {}
             Some(FocusedPosition::Property(index)) => {
@@ -192,11 +188,11 @@ impl JournalsListItemComponent {
     }
 
     pub fn line_count(&self, _: u16) -> u16 {
-        1 + 1 + self.journal.properties.len() as u16 + 1 + self.comment_line_count
+        1 + 1 + self.journal.details.len() as u16 + 1 + self.comment_line_count
     }
 
     pub fn get_cursor_position(&self) -> Position {
-        let property_count = self.journal.properties.len();
+        let property_count = self.journal.details.len();
         match self.focused_position {
             None => Position { x: 0, y: 0 },
             Some(FocusedPosition::Property(index)) => Position {

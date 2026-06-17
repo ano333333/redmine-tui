@@ -4,4 +4,4 @@ pub mod journal;
 
 pub use issue::Issue;
 pub use issue_status::IssueStatus;
-pub use journal::{Journal, JournalPropertyChange};
+pub use journal::{Journal, JournalDetail, JournalDetailAttr};

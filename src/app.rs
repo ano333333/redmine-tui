@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use crate::entities::{Issue, IssueStatus, Journal, JournalPropertyChange};
+use crate::entities::{Issue, IssueStatus, Journal, JournalDetail, JournalDetailAttr};
 use crate::libs::yaml::{as_u16_array, as_u16_option};
 use crate::libs::{
     as_bool, as_local_datetime, as_local_datetime_option, as_string, as_string_array,
@@ -96,9 +96,9 @@ impl Store {
                         .insert(id, (parse_journal_yaml(id), JournalState::Synced));
                 }
             }
-            Action::UpdateJournal { id, body } => {
+            Action::UpdateJournal { id, notes } => {
                 if let Some((journal, state)) = self.journals.get_mut(&id) {
-                    journal.comment = Some(body);
+                    journal.notes = notes;
                     *state = JournalState::Updated;
                 }
             }
@@ -130,46 +130,63 @@ pub enum Action {
     UpdateIssue { id: u16, body: String },
     UpdateIssueStatus { id: u16, status_id: u16 },
     LoadJournal { id: u16 },
-    UpdateJournal { id: u16, body: String },
+    UpdateJournal { id: u16, notes: String },
 }
 
 fn parse_journal_yaml(id: u16) -> Journal {
     let path = format!("datas/journals/{}.yml", id);
     let yaml = read_yaml(path.as_str());
-    let creator = as_string(&yaml, "creator");
-    let updated_at = as_local_datetime(&yaml, "updated_at");
-    let journal_type = yaml["type"].as_str();
-    let properties = if let Some(entries) = yaml["properties"].as_vec() {
-        entries
-            .iter()
-            .map(|entry| JournalPropertyChange {
-                target: entry["target"].as_str().expect("no target").to_string(),
-                old: entry["old"].as_str().expect("no old").to_string(),
-                new: entry["new"].as_str().expect("no new").to_string(),
-            })
-            .collect()
-    } else if journal_type == Some("property") {
-        vec![JournalPropertyChange {
-            target: as_string(&yaml, "target"),
-            old: as_string(&yaml, "old"),
-            new: as_string(&yaml, "new"),
-        }]
-    } else {
-        vec![]
-    };
-    let comment = yaml["body"].as_str().map(|body| body.to_string());
-
-    if properties.is_empty() && comment.is_none() {
-        panic!("no matching journal content");
-    }
+    let parsed_id = as_u16(&yaml, "id");
+    assert_eq!(parsed_id, id, "journal id mismatch: {} != {}", parsed_id, id);
+    let user = as_string(&yaml, "user");
+    let updated_on = as_local_datetime(&yaml, "updated_on");
+    let notes = read_required_string_option(&yaml, "notes").unwrap_or_default();
+    let details = yaml["details"]
+        .as_vec()
+        .expect("no details")
+        .iter()
+        .map(parse_journal_detail_yaml)
+        .collect();
 
     Journal {
         id,
-        creator,
-        updated_at,
-        properties,
-        comment,
+        user,
+        updated_on,
+        details,
+        notes,
     }
+}
+
+fn parse_journal_detail_yaml(yaml: &yaml_rust::Yaml) -> JournalDetail {
+    match as_string(yaml, "type").as_str() {
+        "attr" => JournalDetail::Attr(parse_journal_detail_attr_yaml(yaml)),
+        detail_type => panic!("unsupported journal detail type: {}", detail_type),
+    }
+}
+
+fn parse_journal_detail_attr_yaml(yaml: &yaml_rust::Yaml) -> JournalDetailAttr {
+    match as_string(yaml, "name").as_str() {
+        "status_id" => JournalDetailAttr::StatusId {
+            old: as_string(yaml, "old"),
+            new: as_string(yaml, "new"),
+        },
+        "due_date" => JournalDetailAttr::DueDate {
+            old: as_local_datetime(yaml, "old"),
+            new: as_local_datetime(yaml, "new"),
+        },
+        "assigned_to" => JournalDetailAttr::AssignedTo {
+            old: read_required_string_option(yaml, "old"),
+            new: read_required_string_option(yaml, "new"),
+        },
+        attr_name => panic!("unsupported journal detail attr: {}", attr_name),
+    }
+}
+
+fn read_required_string_option(yaml: &yaml_rust::Yaml, key: &str) -> Option<String> {
+    if yaml[key].is_badvalue() {
+        panic!("no {}", key);
+    }
+    as_string_option(yaml, key)
 }
 
 fn parse_issue_yaml(id: u16) -> Issue {
