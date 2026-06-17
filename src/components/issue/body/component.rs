@@ -121,10 +121,10 @@ impl BodyComponent {
 
     pub fn update(&mut self, issue: &Issue, width: u16) {
         let mut hasher = DefaultHasher::new();
-        issue.body.hash(&mut hasher);
+        issue.description.hash(&mut hasher);
         let body_hash = hasher.finish();
         if self.width != width || self.body_hash != body_hash {
-            self.body = issue.body.clone();
+            self.body = issue.description.clone();
             self.body_hash = body_hash;
             self.widget_state.update(width, &self.body);
         }

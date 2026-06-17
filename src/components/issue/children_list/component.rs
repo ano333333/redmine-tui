@@ -34,7 +34,7 @@ impl ChildrenListComponent {
             .iter()
             .filter(|id| {
                 store.get_issue(**id).is_some_and(|(issue, _)| {
-                    let (issue_status, _) = store.get_issue_status(issue.issue_status_id);
+                    let (issue_status, _) = store.get_issue_status(issue.status_id);
                     issue_status.is_closed
                 })
             })
@@ -47,7 +47,7 @@ impl ChildrenListComponent {
             .filter_map(|id| store.get_issue(*id))
             .map(|(issue, _)| ChildIssueRow {
                 issue,
-                issue_status: store.get_issue_status(issue.issue_status_id),
+                issue_status: store.get_issue_status(issue.status_id),
             })
             .collect();
 

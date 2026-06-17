@@ -109,12 +109,12 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
         ])
         .split(row);
     create_id_widget(issue.id, is_closed).render(cols[0], buffer);
-    create_title_widget(&issue.title).render(cols[2], buffer);
+    create_title_widget(&issue.subject).render(cols[2], buffer);
     create_status_widget(status_name).render(cols[4], buffer);
-    create_person_in_charge_widget(&issue.person_in_charge).render(cols[6], buffer);
+    create_person_in_charge_widget(&issue.assigned_to).render(cols[6], buffer);
     create_start_date_widget(&issue.start_date).render(cols[8], buffer);
-    create_due_widget(&issue.due).render(cols[10], buffer);
-    create_progress_widget(issue.progress).render(cols[12], buffer);
+    create_due_widget(&issue.due_date).render(cols[10], buffer);
+    create_progress_widget(issue.done_ratio).render(cols[12], buffer);
 
     if focused {
         for x in 0..row.width {

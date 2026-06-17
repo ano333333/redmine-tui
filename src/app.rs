@@ -81,13 +81,13 @@ impl Store {
             }
             Action::UpdateIssue { id, body } => {
                 if let Some((issue, state)) = self.issues.get_mut(&id) {
-                    issue.body = body;
+                    issue.description = body;
                     *state = IssueState::Updated;
                 }
             }
             Action::UpdateIssueStatus { id, status_id } => {
                 if let Some((issue, state)) = self.issues.get_mut(&id) {
-                    issue.issue_status_id = status_id
+                    issue.status_id = status_id
                 }
             }
             Action::LoadJournal { id } => {
@@ -176,42 +176,42 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let path = format!("datas/issues/{}.yml", id);
     let yaml = read_yaml(path.as_str());
     let id = as_u16(&yaml, "id");
-    let title = as_string(&yaml, "title");
-    let creator = as_string(&yaml, "creator");
-    let appended_at = as_local_datetime(&yaml, "appended_at");
-    let updated_at = as_local_datetime(&yaml, "updated_at");
-    let issue_status_id = as_u16(&yaml, "issue_status_id");
+    let subject = as_string(&yaml, "subject");
+    let author = as_string(&yaml, "author");
+    let created_on = as_local_datetime(&yaml, "created_on");
+    let updated_on = as_local_datetime(&yaml, "updated_on");
+    let status_id = as_u16(&yaml, "status_id");
     let priority = as_string(&yaml, "priority");
-    let person_in_charge = as_string_option(&yaml, "person_in_charge");
-    let target_version = as_string_option(&yaml, "target_version");
+    let assigned_to = as_string_option(&yaml, "assigned_to");
+    let fixed_version = as_string_option(&yaml, "fixed_version");
     let start_date = as_local_datetime_option(&yaml, "start_date");
-    let due = as_local_datetime_option(&yaml, "due");
-    let progress = as_u16(&yaml, "progress");
-    let planned_hours = as_u16_option(&yaml, "planned_hours");
+    let due_date = as_local_datetime_option(&yaml, "due_date");
+    let done_ratio = as_u16(&yaml, "done_ratio");
+    let estimated_hours = as_u16_option(&yaml, "estimated_hours");
     let resolve_way = as_string_option(&yaml, "resolve_way");
     let component = as_string(&yaml, "component");
     let tags = as_string_array(&yaml, "tags");
-    let body = as_string(&yaml, "body");
+    let description = as_string(&yaml, "description");
     let child_ids = as_u16_array(&yaml, "child_ids");
     let journal_ids = as_u16_array(&yaml, "journal_ids");
     Issue {
         id,
-        title,
-        creator,
-        appended_at,
-        updated_at,
-        issue_status_id,
+        subject,
+        author,
+        created_on,
+        updated_on,
+        status_id,
         priority,
-        person_in_charge,
-        target_version,
+        assigned_to,
+        fixed_version,
         start_date,
-        due,
-        progress,
-        planned_hours,
+        due_date,
+        done_ratio,
+        estimated_hours,
         resolve_way,
         component,
         tags,
-        body,
+        description,
         child_ids,
         journal_ids,
     }

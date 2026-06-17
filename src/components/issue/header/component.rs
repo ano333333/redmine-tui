@@ -32,10 +32,10 @@ impl HeaderComponent {
         if let Some((issue, _)) = store.get_issue(self.id) {
             let widget = HeaderWidget::new(
                 self.id,
-                &issue.title,
-                &issue.creator,
-                issue.appended_at,
-                issue.updated_at,
+                &issue.subject,
+                &issue.author,
+                issue.created_on,
+                issue.updated_on,
                 self.focus_state.is_focused(),
             );
             widget.line_count(width) as u16
@@ -48,10 +48,10 @@ impl HeaderComponent {
         let (issue, _) = store.get_issue(self.id).unwrap();
         HeaderWidget::new(
             self.id,
-            &issue.title,
-            &issue.creator,
-            issue.appended_at,
-            issue.updated_at,
+            &issue.subject,
+            &issue.author,
+            issue.created_on,
+            issue.updated_on,
             self.focus_state.is_focused(),
         )
     }

@@ -1,13 +1,11 @@
 id: 1
 subject: issue1
-author_id: 1
+author: user1
 created_on: 2026/01/01
 updated_on: 2026/01/04
-project_id: 1
-tracker_id: 1
 status_id: 3
-priority_id: 1
-assigned_to_id: 1
+priority: major
+assigned_to: user1
 start_date: 2025/12/09
 due_date: 2025/12/19
 done_ratio: 100
