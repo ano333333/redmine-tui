@@ -48,6 +48,10 @@ impl ChildrenListComponent {
             .map(|(issue, _)| ChildIssueRow {
                 issue,
                 issue_status: store.get_issue_status(issue.status_id),
+                assigned_to_name: issue
+                    .assigned_to_id
+                    .and_then(|user_id| store.get_user(user_id))
+                    .map(|(user, _)| user.name.as_str()),
             })
             .collect();
 

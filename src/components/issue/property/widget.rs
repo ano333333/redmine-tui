@@ -12,7 +12,7 @@ pub struct PropertyWidget<'a> {
     id: u16,
     status: &'a str,
     priority: &'a String,
-    person_in_charge: &'a Option<String>,
+    person_in_charge: Option<&'a str>,
     target_version: &'a Option<String>,
     start_date: Option<DateTime<Local>>,
     due: Option<DateTime<Local>>,
@@ -41,7 +41,7 @@ impl<'a> PropertyWidget<'a> {
         id: u16,
         status: &'a str,
         priority: &'a String,
-        person_in_charge: &'a Option<String>,
+        person_in_charge: Option<&'a str>,
         target_version: &'a Option<String>,
         start_date: Option<DateTime<Local>>,
         due: Option<DateTime<Local>>,
@@ -76,7 +76,7 @@ impl<'a> PropertyWidget<'a> {
 
     fn create_paragraph(&self) -> Paragraph<'_> {
         let person = match self.person_in_charge {
-            Some(s) => s.clone(),
+            Some(s) => s.to_string(),
             None => "-".to_string(),
         };
         let target_version = match self.target_version {
@@ -159,7 +159,7 @@ mod tests {
                 1,
                 status.as_str(),
                 &priority,
-                &person_in_charge,
+                person_in_charge.as_deref(),
                 &target_version,
                 Some(local_datetime("2026-01-10T00:00:00+09:00")),
                 Some(local_datetime("2026-01-20T00:00:00+09:00")),
@@ -190,7 +190,7 @@ mod tests {
                 1,
                 status.as_str(),
                 &priority,
-                &person_in_charge,
+                person_in_charge,
                 &target_version,
                 None,
                 None,
@@ -217,7 +217,7 @@ mod tests {
             1,
             status.as_str(),
             &priority,
-            &person_in_charge,
+            person_in_charge,
             &target_version,
             None,
             None,
@@ -245,7 +245,7 @@ mod tests {
             1,
             status.as_str(),
             &priority,
-            &person_in_charge,
+            person_in_charge,
             &target_version,
             None,
             None,

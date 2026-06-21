@@ -10,8 +10,8 @@ const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 
 pub struct HeaderWidget<'a> {
     id: u16,
-    title: &'a String,
-    creator: &'a String,
+    title: &'a str,
+    creator: &'a str,
     appended_at: DateTime<Local>,
     updated_at: DateTime<Local>,
     focused_title: bool,
@@ -23,11 +23,11 @@ impl<'a> Widget for HeaderWidget<'a> {
         let paragraph = Paragraph::new(vec![
             Line::from(format!("#{}", self.id)),
             Line::from(""),
-            Line::from(format!("# {}", self.title.clone())).style(Style::default().bold()),
+            Line::from(format!("# {}", self.title)).style(Style::default().bold()),
             // FIXME: 改行を指定して2行の間を作ろうとしているが、実際は1行分の空白しかできていない
             Line::from("\n"),
             Line::from(vec![
-                Span::from(self.creator.clone()).style(Style::default().blue()),
+                Span::from(self.creator.to_string()).style(Style::default().blue()),
                 Span::from("が"),
                 Span::from(self.appended_at.format("%Y/%m/%d").to_string())
                     .style(Style::default().blue()),
@@ -49,8 +49,8 @@ impl<'a> Widget for HeaderWidget<'a> {
 impl<'a> HeaderWidget<'a> {
     pub fn new(
         id: u16,
-        title: &'a String,
-        creator: &'a String,
+        title: &'a str,
+        creator: &'a str,
         appended_at: DateTime<Local>,
         updated_at: DateTime<Local>,
         focused_title: bool,

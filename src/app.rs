@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use crate::entities::{Issue, IssueStatus, Journal, JournalDetail, JournalDetailAttr};
+use crate::entities::{Issue, IssueStatus, Journal, JournalDetail, JournalDetailAttr, User};
 use crate::libs::yaml::{as_u16_array, as_u16_option};
 use crate::libs::{
     as_bool, as_local_datetime, as_local_datetime_option, as_string, as_string_array,
@@ -46,6 +46,12 @@ pub enum JournalState {
 }
 
 #[derive(PartialEq, Eq)]
+pub enum UserState {
+    Existing,
+    Deleted,
+}
+
+#[derive(PartialEq, Eq)]
 pub enum IssueStatusState {
     Existing,
     Deleted,
@@ -54,6 +60,7 @@ pub enum IssueStatusState {
 pub struct Store {
     issues: HashMap<u16, (Issue, IssueState)>,
     journals: HashMap<u16, (Journal, JournalState)>,
+    users: HashMap<u16, (User, UserState)>,
     issue_statuses: HashMap<u16, (IssueStatus, IssueStatusState)>,
 }
 
@@ -62,12 +69,18 @@ impl Store {
         Self {
             issues: HashMap::new(),
             journals: HashMap::new(),
+            users: HashMap::new(),
             issue_statuses: HashMap::new(),
         }
     }
 
     pub fn consume_action(&mut self, action: Action) {
         match action {
+            Action::LoadUsers => {
+                if self.users.is_empty() {
+                    self.users = parse_users_yaml();
+                }
+            }
             Action::LoadIssueStatuses => {
                 if self.issue_statuses.is_empty() {
                     self.issue_statuses = parse_issue_statuses_yaml();
@@ -86,7 +99,7 @@ impl Store {
                 }
             }
             Action::UpdateIssueStatus { id, status_id } => {
-                if let Some((issue, state)) = self.issues.get_mut(&id) {
+                if let Some((issue, _state)) = self.issues.get_mut(&id) {
                     issue.status_id = status_id
                 }
             }
@@ -113,6 +126,14 @@ impl Store {
         self.journals.get(&journal_id)
     }
 
+    pub fn get_users(&self) -> &HashMap<u16, (User, UserState)> {
+        &self.users
+    }
+
+    pub fn get_user(&self, user_id: u16) -> Option<&(User, UserState)> {
+        self.users.get(&user_id)
+    }
+
     pub fn get_issue_statuses(&self) -> &HashMap<u16, (IssueStatus, IssueStatusState)> {
         &self.issue_statuses
     }
@@ -125,6 +146,7 @@ impl Store {
 }
 
 pub enum Action {
+    LoadUsers,
     LoadIssueStatuses,
     LoadIssue { id: u16 },
     UpdateIssue { id: u16, body: String },
@@ -137,7 +159,11 @@ fn parse_journal_yaml(id: u16) -> Journal {
     let path = format!("datas/journals/{}.yml", id);
     let yaml = read_yaml(path.as_str());
     let parsed_id = as_u16(&yaml, "id");
-    assert_eq!(parsed_id, id, "journal id mismatch: {} != {}", parsed_id, id);
+    assert_eq!(
+        parsed_id, id,
+        "journal id mismatch: {} != {}",
+        parsed_id, id
+    );
     let user = as_string(&yaml, "user");
     let updated_on = as_local_datetime(&yaml, "updated_on");
     let notes = read_required_string_option(&yaml, "notes").unwrap_or_default();
@@ -194,12 +220,12 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let yaml = read_yaml(path.as_str());
     let id = as_u16(&yaml, "id");
     let subject = as_string(&yaml, "subject");
-    let author = as_string(&yaml, "author");
+    let author_id = as_u16(&yaml, "author_id");
     let created_on = as_local_datetime(&yaml, "created_on");
     let updated_on = as_local_datetime(&yaml, "updated_on");
     let status_id = as_u16(&yaml, "status_id");
     let priority = as_string(&yaml, "priority");
-    let assigned_to = as_string_option(&yaml, "assigned_to");
+    let assigned_to_id = as_u16_option(&yaml, "assigned_to_id");
     let fixed_version = as_string_option(&yaml, "fixed_version");
     let start_date = as_local_datetime_option(&yaml, "start_date");
     let due_date = as_local_datetime_option(&yaml, "due_date");
@@ -214,12 +240,12 @@ fn parse_issue_yaml(id: u16) -> Issue {
     Issue {
         id,
         subject,
-        author,
+        author_id,
         created_on,
         updated_on,
         status_id,
         priority,
-        assigned_to,
+        assigned_to_id,
         fixed_version,
         start_date,
         due_date,
@@ -232,6 +258,22 @@ fn parse_issue_yaml(id: u16) -> Issue {
         child_ids,
         journal_ids,
     }
+}
+
+fn parse_users_yaml() -> HashMap<u16, (User, UserState)> {
+    let yaml = read_yaml("datas/users.yml");
+    let entries = yaml["users"].as_vec().expect("no users");
+
+    entries
+        .iter()
+        .map(|entry| {
+            let user = User {
+                id: as_u16(entry, "id"),
+                name: as_string(entry, "name"),
+            };
+            (user.id, (user, UserState::Existing))
+        })
+        .collect()
 }
 
 fn parse_issue_statuses_yaml() -> HashMap<u16, (IssueStatus, IssueStatusState)> {

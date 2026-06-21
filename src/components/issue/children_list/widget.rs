@@ -14,6 +14,7 @@ const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 pub struct ChildIssueRow<'a> {
     pub issue: &'a Issue,
     pub issue_status: &'a (IssueStatus, IssueStatusState),
+    pub assigned_to_name: Option<&'a str>,
 }
 
 pub struct ChildrenListWidget<'a> {
@@ -111,7 +112,7 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
     create_id_widget(issue.id, is_closed).render(cols[0], buffer);
     create_title_widget(&issue.subject).render(cols[2], buffer);
     create_status_widget(status_name).render(cols[4], buffer);
-    create_person_in_charge_widget(&issue.assigned_to).render(cols[6], buffer);
+    create_person_in_charge_widget(child.assigned_to_name).render(cols[6], buffer);
     create_start_date_widget(&issue.start_date).render(cols[8], buffer);
     create_due_widget(&issue.due_date).render(cols[10], buffer);
     create_progress_widget(issue.done_ratio).render(cols[12], buffer);
@@ -142,9 +143,11 @@ fn create_status_widget(status: &str) -> Paragraph<'static> {
     Paragraph::new(Text::from(status.to_string())).wrap(Wrap { trim: true })
 }
 
-fn create_person_in_charge_widget(person_in_charge: &Option<String>) -> Paragraph<'static> {
-    match &person_in_charge {
-        Some(p) => Paragraph::new(Text::from(p.clone())).style(Style::default().fg(Color::Blue)),
+fn create_person_in_charge_widget(person_in_charge: Option<&str>) -> Paragraph<'static> {
+    match person_in_charge {
+        Some(p) => {
+            Paragraph::new(Text::from(p.to_string())).style(Style::default().fg(Color::Blue))
+        }
         None => Paragraph::new(Text::from("(なし)")).style(Style::default().fg(Color::Gray)),
     }
 }
@@ -180,7 +183,7 @@ mod tests {
             7,
             "Done child",
             3,
-            Some("alice"),
+            Some(1),
             Some("2026-01-10T00:00:00+09:00"),
             Some("2026-01-15T00:00:00+09:00"),
             100,
@@ -213,6 +216,7 @@ mod tests {
                             },
                             IssueStatusState::Existing,
                         ),
+                        assigned_to_name: Some("alice"),
                     },
                     ChildIssueRow {
                         issue: &open,
@@ -224,6 +228,7 @@ mod tests {
                             },
                             IssueStatusState::Existing,
                         ),
+                        assigned_to_name: None,
                     },
                 ],
                 Some(1),
@@ -233,7 +238,7 @@ mod tests {
 
     #[test]
     fn line_count_children_current_values() {
-        let child_a = sample_issue(7, "Done child", 3, Some("alice"), None, None, 100);
+        let child_a = sample_issue(7, "Done child", 3, Some(1), None, None, 100);
         let child_b = sample_issue(8, "Open child", 5, None, None, None, 35);
         let child_a_status = (
             IssueStatus {
@@ -259,10 +264,12 @@ mod tests {
                 ChildIssueRow {
                     issue: &child_a,
                     issue_status: &child_a_status,
+                    assigned_to_name: Some("alice"),
                 },
                 ChildIssueRow {
                     issue: &child_b,
                     issue_status: &child_b_status,
+                    assigned_to_name: None,
                 },
             ],
             None,

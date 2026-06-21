@@ -30,10 +30,14 @@ impl HeaderComponent {
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
         if let Some((issue, _)) = store.get_issue(self.id) {
+            let author = store
+                .get_user(issue.author_id)
+                .map(|(user, _)| user.name.as_str())
+                .unwrap_or("(unknown)");
             let widget = HeaderWidget::new(
                 self.id,
                 &issue.subject,
-                &issue.author,
+                author,
                 issue.created_on,
                 issue.updated_on,
                 self.focus_state.is_focused(),
@@ -46,10 +50,14 @@ impl HeaderComponent {
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> HeaderWidget<'a> {
         let (issue, _) = store.get_issue(self.id).unwrap();
+        let author = store
+            .get_user(issue.author_id)
+            .map(|(user, _)| user.name.as_str())
+            .unwrap_or("(unknown)");
         HeaderWidget::new(
             self.id,
             &issue.subject,
-            &issue.author,
+            author,
             issue.created_on,
             issue.updated_on,
             self.focus_state.is_focused(),

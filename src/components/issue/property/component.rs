@@ -32,7 +32,7 @@ impl PropertyComponent {
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
         if let Some((issue, _)) = store.get_issue(self.id) {
             let paragraph =
-                create_property_widget(issue, store.get_issue_status(issue.status_id), None);
+                create_property_widget(issue, store, store.get_issue_status(issue.status_id), None);
             paragraph.line_count(width) as u16
         } else {
             0
@@ -43,6 +43,7 @@ impl PropertyComponent {
         let (issue, _) = store.get_issue(self.id).unwrap();
         create_property_widget(
             issue,
+            store,
             store.get_issue_status(issue.status_id),
             self.focus_state.focused_y(),
         )
@@ -55,14 +56,19 @@ impl PropertyComponent {
 
 fn create_property_widget<'a>(
     issue: &'a Issue,
+    store: &'a Store,
     issue_status: &'a (IssueStatus, IssueStatusState),
     focused_y: Option<u16>,
 ) -> PropertyWidget<'a> {
+    let assigned_to = issue
+        .assigned_to_id
+        .and_then(|user_id| store.get_user(user_id))
+        .map(|(user, _)| user.name.as_str());
     PropertyWidget::new(
         issue.id,
         issue_status.0.name.as_str(),
         &issue.priority,
-        &issue.assigned_to,
+        assigned_to,
         &issue.fixed_version,
         issue.start_date,
         issue.due_date,
