@@ -207,7 +207,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        entities::{Journal, JournalDetail, JournalDetailAttr},
+        entities::{Journal, JournalDetail, JournalDetailAttr, JournalId},
         test_support::{local_datetime, render_snapshot},
     };
 
@@ -218,7 +218,7 @@ mod tests {
         notes: &String,
     ) -> Journal {
         Journal {
-            id: 1,
+            id: JournalId::new(1),
             user,
             updated_on,
             details,

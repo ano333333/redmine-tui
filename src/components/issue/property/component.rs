@@ -4,7 +4,7 @@ use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::app::Store;
-use crate::entities::{Issue, IssueStatus};
+use crate::entities::{EntityIdValue, Issue, IssueStatus};
 
 pub struct PropertyComponent {
     id: u16,
@@ -69,7 +69,7 @@ fn create_property_widget<'a>(
         .map(|priority| priority.name.as_str())
         .unwrap_or("(unknown)");
     PropertyWidget::new(
-        issue.id,
+        issue.id.get(),
         issue_status.name.as_str(),
         priority,
         assigned_to,

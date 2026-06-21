@@ -5,7 +5,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
-use crate::entities::{Issue, IssueStatus};
+use crate::entities::{EntityIdValue, Issue, IssueStatus};
 
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
@@ -108,7 +108,7 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
             Constraint::Length(4), // progress
         ])
         .split(row);
-    create_id_widget(issue.id, is_closed).render(cols[0], buffer);
+    create_id_widget(issue.id.get(), is_closed).render(cols[0], buffer);
     create_title_widget(&issue.subject).render(cols[2], buffer);
     create_status_widget(status_name).render(cols[4], buffer);
     create_person_in_charge_widget(child.assigned_to_name).render(cols[6], buffer);
@@ -197,12 +197,12 @@ mod tests {
             35,
         );
         let done_status = IssueStatus {
-            id: 3,
+            id: 3.into(),
             name: "完了(closed)".to_string(),
             is_closed: true,
         };
         let open_status = IssueStatus {
-            id: 5,
+            id: 5.into(),
             name: "進行中(accepted)".to_string(),
             is_closed: false,
         };
@@ -236,12 +236,12 @@ mod tests {
         let child_a = sample_issue(7, "Done child", 3, Some(1), None, None, 100);
         let child_b = sample_issue(8, "Open child", 5, None, None, None, 35);
         let child_a_status = IssueStatus {
-            id: 3,
+            id: 3.into(),
             name: "完了(closed)".to_string(),
             is_closed: true,
         };
         let child_b_status = IssueStatus {
-            id: 5,
+            id: 5.into(),
             name: "進行中(accepted)".to_string(),
             is_closed: false,
         };

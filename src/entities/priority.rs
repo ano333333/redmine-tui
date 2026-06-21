@@ -1,4 +1,6 @@
+use super::PriorityId;
+
 pub struct Priority {
-    pub id: u16,
+    pub id: PriorityId,
     pub name: String,
 }

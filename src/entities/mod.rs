@@ -1,9 +1,11 @@
+pub mod id;
 pub mod issue;
 pub mod issue_status;
 pub mod journal;
 pub mod priority;
 pub mod user;
 
+pub use id::{EntityIdValue, IssueId, IssueStatusId, JournalId, PriorityId};
 pub use issue::Issue;
 pub use issue_status::IssueStatus;
 pub use journal::{Journal, JournalDetail, JournalDetailAttr};

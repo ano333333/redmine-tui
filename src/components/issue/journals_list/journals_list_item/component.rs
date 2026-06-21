@@ -3,7 +3,7 @@ use std::cmp::min;
 use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
 
-use crate::entities::Journal;
+use crate::entities::{EntityIdValue, Journal};
 
 use super::{JournalItemWidget, JournalItemWidgetState};
 
@@ -36,7 +36,7 @@ pub struct JournalsListItemComponent {
 impl JournalsListItemComponent {
     pub fn new(journal: &Journal) -> Self {
         Self {
-            id: journal.id,
+            id: journal.id.get(),
             width: 0,
             journal: journal.clone(),
             comment_line_count: 0,

@@ -1,8 +1,10 @@
 use chrono::{DateTime, Local};
 
+use super::JournalId;
+
 #[derive(Clone)]
 pub struct Journal {
-    pub id: u16,
+    pub id: JournalId,
     pub user: String,
     pub updated_on: DateTime<Local>,
     pub details: Vec<JournalDetail>,

@@ -1,7 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::entities::{
-    Issue, IssueStatus, Journal, JournalDetail, JournalDetailAttr, Priority, User,
+    EntityIdValue, Issue, IssueId, IssueStatus, IssueStatusId, Journal, JournalDetail,
+    JournalDetailAttr, Priority, PriorityId, User,
 };
 use crate::libs::yaml::{as_u16_array, as_u16_option};
 use crate::libs::{
@@ -181,7 +182,7 @@ fn parse_journal_yaml(id: u16) -> Journal {
         .collect();
 
     Journal {
-        id,
+        id: id.into(),
         user,
         updated_on,
         details,
@@ -224,7 +225,7 @@ fn read_required_string_option(yaml: &yaml_rust::Yaml, key: &str) -> Option<Stri
 fn parse_issue_yaml(id: u16) -> Issue {
     let path = format!("datas/issues/{}.yml", id);
     let yaml = read_yaml(path.as_str());
-    let id = as_u16(&yaml, "id");
+    let id = IssueId::new(as_u16(&yaml, "id"));
     let subject = as_string(&yaml, "subject");
     let author_id = as_u16(&yaml, "author_id");
     let created_on = as_local_datetime(&yaml, "created_on");
@@ -290,11 +291,11 @@ fn parse_issue_statuses_yaml() -> HashMap<u16, IssueStatus> {
         .iter()
         .map(|entry| {
             let status = IssueStatus {
-                id: as_u16(entry, "id"),
+                id: IssueStatusId::new(as_u16(entry, "id")),
                 name: as_string(entry, "name"),
                 is_closed: as_bool(entry, "is_closed"),
             };
-            (status.id, status)
+            (status.id.get(), status)
         })
         .collect()
 }
@@ -307,10 +308,10 @@ fn parse_priorities_yaml() -> HashMap<u16, Priority> {
         .iter()
         .map(|entry| {
             let priority = Priority {
-                id: as_u16(entry, "id"),
+                id: PriorityId::new(as_u16(entry, "id")),
                 name: as_string(entry, "name"),
             };
-            (priority.id, priority)
+            (priority.id.get(), priority)
         })
         .collect()
 }

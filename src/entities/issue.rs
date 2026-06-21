@@ -1,7 +1,9 @@
 use chrono::{DateTime, Local};
 
+use super::IssueId;
+
 pub struct Issue {
-    pub id: u16,
+    pub id: IssueId,
     pub subject: String,
     pub author_id: u16,
     pub created_on: DateTime<Local>,

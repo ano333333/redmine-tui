@@ -1,5 +1,7 @@
+use super::IssueStatusId;
+
 pub struct IssueStatus {
-    pub id: u16,
+    pub id: IssueStatusId,
     pub name: String,
     pub is_closed: bool,
 }

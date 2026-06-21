@@ -167,7 +167,7 @@ impl JournalsListComponent {
         for (index, journal) in journals.iter().enumerate() {
             // 新しいJournalが末尾以外に追加することはないと考え、
             // journalがself.items[index]に来るまでself.itemsの要素を間引く
-            while index < self.items.len() && self.items[index].id != journal.id {
+            while index < self.items.len() && journal.id != self.items[index].id {
                 self.items.remove(index);
             }
             if index >= self.items.len() {
