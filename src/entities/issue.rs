@@ -7,7 +7,7 @@ pub struct Issue {
     pub created_on: DateTime<Local>,
     pub updated_on: DateTime<Local>,
     pub status_id: u16,
-    pub priority: String,
+    pub priority_id: u16,
     pub assigned_to_id: Option<u16>,
     pub fixed_version: Option<String>,
     pub start_date: Option<DateTime<Local>>,

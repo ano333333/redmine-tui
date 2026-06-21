@@ -1,6 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 
-use crate::entities::{Issue, IssueStatus, Journal, JournalDetail, JournalDetailAttr, User};
+use crate::entities::{
+    Issue, IssueStatus, Journal, JournalDetail, JournalDetailAttr, Priority, User,
+};
 use crate::libs::yaml::{as_u16_array, as_u16_option};
 use crate::libs::{
     as_bool, as_local_datetime, as_local_datetime_option, as_string, as_string_array,
@@ -57,11 +59,18 @@ pub enum IssueStatusState {
     Deleted,
 }
 
+#[derive(PartialEq, Eq)]
+pub enum PriorityState {
+    Existing,
+    Deleted,
+}
+
 pub struct Store {
     issues: HashMap<u16, (Issue, IssueState)>,
     journals: HashMap<u16, (Journal, JournalState)>,
     users: HashMap<u16, (User, UserState)>,
     issue_statuses: HashMap<u16, (IssueStatus, IssueStatusState)>,
+    priorities: HashMap<u16, (Priority, PriorityState)>,
 }
 
 impl Store {
@@ -71,6 +80,7 @@ impl Store {
             journals: HashMap::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
+            priorities: HashMap::new(),
         }
     }
 
@@ -84,6 +94,11 @@ impl Store {
             Action::LoadIssueStatuses => {
                 if self.issue_statuses.is_empty() {
                     self.issue_statuses = parse_issue_statuses_yaml();
+                }
+            }
+            Action::LoadPriorities => {
+                if self.priorities.is_empty() {
+                    self.priorities = parse_priorities_yaml();
                 }
             }
             Action::LoadIssue { id } => {
@@ -143,11 +158,20 @@ impl Store {
             .get(&issue_status_id)
             .expect("issue status must exist")
     }
+
+    pub fn get_priorities(&self) -> &HashMap<u16, (Priority, PriorityState)> {
+        &self.priorities
+    }
+
+    pub fn get_priority(&self, priority_id: u16) -> Option<&(Priority, PriorityState)> {
+        self.priorities.get(&priority_id)
+    }
 }
 
 pub enum Action {
     LoadUsers,
     LoadIssueStatuses,
+    LoadPriorities,
     LoadIssue { id: u16 },
     UpdateIssue { id: u16, body: String },
     UpdateIssueStatus { id: u16, status_id: u16 },
@@ -224,7 +248,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let created_on = as_local_datetime(&yaml, "created_on");
     let updated_on = as_local_datetime(&yaml, "updated_on");
     let status_id = as_u16(&yaml, "status_id");
-    let priority = as_string(&yaml, "priority");
+    let priority_id = as_u16(&yaml, "priority_id");
     let assigned_to_id = as_u16_option(&yaml, "assigned_to_id");
     let fixed_version = as_string_option(&yaml, "fixed_version");
     let start_date = as_local_datetime_option(&yaml, "start_date");
@@ -244,7 +268,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
         created_on,
         updated_on,
         status_id,
-        priority,
+        priority_id,
         assigned_to_id,
         fixed_version,
         start_date,
@@ -289,6 +313,22 @@ fn parse_issue_statuses_yaml() -> HashMap<u16, (IssueStatus, IssueStatusState)> 
                 is_closed: as_bool(entry, "is_closed"),
             };
             (status.id, (status, IssueStatusState::Existing))
+        })
+        .collect()
+}
+
+fn parse_priorities_yaml() -> HashMap<u16, (Priority, PriorityState)> {
+    let yaml = read_yaml("datas/priorities.yml");
+    let entries = yaml["priorities"].as_vec().expect("no priorities");
+
+    entries
+        .iter()
+        .map(|entry| {
+            let priority = Priority {
+                id: as_u16(entry, "id"),
+                name: as_string(entry, "name"),
+            };
+            (priority.id, (priority, PriorityState::Existing))
         })
         .collect()
 }

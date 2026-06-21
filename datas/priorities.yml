@@ -1,0 +1,9 @@
+priorities:
+  - id: 1
+    name: major
+  - id: 2
+    name: minor
+  - id: 3
+    name: critical
+  - id: 4
+    name: blocker

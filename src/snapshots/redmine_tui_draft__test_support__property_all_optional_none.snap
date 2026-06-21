@@ -1,11 +1,10 @@
 ---
 source: src/test_support.rs
-assertion_line: 28
 expression: describe_buffer(terminal.backend().buffer())
 ---
 area=Rect { x: 0, y: 0, width: 22, height: 16 }
 00: "ス テ ー タ ス           Wa" | 0:"ス" fg=Blue bg=Reset mod=NONE, 2:"テ" fg=Blue bg=Reset mod=NONE, 4:"ー" fg=Blue bg=Reset mod=NONE, 6:"タ" fg=Blue bg=Reset mod=NONE, 8:"ス" fg=Blue bg=Reset mod=NONE, 10:" " fg=Blue bg=Reset mod=NONE, 11:" " fg=Blue bg=Reset mod=NONE, 12:" " fg=Blue bg=Reset mod=NONE, 13:" " fg=Blue bg=Reset mod=NONE, 14:" " fg=Blue bg=Reset mod=NONE, 15:" " fg=Blue bg=Reset mod=NONE, 16:" " fg=Blue bg=Reset mod=NONE, 17:" " fg=Blue bg=Reset mod=NONE, 18:" " fg=Blue bg=Reset mod=NONE, 19:" " fg=Blue bg=Reset mod=NONE, 20:"W" fg=Reset bg=Reset mod=NONE, 21:"a" fg=Reset bg=Reset mod=NONE
-01: "優 先 度               Ve" | 0:"優" fg=Reset bg=Reset mod=NONE, 2:"先" fg=Reset bg=Reset mod=NONE, 4:"度" fg=Reset bg=Reset mod=NONE, 20:"V" fg=Reset bg=Reset mod=NONE, 21:"e" fg=Reset bg=Reset mod=NONE
+01: "優 先 度               ma" | 0:"優" fg=Reset bg=Reset mod=NONE, 2:"先" fg=Reset bg=Reset mod=NONE, 4:"度" fg=Reset bg=Reset mod=NONE, 20:"m" fg=Reset bg=Reset mod=NONE, 21:"a" fg=Reset bg=Reset mod=NONE
 02: "担 当 者               - " | 0:"担" fg=Blue bg=Reset mod=NONE, 2:"当" fg=Blue bg=Reset mod=NONE, 4:"者" fg=Blue bg=Reset mod=NONE, 6:" " fg=Blue bg=Reset mod=NONE, 7:" " fg=Blue bg=Reset mod=NONE, 8:" " fg=Blue bg=Reset mod=NONE, 9:" " fg=Blue bg=Reset mod=NONE, 10:" " fg=Blue bg=Reset mod=NONE, 11:" " fg=Blue bg=Reset mod=NONE, 12:" " fg=Blue bg=Reset mod=NONE, 13:" " fg=Blue bg=Reset mod=NONE, 14:" " fg=Blue bg=Reset mod=NONE, 15:" " fg=Blue bg=Reset mod=NONE, 16:" " fg=Blue bg=Reset mod=NONE, 17:" " fg=Blue bg=Reset mod=NONE, 18:" " fg=Blue bg=Reset mod=NONE, 19:" " fg=Blue bg=Reset mod=NONE, 20:"-" fg=Blue bg=Reset mod=NONE
 03: "対 象 バ ー ジ ョ ン       - " | 0:"対" fg=Reset bg=Reset mod=NONE, 2:"象" fg=Reset bg=Reset mod=NONE, 4:"バ" fg=Reset bg=Reset mod=NONE, 6:"ー" fg=Reset bg=Reset mod=NONE, 8:"ジ" fg=Reset bg=Reset mod=NONE, 10:"ョ" fg=Reset bg=Reset mod=NONE, 12:"ン" fg=Reset bg=Reset mod=NONE, 20:"-" fg=Reset bg=Reset mod=NONE
 04: "開 始 日               - " | 0:"開" fg=Reset bg=Reset mod=NONE, 2:"始" fg=Reset bg=Reset mod=NONE, 4:"日" fg=Reset bg=Reset mod=NONE, 20:"-" fg=Reset bg=Reset mod=NONE

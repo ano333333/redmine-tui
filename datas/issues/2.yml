@@ -4,7 +4,7 @@ author_id: 1
 created_on: 2026/02/01
 updated_on: 2026/02/04
 status_id: 5
-priority: major
+priority_id: 1
 assigned_to_id: 1
 start_date: 2025/12/09
 due_date: 2025/12/19

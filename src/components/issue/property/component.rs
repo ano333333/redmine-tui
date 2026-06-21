@@ -64,10 +64,14 @@ fn create_property_widget<'a>(
         .assigned_to_id
         .and_then(|user_id| store.get_user(user_id))
         .map(|(user, _)| user.name.as_str());
+    let priority = store
+        .get_priority(issue.priority_id)
+        .map(|(priority, _)| priority.name.as_str())
+        .unwrap_or("(unknown)");
     PropertyWidget::new(
         issue.id,
         issue_status.0.name.as_str(),
-        &issue.priority,
+        priority,
         assigned_to,
         &issue.fixed_version,
         issue.start_date,

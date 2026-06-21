@@ -72,7 +72,7 @@ pub fn sample_issue(
         created_on: local_datetime("2026-01-10T00:00:00+09:00"),
         updated_on: local_datetime("2026-01-15T00:00:00+09:00"),
         status_id: issue_status_id,
-        priority: "High".to_string(),
+        priority_id: 1,
         assigned_to_id: person_in_charge_id,
         fixed_version: Some("v1.2.3".to_string()),
         start_date: start_date.map(local_datetime),
