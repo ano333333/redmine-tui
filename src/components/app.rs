@@ -6,7 +6,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::widgets::Clear;
 
-use crate::app::{Action, Dispatcher, IssueStatusState, Store};
+use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
 };
@@ -80,8 +80,7 @@ impl AppComponent {
                         .store()
                         .get_issue_statuses()
                         .iter()
-                        .filter(|(_, (_, state))| *state == IssueStatusState::Existing)
-                        .map(|(id, (status, _))| (*id, status.name.clone()))
+                        .map(|(id, status)| (*id, status.name.clone()))
                         .collect::<Vec<_>>();
                     let issue_id = self.issue_component.id;
                     self.popup_component = Some(SelectBoxPopupComponent::new(

@@ -3,7 +3,7 @@ use super::widget::PropertyWidget;
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::app::{IssueStatusState, Store};
+use crate::app::Store;
 use crate::entities::{Issue, IssueStatus};
 
 pub struct PropertyComponent {
@@ -57,20 +57,20 @@ impl PropertyComponent {
 fn create_property_widget<'a>(
     issue: &'a Issue,
     store: &'a Store,
-    issue_status: &'a (IssueStatus, IssueStatusState),
+    issue_status: &'a IssueStatus,
     focused_y: Option<u16>,
 ) -> PropertyWidget<'a> {
     let assigned_to = issue
         .assigned_to_id
         .and_then(|user_id| store.get_user(user_id))
-        .map(|(user, _)| user.name.as_str());
+        .map(|user| user.name.as_str());
     let priority = store
         .get_priority(issue.priority_id)
-        .map(|(priority, _)| priority.name.as_str())
+        .map(|priority| priority.name.as_str())
         .unwrap_or("(unknown)");
     PropertyWidget::new(
         issue.id,
-        issue_status.0.name.as_str(),
+        issue_status.name.as_str(),
         priority,
         assigned_to,
         &issue.fixed_version,

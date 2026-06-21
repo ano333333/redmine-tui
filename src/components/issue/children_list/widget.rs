@@ -5,7 +5,6 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
-use crate::app::IssueStatusState;
 use crate::entities::{Issue, IssueStatus};
 
 // TODO: Extract this focus background color into one shared constant for all widgets.
@@ -13,7 +12,7 @@ const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 
 pub struct ChildIssueRow<'a> {
     pub issue: &'a Issue,
-    pub issue_status: &'a (IssueStatus, IssueStatusState),
+    pub issue_status: &'a IssueStatus,
     pub assigned_to_name: Option<&'a str>,
 }
 
@@ -85,8 +84,8 @@ fn create_header_text(
 
 fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer, focused: bool) {
     let issue = child.issue;
-    let status_name = child.issue_status.0.name.as_str();
-    let is_closed = child.issue_status.0.is_closed;
+    let status_name = child.issue_status.name.as_str();
+    let is_closed = child.issue_status.is_closed;
     let row = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Max(1)])
@@ -197,6 +196,16 @@ mod tests {
             None,
             35,
         );
+        let done_status = IssueStatus {
+            id: 3,
+            name: "完了(closed)".to_string(),
+            is_closed: true,
+        };
+        let open_status = IssueStatus {
+            id: 5,
+            name: "進行中(accepted)".to_string(),
+            is_closed: false,
+        };
         render_snapshot(
             "children_mixed_option_and_status_display",
             64,
@@ -208,26 +217,12 @@ mod tests {
                 vec![
                     ChildIssueRow {
                         issue: &done,
-                        issue_status: &(
-                            IssueStatus {
-                                id: 3,
-                                name: "完了(closed)".to_string(),
-                                is_closed: true,
-                            },
-                            IssueStatusState::Existing,
-                        ),
+                        issue_status: &done_status,
                         assigned_to_name: Some("alice"),
                     },
                     ChildIssueRow {
                         issue: &open,
-                        issue_status: &(
-                            IssueStatus {
-                                id: 5,
-                                name: "進行中(accepted)".to_string(),
-                                is_closed: false,
-                            },
-                            IssueStatusState::Existing,
-                        ),
+                        issue_status: &open_status,
                         assigned_to_name: None,
                     },
                 ],
@@ -240,22 +235,16 @@ mod tests {
     fn line_count_children_current_values() {
         let child_a = sample_issue(7, "Done child", 3, Some(1), None, None, 100);
         let child_b = sample_issue(8, "Open child", 5, None, None, None, 35);
-        let child_a_status = (
-            IssueStatus {
-                id: 3,
-                name: "完了(closed)".to_string(),
-                is_closed: true,
-            },
-            IssueStatusState::Existing,
-        );
-        let child_b_status = (
-            IssueStatus {
-                id: 5,
-                name: "進行中(accepted)".to_string(),
-                is_closed: false,
-            },
-            IssueStatusState::Existing,
-        );
+        let child_a_status = IssueStatus {
+            id: 3,
+            name: "完了(closed)".to_string(),
+            is_closed: true,
+        };
+        let child_b_status = IssueStatus {
+            id: 5,
+            name: "進行中(accepted)".to_string(),
+            is_closed: false,
+        };
         let widget = ChildrenListWidget::new(
             2,
             1,

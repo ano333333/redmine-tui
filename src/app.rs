@@ -47,30 +47,12 @@ pub enum JournalState {
     Updated,
 }
 
-#[derive(PartialEq, Eq)]
-pub enum UserState {
-    Existing,
-    Deleted,
-}
-
-#[derive(PartialEq, Eq)]
-pub enum IssueStatusState {
-    Existing,
-    Deleted,
-}
-
-#[derive(PartialEq, Eq)]
-pub enum PriorityState {
-    Existing,
-    Deleted,
-}
-
 pub struct Store {
     issues: HashMap<u16, (Issue, IssueState)>,
     journals: HashMap<u16, (Journal, JournalState)>,
-    users: HashMap<u16, (User, UserState)>,
-    issue_statuses: HashMap<u16, (IssueStatus, IssueStatusState)>,
-    priorities: HashMap<u16, (Priority, PriorityState)>,
+    users: HashMap<u16, User>,
+    issue_statuses: HashMap<u16, IssueStatus>,
+    priorities: HashMap<u16, Priority>,
 }
 
 impl Store {
@@ -141,29 +123,29 @@ impl Store {
         self.journals.get(&journal_id)
     }
 
-    pub fn get_users(&self) -> &HashMap<u16, (User, UserState)> {
+    pub fn get_users(&self) -> &HashMap<u16, User> {
         &self.users
     }
 
-    pub fn get_user(&self, user_id: u16) -> Option<&(User, UserState)> {
+    pub fn get_user(&self, user_id: u16) -> Option<&User> {
         self.users.get(&user_id)
     }
 
-    pub fn get_issue_statuses(&self) -> &HashMap<u16, (IssueStatus, IssueStatusState)> {
+    pub fn get_issue_statuses(&self) -> &HashMap<u16, IssueStatus> {
         &self.issue_statuses
     }
 
-    pub fn get_issue_status(&self, issue_status_id: u16) -> &(IssueStatus, IssueStatusState) {
+    pub fn get_issue_status(&self, issue_status_id: u16) -> &IssueStatus {
         self.issue_statuses
             .get(&issue_status_id)
             .expect("issue status must exist")
     }
 
-    pub fn get_priorities(&self) -> &HashMap<u16, (Priority, PriorityState)> {
+    pub fn get_priorities(&self) -> &HashMap<u16, Priority> {
         &self.priorities
     }
 
-    pub fn get_priority(&self, priority_id: u16) -> Option<&(Priority, PriorityState)> {
+    pub fn get_priority(&self, priority_id: u16) -> Option<&Priority> {
         self.priorities.get(&priority_id)
     }
 }
@@ -284,7 +266,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     }
 }
 
-fn parse_users_yaml() -> HashMap<u16, (User, UserState)> {
+fn parse_users_yaml() -> HashMap<u16, User> {
     let yaml = read_yaml("datas/users.yml");
     let entries = yaml["users"].as_vec().expect("no users");
 
@@ -295,12 +277,12 @@ fn parse_users_yaml() -> HashMap<u16, (User, UserState)> {
                 id: as_u16(entry, "id"),
                 name: as_string(entry, "name"),
             };
-            (user.id, (user, UserState::Existing))
+            (user.id, user)
         })
         .collect()
 }
 
-fn parse_issue_statuses_yaml() -> HashMap<u16, (IssueStatus, IssueStatusState)> {
+fn parse_issue_statuses_yaml() -> HashMap<u16, IssueStatus> {
     let yaml = read_yaml("datas/issue_statuses.yml");
     let entries = yaml["issue_statuses"].as_vec().expect("no issue_statuses");
 
@@ -312,12 +294,12 @@ fn parse_issue_statuses_yaml() -> HashMap<u16, (IssueStatus, IssueStatusState)> 
                 name: as_string(entry, "name"),
                 is_closed: as_bool(entry, "is_closed"),
             };
-            (status.id, (status, IssueStatusState::Existing))
+            (status.id, status)
         })
         .collect()
 }
 
-fn parse_priorities_yaml() -> HashMap<u16, (Priority, PriorityState)> {
+fn parse_priorities_yaml() -> HashMap<u16, Priority> {
     let yaml = read_yaml("datas/priorities.yml");
     let entries = yaml["priorities"].as_vec().expect("no priorities");
 
@@ -328,7 +310,7 @@ fn parse_priorities_yaml() -> HashMap<u16, (Priority, PriorityState)> {
                 id: as_u16(entry, "id"),
                 name: as_string(entry, "name"),
             };
-            (priority.id, (priority, PriorityState::Existing))
+            (priority.id, priority)
         })
         .collect()
 }

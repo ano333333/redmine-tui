@@ -32,7 +32,7 @@ impl HeaderComponent {
         if let Some((issue, _)) = store.get_issue(self.id) {
             let author = store
                 .get_user(issue.author_id)
-                .map(|(user, _)| user.name.as_str())
+                .map(|user| user.name.as_str())
                 .unwrap_or("(unknown)");
             let widget = HeaderWidget::new(
                 self.id,
@@ -52,7 +52,7 @@ impl HeaderComponent {
         let (issue, _) = store.get_issue(self.id).unwrap();
         let author = store
             .get_user(issue.author_id)
-            .map(|(user, _)| user.name.as_str())
+            .map(|user| user.name.as_str())
             .unwrap_or("(unknown)");
         HeaderWidget::new(
             self.id,
