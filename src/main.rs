@@ -20,9 +20,6 @@ use std::io::Result;
 
 use self::app_container::AppContainer;
 
-const APP_COMPONENT_OFFSET_X: u16 = 1;
-const APP_COMPONENT_OFFSET_Y: u16 = 5;
-
 fn main() -> Result<()> {
     logging::initialize_logging()?;
     trace_dbg!("start");

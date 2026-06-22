@@ -26,8 +26,6 @@ impl HeaderComponent {
         self.focus_state.focus_event(event);
     }
 
-    pub fn update(&mut self) {}
-
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
         if let Some((issue, _)) = store.get_issue(self.id) {
             let author = store
