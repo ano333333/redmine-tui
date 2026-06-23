@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::entities::{
     EntityIdValue, Issue, IssueId, IssueStatus, IssueStatusId, Journal, JournalDetail,
-    JournalDetailAttr, Priority, PriorityId, Tracker, TrackerId, User,
+    JournalDetailAttr, Priority, PriorityId, Tracker, TrackerId, User, UserId,
 };
 use crate::libs::yaml::{as_u16_array, as_u16_option};
 use crate::libs::{
@@ -51,7 +51,7 @@ pub enum JournalState {
 pub struct Store {
     issues: HashMap<u16, (Issue, IssueState)>,
     journals: HashMap<u16, (Journal, JournalState)>,
-    users: HashMap<u16, User>,
+    users: HashMap<UserId, User>,
     issue_statuses: HashMap<u16, IssueStatus>,
     priorities: HashMap<u16, Priority>,
     trackers: HashMap<u16, Tracker>,
@@ -131,11 +131,11 @@ impl Store {
         self.journals.get(&journal_id)
     }
 
-    pub fn get_users(&self) -> &HashMap<u16, User> {
+    pub fn get_users(&self) -> &HashMap<UserId, User> {
         &self.users
     }
 
-    pub fn get_user(&self, user_id: u16) -> Option<&User> {
+    pub fn get_user(&self, user_id: UserId) -> Option<&User> {
         self.users.get(&user_id)
     }
 
@@ -243,13 +243,13 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let yaml = read_yaml(path.as_str());
     let id = IssueId::new(as_u16(&yaml, "id"));
     let subject = as_string(&yaml, "subject");
-    let author_id = as_u16(&yaml, "author_id");
+    let author_id = UserId::new(as_u16(&yaml, "author_id"));
     let created_on = as_local_datetime(&yaml, "created_on");
     let updated_on = as_local_datetime(&yaml, "updated_on");
     let tracker_id = TrackerId::new(as_u16(&yaml, "tracker_id"));
     let status_id = as_u16(&yaml, "status_id");
     let priority_id = as_u16(&yaml, "priority_id");
-    let assigned_to_id = as_u16_option(&yaml, "assigned_to_id");
+    let assigned_to_id = as_u16_option(&yaml, "assigned_to_id").map(UserId::new);
     let fixed_version = as_string_option(&yaml, "fixed_version");
     let start_date = as_local_datetime_option(&yaml, "start_date");
     let due_date = as_local_datetime_option(&yaml, "due_date");
@@ -285,7 +285,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     }
 }
 
-fn parse_users_yaml() -> HashMap<u16, User> {
+fn parse_users_yaml() -> HashMap<UserId, User> {
     let yaml = read_yaml("datas/users.yml");
     let entries = yaml["users"].as_vec().expect("no users");
 
@@ -293,7 +293,7 @@ fn parse_users_yaml() -> HashMap<u16, User> {
         .iter()
         .map(|entry| {
             let user = User {
-                id: as_u16(entry, "id"),
+                id: UserId::new(as_u16(entry, "id")),
                 name: as_string(entry, "name"),
             };
             (user.id, user)

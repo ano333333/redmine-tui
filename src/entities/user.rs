@@ -1,4 +1,6 @@
+use super::UserId;
+
 pub struct User {
-    pub id: u16,
+    pub id: UserId,
     pub name: String,
 }

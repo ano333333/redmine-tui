@@ -99,9 +99,12 @@ pub enum JournalTag {}
 pub enum PriorityTag {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TrackerTag {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum UserTag {}
 
 pub type IssueId = EntityId<IssueTag>;
 pub type IssueStatusId = EntityId<IssueStatusTag>;
 pub type JournalId = EntityId<JournalTag>;
 pub type PriorityId = EntityId<PriorityTag>;
 pub type TrackerId = EntityId<TrackerTag>;
+pub type UserId = EntityId<UserTag>;
