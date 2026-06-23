@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local};
 
-use super::IssueId;
+use super::{IssueId, TrackerId};
 
 pub struct Issue {
     pub id: IssueId,
@@ -8,6 +8,7 @@ pub struct Issue {
     pub author_id: u16,
     pub created_on: DateTime<Local>,
     pub updated_on: DateTime<Local>,
+    pub tracker_id: TrackerId,
     pub status_id: u16,
     pub priority_id: u16,
     pub assigned_to_id: Option<u16>,

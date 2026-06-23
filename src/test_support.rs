@@ -71,6 +71,7 @@ pub fn sample_issue(
         author_id: 1,
         created_on: local_datetime("2026-01-10T00:00:00+09:00"),
         updated_on: local_datetime("2026-01-15T00:00:00+09:00"),
+        tracker_id: 1.into(),
         status_id: issue_status_id,
         priority_id: 1,
         assigned_to_id: person_in_charge_id,

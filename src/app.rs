@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::entities::{
     EntityIdValue, Issue, IssueId, IssueStatus, IssueStatusId, Journal, JournalDetail,
-    JournalDetailAttr, Priority, PriorityId, User,
+    JournalDetailAttr, Priority, PriorityId, Tracker, TrackerId, User,
 };
 use crate::libs::yaml::{as_u16_array, as_u16_option};
 use crate::libs::{
@@ -54,6 +54,7 @@ pub struct Store {
     users: HashMap<u16, User>,
     issue_statuses: HashMap<u16, IssueStatus>,
     priorities: HashMap<u16, Priority>,
+    trackers: HashMap<u16, Tracker>,
 }
 
 impl Store {
@@ -64,6 +65,7 @@ impl Store {
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
             priorities: HashMap::new(),
+            trackers: HashMap::new(),
         }
     }
 
@@ -82,6 +84,11 @@ impl Store {
             Action::LoadPriorities => {
                 if self.priorities.is_empty() {
                     self.priorities = parse_priorities_yaml();
+                }
+            }
+            Action::LoadTrackers => {
+                if self.trackers.is_empty() {
+                    self.trackers = parse_trackers_yaml();
                 }
             }
             Action::LoadIssue { id } => {
@@ -149,12 +156,21 @@ impl Store {
     pub fn get_priority(&self, priority_id: u16) -> Option<&Priority> {
         self.priorities.get(&priority_id)
     }
+
+    pub fn get_trackers(&self) -> &HashMap<u16, Tracker> {
+        &self.trackers
+    }
+
+    pub fn get_tracker(&self, tracker_id: u16) -> Option<&Tracker> {
+        self.trackers.get(&tracker_id)
+    }
 }
 
 pub enum Action {
     LoadUsers,
     LoadIssueStatuses,
     LoadPriorities,
+    LoadTrackers,
     LoadIssue { id: u16 },
     UpdateIssue { id: u16, body: String },
     UpdateIssueStatus { id: u16, status_id: u16 },
@@ -230,6 +246,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let author_id = as_u16(&yaml, "author_id");
     let created_on = as_local_datetime(&yaml, "created_on");
     let updated_on = as_local_datetime(&yaml, "updated_on");
+    let tracker_id = TrackerId::new(as_u16(&yaml, "tracker_id"));
     let status_id = as_u16(&yaml, "status_id");
     let priority_id = as_u16(&yaml, "priority_id");
     let assigned_to_id = as_u16_option(&yaml, "assigned_to_id");
@@ -250,6 +267,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
         author_id,
         created_on,
         updated_on,
+        tracker_id,
         status_id,
         priority_id,
         assigned_to_id,
@@ -312,6 +330,22 @@ fn parse_priorities_yaml() -> HashMap<u16, Priority> {
                 name: as_string(entry, "name"),
             };
             (priority.id.get(), priority)
+        })
+        .collect()
+}
+
+fn parse_trackers_yaml() -> HashMap<u16, Tracker> {
+    let yaml = read_yaml("datas/trackers.yml");
+    let entries = yaml["trackers"].as_vec().expect("no trackers");
+
+    entries
+        .iter()
+        .map(|entry| {
+            let tracker = Tracker {
+                id: TrackerId::new(as_u16(entry, "id")),
+                name: as_string(entry, "name"),
+            };
+            (tracker.id.get(), tracker)
         })
         .collect()
 }
