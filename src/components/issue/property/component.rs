@@ -66,9 +66,14 @@ fn create_property_widget<'a>(
         .get_priority(issue.priority_id)
         .map(|priority| priority.name.as_str())
         .unwrap_or("(unknown)");
+    let tracker = store
+        .get_tracker(issue.tracker_id.get())
+        .map(|tracker| tracker.name.as_str())
+        .unwrap_or("(unknown)");
     PropertyWidget::new(
         issue.id.get(),
         issue_status.name.as_str(),
+        tracker,
         priority,
         assigned_to,
         &issue.fixed_version,

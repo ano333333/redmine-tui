@@ -11,6 +11,7 @@ const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 pub struct PropertyWidget<'a> {
     id: u16,
     status: &'a str,
+    tracker: &'a str,
     priority: &'a str,
     person_in_charge: Option<&'a str>,
     target_version: &'a Option<String>,
@@ -40,6 +41,7 @@ impl<'a> PropertyWidget<'a> {
     pub fn new(
         id: u16,
         status: &'a str,
+        tracker: &'a str,
         priority: &'a str,
         person_in_charge: Option<&'a str>,
         target_version: &'a Option<String>,
@@ -55,6 +57,7 @@ impl<'a> PropertyWidget<'a> {
         Self {
             id,
             status,
+            tracker,
             priority,
             person_in_charge,
             target_version,
@@ -102,6 +105,7 @@ impl<'a> PropertyWidget<'a> {
                 Span::from("ステータス          ").style(Style::default().blue()),
                 Span::from(self.status.to_string()),
             ]),
+            Line::from(format!("トラッカー          {}", self.tracker)),
             Line::from(format!("優先度              {}", self.priority)),
             Line::from(format!("担当者              {}", person)).style(Style::default().blue()),
             Line::from(format!("対象バージョン      {}", target_version)),
@@ -145,6 +149,7 @@ mod tests {
     #[test]
     fn snapshot_property_full_values_wide() {
         let status = "In Progress".to_string();
+        let tracker = "Bug".to_string();
         let priority = "critical".to_string();
         let person_in_charge = Some("alice".to_string());
         let target_version = Some("2026 Spring".to_string());
@@ -154,10 +159,11 @@ mod tests {
         render_snapshot(
             "property_full_values_wide",
             40,
-            11,
+            12,
             PropertyWidget::new(
                 1,
                 status.as_str(),
+                tracker.as_str(),
                 priority.as_str(),
                 person_in_charge.as_deref(),
                 &target_version,
@@ -168,7 +174,7 @@ mod tests {
                 &resolve_way,
                 &component,
                 &tags,
-                Some(2),
+                Some(3),
             ),
         );
     }
@@ -176,6 +182,7 @@ mod tests {
     #[test]
     fn snapshot_property_all_optional_none() {
         let status = "Waiting for external review".to_string();
+        let tracker = "Support".to_string();
         let priority = "major".to_string();
         let person_in_charge = None;
         let target_version = None;
@@ -189,6 +196,7 @@ mod tests {
             PropertyWidget::new(
                 1,
                 status.as_str(),
+                tracker.as_str(),
                 priority.as_str(),
                 person_in_charge,
                 &target_version,
@@ -207,6 +215,7 @@ mod tests {
     #[test]
     fn line_count_property_current_values() {
         let status = "Waiting for external review".to_string();
+        let tracker = "Support".to_string();
         let priority = "minor".to_string();
         let person_in_charge = None;
         let target_version = None;
@@ -216,6 +225,7 @@ mod tests {
         let widget = PropertyWidget::new(
             1,
             status.as_str(),
+            tracker.as_str(),
             priority.as_str(),
             person_in_charge,
             &target_version,
@@ -228,13 +238,14 @@ mod tests {
             &tags,
             None,
         );
-        assert_eq!(widget.line_count(40), 11);
-        assert_eq!(widget.line_count(22), 11);
+        assert_eq!(widget.line_count(40), 12);
+        assert_eq!(widget.line_count(22), 12);
     }
 
     #[test]
     fn line_count_property_is_stable_without_wrap() {
         let status = "Waiting for external review".to_string();
+        let tracker = "Support".to_string();
         let priority = "blocker".to_string();
         let person_in_charge = None;
         let target_version = None;
@@ -244,6 +255,7 @@ mod tests {
         let widget = PropertyWidget::new(
             1,
             status.as_str(),
+            tracker.as_str(),
             priority.as_str(),
             person_in_charge,
             &target_version,
