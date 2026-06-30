@@ -143,9 +143,9 @@ impl Store {
         &self.issue_statuses
     }
 
-    pub fn get_issue_status(&self, issue_status_id: u16) -> &IssueStatus {
+    pub fn get_issue_status(&self, issue_status_id: IssueStatusId) -> &IssueStatus {
         self.issue_statuses
-            .get(&issue_status_id)
+            .get(&issue_status_id.get())
             .expect("issue status must exist")
     }
 
@@ -173,7 +173,7 @@ pub enum Action {
     LoadTrackers,
     LoadIssue { id: u16 },
     UpdateIssue { id: u16, body: String },
-    UpdateIssueStatus { id: u16, status_id: u16 },
+    UpdateIssueStatus { id: u16, status_id: IssueStatusId },
     LoadJournal { id: u16 },
     UpdateJournal { id: u16, notes: String },
 }
@@ -247,7 +247,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let created_on = as_local_datetime(&yaml, "created_on");
     let updated_on = as_local_datetime(&yaml, "updated_on");
     let tracker_id = TrackerId::new(as_u16(&yaml, "tracker_id"));
-    let status_id = as_u16(&yaml, "status_id");
+    let status_id = IssueStatusId::new(as_u16(&yaml, "status_id"));
     let priority_id = as_u16(&yaml, "priority_id");
     let assigned_to_id = as_u16_option(&yaml, "assigned_to_id").map(UserId::new);
     let fixed_version = as_string_option(&yaml, "fixed_version");

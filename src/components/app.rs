@@ -10,6 +10,7 @@ use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
 };
+use crate::entities::IssueStatusId;
 
 use super::select_box_popup::{
     EventProcessResult as SelectBoxPopupEventProcessResult, SelectBoxPopupComponent,
@@ -89,7 +90,7 @@ impl AppComponent {
                         Box::new(move |status_id| {
                             dispatcher.borrow_mut().dispatch(Action::UpdateIssueStatus {
                                 id: issue_id,
-                                status_id,
+                                status_id: IssueStatusId::new(status_id),
                             });
                         }),
                     ));

@@ -4,7 +4,7 @@ use chrono::{DateTime, Local};
 use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
-use crate::entities::{Issue, IssueId, UserId};
+use crate::entities::{Issue, IssueId, IssueStatusId, UserId};
 
 pub fn local_datetime(input: &str) -> DateTime<Local> {
     DateTime::parse_from_rfc3339(input)
@@ -59,7 +59,7 @@ fn describe_buffer(buffer: &Buffer) -> String {
 pub fn sample_issue(
     id: u16,
     title: &str,
-    issue_status_id: u16,
+    issue_status_id: IssueStatusId,
     person_in_charge_id: Option<u16>,
     start_date: Option<&str>,
     due: Option<&str>,

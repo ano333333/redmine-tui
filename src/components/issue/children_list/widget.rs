@@ -181,7 +181,7 @@ mod tests {
         let done = sample_issue(
             7,
             "Done child",
-            3,
+            3.into(),
             Some(1),
             Some("2026-01-10T00:00:00+09:00"),
             Some("2026-01-15T00:00:00+09:00"),
@@ -190,7 +190,7 @@ mod tests {
         let open = sample_issue(
             8,
             "Open child without assignee and dates",
-            5,
+            5.into(),
             None,
             None,
             None,
@@ -233,8 +233,8 @@ mod tests {
 
     #[test]
     fn line_count_children_current_values() {
-        let child_a = sample_issue(7, "Done child", 3, Some(1), None, None, 100);
-        let child_b = sample_issue(8, "Open child", 5, None, None, None, 35);
+        let child_a = sample_issue(7, "Done child", 3.into(), Some(1), None, None, 100);
+        let child_b = sample_issue(8, "Open child", 5.into(), None, None, None, 35);
         let child_a_status = IssueStatus {
             id: 3.into(),
             name: "完了(closed)".to_string(),
