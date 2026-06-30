@@ -10,6 +10,9 @@ const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 
 pub struct PropertyWidget<'a> {
     id: u16,
+    author: &'a str,
+    created_on: DateTime<Local>,
+    updated_on: DateTime<Local>,
     status: &'a str,
     tracker: &'a str,
     priority: &'a str,
@@ -40,6 +43,9 @@ impl<'a> PropertyWidget<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: u16,
+        author: &'a str,
+        created_on: DateTime<Local>,
+        updated_on: DateTime<Local>,
         status: &'a str,
         tracker: &'a str,
         priority: &'a str,
@@ -56,6 +62,9 @@ impl<'a> PropertyWidget<'a> {
     ) -> Self {
         Self {
             id,
+            author,
+            created_on,
+            updated_on,
             status,
             tracker,
             priority,
@@ -101,6 +110,15 @@ impl<'a> PropertyWidget<'a> {
             None => "-".to_string(),
         };
         Paragraph::new(vec![
+            Line::from(format!("作成者              {}", self.author)),
+            Line::from(format!(
+                "作成日              {}",
+                self.created_on.format("%Y/%m/%d")
+            )),
+            Line::from(format!(
+                "更新日              {}",
+                self.updated_on.format("%Y/%m/%d")
+            )),
             Line::from(vec![
                 Span::from("ステータス          ").style(Style::default().blue()),
                 Span::from(self.status.to_string()),
@@ -159,9 +177,12 @@ mod tests {
         render_snapshot(
             "property_full_values_wide",
             40,
-            12,
+            15,
             PropertyWidget::new(
                 1,
+                "author",
+                local_datetime("2026-01-10T00:00:00+09:00"),
+                local_datetime("2026-01-15T00:00:00+09:00"),
                 status.as_str(),
                 tracker.as_str(),
                 priority.as_str(),
@@ -192,9 +213,12 @@ mod tests {
         render_snapshot(
             "property_all_optional_none",
             22,
-            16,
+            19,
             PropertyWidget::new(
                 1,
+                "author",
+                local_datetime("2026-01-10T00:00:00+09:00"),
+                local_datetime("2026-01-15T00:00:00+09:00"),
                 status.as_str(),
                 tracker.as_str(),
                 priority.as_str(),
@@ -224,6 +248,9 @@ mod tests {
         let tags = vec!["frontend".to_string(), "needs-review".to_string()];
         let widget = PropertyWidget::new(
             1,
+            "author",
+            local_datetime("2026-01-10T00:00:00+09:00"),
+            local_datetime("2026-01-15T00:00:00+09:00"),
             status.as_str(),
             tracker.as_str(),
             priority.as_str(),
@@ -238,8 +265,8 @@ mod tests {
             &tags,
             None,
         );
-        assert_eq!(widget.line_count(40), 12);
-        assert_eq!(widget.line_count(22), 12);
+        assert_eq!(widget.line_count(40), 15);
+        assert_eq!(widget.line_count(22), 15);
     }
 
     #[test]
@@ -254,6 +281,9 @@ mod tests {
         let tags = vec!["frontend".to_string(), "needs-review".to_string()];
         let widget = PropertyWidget::new(
             1,
+            "author",
+            local_datetime("2026-01-10T00:00:00+09:00"),
+            local_datetime("2026-01-15T00:00:00+09:00"),
             status.as_str(),
             tracker.as_str(),
             priority.as_str(),

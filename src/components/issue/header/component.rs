@@ -28,18 +28,7 @@ impl HeaderComponent {
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
         if let Some((issue, _)) = store.get_issue(self.id) {
-            let author = store
-                .get_user(issue.author_id)
-                .map(|user| user.name.as_str())
-                .unwrap_or("(unknown)");
-            let widget = HeaderWidget::new(
-                self.id,
-                &issue.subject,
-                author,
-                issue.created_on,
-                issue.updated_on,
-                self.focus_state.is_focused(),
-            );
+            let widget = HeaderWidget::new(self.id, &issue.subject, self.focus_state.is_focused());
             widget.line_count(width) as u16
         } else {
             0
@@ -48,18 +37,7 @@ impl HeaderComponent {
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> HeaderWidget<'a> {
         let (issue, _) = store.get_issue(self.id).unwrap();
-        let author = store
-            .get_user(issue.author_id)
-            .map(|user| user.name.as_str())
-            .unwrap_or("(unknown)");
-        HeaderWidget::new(
-            self.id,
-            &issue.subject,
-            author,
-            issue.created_on,
-            issue.updated_on,
-            self.focus_state.is_focused(),
-        )
+        HeaderWidget::new(self.id, &issue.subject, self.focus_state.is_focused())
     }
 
     pub fn get_cursor_position(&self) -> Position {

@@ -1,6 +1,8 @@
 use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
 
+const LINE_COUNT: u16 = 14;
+
 pub enum FocusEvent {
     Unfocused,
     CursorEnteredFromAbove,
@@ -28,7 +30,7 @@ impl FocusState {
         {
             match key.code {
                 KeyCode::Char('j') => {
-                    if *focused_y + 1 == 11 {
+                    if *focused_y + 1 == LINE_COUNT {
                         return Some(EventProcessResult::CursorLeavedFromBelow);
                     }
                     *focused_y += 1;
@@ -40,7 +42,7 @@ impl FocusState {
                     *focused_y -= 1;
                 }
                 KeyCode::Char('e') => {
-                    if *focused_y == 0 {
+                    if *focused_y == 3 {
                         return Some(EventProcessResult::OpenIssueStatusPopup);
                     }
                 }
@@ -59,7 +61,7 @@ impl FocusState {
                 self.focused_y = Some(0);
             }
             FocusEvent::CursorEnteredFromBelow => {
-                self.focused_y = Some(10);
+                self.focused_y = Some(LINE_COUNT - 1);
             }
         }
     }

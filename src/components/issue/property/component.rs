@@ -58,6 +58,10 @@ fn create_property_widget<'a>(
     issue_status: &'a IssueStatus,
     focused_y: Option<u16>,
 ) -> PropertyWidget<'a> {
+    let author = store
+        .get_user(issue.author_id)
+        .map(|user| user.name.as_str())
+        .unwrap_or("(unknown)");
     let assigned_to = issue
         .assigned_to_id
         .and_then(|user_id| store.get_user(user_id))
@@ -72,6 +76,9 @@ fn create_property_widget<'a>(
         .unwrap_or("(unknown)");
     PropertyWidget::new(
         issue.id.get(),
+        author,
+        issue.created_on,
+        issue.updated_on,
         issue_status.name.as_str(),
         tracker,
         priority,
