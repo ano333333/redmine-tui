@@ -21,6 +21,6 @@ pub struct Issue {
     pub component: String,
     pub tags: Vec<String>,
     pub description: String,
-    pub child_ids: Vec<u16>,
+    pub child_ids: Vec<IssueId>,
     pub journal_ids: Vec<u16>,
 }

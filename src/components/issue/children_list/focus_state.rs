@@ -1,6 +1,8 @@
 use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
 
+use crate::entities::IssueId;
+
 pub enum FocusEvent {
     Unfocused,
     CursorEnteredFromAbove,
@@ -13,8 +15,8 @@ pub enum EventProcessResult {
 }
 
 pub struct FocusState {
-    ids: Vec<u16>,
-    focused_id: Option<u16>,
+    ids: Vec<IssueId>,
+    focused_id: Option<IssueId>,
 }
 
 impl FocusState {
@@ -25,7 +27,7 @@ impl FocusState {
         }
     }
 
-    pub fn update(&mut self, ids: &[u16]) {
+    pub fn update(&mut self, ids: &[IssueId]) {
         let Some(focused_id) = self.focused_id else {
             self.ids = ids.to_vec();
             return;

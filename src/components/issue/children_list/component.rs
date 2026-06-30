@@ -2,6 +2,7 @@ use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::app::Store;
+use crate::entities::EntityIdValue;
 
 use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
 use super::widget::{ChildIssueRow, ChildrenListWidget};
@@ -33,7 +34,7 @@ impl ChildrenListComponent {
             .child_ids
             .iter()
             .filter(|id| {
-                store.get_issue(**id).is_some_and(|(issue, _)| {
+                store.get_issue(id.get()).is_some_and(|(issue, _)| {
                     let issue_status = store.get_issue_status(issue.status_id);
                     issue_status.is_closed
                 })
@@ -44,7 +45,7 @@ impl ChildrenListComponent {
         let children: Vec<_> = issue
             .child_ids
             .iter()
-            .filter_map(|id| store.get_issue(*id))
+            .filter_map(|id| store.get_issue(id.get()))
             .map(|(issue, _)| ChildIssueRow {
                 issue,
                 issue_status: store.get_issue_status(issue.status_id),
