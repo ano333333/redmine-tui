@@ -153,8 +153,8 @@ impl Store {
         &self.priorities
     }
 
-    pub fn get_priority(&self, priority_id: u16) -> Option<&Priority> {
-        self.priorities.get(&priority_id)
+    pub fn get_priority(&self, priority_id: PriorityId) -> Option<&Priority> {
+        self.priorities.get(&priority_id.get())
     }
 
     pub fn get_trackers(&self) -> &HashMap<u16, Tracker> {
@@ -248,7 +248,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let updated_on = as_local_datetime(&yaml, "updated_on");
     let tracker_id = TrackerId::new(as_u16(&yaml, "tracker_id"));
     let status_id = IssueStatusId::new(as_u16(&yaml, "status_id"));
-    let priority_id = as_u16(&yaml, "priority_id");
+    let priority_id = PriorityId::new(as_u16(&yaml, "priority_id"));
     let assigned_to_id = as_u16_option(&yaml, "assigned_to_id").map(UserId::new);
     let fixed_version = as_string_option(&yaml, "fixed_version");
     let start_date = as_local_datetime_option(&yaml, "start_date");
