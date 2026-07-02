@@ -66,7 +66,7 @@ impl AppContainer {
 
     pub fn handle_key_event(&mut self, event: Event, terminal: &mut DefaultTerminal) -> bool {
         if let Event::Key(key) = event {
-            if key.code == KeyCode::Char('q') {
+            if key.code == KeyCode::Char('Q') {
                 return false;
             }
             match key.code {
