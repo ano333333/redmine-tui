@@ -221,9 +221,12 @@ impl IssueDetailComponent {
         );
         widget.render(frame_area, frame.buffer_mut());
 
-        let cursor_position = self
-            .widget_state
-            .calc_cursor_area_position(self.calc_cursor_global_position(store), frame_area);
+        let header_height = self.header.line_count(store, frame_area.width);
+        let cursor_position = self.widget_state.calc_cursor_area_position(
+            self.calc_cursor_global_position(store),
+            frame_area,
+            header_height,
+        );
         frame.set_cursor_position(cursor_position);
     }
 
