@@ -81,6 +81,7 @@ pub fn sample_issue(
         due_date: due.map(local_datetime),
         done_ratio: progress,
         estimated_hours: Some(8),
+        total_spent_hours: Some(3.5),
         resolve_way: Some("Fixed".to_string()),
         component: "UI".to_string(),
         tags: vec!["frontend".to_string(), "urgent".to_string()],

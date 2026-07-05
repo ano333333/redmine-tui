@@ -23,6 +23,7 @@ pub struct PropertyWidget<'a> {
     due: Option<DateTime<Local>>,
     progress: u16,
     planned_hours: Option<u16>,
+    total_spent_hours: Option<f64>,
     resolve_way: &'a Option<String>,
     component: &'a String,
     tags: &'a Vec<String>,
@@ -57,6 +58,7 @@ impl<'a> PropertyWidget<'a> {
         due: Option<DateTime<Local>>,
         progress: u16,
         planned_hours: Option<u16>,
+        total_spent_hours: Option<f64>,
         resolve_way: &'a Option<String>,
         component: &'a String,
         tags: &'a Vec<String>,
@@ -77,6 +79,7 @@ impl<'a> PropertyWidget<'a> {
             due,
             progress,
             planned_hours,
+            total_spent_hours,
             resolve_way,
             component,
             tags,
@@ -106,6 +109,11 @@ impl<'a> PropertyWidget<'a> {
         }
         let planned_hours = match self.planned_hours {
             Some(p) => p.to_string(),
+            None => "".to_string(),
+        };
+        let total_spent_hours = match self.total_spent_hours {
+            Some(hours) if hours.fract() == 0.0 => format!("{hours:.0}"),
+            Some(hours) => hours.to_string(),
             None => "".to_string(),
         };
         let resolve_way = match self.resolve_way {
@@ -144,6 +152,7 @@ impl<'a> PropertyWidget<'a> {
                 Span::from(self.progress.to_string()),
             ]),
             Line::from(format!("予定工数            {}", planned_hours)),
+            Line::from(format!("実績工数            {}", total_spent_hours)),
             Line::from(format!("解決方法            {}", resolve_way)),
             Line::from(format!("コンポーネント      {}", self.component)),
             Line::from(format!("Tags                {}", self.tags.concat())),
@@ -198,6 +207,7 @@ mod tests {
                 Some(local_datetime("2026-01-20T00:00:00+09:00")),
                 65,
                 Some(13),
+                Some(8.5),
                 &resolve_way,
                 &component,
                 &tags,
@@ -236,6 +246,7 @@ mod tests {
                 None,
                 0,
                 None,
+                None,
                 &resolve_way,
                 &component,
                 &tags,
@@ -270,13 +281,14 @@ mod tests {
             None,
             0,
             None,
+            None,
             &resolve_way,
             &component,
             &tags,
             None,
         );
-        assert_eq!(widget.line_count(40), 16);
-        assert_eq!(widget.line_count(22), 16);
+        assert_eq!(widget.line_count(40), 17);
+        assert_eq!(widget.line_count(22), 17);
     }
 
     #[test]
@@ -304,6 +316,7 @@ mod tests {
             None,
             None,
             0,
+            None,
             None,
             &resolve_way,
             &component,

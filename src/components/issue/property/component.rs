@@ -93,6 +93,7 @@ fn create_property_widget<'a>(
         issue.due_date,
         issue.done_ratio,
         issue.estimated_hours,
+        issue.total_spent_hours,
         &issue.resolve_way,
         &issue.component,
         &issue.tags,

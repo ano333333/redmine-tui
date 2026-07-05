@@ -40,6 +40,10 @@ pub fn as_u16_option(yaml: &Yaml, key: &str) -> Option<u16> {
     yaml[key].as_i64().map(|i| i.try_into().unwrap())
 }
 
+pub fn as_f64_option(yaml: &Yaml, key: &str) -> Option<f64> {
+    yaml[key].as_f64()
+}
+
 pub fn as_string_option(yaml: &Yaml, key: &str) -> Option<String> {
     yaml[key].as_str().map(|s| s.to_string())
 }

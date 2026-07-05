@@ -18,6 +18,7 @@ pub struct Issue {
     pub due_date: Option<DateTime<Local>>,
     pub done_ratio: u16,
     pub estimated_hours: Option<u16>,
+    pub total_spent_hours: Option<f64>,
     pub resolve_way: Option<String>,
     pub component: String,
     pub tags: Vec<String>,

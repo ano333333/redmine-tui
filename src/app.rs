@@ -6,8 +6,8 @@ use crate::entities::{
 };
 use crate::libs::yaml::{as_u16_array, as_u16_option};
 use crate::libs::{
-    as_bool, as_local_datetime, as_local_datetime_option, as_string, as_string_array,
-    as_string_option, as_u16, read_yaml,
+    as_bool, as_f64_option, as_local_datetime, as_local_datetime_option, as_string,
+    as_string_array, as_string_option, as_u16, read_yaml,
 };
 
 pub struct Dispatcher {
@@ -272,6 +272,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let due_date = as_local_datetime_option(&yaml, "due_date");
     let done_ratio = as_u16(&yaml, "done_ratio");
     let estimated_hours = as_u16_option(&yaml, "estimated_hours");
+    let total_spent_hours = as_f64_option(&yaml, "total_spent_hours");
     let resolve_way = as_string_option(&yaml, "resolve_way");
     let component = as_string(&yaml, "component");
     let tags = as_string_array(&yaml, "tags");
@@ -297,6 +298,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
         due_date,
         done_ratio,
         estimated_hours,
+        total_spent_hours,
         resolve_way,
         component,
         tags,
