@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::entities::{
     EntityIdValue, Issue, IssueId, IssueStatus, IssueStatusId, Journal, JournalDetail,
-    JournalDetailAttr, Priority, PriorityId, Tracker, TrackerId, User, UserId,
+    JournalDetailAttr, Priority, PriorityId, Project, ProjectId, Tracker, TrackerId, User, UserId,
 };
 use crate::libs::yaml::{as_u16_array, as_u16_option};
 use crate::libs::{
@@ -54,6 +54,7 @@ pub struct Store {
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<u16, IssueStatus>,
     priorities: HashMap<u16, Priority>,
+    projects: HashMap<u16, Project>,
     trackers: HashMap<u16, Tracker>,
 }
 
@@ -65,6 +66,7 @@ impl Store {
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
             priorities: HashMap::new(),
+            projects: HashMap::new(),
             trackers: HashMap::new(),
         }
     }
@@ -84,6 +86,11 @@ impl Store {
             Action::LoadPriorities => {
                 if self.priorities.is_empty() {
                     self.priorities = parse_priorities_yaml();
+                }
+            }
+            Action::LoadProjects => {
+                if self.projects.is_empty() {
+                    self.projects = parse_projects_yaml();
                 }
             }
             Action::LoadTrackers => {
@@ -157,6 +164,14 @@ impl Store {
         self.priorities.get(&priority_id.get())
     }
 
+    pub fn get_projects(&self) -> &HashMap<u16, Project> {
+        &self.projects
+    }
+
+    pub fn get_project(&self, project_id: ProjectId) -> Option<&Project> {
+        self.projects.get(&project_id.get())
+    }
+
     pub fn get_trackers(&self) -> &HashMap<u16, Tracker> {
         &self.trackers
     }
@@ -170,6 +185,7 @@ pub enum Action {
     LoadUsers,
     LoadIssueStatuses,
     LoadPriorities,
+    LoadProjects,
     LoadTrackers,
     LoadIssue { id: u16 },
     UpdateIssue { id: u16, body: String },
@@ -246,6 +262,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let author_id = UserId::new(as_u16(&yaml, "author_id"));
     let created_on = as_local_datetime(&yaml, "created_on");
     let updated_on = as_local_datetime(&yaml, "updated_on");
+    let project_id = ProjectId::new(as_u16(&yaml, "project_id"));
     let tracker_id = TrackerId::new(as_u16(&yaml, "tracker_id"));
     let status_id = IssueStatusId::new(as_u16(&yaml, "status_id"));
     let priority_id = PriorityId::new(as_u16(&yaml, "priority_id"));
@@ -270,6 +287,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
         author_id,
         created_on,
         updated_on,
+        project_id,
         tracker_id,
         status_id,
         priority_id,
@@ -333,6 +351,22 @@ fn parse_priorities_yaml() -> HashMap<u16, Priority> {
                 name: as_string(entry, "name"),
             };
             (priority.id.get(), priority)
+        })
+        .collect()
+}
+
+fn parse_projects_yaml() -> HashMap<u16, Project> {
+    let yaml = read_yaml("datas/projects.yml");
+    let entries = yaml["projects"].as_vec().expect("no projects");
+
+    entries
+        .iter()
+        .map(|entry| {
+            let project = Project {
+                id: ProjectId::new(as_u16(entry, "id")),
+                name: as_string(entry, "name"),
+            };
+            (project.id.get(), project)
         })
         .collect()
 }

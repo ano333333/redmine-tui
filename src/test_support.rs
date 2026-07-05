@@ -4,7 +4,7 @@ use chrono::{DateTime, Local};
 use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
-use crate::entities::{Issue, IssueId, IssueStatusId, PriorityId, UserId};
+use crate::entities::{Issue, IssueId, IssueStatusId, PriorityId, ProjectId, UserId};
 
 pub fn local_datetime(input: &str) -> DateTime<Local> {
     DateTime::parse_from_rfc3339(input)
@@ -71,6 +71,7 @@ pub fn sample_issue(
         author_id: UserId::new(1),
         created_on: local_datetime("2026-01-10T00:00:00+09:00"),
         updated_on: local_datetime("2026-01-15T00:00:00+09:00"),
+        project_id: ProjectId::new(1),
         tracker_id: 1.into(),
         status_id: issue_status_id,
         priority_id: PriorityId::new(1),

@@ -43,6 +43,7 @@ impl AppContainer {
             d.dispatch(Action::LoadUsers);
             d.dispatch(Action::LoadIssueStatuses);
             d.dispatch(Action::LoadPriorities);
+            d.dispatch(Action::LoadProjects);
             d.dispatch(Action::LoadTrackers);
             d.dispatch(Action::LoadIssue { id: 1 });
             d.dispatch(Action::LoadIssue { id: 2 });
