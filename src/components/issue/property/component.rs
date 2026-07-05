@@ -70,6 +70,10 @@ fn create_property_widget<'a>(
         .get_priority(issue.priority_id)
         .map(|priority| priority.name.as_str())
         .unwrap_or("(unknown)");
+    let project = store
+        .get_project(issue.project_id)
+        .map(|project| project.name.as_str())
+        .unwrap_or("(unknown)");
     let tracker = store
         .get_tracker(issue.tracker_id.get())
         .map(|tracker| tracker.name.as_str())
@@ -82,6 +86,7 @@ fn create_property_widget<'a>(
         issue_status.name.as_str(),
         tracker,
         priority,
+        project,
         assigned_to,
         &issue.fixed_version,
         issue.start_date,

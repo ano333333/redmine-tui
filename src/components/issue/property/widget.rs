@@ -16,6 +16,7 @@ pub struct PropertyWidget<'a> {
     status: &'a str,
     tracker: &'a str,
     priority: &'a str,
+    project: &'a str,
     person_in_charge: Option<&'a str>,
     target_version: &'a Option<String>,
     start_date: Option<DateTime<Local>>,
@@ -49,6 +50,7 @@ impl<'a> PropertyWidget<'a> {
         status: &'a str,
         tracker: &'a str,
         priority: &'a str,
+        project: &'a str,
         person_in_charge: Option<&'a str>,
         target_version: &'a Option<String>,
         start_date: Option<DateTime<Local>>,
@@ -68,6 +70,7 @@ impl<'a> PropertyWidget<'a> {
             status,
             tracker,
             priority,
+            project,
             person_in_charge,
             target_version,
             start_date,
@@ -125,6 +128,7 @@ impl<'a> PropertyWidget<'a> {
             ]),
             Line::from(format!("トラッカー          {}", self.tracker)),
             Line::from(format!("優先度              {}", self.priority)),
+            Line::from(format!("プロジェクト        {}", self.project)),
             Line::from(format!("担当者              {}", person)).style(Style::default().blue()),
             Line::from(format!("対象バージョン      {}", target_version)),
             Line::from(format!(
@@ -169,6 +173,7 @@ mod tests {
         let status = "In Progress".to_string();
         let tracker = "Bug".to_string();
         let priority = "critical".to_string();
+        let project = "Sample Project".to_string();
         let person_in_charge = Some("alice".to_string());
         let target_version = Some("2026 Spring".to_string());
         let resolve_way = Some("Patch".to_string());
@@ -177,7 +182,7 @@ mod tests {
         render_snapshot(
             "property_full_values_wide",
             40,
-            15,
+            16,
             PropertyWidget::new(
                 1,
                 "author",
@@ -186,6 +191,7 @@ mod tests {
                 status.as_str(),
                 tracker.as_str(),
                 priority.as_str(),
+                project.as_str(),
                 person_in_charge.as_deref(),
                 &target_version,
                 Some(local_datetime("2026-01-10T00:00:00+09:00")),
@@ -205,6 +211,7 @@ mod tests {
         let status = "Waiting for external review".to_string();
         let tracker = "Support".to_string();
         let priority = "major".to_string();
+        let project = "Sample Project".to_string();
         let person_in_charge = None;
         let target_version = None;
         let resolve_way = None;
@@ -222,6 +229,7 @@ mod tests {
                 status.as_str(),
                 tracker.as_str(),
                 priority.as_str(),
+                project.as_str(),
                 person_in_charge,
                 &target_version,
                 None,
@@ -241,6 +249,7 @@ mod tests {
         let status = "Waiting for external review".to_string();
         let tracker = "Support".to_string();
         let priority = "minor".to_string();
+        let project = "Sample Project".to_string();
         let person_in_charge = None;
         let target_version = None;
         let resolve_way = None;
@@ -254,6 +263,7 @@ mod tests {
             status.as_str(),
             tracker.as_str(),
             priority.as_str(),
+            project.as_str(),
             person_in_charge,
             &target_version,
             None,
@@ -265,8 +275,8 @@ mod tests {
             &tags,
             None,
         );
-        assert_eq!(widget.line_count(40), 15);
-        assert_eq!(widget.line_count(22), 15);
+        assert_eq!(widget.line_count(40), 16);
+        assert_eq!(widget.line_count(22), 16);
     }
 
     #[test]
@@ -274,6 +284,7 @@ mod tests {
         let status = "Waiting for external review".to_string();
         let tracker = "Support".to_string();
         let priority = "blocker".to_string();
+        let project = "Sample Project".to_string();
         let person_in_charge = None;
         let target_version = None;
         let resolve_way = None;
@@ -287,6 +298,7 @@ mod tests {
             status.as_str(),
             tracker.as_str(),
             priority.as_str(),
+            project.as_str(),
             person_in_charge,
             &target_version,
             None,
