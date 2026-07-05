@@ -14,7 +14,6 @@ pub use issue::Issue;
 pub use issue_status::IssueStatus;
 pub use journal::{Journal, JournalDetail, JournalDetailAttr};
 pub use priority::Priority;
-#[allow(unused_imports)]
 pub use project::Project;
 pub use tracker::Tracker;
 pub use user::User;
