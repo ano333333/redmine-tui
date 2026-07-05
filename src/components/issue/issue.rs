@@ -205,8 +205,11 @@ impl IssueDetailComponent {
             self.journals_list.update(journals, self.width);
         }
 
-        self.widget_state
-            .update(self.calc_cursor_global_position(store), self.height);
+        self.widget_state.update(
+            self.calc_cursor_global_position(store),
+            self.height,
+            self.header.line_count(store, self.width),
+        );
     }
 
     /// Componentをframeのarea範囲内に描画する。
@@ -230,7 +233,7 @@ impl IssueDetailComponent {
         frame.set_cursor_position(cursor_position);
     }
 
-    /// IssueDetailComponentの全体から見たカーソル位置を計算する
+    /// IssueDetailComponentの全体を含む仮想バッファから見たカーソル位置を計算する(HeaderWidget含)
     /// render時にクライアント座標への変換とFrame描画位置への加算を行うこと
     fn calc_cursor_global_position(&self, store: &Store) -> Position {
         let mut offset = Offset::default();

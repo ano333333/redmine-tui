@@ -13,7 +13,8 @@ use super::journals_list::JournalsListWidget;
 use super::property::widget::PropertyWidget;
 
 pub struct IssueDetailWidgetState {
-    /// グローバル座標のどのyから描画を始めるか
+    /// PropertyWidget以下の全てのWidgetを含む仮想バッファを考えた時、どのyからクライアントに転写するか
+    /// (HeaderWidgetはトップに固定描画するので、仮想バッファに含まない)
     pub offset_y: u16,
 }
 
@@ -22,16 +23,30 @@ impl IssueDetailWidgetState {
         Self { offset_y: 0 }
     }
 
-    pub fn update(&mut self, cursor_global_position: Position, height: u16) {
+    /// # Arguments
+    ///
+    /// * `cursor_global_position` - **HeaderWidgetを含む**全てのWidgetの仮想バッファから見たカーソル位置
+    /// * `height` - IssueDetailWidgetの表示行数
+    /// * `header_height` - HeaderWidgetの高さ・行数
+    pub fn update(&mut self, cursor_global_position: Position, height: u16, header_height: u16) {
         let cursor_y = cursor_global_position.y;
-        if cursor_y < self.offset_y {
-            self.offset_y = cursor_y;
-        }
-        if cursor_y >= self.offset_y + height {
-            self.offset_y = (cursor_y + 1) - height;
+        if cursor_y < header_height {
+            self.offset_y = 0;
+        } else if cursor_y - header_height < self.offset_y {
+            self.offset_y = cursor_y - header_height;
+        } else if cursor_y - header_height >= self.offset_y + (height - header_height) {
+            self.offset_y = cursor_y - height + 1;
         }
     }
 
+    /// **HeaderWidgetを含む**全てのWidgetの仮想バッファから見たカーソル位置を、
+    /// クライアント座標に変換する。
+    ///
+    /// # Arguments
+    ///
+    /// * `cursor_global_position` - **HeaderWidgetを含む**全てのWidgetの仮想バッファから見たカーソル位置
+    /// * `area` - このWidgetを描画するクライアント領域
+    /// * `header_height` - HeaderWidgetの高さ・行数
     pub fn calc_cursor_area_position(
         &self,
         cursor_global_position: Position,
