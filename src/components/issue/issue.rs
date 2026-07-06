@@ -30,6 +30,7 @@ use super::{IssueDetailWidget, IssueDetailWidgetState};
 pub enum EventProcessResult {
     EditIssueBodyRequested { id: u16, body: String },
     OpenIssueStatusPopup,
+    OpenSpentTimeInputPopup,
 }
 
 #[derive(PartialEq)]
@@ -119,6 +120,9 @@ impl IssueDetailComponent {
                     }
                     Some(PropertyEventProcessResult::OpenIssueStatusPopup) => {
                         return Some(EventProcessResult::OpenIssueStatusPopup);
+                    }
+                    Some(PropertyEventProcessResult::OpenSpentTimeInputPopup) => {
+                        return Some(EventProcessResult::OpenSpentTimeInputPopup);
                     }
                     None => {}
                 }

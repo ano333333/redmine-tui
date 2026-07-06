@@ -15,6 +15,9 @@ use crate::entities::IssueStatusId;
 use super::select_box_popup::{
     EventProcessResult as SelectBoxPopupEventProcessResult, SelectBoxPopupComponent,
 };
+use super::spent_time_input_popup::{
+    EventProcessResult as SpentTimeInputPopupEventProcessResult, SpentTimeInputPopupComponent,
+};
 
 pub struct EditorRequest {
     pub initial_text: String,
@@ -32,9 +35,14 @@ enum PendingEditorContext {
     IssueBody { id: u16 },
 }
 
+enum PopupComponent {
+    SelectBox(SelectBoxPopupComponent),
+    SpentTimeInput(SpentTimeInputPopupComponent),
+}
+
 pub struct AppComponent {
     issue_component: IssueDetailComponent,
-    popup_component: Option<SelectBoxPopupComponent>,
+    popup_component: Option<PopupComponent>,
     dispatcher: Rc<RefCell<Dispatcher>>,
     pending_effect: Option<AppEffect>,
     pending_editor_context: Option<PendingEditorContext>,
@@ -54,13 +62,30 @@ impl AppComponent {
     /// crosstermの同期イベントを処理する。updateとrenderがこの順で後続する
     pub fn process_event(&mut self, event: Event, dispatcher: Rc<RefCell<Dispatcher>>) {
         if let Some(popup_component) = &mut self.popup_component {
-            let result = popup_component.process_event(event, self.dispatcher.clone());
-            match result {
-                Some(SelectBoxPopupEventProcessResult::Entered)
-                | Some(SelectBoxPopupEventProcessResult::Quited) => {
-                    self.popup_component = None;
+            match popup_component {
+                PopupComponent::SelectBox(popup_component) => {
+                    let result = popup_component.process_event(event, self.dispatcher.clone());
+                    match result {
+                        Some(SelectBoxPopupEventProcessResult::Entered)
+                        | Some(SelectBoxPopupEventProcessResult::Quited) => {
+                            self.popup_component = None;
+                        }
+                        None => {}
+                    }
                 }
-                None => {}
+                PopupComponent::SpentTimeInput(popup_component) => {
+                    let result = popup_component.process_event(event);
+                    match result {
+                        Some(SpentTimeInputPopupEventProcessResult::Quited) => {
+                            self.popup_component = None;
+                        }
+                        Some(SpentTimeInputPopupEventProcessResult::Submited) => {
+                            // FIXME: Storeの更新
+                            self.popup_component = None;
+                        }
+                        None => {}
+                    }
+                }
             }
         } else {
             let result = self
@@ -84,15 +109,24 @@ impl AppComponent {
                         .map(|(id, status)| (*id, status.name.clone()))
                         .collect::<Vec<_>>();
                     let issue_id = self.issue_component.id;
-                    self.popup_component = Some(SelectBoxPopupComponent::new(
-                        &issue_statuses,
-                        0,
-                        Box::new(move |status_id| {
-                            dispatcher.borrow_mut().dispatch(Action::UpdateIssueStatus {
-                                id: issue_id,
-                                status_id: IssueStatusId::new(status_id),
-                            });
-                        }),
+                    self.popup_component =
+                        Some(PopupComponent::SelectBox(SelectBoxPopupComponent::new(
+                            &issue_statuses,
+                            0,
+                            Box::new(move |status_id| {
+                                dispatcher.borrow_mut().dispatch(Action::UpdateIssueStatus {
+                                    id: issue_id,
+                                    status_id: IssueStatusId::new(status_id),
+                                });
+                            }),
+                        )));
+                }
+                Some(IssueEventProcessResult::OpenSpentTimeInputPopup) => {
+                    if self.popup_component.is_some() {
+                        return;
+                    }
+                    self.popup_component = Some(PopupComponent::SpentTimeInput(
+                        SpentTimeInputPopupComponent::new(dispatcher.borrow().store()),
                     ));
                 }
                 None => {}
@@ -108,7 +142,7 @@ impl AppComponent {
     /// Componentをframeのarea範囲内に描画する。
     pub fn render(&self, store: &Store, frame: &mut Frame, area: Rect) {
         self.issue_component.render(store, frame, area);
-        self.render_popup_component(frame, area);
+        self.render_popup_component(frame, area, store);
     }
 
     pub fn take_effect(&mut self) -> Option<AppEffect> {
@@ -129,9 +163,8 @@ impl AppComponent {
         }
     }
 
-    fn render_popup_component(&self, frame: &mut Frame, area: Rect) {
+    fn render_popup_component(&self, frame: &mut Frame, area: Rect, store: &Store) {
         if let Some(popup_component) = &self.popup_component {
-            let widget = popup_component.create_widget();
             let vert_layouts = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
@@ -151,7 +184,22 @@ impl AppComponent {
             let area = hor_layouts[1];
 
             frame.render_widget(Clear, area);
-            frame.render_widget(widget, area);
+            match popup_component {
+                PopupComponent::SelectBox(popup_component) => {
+                    let widget = popup_component.create_widget();
+                    frame.render_widget(widget, area);
+                }
+                PopupComponent::SpentTimeInput(popup_component) => {
+                    let widget = popup_component.create_widget(store);
+                    frame.render_widget(widget, area);
+                    if let Some(cursor_position) = popup_component.cursor_position() {
+                        frame.set_cursor_position((
+                            area.x + cursor_position.x,
+                            area.y + cursor_position.y,
+                        ));
+                    }
+                }
+            }
         }
     }
 }

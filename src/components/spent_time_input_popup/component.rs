@@ -25,6 +25,8 @@ pub enum FocusTarget {
 
 pub struct SpentTimeInputPopupComponent {
     activity_id: TimeEntityActivityId,
+    // AppComponentがこのstructを保持するためTextareaを'statisで持つ。
+    // enum PopupComponentの定義を参照。
     hours_textarea: TextArea<'static>,
     memo_textarea: TextArea<'static>,
     focused_target: FocusTarget,
