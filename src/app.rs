@@ -2,7 +2,8 @@ use std::collections::{HashMap, VecDeque};
 
 use crate::entities::{
     EntityIdValue, Issue, IssueId, IssueStatus, IssueStatusId, Journal, JournalDetail,
-    JournalDetailAttr, Priority, PriorityId, Project, ProjectId, Tracker, TrackerId, User, UserId,
+    JournalDetailAttr, Priority, PriorityId, Project, ProjectId, TimeEntityActivity,
+    TimeEntityActivityId, Tracker, TrackerId, User, UserId,
 };
 use crate::libs::yaml::{as_u16_array, as_u16_option};
 use crate::libs::{
@@ -56,6 +57,7 @@ pub struct Store {
     priorities: HashMap<u16, Priority>,
     projects: HashMap<u16, Project>,
     trackers: HashMap<u16, Tracker>,
+    time_entity_activities: HashMap<TimeEntityActivityId, TimeEntityActivity>,
 }
 
 impl Store {
@@ -68,6 +70,7 @@ impl Store {
             priorities: HashMap::new(),
             projects: HashMap::new(),
             trackers: HashMap::new(),
+            time_entity_activities: HashMap::new(),
         }
     }
 
@@ -96,6 +99,11 @@ impl Store {
             Action::LoadTrackers => {
                 if self.trackers.is_empty() {
                     self.trackers = parse_trackers_yaml();
+                }
+            }
+            Action::LoadTimeEntityActivities => {
+                if self.time_entity_activities.is_empty() {
+                    self.time_entity_activities = parse_time_entity_activities_yaml();
                 }
             }
             Action::LoadIssue { id } => {
@@ -179,6 +187,10 @@ impl Store {
     pub fn get_tracker(&self, tracker_id: u16) -> Option<&Tracker> {
         self.trackers.get(&tracker_id)
     }
+
+    pub fn get_time_entity_activities(&self) -> &HashMap<TimeEntityActivityId, TimeEntityActivity> {
+        &self.time_entity_activities
+    }
 }
 
 pub enum Action {
@@ -187,6 +199,7 @@ pub enum Action {
     LoadPriorities,
     LoadProjects,
     LoadTrackers,
+    LoadTimeEntityActivities,
     LoadIssue { id: u16 },
     UpdateIssue { id: u16, body: String },
     UpdateIssueStatus { id: u16, status_id: IssueStatusId },
@@ -385,6 +398,25 @@ fn parse_trackers_yaml() -> HashMap<u16, Tracker> {
                 name: as_string(entry, "name"),
             };
             (tracker.id.get(), tracker)
+        })
+        .collect()
+}
+
+fn parse_time_entity_activities_yaml() -> HashMap<TimeEntityActivityId, TimeEntityActivity> {
+    let yaml = read_yaml("datas/time_entity_activities.yml");
+    let entries = yaml["time_entity_activities"]
+        .as_vec()
+        .expect("no time_entity_activities");
+
+    entries
+        .iter()
+        .map(|entry| {
+            let act = TimeEntityActivity {
+                id: TimeEntityActivityId::new(as_u16(entry, "id")),
+                name: as_string(entry, "name"),
+                is_default: as_bool(entry, "is_default"),
+            };
+            (act.id, act)
         })
         .collect()
 }

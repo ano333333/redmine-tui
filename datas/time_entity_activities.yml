@@ -1,0 +1,10 @@
+time_entity_activities:
+  - id: 1
+    name: 設計
+    is_default: true
+  - id: 2
+    name: 実装
+    is_default: false
+  - id: 3
+    name: 検証
+    is_default: false
