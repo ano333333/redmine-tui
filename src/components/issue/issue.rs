@@ -227,14 +227,15 @@ impl IssueDetailComponent {
             &self.widget_state,
         );
         widget.render(frame_area, frame.buffer_mut());
+    }
 
+    pub fn calc_cursor_position(&self, store: &Store, frame_area: Rect) -> Position {
         let header_height = self.header.line_count(store, frame_area.width);
-        let cursor_position = self.widget_state.calc_cursor_area_position(
+        self.widget_state.calc_cursor_area_position(
             self.calc_cursor_global_position(store),
             frame_area,
             header_height,
-        );
-        frame.set_cursor_position(cursor_position);
+        )
     }
 
     /// IssueDetailComponentの全体を含む仮想バッファから見たカーソル位置を計算する(HeaderWidget含)

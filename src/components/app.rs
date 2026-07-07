@@ -142,6 +142,9 @@ impl AppComponent {
     /// Componentをframeのarea範囲内に描画する。
     pub fn render(&self, store: &Store, frame: &mut Frame, area: Rect) {
         self.issue_component.render(store, frame, area);
+        if self.popup_component.is_none() {
+            frame.set_cursor_position(self.issue_component.calc_cursor_position(store, area));
+        }
         self.render_popup_component(frame, area, store);
     }
 
