@@ -142,9 +142,16 @@ impl SpentTimeInputPopupComponent {
         )
     }
 
-    pub fn cursor_position(&self) -> Option<Position> {
+    /// クライアント領域全体に対するカーソル位置
+    ///
+    /// * `area` - クライアント領域
+    pub fn cursor_position(&self, area: ratatui::layout::Rect) -> Option<Position> {
+        let popup_area = SpentTimeInputPopupWidget::popup_area(area);
         match self.focused_target {
-            FocusTarget::Activity => Some(Position { x: 2, y: 2 }),
+            FocusTarget::Activity => Some(Position {
+                x: popup_area.x + 2,
+                y: popup_area.y + 2,
+            }),
             // ratatui_textarea::TextAreaが表示するカーソルをそのまま使用する
             _ => None,
         }

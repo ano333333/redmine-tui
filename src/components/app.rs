@@ -3,8 +3,7 @@ use std::rc::Rc;
 
 use crossterm::event::Event;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::widgets::Clear;
+use ratatui::layout::Rect;
 
 use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
@@ -168,25 +167,6 @@ impl AppComponent {
 
     fn render_popup_component(&self, frame: &mut Frame, area: Rect, store: &Store) {
         if let Some(popup_component) = &self.popup_component {
-            let vert_layouts = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Fill(1),
-                    Constraint::Percentage(50),
-                    Constraint::Fill(1),
-                ])
-                .split(area);
-            let hor_layouts = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Fill(1),
-                    Constraint::Percentage(50),
-                    Constraint::Fill(1),
-                ])
-                .split(vert_layouts[1]);
-            let area = hor_layouts[1];
-
-            frame.render_widget(Clear, area);
             match popup_component {
                 PopupComponent::SelectBox(popup_component) => {
                     let widget = popup_component.create_widget();
@@ -195,11 +175,8 @@ impl AppComponent {
                 PopupComponent::SpentTimeInput(popup_component) => {
                     let widget = popup_component.create_widget(store);
                     frame.render_widget(widget, area);
-                    if let Some(cursor_position) = popup_component.cursor_position() {
-                        frame.set_cursor_position((
-                            area.x + cursor_position.x,
-                            area.y + cursor_position.y,
-                        ));
+                    if let Some(cursor_position) = popup_component.cursor_position(area) {
+                        frame.set_cursor_position(cursor_position);
                     }
                 }
             }

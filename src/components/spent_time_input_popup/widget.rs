@@ -35,10 +35,21 @@ impl<'a, 'b> SpentTimeInputPopupWidget<'a, 'b> {
             submit_button_focused,
         }
     }
+
+    pub fn popup_area(area: Rect) -> Rect {
+        Rect {
+            x: area.x + area.width / 4,
+            y: area.y + area.height / 4,
+            width: area.width / 2,
+            height: area.height / 2,
+        }
+    }
 }
 
 impl Widget for SpentTimeInputPopupWidget<'_, '_> {
+    /// クライアント領域に対する描画(したがってClearの責務がある)
     fn render(self, area: Rect, buf: &mut Buffer) {
+        let area = Self::popup_area(area);
         if area.width < 3 || area.height < 3 {
             return;
         }

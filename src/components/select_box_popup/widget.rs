@@ -19,13 +19,24 @@ impl<'a> SelectBoxPopupWidget<'a> {
         }
     }
 
+    pub fn popup_area(area: Rect) -> Rect {
+        Rect {
+            x: area.x + area.width / 4,
+            y: area.y + area.height / 4,
+            width: area.width / 2,
+            height: area.height / 2,
+        }
+    }
+
     pub fn line_count(&self, _: u16) -> usize {
         self.items.len().saturating_add(2)
     }
 }
 
 impl Widget for SelectBoxPopupWidget<'_> {
+    /// クライアント領域に対する描画(したがってClearの責務がある)
     fn render(self, area: Rect, buf: &mut Buffer) {
+        let area = Self::popup_area(area);
         if area.width < 2 || area.height < 2 {
             return;
         }
@@ -78,8 +89,8 @@ mod tests {
 
         render_snapshot(
             "select_box_popup_focus_and_clip",
-            20,
-            6,
+            40,
+            12,
             SelectBoxPopupWidget::new(&items, 2),
         );
     }
