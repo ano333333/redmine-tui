@@ -102,15 +102,19 @@ mod tests {
         let mut state = BodyWidgetState::new();
         let body = "# Heading\n\n- first item with **bold**\n- second item with *italic*\n\nParagraph text with [link](https://example.com) that should wrap.".to_string();
         state.update(18, &body);
-        render_snapshot("body_markdown_narrow_wrap", 18, 10, BodyWidget::new(&state, false));
+        render_snapshot(
+            "body_markdown_narrow_wrap",
+            18,
+            10,
+            BodyWidget::new(&state, false),
+        );
     }
 
     #[test]
     fn line_count_body_current_values() {
         let mut state = BodyWidgetState::new();
-        let body =
-            "# Heading\n\n- first item\n- second item\n\nParagraph text that should wrap."
-                .to_string();
+        let body = "# Heading\n\n- first item\n- second item\n\nParagraph text that should wrap."
+            .to_string();
         state.update(32, &body);
         assert_eq!(BodyWidget::new(&state, false).line_count(32), 6);
 
@@ -121,8 +125,7 @@ mod tests {
     #[test]
     fn line_count_body_changes_with_width_and_body() {
         let mut state = BodyWidgetState::new();
-        let short_body =
-            "Paragraph with enough words to wrap once in a narrow area.".to_string();
+        let short_body = "Paragraph with enough words to wrap once in a narrow area.".to_string();
         let long_body = "Paragraph with enough words to wrap once in a narrow area, then expand into several additional wrapped lines for height growth.".to_string();
 
         state.update(32, &short_body);

@@ -19,7 +19,11 @@ pub struct SelectBoxPopupComponent {
 }
 
 impl SelectBoxPopupComponent {
-    pub fn new(items: &[(u16, String)], focused_index: usize, observer: Box<dyn FnMut(u16)>) -> Self {
+    pub fn new(
+        items: &[(u16, String)],
+        focused_index: usize,
+        observer: Box<dyn FnMut(u16)>,
+    ) -> Self {
         Self {
             items: Vec::from(items),
             focused_index,
@@ -111,7 +115,14 @@ mod tests {
         let component = component_with_observer(1, selected_id, selected_dispatcher);
 
         let widget = component.create_widget();
-        assert_eq!(widget.items, [(1, "New".to_string()), (2, "Doing".to_string()), (3, "Done".to_string())]);
+        assert_eq!(
+            widget.items,
+            [
+                (1, "New".to_string()),
+                (2, "Doing".to_string()),
+                (3, "Done".to_string())
+            ]
+        );
         assert_eq!(widget.focused_index, 1);
     }
 

@@ -13,6 +13,7 @@ pub enum EventProcessResult {
     CursorLeavedFromAbove,
     CursorLeavedFromBelow,
     OpenIssueStatusPopup,
+    OpenSpentTimeInputPopup,
 }
 
 pub struct FocusState {
@@ -44,6 +45,11 @@ impl FocusState {
                 KeyCode::Char('e') => {
                     if *focused_y == 3 {
                         return Some(EventProcessResult::OpenIssueStatusPopup);
+                    }
+                }
+                KeyCode::Char('a') => {
+                    if *focused_y == 13 {
+                        return Some(EventProcessResult::OpenSpentTimeInputPopup);
                     }
                 }
                 _ => {}
