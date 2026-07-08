@@ -131,3 +131,61 @@ impl<'a, 'b> SpentTimeInputPopupWidget<'a, 'b> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::render_snapshot;
+
+    fn textarea_with_value(value: &str) -> TextArea<'static> {
+        let mut textarea = TextArea::default();
+        textarea.insert_str(value);
+        textarea
+    }
+
+    #[test]
+    fn snapshot_spent_time_input_popup_wide_short_values_all_unfocused() {
+        let hours_textarea = textarea_with_value("1.5");
+        let memo_textarea = textarea_with_value("朝会対応");
+        let widget = SpentTimeInputPopupWidget::new(
+            "開発",
+            &hours_textarea,
+            &memo_textarea,
+            false,
+            false,
+            false,
+            false,
+        );
+
+        render_snapshot(
+            "spent_time_input_popup_wide_short_values_all_unfocused",
+            60,
+            30,
+            widget,
+        );
+    }
+
+    #[test]
+    fn snapshot_spent_time_input_popup_narrow_long_values_all_focused() {
+        let hours_textarea = textarea_with_value("1234567890.25h-long-entry");
+        let memo_textarea = textarea_with_value(
+            "定例確認と関連チケットの調査メモ。表示幅を超える長文入力で先頭側が見切れる状態。",
+        );
+        let widget = SpentTimeInputPopupWidget::new(
+            "とても長いアクティビティ名で表示幅を超えるケース",
+            &hours_textarea,
+            &memo_textarea,
+            true,
+            true,
+            true,
+            true,
+        );
+
+        render_snapshot(
+            "spent_time_input_popup_narrow_long_values_all_focused",
+            30,
+            20,
+            widget,
+        );
+    }
+}
