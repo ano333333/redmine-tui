@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crossterm::event::Event;
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 
 use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
@@ -150,10 +150,10 @@ impl AppComponent {
     /// Componentをframeのarea範囲内に描画する。
     pub fn render(&self, store: &Store, frame: &mut Frame, area: Rect) {
         self.issue_component.render(store, frame, area);
-        if self.popup_components.is_empty() {
-            frame.set_cursor_position(self.issue_component.calc_cursor_position(store, area));
-        }
         self.render_popup_component(frame, area, store);
+        if let Some(cursor_position) = self.cursor_position(store, area) {
+            frame.set_cursor_position(cursor_position);
+        }
     }
 
     pub fn take_effect(&mut self) -> Option<AppEffect> {
@@ -185,11 +185,22 @@ impl AppComponent {
                 PopupComponent::SpentTimeInput(popup_component) => {
                     let widget = popup_component.create_widget(store);
                     frame.render_widget(widget, area);
-                    if let Some(cursor_position) = popup_component.cursor_position(area) {
-                        frame.set_cursor_position(cursor_position);
-                    }
                 }
             }
+        }
+    }
+
+    fn cursor_position(&self, store: &Store, area: Rect) -> Option<Position> {
+        if let Some(popup_component) = self.popup_components.back() {
+            let popup_component = popup_component.borrow();
+            match &*popup_component {
+                PopupComponent::SelectBox(_) => None,
+                PopupComponent::SpentTimeInput(popup_component) => {
+                    popup_component.cursor_position(area)
+                }
+            }
+        } else {
+            Some(self.issue_component.calc_cursor_position(store, area))
         }
     }
 
