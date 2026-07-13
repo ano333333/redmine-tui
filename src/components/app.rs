@@ -35,21 +35,21 @@ enum PendingEditorContext {
     IssueBody { id: u16 },
 }
 
-enum PopupComponent {
-    SelectBox(SelectBoxPopupComponent),
-    SpentTimeInput(SpentTimeInputPopupComponent),
+enum PopupComponent<'a> {
+    SelectBox(SelectBoxPopupComponent<'a>),
+    SpentTimeInput(SpentTimeInputPopupComponent<'a>),
 }
 
-pub struct AppComponent {
+pub struct AppComponent<'a> {
     issue_component: IssueDetailComponent,
     // popup追加の際は末尾に追加する、先頭要素が最奥に表示される
-    popup_components: VecDeque<Rc<RefCell<PopupComponent>>>,
+    popup_components: VecDeque<Rc<RefCell<PopupComponent<'a>>>>,
     dispatcher: Rc<RefCell<Dispatcher>>,
     pending_effect: Option<AppEffect>,
     pending_editor_context: Option<PendingEditorContext>,
 }
 
-impl AppComponent {
+impl<'a> AppComponent<'a> {
     pub fn new(dispatcher: Rc<RefCell<Dispatcher>>) -> Self {
         AppComponent {
             issue_component: IssueDetailComponent::new(dispatcher.clone(), 3),
@@ -206,8 +206,8 @@ impl AppComponent {
 
     fn create_spent_time_input_popup_component(
         dispatcher: Rc<RefCell<Dispatcher>>,
-        popup_component: Rc<RefCell<PopupComponent>>,
-    ) -> Rc<RefCell<PopupComponent>> {
+        popup_component: Rc<RefCell<PopupComponent<'a>>>,
+    ) -> Rc<RefCell<PopupComponent<'a>>> {
         let dispatcher = dispatcher.borrow();
         let acts = dispatcher.store().get_time_entity_activities();
         let act_names = acts

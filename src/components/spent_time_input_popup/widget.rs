@@ -5,21 +5,21 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 use ratatui_textarea::TextArea;
 
-pub struct SpentTimeInputPopupWidget<'a, 'b> {
+pub struct SpentTimeInputPopupWidget<'a> {
     activity: &'a str,
-    hours_textarea: &'a TextArea<'b>,
-    memo_textarea: &'a TextArea<'b>,
+    hours_textarea: &'a TextArea<'a>,
+    memo_textarea: &'a TextArea<'a>,
     activity_focused: bool,
     hours_textarea_focused: bool,
     memo_textarea_focused: bool,
     submit_button_focused: bool,
 }
 
-impl<'a, 'b> SpentTimeInputPopupWidget<'a, 'b> {
+impl<'a> SpentTimeInputPopupWidget<'a> {
     pub fn new(
         activity: &'a str,
-        hours_textarea: &'a TextArea<'b>,
-        memo_textarea: &'a TextArea<'b>,
+        hours_textarea: &'a TextArea<'a>,
+        memo_textarea: &'a TextArea<'a>,
         activity_focused: bool,
         hours_textarea_focused: bool,
         memo_textarea_focused: bool,
@@ -46,7 +46,7 @@ impl<'a, 'b> SpentTimeInputPopupWidget<'a, 'b> {
     }
 }
 
-impl Widget for SpentTimeInputPopupWidget<'_, '_> {
+impl Widget for SpentTimeInputPopupWidget<'_> {
     /// クライアント領域に対する描画(したがってClearの責務がある)
     fn render(self, area: Rect, buf: &mut Buffer) {
         let area = Self::popup_area(area);
@@ -122,7 +122,7 @@ impl Widget for SpentTimeInputPopupWidget<'_, '_> {
     }
 }
 
-impl<'a, 'b> SpentTimeInputPopupWidget<'a, 'b> {
+impl<'a> SpentTimeInputPopupWidget<'a> {
     fn border_style(focused: bool) -> Style {
         if focused {
             Style::default().fg(Color::LightGreen)

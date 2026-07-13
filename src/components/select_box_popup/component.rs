@@ -12,17 +12,17 @@ pub enum EventProcessResult {
     Quited,
 }
 
-pub struct SelectBoxPopupComponent {
+pub struct SelectBoxPopupComponent<'a> {
     items: Vec<(u16, String)>,
     focused_index: usize,
-    observer: Box<dyn FnMut(u16)>,
+    observer: Box<dyn FnMut(u16) + 'a>,
 }
 
-impl SelectBoxPopupComponent {
+impl<'a> SelectBoxPopupComponent<'a> {
     pub fn new(
         items: &[(u16, String)],
         focused_index: usize,
-        observer: Box<dyn FnMut(u16)>,
+        observer: Box<dyn FnMut(u16) + 'a>,
     ) -> Self {
         Self {
             items: Vec::from(items),
@@ -64,7 +64,7 @@ impl SelectBoxPopupComponent {
         None
     }
 
-    pub fn create_widget<'a>(&'a self) -> SelectBoxPopupWidget<'a> {
+    pub fn create_widget<'b>(&'b self) -> SelectBoxPopupWidget<'b> {
         SelectBoxPopupWidget::new(&self.items, self.focused_index)
     }
 }
@@ -97,7 +97,7 @@ mod tests {
         focused_index: usize,
         selected_id: Rc<RefCell<Option<u16>>>,
         selected_dispatcher: Rc<RefCell<Option<Rc<RefCell<Dispatcher>>>>>,
-    ) -> SelectBoxPopupComponent {
+    ) -> SelectBoxPopupComponent<'static> {
         SelectBoxPopupComponent::new(
             &items(),
             focused_index,

@@ -24,16 +24,16 @@ pub enum FocusTarget {
     Submit,
 }
 
-pub struct SpentTimeInputPopupComponent {
+pub struct SpentTimeInputPopupComponent<'a> {
     activity_id: TimeEntityActivityId,
     // AppComponentがこのstructを保持するためTextareaを'statisで持つ。
     // enum PopupComponentの定義を参照。
-    hours_textarea: TextArea<'static>,
-    memo_textarea: TextArea<'static>,
+    hours_textarea: TextArea<'a>,
+    memo_textarea: TextArea<'a>,
     focused_target: FocusTarget,
 }
 
-impl SpentTimeInputPopupComponent {
+impl<'a> SpentTimeInputPopupComponent<'a> {
     pub fn new(store: &Store) -> Self {
         let mut hours_textarea = TextArea::default();
         hours_textarea.set_cursor_line_style(Default::default());
@@ -127,7 +127,7 @@ impl SpentTimeInputPopupComponent {
         }
     }
 
-    pub fn create_widget<'b>(&'b self, store: &'b Store) -> SpentTimeInputPopupWidget<'b, 'static> {
+    pub fn create_widget<'b>(&'b self, store: &'b Store) -> SpentTimeInputPopupWidget<'b> {
         let activity = store.get_time_entity_activities().get(&self.activity_id);
         SpentTimeInputPopupWidget::new(
             activity.map(|act| act.name.as_str()).unwrap_or(""),

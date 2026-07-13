@@ -28,14 +28,14 @@ const APP_INITIAL_HEIGHT: u16 = 80;
 const APP_WIDTH_MIN: u16 = 40;
 const APP_HEIGHT_MIN: u16 = 40;
 
-pub struct AppContainer {
+pub struct AppContainer<'a> {
     width: u16,
     height: u16,
     dispatcher: Rc<RefCell<Dispatcher>>,
-    pub app_component: AppComponent,
+    pub app_component: AppComponent<'a>,
 }
 
-impl AppContainer {
+impl<'a> AppContainer<'a> {
     pub fn new() -> Self {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
