@@ -15,13 +15,23 @@ pub enum EventProcessResult {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum FocusTarget {
+pub enum FocusField {
     Activity,
-    // boolは入力中か否かを表す
-    Hours(bool),
-    // boolは入力中か否かを表す
-    Memo(bool),
+    Hours,
+    Memo,
     Submit,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum InputMode {
+    Navigating,
+    Editing(EditableField),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum EditableField {
+    Hours,
+    Memo,
 }
 
 pub struct SpentTimeInputPopupComponent<'a> {
@@ -30,7 +40,8 @@ pub struct SpentTimeInputPopupComponent<'a> {
     // enum PopupComponentの定義を参照。
     hours_textarea: TextArea<'a>,
     memo_textarea: TextArea<'a>,
-    focused_target: FocusTarget,
+    focused_field: FocusField,
+    input_mode: InputMode,
 }
 
 impl<'a> SpentTimeInputPopupComponent<'a> {
@@ -57,7 +68,8 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
             activity_id: *activity_id,
             hours_textarea,
             memo_textarea,
-            focused_target: FocusTarget::Activity,
+            focused_field: FocusField::Activity,
+            input_mode: InputMode::Navigating,
         }
     }
 
@@ -69,35 +81,41 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
         match key.code {
             KeyCode::Esc => Some(EventProcessResult::Quited),
             KeyCode::Char('j') => {
-                if self.focused_target != FocusTarget::Hours(true)
-                    && self.focused_target != FocusTarget::Memo(true)
-                {
+                if self.input_mode == InputMode::Navigating {
                     self.focus_next();
                 }
                 None
             }
             KeyCode::Char('k') => {
-                if self.focused_target != FocusTarget::Hours(true)
-                    && self.focused_target != FocusTarget::Memo(true)
-                {
+                if self.input_mode == InputMode::Navigating {
                     self.focus_previous();
                 }
                 None
             }
             KeyCode::Enter => {
-                match self.focused_target {
-                    FocusTarget::Activity => {
+                match self.focused_field {
+                    FocusField::Activity => {
                         return Some(EventProcessResult::OpenTimeEntityActivitiesPopup);
                     }
-                    FocusTarget::Hours(entering) => {
-                        self.focused_target = FocusTarget::Hours(!entering);
-                        Self::set_textarea_cursor(&mut self.hours_textarea, !entering);
+                    FocusField::Hours => {
+                        let entering = self.input_mode != InputMode::Editing(EditableField::Hours);
+                        self.input_mode = if entering {
+                            InputMode::Editing(EditableField::Hours)
+                        } else {
+                            InputMode::Navigating
+                        };
+                        Self::set_textarea_cursor(&mut self.hours_textarea, entering);
                     }
-                    FocusTarget::Memo(entering) => {
-                        self.focused_target = FocusTarget::Memo(!entering);
-                        Self::set_textarea_cursor(&mut self.memo_textarea, !entering);
+                    FocusField::Memo => {
+                        let entering = self.input_mode != InputMode::Editing(EditableField::Memo);
+                        self.input_mode = if entering {
+                            InputMode::Editing(EditableField::Memo)
+                        } else {
+                            InputMode::Navigating
+                        };
+                        Self::set_textarea_cursor(&mut self.memo_textarea, entering);
                     }
-                    FocusTarget::Submit => {
+                    FocusField::Submit => {
                         return Some(EventProcessResult::Submited);
                     }
                 }
@@ -109,20 +127,16 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
                 }
                 None
             }
-            _ => match self.focused_target {
-                FocusTarget::Hours(entering) => {
-                    if entering {
-                        self.hours_textarea.input(key);
-                    }
+            _ => match self.input_mode {
+                InputMode::Editing(EditableField::Hours) => {
+                    self.hours_textarea.input(key);
                     None
                 }
-                FocusTarget::Memo(entering) => {
-                    if entering {
-                        self.memo_textarea.input(key);
-                    }
+                InputMode::Editing(EditableField::Memo) => {
+                    self.memo_textarea.input(key);
                     None
                 }
-                _ => None,
+                InputMode::Navigating => None,
             },
         }
     }
@@ -133,12 +147,10 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
             activity.map(|act| act.name.as_str()).unwrap_or(""),
             &self.hours_textarea,
             &self.memo_textarea,
-            self.focused_target == FocusTarget::Activity,
-            self.focused_target == FocusTarget::Hours(true)
-                || self.focused_target == FocusTarget::Hours(false),
-            self.focused_target == FocusTarget::Memo(true)
-                || self.focused_target == FocusTarget::Memo(false),
-            self.focused_target == FocusTarget::Submit,
+            self.focused_field == FocusField::Activity,
+            self.focused_field == FocusField::Hours,
+            self.focused_field == FocusField::Memo,
+            self.focused_field == FocusField::Submit,
         )
     }
 
@@ -147,8 +159,8 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
     /// * `area` - クライアント領域
     pub fn cursor_position(&self, area: ratatui::layout::Rect) -> Option<Position> {
         let popup_area = SpentTimeInputPopupWidget::popup_area(area);
-        match self.focused_target {
-            FocusTarget::Activity => Some(Position {
+        match self.focused_field {
+            FocusField::Activity => Some(Position {
                 x: popup_area.x + 2,
                 y: popup_area.y + 2,
             }),
@@ -162,35 +174,37 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
     }
 
     fn focus_next(&mut self) {
-        match self.focused_target {
-            FocusTarget::Activity => {
-                self.focused_target = FocusTarget::Hours(false);
+        self.input_mode = InputMode::Navigating;
+        match self.focused_field {
+            FocusField::Activity => {
+                self.focused_field = FocusField::Hours;
             }
-            FocusTarget::Hours(_) => {
+            FocusField::Hours => {
                 Self::set_textarea_cursor(&mut self.hours_textarea, false);
-                self.focused_target = FocusTarget::Memo(false);
+                self.focused_field = FocusField::Memo;
             }
-            FocusTarget::Memo(_) => {
+            FocusField::Memo => {
                 Self::set_textarea_cursor(&mut self.memo_textarea, false);
-                self.focused_target = FocusTarget::Submit;
+                self.focused_field = FocusField::Submit;
             }
-            FocusTarget::Submit => {}
+            FocusField::Submit => {}
         }
     }
 
     fn focus_previous(&mut self) {
-        match self.focused_target {
-            FocusTarget::Activity => {}
-            FocusTarget::Hours(_) => {
+        self.input_mode = InputMode::Navigating;
+        match self.focused_field {
+            FocusField::Activity => {}
+            FocusField::Hours => {
                 Self::set_textarea_cursor(&mut self.hours_textarea, false);
-                self.focused_target = FocusTarget::Activity;
+                self.focused_field = FocusField::Activity;
             }
-            FocusTarget::Memo(_) => {
+            FocusField::Memo => {
                 Self::set_textarea_cursor(&mut self.memo_textarea, false);
-                self.focused_target = FocusTarget::Hours(false);
+                self.focused_field = FocusField::Hours;
             }
-            FocusTarget::Submit => {
-                self.focused_target = FocusTarget::Memo(false);
+            FocusField::Submit => {
+                self.focused_field = FocusField::Memo;
             }
         }
     }
