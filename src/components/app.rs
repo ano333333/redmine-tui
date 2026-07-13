@@ -10,7 +10,7 @@ use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
 };
-use crate::entities::IssueStatusId;
+use crate::entities::{EntityIdValue, IssueStatusId, TimeEntityActivityId};
 
 use super::select_box_popup::{
     EventProcessResult as SelectBoxPopupEventProcessResult, SelectBoxPopupComponent,
@@ -43,7 +43,7 @@ enum PopupComponent {
 pub struct AppComponent {
     issue_component: IssueDetailComponent,
     // popup追加の際は末尾に追加する、先頭要素が最奥に表示される
-    popup_components: VecDeque<PopupComponent>,
+    popup_components: VecDeque<Rc<RefCell<PopupComponent>>>,
     dispatcher: Rc<RefCell<Dispatcher>>,
     pending_effect: Option<AppEffect>,
     pending_editor_context: Option<PendingEditorContext>,
@@ -62,8 +62,9 @@ impl AppComponent {
 
     /// crosstermの同期イベントを処理する。updateとrenderがこの順で後続する
     pub fn process_event(&mut self, event: Event, dispatcher: Rc<RefCell<Dispatcher>>) {
-        if let Some(popup_component) = &mut self.popup_components.back_mut() {
-            match popup_component {
+        if let Some(popup_component) = self.popup_components.back() {
+            let popup_component_rc = popup_component.clone();
+            match &mut *(popup_component_rc.borrow_mut()) {
                 PopupComponent::SelectBox(popup_component) => {
                     let result = popup_component.process_event(event, self.dispatcher.clone());
                     match result {
@@ -79,6 +80,15 @@ impl AppComponent {
                     match result {
                         Some(SpentTimeInputPopupEventProcessResult::Quited) => {
                             self.popup_components.pop_back();
+                        }
+                        Some(
+                            SpentTimeInputPopupEventProcessResult::OpenTimeEntityActivitiesPopup,
+                        ) => {
+                            let popup_component = Self::create_spent_time_input_popup_component(
+                                dispatcher.clone(),
+                                popup_component_rc.clone(),
+                            );
+                            self.popup_components.push_back(popup_component);
                         }
                         Some(SpentTimeInputPopupEventProcessResult::Submited) => {
                             // FIXME: Storeの更新
@@ -107,8 +117,8 @@ impl AppComponent {
                         .map(|(id, status)| (*id, status.name.clone()))
                         .collect::<Vec<_>>();
                     let issue_id = self.issue_component.id;
-                    self.popup_components.push_back(PopupComponent::SelectBox(
-                        SelectBoxPopupComponent::new(
+                    self.popup_components.push_back(Rc::new(RefCell::new(
+                        PopupComponent::SelectBox(SelectBoxPopupComponent::new(
                             &issue_statuses,
                             0,
                             Box::new(move |status_id| {
@@ -117,14 +127,15 @@ impl AppComponent {
                                     status_id: IssueStatusId::new(status_id),
                                 });
                             }),
-                        ),
-                    ));
+                        )),
+                    )));
                 }
                 Some(IssueEventProcessResult::OpenSpentTimeInputPopup) => {
-                    self.popup_components
-                        .push_back(PopupComponent::SpentTimeInput(
-                            SpentTimeInputPopupComponent::new(dispatcher.borrow().store()),
-                        ));
+                    self.popup_components.push_back(Rc::new(RefCell::new(
+                        PopupComponent::SpentTimeInput(SpentTimeInputPopupComponent::new(
+                            dispatcher.borrow().store(),
+                        )),
+                    )));
                 }
                 None => {}
             }
@@ -165,7 +176,8 @@ impl AppComponent {
 
     fn render_popup_component(&self, frame: &mut Frame, area: Rect, store: &Store) {
         for popup_component in &self.popup_components {
-            match popup_component {
+            let popup_component = popup_component.clone();
+            match &mut *(popup_component.borrow_mut()) {
                 PopupComponent::SelectBox(popup_component) => {
                     let widget = popup_component.create_widget();
                     frame.render_widget(widget, area);
@@ -179,5 +191,40 @@ impl AppComponent {
                 }
             }
         }
+    }
+
+    fn create_spent_time_input_popup_component(
+        dispatcher: Rc<RefCell<Dispatcher>>,
+        popup_component: Rc<RefCell<PopupComponent>>,
+    ) -> Rc<RefCell<PopupComponent>> {
+        let dispatcher = dispatcher.borrow();
+        let acts = dispatcher.store().get_time_entity_activities();
+        let act_names = acts
+            .iter()
+            .map(|(id, status)| (id.get(), status.name.clone()))
+            .collect::<Vec<_>>();
+        let focused_index = acts
+            .iter()
+            .enumerate()
+            .find(|(_, (_, act))| act.is_default)
+            .map_or(0, |(id, _)| id);
+        drop(dispatcher);
+        let popup_component_weak = Rc::downgrade(&popup_component);
+        Rc::new(RefCell::new(PopupComponent::SelectBox(
+            SelectBoxPopupComponent::new(
+                &act_names,
+                focused_index,
+                Box::new(move |act_id| {
+                    if let Some(popup_component) = popup_component_weak.upgrade() {
+                        let popup_component = &mut *popup_component.borrow_mut();
+                        if let PopupComponent::SpentTimeInput(popup_component) = popup_component {
+                            popup_component.on_time_entity_activity_selected(
+                                TimeEntityActivityId::new(act_id),
+                            );
+                        }
+                    }
+                }),
+            ),
+        )))
     }
 }

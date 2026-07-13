@@ -10,6 +10,7 @@ use super::widget::SpentTimeInputPopupWidget;
 
 pub enum EventProcessResult {
     Submited,
+    OpenTimeEntityActivitiesPopup,
     Quited,
 }
 
@@ -86,8 +87,7 @@ impl SpentTimeInputPopupComponent {
             KeyCode::Enter => {
                 match self.focused_target {
                     FocusTarget::Activity => {
-                        // FIXME: `self.focused_target == FocusTarget::Activity`の場合TimeActivityEntityの選択ポップアップを重ねる
-                        self.focus_next();
+                        return Some(EventProcessResult::OpenTimeEntityActivitiesPopup);
                     }
                     FocusTarget::Hours(entering) => {
                         self.focused_target = FocusTarget::Hours(!entering);
@@ -155,6 +155,10 @@ impl SpentTimeInputPopupComponent {
             // ratatui_textarea::TextAreaが表示するカーソルをそのまま使用する
             _ => None,
         }
+    }
+
+    pub fn on_time_entity_activity_selected(&mut self, id: TimeEntityActivityId) {
+        self.activity_id = id;
     }
 
     fn focus_next(&mut self) {
