@@ -76,3 +76,61 @@ impl FocusState {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    fn key_event(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    #[test]
+    fn process_event_ignores_key_when_unfocused() {
+        let mut state = FocusState::new();
+
+        let result = state.process_event(key_event(KeyCode::Char('j')));
+
+        assert!(result.is_none());
+        assert!(!state.is_focused());
+    }
+
+    #[test]
+    fn process_event_j_returns_leave_result_and_clears_focus() {
+        let mut state = FocusState::new();
+        state.focus_event(FocusEvent::Focused);
+
+        let result = state.process_event(key_event(KeyCode::Char('j')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::CursorLeavedFromBelow)
+        ));
+        assert!(!state.is_focused());
+    }
+
+    #[test]
+    fn process_event_non_mapped_key_keeps_focus() {
+        let mut state = FocusState::new();
+        state.focus_event(FocusEvent::Focused);
+
+        let result = state.process_event(key_event(KeyCode::Char('k')));
+
+        assert!(result.is_none());
+        assert!(state.is_focused());
+    }
+
+    #[test]
+    fn focus_event_updates_focus_state() {
+        let mut state = FocusState::new();
+
+        state.focus_event(FocusEvent::CursorEnteredFromBelow);
+        assert!(state.is_focused());
+
+        state.focus_event(FocusEvent::Unfocused);
+        assert!(!state.is_focused());
+
+        state.focus_event(FocusEvent::Focused);
+        assert!(state.is_focused());
+    }
+}
