@@ -16,6 +16,13 @@ pub enum EventProcessResult {
     OpenSpentTimeInputPopup,
 }
 
+enum Action {
+    MoveDown,
+    MoveUp,
+    OpenIssueStatusPopup,
+    OpenSpentTimeInputPopup,
+}
+
 pub struct FocusState {
     focused_y: Option<u16>,
 }
@@ -26,36 +33,8 @@ impl FocusState {
     }
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        if let Event::Key(key) = event
-            && let Some(focused_y) = &mut self.focused_y
-        {
-            match key.code {
-                KeyCode::Char('j') => {
-                    if *focused_y + 1 == LINE_COUNT {
-                        return Some(EventProcessResult::CursorLeavedFromBelow);
-                    }
-                    *focused_y += 1;
-                }
-                KeyCode::Char('k') => {
-                    if *focused_y == 0 {
-                        return Some(EventProcessResult::CursorLeavedFromAbove);
-                    }
-                    *focused_y -= 1;
-                }
-                KeyCode::Char('e') => {
-                    if *focused_y == 3 {
-                        return Some(EventProcessResult::OpenIssueStatusPopup);
-                    }
-                }
-                KeyCode::Char('a') => {
-                    if *focused_y == 13 {
-                        return Some(EventProcessResult::OpenSpentTimeInputPopup);
-                    }
-                }
-                _ => {}
-            }
-        }
-        None
+        let action = self.action_from_event(event)?;
+        self.apply_action(action)
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
@@ -82,4 +61,46 @@ impl FocusState {
     pub fn focused_y(&self) -> Option<u16> {
         self.focused_y
     }
+
+    fn action_from_event(&self, event: Event) -> Option<Action> {
+        let Event::Key(key) = event else {
+            return None;
+        };
+
+        let focused_y = self.focused_y?;
+
+        match key.code {
+            KeyCode::Char('j') => Some(Action::MoveDown),
+            KeyCode::Char('k') => Some(Action::MoveUp),
+            KeyCode::Char('e') if focused_y == 3 => Some(Action::OpenIssueStatusPopup),
+            KeyCode::Char('a') if focused_y == LINE_COUNT - 1 => {
+                Some(Action::OpenSpentTimeInputPopup)
+            }
+            _ => None,
+        }
+    }
+
+    fn apply_action(&mut self, action: Action) -> Option<EventProcessResult> {
+        match action {
+            Action::MoveDown => {
+                let focused_y = self.focused_y.as_mut()?;
+                if *focused_y + 1 == LINE_COUNT {
+                    return Some(EventProcessResult::CursorLeavedFromBelow);
+                }
+                *focused_y += 1;
+                None
+            }
+            Action::MoveUp => {
+                let focused_y = self.focused_y.as_mut()?;
+                if *focused_y == 0 {
+                    return Some(EventProcessResult::CursorLeavedFromAbove);
+                }
+                *focused_y -= 1;
+                None
+            }
+            Action::OpenIssueStatusPopup => Some(EventProcessResult::OpenIssueStatusPopup),
+            Action::OpenSpentTimeInputPopup => Some(EventProcessResult::OpenSpentTimeInputPopup),
+        }
+    }
 }
+
