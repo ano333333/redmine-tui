@@ -104,3 +104,89 @@ impl FocusState {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    fn key_event(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    #[test]
+    fn process_event_ignores_key_when_unfocused() {
+        let mut state = FocusState::new();
+
+        let result = state.process_event(key_event(KeyCode::Char('j')));
+
+        assert!(result.is_none());
+        assert_eq!(state.focused_y(), None);
+    }
+
+    #[test]
+    fn process_event_j_moves_focus_down() {
+        let mut state = FocusState::new();
+        state.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        let result = state.process_event(key_event(KeyCode::Char('j')));
+
+        assert!(result.is_none());
+        assert_eq!(state.focused_y(), Some(1));
+    }
+
+    #[test]
+    fn process_event_j_on_last_line_returns_leave_from_below() {
+        let mut state = FocusState::new();
+        state.focus_event(FocusEvent::CursorEnteredFromBelow);
+
+        let result = state.process_event(key_event(KeyCode::Char('j')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::CursorLeavedFromBelow)
+        ));
+        assert_eq!(state.focused_y(), Some(LINE_COUNT - 1));
+    }
+
+    #[test]
+    fn process_event_k_on_first_line_returns_leave_from_above() {
+        let mut state = FocusState::new();
+        state.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        let result = state.process_event(key_event(KeyCode::Char('k')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::CursorLeavedFromAbove)
+        ));
+        assert_eq!(state.focused_y(), Some(0));
+    }
+
+    #[test]
+    fn process_event_e_on_issue_status_line_opens_popup() {
+        let mut state = FocusState { focused_y: Some(3) };
+
+        let result = state.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenIssueStatusPopup)
+        ));
+        assert_eq!(state.focused_y(), Some(3));
+    }
+
+    #[test]
+    fn process_event_a_on_last_line_opens_spent_time_popup() {
+        let mut state = FocusState {
+            focused_y: Some(LINE_COUNT - 1),
+        };
+
+        let result = state.process_event(key_event(KeyCode::Char('a')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenSpentTimeInputPopup)
+        ));
+        assert_eq!(state.focused_y(), Some(LINE_COUNT - 1));
+    }
+}
