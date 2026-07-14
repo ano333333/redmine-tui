@@ -11,6 +11,10 @@ pub enum EventProcessResult {
     CursorLeavedFromBelow,
 }
 
+enum Action {
+    LeaveFromBelow,
+}
+
 pub struct FocusState {
     focused: bool,
 }
@@ -25,7 +29,7 @@ impl FocusState {
             FocusEvent::CursorEnteredFromBelow => {
                 self.focused = true;
             }
-            FocusEvent::Focused { .. } => {
+            FocusEvent::Focused => {
                 self.focused = true;
             }
             FocusEvent::Unfocused => {
@@ -34,14 +38,9 @@ impl FocusState {
         }
     }
 
-    pub fn process_event(&mut self, event: crossterm::event::Event) -> Option<EventProcessResult> {
-        if self.focused
-            && let Event::Key(key) = event
-            && key.code == KeyCode::Char('j')
-        {
-            return Some(EventProcessResult::CursorLeavedFromBelow);
-        }
-        None
+    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
+        let action = self.action_from_event(event)?;
+        self.apply_action(action)
     }
 
     pub fn get_cursor_position(&self) -> Position {
@@ -51,4 +50,29 @@ impl FocusState {
     pub fn is_focused(&self) -> bool {
         self.focused
     }
+
+    fn action_from_event(&self, event: Event) -> Option<Action> {
+        if !self.focused {
+            return None;
+        }
+
+        let Event::Key(key) = event else {
+            return None;
+        };
+
+        match key.code {
+            KeyCode::Char('j') => Some(Action::LeaveFromBelow),
+            _ => None,
+        }
+    }
+
+    fn apply_action(&mut self, action: Action) -> Option<EventProcessResult> {
+        match action {
+            Action::LeaveFromBelow => {
+                self.focused = false;
+                Some(EventProcessResult::CursorLeavedFromBelow)
+            }
+        }
+    }
 }
+
