@@ -150,3 +150,154 @@ impl FocusState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyEvent, KeyModifiers};
+
+    fn key_event(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    #[test]
+    fn process_event_ignores_key_when_unfocused() {
+        let mut state = FocusState::new(10, 5);
+
+        let result = state.process_event(key_event(KeyCode::Char('j')));
+
+        assert!(result.is_none());
+        assert_eq!(state.get_cursor_position(), Position::new(0, 0));
+        assert!(!state.is_focused());
+    }
+
+    #[test]
+    fn process_event_h_moves_cursor_left() {
+        let mut state = FocusState::new(10, 5);
+        state.focus_event(FocusEvent::Focused {
+            position: Position::new(3, 2),
+        });
+
+        let result = state.process_event(key_event(KeyCode::Char('h')));
+
+        assert!(result.is_none());
+        assert_eq!(state.get_cursor_position(), Position::new(2, 2));
+    }
+
+    #[test]
+    fn process_event_l_moves_cursor_right_within_width() {
+        let mut state = FocusState::new(10, 5);
+        state.focus_event(FocusEvent::Focused {
+            position: Position::new(3, 2),
+        });
+
+        let result = state.process_event(key_event(KeyCode::Char('l')));
+
+        assert!(result.is_none());
+        assert_eq!(state.get_cursor_position(), Position::new(4, 2));
+    }
+
+    #[test]
+    fn process_event_j_moves_cursor_down() {
+        let mut state = FocusState::new(10, 5);
+        state.focus_event(FocusEvent::Focused {
+            position: Position::new(3, 2),
+        });
+
+        let result = state.process_event(key_event(KeyCode::Char('j')));
+
+        assert!(result.is_none());
+        assert_eq!(state.get_cursor_position(), Position::new(3, 3));
+    }
+
+    #[test]
+    fn process_event_k_moves_cursor_up() {
+        let mut state = FocusState::new(10, 5);
+        state.focus_event(FocusEvent::Focused {
+            position: Position::new(3, 2),
+        });
+
+        let result = state.process_event(key_event(KeyCode::Char('k')));
+
+        assert!(result.is_none());
+        assert_eq!(state.get_cursor_position(), Position::new(3, 1));
+    }
+
+    #[test]
+    fn process_event_j_on_last_line_returns_leave_from_below() {
+        let mut state = FocusState::new(10, 5);
+        state.focus_event(FocusEvent::CursorEnteredFromBelow { x: 4 });
+
+        let result = state.process_event(key_event(KeyCode::Char('j')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::CursorLeavedFromBelow { x: 4 })
+        ));
+        assert_eq!(state.get_cursor_position(), Position::new(4, 4));
+    }
+
+    #[test]
+    fn process_event_k_on_first_line_returns_leave_from_above() {
+        let mut state = FocusState::new(10, 5);
+        state.focus_event(FocusEvent::CursorEnteredFromAbove { x: 4 });
+
+        let result = state.process_event(key_event(KeyCode::Char('k')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::CursorLeavedFromAbove { x: 4 })
+        ));
+        assert_eq!(state.get_cursor_position(), Position::new(4, 0));
+    }
+
+    #[test]
+    fn process_event_e_returns_edit() {
+        let mut state = FocusState::new(10, 5);
+        state.focus_event(FocusEvent::Focused {
+            position: Position::new(3, 2),
+        });
+
+        let result = state.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(result, Some(EventProcessResult::Edit)));
+        assert_eq!(state.get_cursor_position(), Position::new(3, 2));
+    }
+
+    #[test]
+    fn focus_event_clamps_position_to_bounds() {
+        let mut state = FocusState::new(10, 5);
+
+        state.focus_event(FocusEvent::Focused {
+            position: Position::new(20, 9),
+        });
+
+        assert_eq!(state.get_cursor_position(), Position::new(9, 4));
+        assert!(state.is_focused());
+    }
+
+    #[test]
+    fn update_clamps_existing_cursor_to_new_size() {
+        let mut state = FocusState::new(10, 5);
+        state.focus_event(FocusEvent::Focused {
+            position: Position::new(8, 4),
+        });
+
+        state.update(4, 3);
+
+        assert_eq!(state.get_cursor_position(), Position::new(4, 3));
+    }
+
+    #[test]
+    fn focus_event_unfocused_clears_focus() {
+        let mut state = FocusState::new(10, 5);
+        state.focus_event(FocusEvent::Focused {
+            position: Position::new(3, 2),
+        });
+
+        state.focus_event(FocusEvent::Unfocused);
+
+        assert_eq!(state.get_cursor_position(), Position::new(0, 0));
+        assert!(!state.is_focused());
+    }
+}
