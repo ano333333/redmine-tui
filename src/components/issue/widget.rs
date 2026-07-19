@@ -1,10 +1,8 @@
-use std::cmp::min;
-
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Position, Rect};
+use ratatui::layout::{Position, Rect, Size};
 use ratatui::widgets::Widget;
 
-use crate::widgets::Hr;
+use crate::widgets::{Hr, VerticalScrollWidget, VerticalScrollWidgetState};
 
 use super::body::widget::BodyWidget;
 use super::children_list::widget::ChildrenListWidget;
@@ -13,14 +11,20 @@ use super::journals_list::JournalsListWidget;
 use super::property::widget::PropertyWidget;
 
 pub struct IssueDetailWidgetState {
-    /// PropertyWidget以下の全てのWidgetを含む仮想バッファを考えた時、どのyからクライアントに転写するか
-    /// (HeaderWidgetはトップに固定描画するので、仮想バッファに含まない)
-    pub offset_y: u16,
+    /// HeaderWidget以外の全てのWidgetのスクロール状態
+    vertical_scroll_state: VerticalScrollWidgetState,
 }
 
 impl IssueDetailWidgetState {
     pub fn new() -> Self {
-        Self { offset_y: 0 }
+        Self {
+            vertical_scroll_state: VerticalScrollWidgetState::new(),
+        }
+    }
+
+    #[cfg(test)]
+    fn offset_y(&self) -> u16 {
+        self.vertical_scroll_state.offset_y()
     }
 
     /// # Arguments
@@ -29,14 +33,25 @@ impl IssueDetailWidgetState {
     /// * `height` - IssueDetailWidgetの表示行数
     /// * `header_height` - HeaderWidgetの高さ・行数
     pub fn update(&mut self, cursor_global_position: Position, height: u16, header_height: u16) {
-        let cursor_y = cursor_global_position.y;
-        if cursor_y < header_height {
-            self.offset_y = 0;
-        } else if cursor_y - header_height < self.offset_y {
-            self.offset_y = cursor_y - header_height;
-        } else if cursor_y - header_height >= self.offset_y + (height - header_height) {
-            self.offset_y = cursor_y - height + 1;
+        if cursor_global_position.y < header_height {
+            self.vertical_scroll_state.update(
+                Position {
+                    x: cursor_global_position.x,
+                    y: 0,
+                },
+                1,
+            );
+            return;
         }
+
+        let content_height = height.saturating_sub(header_height);
+        let content_cursor_position = Position {
+            x: cursor_global_position.x,
+            y: cursor_global_position.y - header_height,
+        };
+
+        self.vertical_scroll_state
+            .update(content_cursor_position, content_height);
     }
 
     /// **HeaderWidgetを含む**全てのWidgetの仮想バッファから見たカーソル位置を、
@@ -53,18 +68,26 @@ impl IssueDetailWidgetState {
         area: Rect,
         header_height: u16,
     ) -> Position {
-        let y = if cursor_global_position.y < header_height {
-            area.y + cursor_global_position.y
-        } else {
-            area.y
-                + header_height
-                + (cursor_global_position.y - header_height).saturating_sub(self.offset_y)
+        if cursor_global_position.y < header_height {
+            return Position {
+                x: area.x + cursor_global_position.x,
+                y: area.y + cursor_global_position.y,
+            };
+        }
+
+        let content_area = Rect::new(
+            area.x,
+            area.y + header_height,
+            area.width,
+            area.height.saturating_sub(header_height),
+        );
+        let content_cursor_position = Position {
+            x: cursor_global_position.x,
+            y: cursor_global_position.y - header_height,
         };
 
-        Position {
-            x: area.x + cursor_global_position.x,
-            y,
-        }
+        self.vertical_scroll_state
+            .calc_cursor_area_position(content_cursor_position, content_area)
     }
 }
 
@@ -81,104 +104,35 @@ impl<'a> Widget for IssueDetailWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let width = area.width;
         let header_height = self.header.line_count(width) as u16;
-        let offset_y = self.state.offset_y;
 
-        let mut area = area;
+        let header_area = Rect::new(area.x, area.y, area.width, area.height.min(header_height));
+        self.header.render(header_area, buf);
 
-        if area.height > 0 {
-            self.header.render(area, buf);
-            area.y += min(header_height, area.height);
-            area.height = area.height.saturating_sub(header_height);
-        }
+        let scroll_area = Rect::new(
+            area.x,
+            area.y + area.height.min(header_height),
+            area.width,
+            area.height.saturating_sub(header_height),
+        );
+        let mut scroll_widget = VerticalScrollWidget::new(
+            &self.state.vertical_scroll_state,
+            Size::new(width, scroll_area.height),
+        );
 
-        let mut line_count_sum = 0;
-        let height = area.height;
+        let property_line_count = self.property.line_count(width) as u16;
+        let body_line_count = self.body.line_count(width) as u16;
+        let children_line_count = self.children_list.line_count();
+        let journals_line_count = self.journals_list.line_count(width);
 
-        let line_count = self.property.line_count(width) as u16;
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && area.height > 0
-        {
-            render_property_widget_to_buffer(
-                buf,
-                &mut area,
-                self.property,
-                line_count_sum,
-                offset_y,
-            )
-        }
-        line_count_sum += line_count;
+        scroll_widget.render_widget(self.property, property_line_count);
+        scroll_widget.render_widget(Hr::default(), 1);
+        scroll_widget.render_widget(self.body, body_line_count);
+        scroll_widget.render_widget(Hr::default(), 1);
+        scroll_widget.render_widget(self.children_list, children_line_count);
+        scroll_widget.render_widget(Hr::default(), 1);
+        scroll_widget.render_widget(self.journals_list, journals_line_count);
 
-        let line_count: u16 = 1;
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && area.height > 0
-        {
-            Hr::default().render(area, buf);
-            area.y += 1;
-            area.height -= 1;
-        }
-        line_count_sum += line_count;
-
-        let line_count = self.body.line_count(width) as u16;
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && area.height > 0
-        {
-            render_body_widget_to_buffer(buf, &mut area, self.body, line_count_sum, offset_y);
-        }
-        line_count_sum += line_count;
-
-        let line_count: u16 = 1;
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && area.height > 0
-        {
-            Hr::default().render(area, buf);
-            area.y += 1;
-            area.height -= 1;
-        }
-        line_count_sum += line_count;
-
-        let line_count = self.children_list.line_count();
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && area.height > 0
-        {
-            render_children_widget_to_buffer(
-                buf,
-                &mut area,
-                self.children_list,
-                line_count_sum,
-                offset_y,
-            );
-        }
-        line_count_sum += line_count;
-
-        let line_count: u16 = 1;
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && area.height > 0
-        {
-            Hr::default().render(area, buf);
-            area.y += 1;
-            area.height -= 1;
-        }
-        line_count_sum += line_count;
-
-        let line_count = self.journals_list.line_count(width);
-        if line_count_sum + line_count >= offset_y
-            && line_count_sum < offset_y + height
-            && area.height > 0
-        {
-            render_journals_list_widget_to_buffer(
-                buf,
-                &mut area,
-                self.journals_list,
-                line_count_sum,
-                offset_y,
-            );
-        }
+        scroll_widget.render(scroll_area, buf);
     }
 }
 
@@ -199,215 +153,6 @@ impl<'a> IssueDetailWidget<'a> {
             journals_list,
             state,
         }
-    }
-}
-
-/// PropertyWidgetをBufferに描画し、書き込んだ領域を切り詰める
-/// # Arguments
-///
-/// * `buffer` - 描画先のBuffer
-/// * `area` - `buffer`の描画領域
-/// * `widget` - 描画するPropertyWidget
-/// * `line_count_sum` - ここまでに書き込んだComponentの行数(line_count)の和
-/// * `offset_y` - グローバル空間のどのy(行数)から書き始めるか
-fn render_property_widget_to_buffer(
-    buffer: &mut Buffer,
-    area: &mut Rect,
-    widget: PropertyWidget,
-    line_count_sum: u16,
-    offset_y: u16,
-) {
-    // グローバル y 座標で見ると、
-    // PropertyWidget は [line_count_sum, line_count_sum + line_count) を占める。
-    // ここから、今回表示したい範囲 [offset_y, +inf) との重なりだけを描画する。
-
-    // Case 1: Property の先頭から描ける場合
-    //
-    //     global y
-    //        v
-    //
-    //     offset_y                                  +
-    //                                               |
-    //                                               |
-    //   line_count_sum     +------------------+     | visible
-    //                      |     Property     |     |
-    //                      |                  |     |
-    //                      |                  |     +
-    //                      |                  |
-    //                      +------------------+
-    //
-    //   offset_y <= line_count_sum
-    //   -> Property の先頭は表示範囲内にあるので、
-    //      Property を先頭からそのまま Frame に描ける
-    if offset_y <= line_count_sum {
-        let line_count = widget.line_count(area.width) as u16;
-        widget.render(*area, buffer);
-        area.y += min(line_count, area.height);
-        area.height = area.height.saturating_sub(line_count);
-    } else {
-        // Case 2: Property の先頭が表示範囲より上にある場合
-        //
-        //     global y
-        //        v
-        //
-        //   line_count_sum     +------------------+
-        //                      |     Property     |
-        //                      |                  |
-        //   offset_y           |                  |    +
-        //                      |                  |    |
-        //                      +------------------+    |
-        //                                              | visible
-        //                                              |
-        //                                              +
-        //
-        //   line_count_sum < offset_y < line_count_sum + line_count
-        //   -> Property 上部は画面外に切れるので、
-        //      一時 Buffer に描いてから
-        //      (offset_y - line_count_sum) 行目以降だけを Frame に転写する
-        let line_count = widget.line_count(area.width) as u16;
-        let buffer_area = Rect::new(0, 0, area.width, line_count);
-        let mut temp_buffer = Buffer::empty(buffer_area);
-        widget.render(buffer_area, &mut temp_buffer);
-
-        let overlapping_height = min(line_count_sum + line_count - offset_y, area.height);
-        for y in 0..overlapping_height {
-            for x in 0..area.width {
-                let buffer_x = x;
-                let buffer_y = offset_y - line_count_sum + y;
-                let frame_x = area.x + x;
-                let frame_y = area.y + y;
-                let Some(buffer_cell) = temp_buffer.cell((buffer_x, buffer_y)).cloned() else {
-                    continue;
-                };
-                if let Some(frame_cell) = buffer.cell_mut((frame_x, frame_y)) {
-                    *frame_cell = buffer_cell;
-                }
-            }
-        }
-
-        area.y += overlapping_height;
-        area.height -= overlapping_height;
-    }
-}
-
-/// BodyWidgetをBufferに描画し、書き込んだ領域を切り詰める
-/// 詳しい説明はrender_property_widget_to_bufferを参照。
-fn render_body_widget_to_buffer(
-    buffer: &mut Buffer,
-    area: &mut Rect,
-    widget: BodyWidget,
-    line_count_sum: u16,
-    offset_y: u16,
-) {
-    if offset_y <= line_count_sum {
-        let line_count = widget.line_count(area.width) as u16;
-        widget.render(*area, buffer);
-        area.y += min(line_count, area.height);
-        area.height = area.height.saturating_sub(line_count);
-    } else {
-        let line_count = widget.line_count(area.width) as u16;
-        let buffer_area = Rect::new(0, 0, area.width, line_count);
-        let mut temp_buffer = Buffer::empty(buffer_area);
-        widget.render(buffer_area, &mut temp_buffer);
-
-        let overlapping_height = min(line_count_sum + line_count - offset_y, area.height);
-        for y in 0..overlapping_height {
-            for x in 0..area.width {
-                let buffer_x = x;
-                let buffer_y = offset_y - line_count_sum + y;
-                let frame_x = area.x + x;
-                let frame_y = area.y + y;
-                let Some(buffer_cell) = temp_buffer.cell((buffer_x, buffer_y)).cloned() else {
-                    continue;
-                };
-                if let Some(frame_cell) = buffer.cell_mut((frame_x, frame_y)) {
-                    *frame_cell = buffer_cell;
-                }
-            }
-        }
-
-        area.y += overlapping_height;
-        area.height -= overlapping_height;
-    }
-}
-
-/// ChildrenListWidgetをBufferに描画し、書き込んだ領域を切り詰める
-/// 詳しい説明はrender_property_widget_to_bufferを参照。
-fn render_children_widget_to_buffer(
-    buffer: &mut Buffer,
-    area: &mut Rect,
-    widget: ChildrenListWidget,
-    line_count_sum: u16,
-    offset_y: u16,
-) {
-    if offset_y <= line_count_sum {
-        let line_count = widget.line_count() as u16;
-        widget.render(*area, buffer);
-        area.y += min(line_count, area.height);
-        area.height = area.height.saturating_sub(line_count);
-    } else {
-        let line_count = widget.line_count() as u16;
-        let buffer_area = Rect::new(0, 0, area.width, line_count);
-        let mut temp_buffer = Buffer::empty(buffer_area);
-        widget.render(buffer_area, &mut temp_buffer);
-
-        let overlapping_height = min(line_count_sum + line_count - offset_y, area.height);
-        for y in 0..overlapping_height {
-            for x in 0..area.width {
-                let buffer_y = offset_y - line_count_sum + y;
-                let frame_x = area.x + x;
-                let frame_y = area.y + y;
-                let Some(buffer_cell) = temp_buffer.cell((x, buffer_y)).cloned() else {
-                    continue;
-                };
-                if let Some(frame_cell) = buffer.cell_mut((frame_x, frame_y)) {
-                    *frame_cell = buffer_cell;
-                }
-            }
-        }
-
-        area.y += overlapping_height;
-        area.height -= overlapping_height;
-    }
-}
-
-/// JournalsListWidgetをBufferに描画し、書き込んだ領域を切り詰める
-/// 詳しい説明はrender_property_widget_to_bufferを参照。
-fn render_journals_list_widget_to_buffer(
-    buffer: &mut Buffer,
-    area: &mut Rect,
-    widget: JournalsListWidget,
-    line_count_sum: u16,
-    offset_y: u16,
-) {
-    if offset_y <= line_count_sum {
-        let line_count = widget.line_count(area.width) as u16;
-        widget.render(*area, buffer);
-        area.y += min(line_count, area.height);
-        area.height = area.height.saturating_sub(line_count);
-    } else {
-        let line_count = widget.line_count(area.width) as u16;
-        let buffer_area = Rect::new(0, 0, area.width, line_count);
-        let mut temp_buffer = Buffer::empty(buffer_area);
-        widget.render(buffer_area, &mut temp_buffer);
-
-        let overlapping_height = min(line_count_sum + line_count - offset_y, area.height);
-        for y in 0..overlapping_height {
-            for x in 0..area.width {
-                let buffer_y = offset_y - line_count_sum + y;
-                let frame_x = area.x + x;
-                let frame_y = area.y + y;
-                let Some(buffer_cell) = temp_buffer.cell((x, buffer_y)).cloned() else {
-                    continue;
-                };
-                if let Some(frame_cell) = buffer.cell_mut((frame_x, frame_y)) {
-                    *frame_cell = buffer_cell;
-                }
-            }
-        }
-
-        area.y += overlapping_height;
-        area.height -= overlapping_height;
     }
 }
 
@@ -611,7 +356,7 @@ mod tests {
         expected_cursor_area_position: Position,
     ) {
         state.update(cursor_global_position, height, header_height);
-        assert_eq!(state.offset_y, expected_offset_y);
+        assert_eq!(state.offset_y(), expected_offset_y);
         assert_eq!(
             state.calc_cursor_area_position(
                 cursor_global_position,
@@ -1004,7 +749,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "current update implementation underflows when height is shorter than header_height and cursor is in content"]
     fn snapshot_issue_detail_height_shorter_than_header_does_not_panic() {
         let fixture = IssueDetailWidgetFixture::new(WIDTH);
         let mut state = IssueDetailWidgetState::new();

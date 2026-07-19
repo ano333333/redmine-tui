@@ -1,0 +1,8 @@
+---
+source: src/test_support.rs
+expression: describe_buffer(terminal.backend().buffer())
+---
+area=Rect { x: 0, y: 0, width: 40, height: 3 }
+00: "#42                                     " | 0:"#" fg=Reset bg=Reset mod=NONE, 1:"4" fg=Reset bg=Reset mod=NONE, 2:"2" fg=Reset bg=Reset mod=NONE
+01: "                                        "
+02: "Issue detail widget snapshot            " | 0:"I" fg=Reset bg=Reset mod=BOLD, 1:"s" fg=Reset bg=Reset mod=BOLD, 2:"s" fg=Reset bg=Reset mod=BOLD, 3:"u" fg=Reset bg=Reset mod=BOLD, 4:"e" fg=Reset bg=Reset mod=BOLD, 5:" " fg=Reset bg=Reset mod=BOLD, 6:"d" fg=Reset bg=Reset mod=BOLD, 7:"e" fg=Reset bg=Reset mod=BOLD, 8:"t" fg=Reset bg=Reset mod=BOLD, 9:"a" fg=Reset bg=Reset mod=BOLD, 10:"i" fg=Reset bg=Reset mod=BOLD, 11:"l" fg=Reset bg=Reset mod=BOLD, 12:" " fg=Reset bg=Reset mod=BOLD, 13:"w" fg=Reset bg=Reset mod=BOLD, 14:"i" fg=Reset bg=Reset mod=BOLD, 15:"d" fg=Reset bg=Reset mod=BOLD, 16:"g" fg=Reset bg=Reset mod=BOLD, 17:"e" fg=Reset bg=Reset mod=BOLD, 18:"t" fg=Reset bg=Reset mod=BOLD, 19:" " fg=Reset bg=Reset mod=BOLD, 20:"s" fg=Reset bg=Reset mod=BOLD, 21:"n" fg=Reset bg=Reset mod=BOLD, 22:"a" fg=Reset bg=Reset mod=BOLD, 23:"p" fg=Reset bg=Reset mod=BOLD, 24:"s" fg=Reset bg=Reset mod=BOLD, 25:"h" fg=Reset bg=Reset mod=BOLD, 26:"o" fg=Reset bg=Reset mod=BOLD, 27:"t" fg=Reset bg=Reset mod=BOLD
