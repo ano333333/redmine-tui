@@ -1,0 +1,8 @@
+---
+source: src/test_support.rs
+expression: describe_buffer(terminal.backend().buffer())
+---
+area=Rect { x: 0, y: 0, width: 10, height: 3 }
+00: "second    " | 0:"s" fg=Reset bg=Reset mod=NONE, 1:"e" fg=Reset bg=Reset mod=NONE, 2:"c" fg=Reset bg=Reset mod=NONE, 3:"o" fg=Reset bg=Reset mod=NONE, 4:"n" fg=Reset bg=Reset mod=NONE, 5:"d" fg=Reset bg=Reset mod=NONE
+01: "third     " | 0:"t" fg=Reset bg=Reset mod=NONE, 1:"h" fg=Reset bg=Reset mod=NONE, 2:"i" fg=Reset bg=Reset mod=NONE, 3:"r" fg=Reset bg=Reset mod=NONE, 4:"d" fg=Reset bg=Reset mod=NONE
+02: "fourth    " | 0:"f" fg=Reset bg=Reset mod=NONE, 1:"o" fg=Reset bg=Reset mod=NONE, 2:"u" fg=Reset bg=Reset mod=NONE, 3:"r" fg=Reset bg=Reset mod=NONE, 4:"t" fg=Reset bg=Reset mod=NONE, 5:"h" fg=Reset bg=Reset mod=NONE
