@@ -16,8 +16,8 @@ pub enum EventProcessResult {
 }
 
 enum FocusedPosition {
-    Property(usize),
-    Comment(Position),
+    Detail(usize),
+    Notes(Position),
 }
 
 enum Action {
@@ -51,13 +51,13 @@ impl FocusState {
 
         match &mut self.focused_position {
             None => {}
-            Some(FocusedPosition::Property(index)) => {
+            Some(FocusedPosition::Detail(index)) => {
                 // NOTE: (現実的かはともかく)今回のupdateでpropertyリストが消えた場合は未実装
                 if *index >= property_count {
                     *index = property_count.saturating_sub(1);
                 }
             }
-            Some(FocusedPosition::Comment(position)) => {
+            Some(FocusedPosition::Notes(position)) => {
                 if position.x >= width {
                     position.x = width.saturating_sub(1);
                 }
@@ -92,13 +92,13 @@ impl FocusState {
         let focused_position = self.focused_position.as_mut()?;
         match action {
             Action::MoveDown => {
-                if let FocusedPosition::Property(index) = focused_position {
+                if let FocusedPosition::Detail(index) = focused_position {
                     if *index + 1 < self.property_count {
                         *index += 1;
                     } else {
-                        *focused_position = FocusedPosition::Comment(Position { x: 0, y: 0 });
+                        *focused_position = FocusedPosition::Notes(Position { x: 0, y: 0 });
                     }
-                } else if let FocusedPosition::Comment(position) = focused_position {
+                } else if let FocusedPosition::Notes(position) = focused_position {
                     if position.y + 1 < self.comment_line_count {
                         position.y += 1;
                     } else {
@@ -107,31 +107,31 @@ impl FocusState {
                 }
             }
             Action::MoveUp => {
-                if let FocusedPosition::Property(index) = focused_position {
+                if let FocusedPosition::Detail(index) = focused_position {
                     if *index > 0 {
                         *index -= 1;
                     } else {
                         return Some(EventProcessResult::CursorLeavedFromAbove { x: 0 });
                     }
-                } else if let FocusedPosition::Comment(position) = focused_position {
+                } else if let FocusedPosition::Notes(position) = focused_position {
                     if position.y > 0 {
                         position.y -= 1;
                     } else if self.property_count > 0 {
-                        *focused_position = FocusedPosition::Property(self.property_count - 1);
+                        *focused_position = FocusedPosition::Detail(self.property_count - 1);
                     } else {
                         return Some(EventProcessResult::CursorLeavedFromAbove { x: position.x });
                     }
                 }
             }
             Action::MoveLeft => {
-                if let FocusedPosition::Comment(position) = focused_position
+                if let FocusedPosition::Notes(position) = focused_position
                     && position.x > 0
                 {
                     position.x -= 1;
                 }
             }
             Action::MoveRight => {
-                if let FocusedPosition::Comment(position) = focused_position
+                if let FocusedPosition::Notes(position) = focused_position
                     && position.x + 1 < self.width
                 {
                     position.x += 1;
@@ -145,13 +145,13 @@ impl FocusState {
         match event {
             FocusEvent::Focused { position } => {
                 if self.property_count > 0 && position.y < self.property_count as u16 + 2 {
-                    self.focused_position = Some(FocusedPosition::Property(min(
+                    self.focused_position = Some(FocusedPosition::Detail(min(
                         position.y.saturating_sub(2) as usize,
                         self.property_count.saturating_sub(1),
                     )));
                 } else {
                     let comment_start_y = 2 + self.property_count as u16 + 1;
-                    self.focused_position = Some(FocusedPosition::Comment(Position {
+                    self.focused_position = Some(FocusedPosition::Notes(Position {
                         x: min(position.x, self.width.saturating_sub(1)),
                         y: min(
                             position.y.saturating_sub(comment_start_y),
@@ -165,13 +165,13 @@ impl FocusState {
             }
             FocusEvent::CursorEnteredFromAbove { x } => {
                 if self.property_count > 0 {
-                    self.focused_position = Some(FocusedPosition::Property(0));
+                    self.focused_position = Some(FocusedPosition::Detail(0));
                 } else {
-                    self.focused_position = Some(FocusedPosition::Comment(Position { x, y: 0 }));
+                    self.focused_position = Some(FocusedPosition::Notes(Position { x, y: 0 }));
                 }
             }
             FocusEvent::CursorEnteredFromBelow { x } => {
-                self.focused_position = Some(FocusedPosition::Comment(Position {
+                self.focused_position = Some(FocusedPosition::Notes(Position {
                     x,
                     y: self.comment_line_count.saturating_sub(1),
                 }));
@@ -182,11 +182,11 @@ impl FocusState {
     pub fn get_cursor_position(&self) -> Position {
         match self.focused_position {
             None => Position { x: 0, y: 0 },
-            Some(FocusedPosition::Property(index)) => Position {
+            Some(FocusedPosition::Detail(index)) => Position {
                 x: 0,
                 y: index as u16 + 2,
             },
-            Some(FocusedPosition::Comment(position)) => Position {
+            Some(FocusedPosition::Notes(position)) => Position {
                 x: position.x,
                 y: 2 + self.property_count as u16 + 1 + position.y,
             },
