@@ -124,6 +124,59 @@ mod tests {
     }
 
     #[test]
+    fn focus_event_unfocused_clears_focus() {
+        let mut state = FocusState::new();
+        state.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        state.focus_event(FocusEvent::Unfocused);
+
+        assert_eq!(state.focused_y(), None);
+    }
+
+    #[test]
+    fn get_cursor_position_returns_default_when_unfocused() {
+        let state = FocusState::new();
+
+        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 0 });
+    }
+
+    #[test]
+    fn get_cursor_position_tracks_focus_event_changes() {
+        let mut state = FocusState::new();
+
+        state.focus_event(FocusEvent::CursorEnteredFromAbove);
+        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 0 });
+
+        state.focus_event(FocusEvent::CursorEnteredFromBelow);
+        assert_eq!(
+            state.get_cursor_position(),
+            Position { x: 20, y: 14 - 1 }
+        );
+
+        state.focus_event(FocusEvent::Unfocused);
+        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 0 });
+    }
+
+    #[test]
+    fn get_cursor_position_tracks_process_event_changes() {
+        let mut state = FocusState::new();
+        state.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        state.process_event(key_event(KeyCode::Char('j')));
+
+        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 1 });
+
+        state.focus_event(FocusEvent::CursorEnteredFromBelow);
+
+        state.process_event(key_event(KeyCode::Char('k')));
+
+        assert_eq!(
+            state.get_cursor_position(),
+            Position { x: 20, y: 14 - 2 }
+        );
+    }
+
+    #[test]
     fn process_event_j_moves_focus_down() {
         let mut state = FocusState::new();
         state.focus_event(FocusEvent::CursorEnteredFromAbove);
@@ -145,7 +198,11 @@ mod tests {
             result,
             Some(EventProcessResult::CursorLeavedFromBelow)
         ));
-        assert_eq!(state.focused_y(), Some(LINE_COUNT - 1));
+        assert_eq!(state.focused_y(), Some(14 - 1));
+        assert_eq!(
+            state.get_cursor_position(),
+            Position { x: 20, y: 14 - 1 }
+        );
     }
 
     #[test]
@@ -160,6 +217,7 @@ mod tests {
             Some(EventProcessResult::CursorLeavedFromAbove)
         ));
         assert_eq!(state.focused_y(), Some(0));
+        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 0 });
     }
 
     #[test]
@@ -178,7 +236,7 @@ mod tests {
     #[test]
     fn process_event_a_on_last_line_opens_spent_time_popup() {
         let mut state = FocusState {
-            focused_y: Some(LINE_COUNT - 1),
+            focused_y: Some(14 - 1),
         };
 
         let result = state.process_event(key_event(KeyCode::Char('a')));
@@ -187,6 +245,6 @@ mod tests {
             result,
             Some(EventProcessResult::OpenSpentTimeInputPopup)
         ));
-        assert_eq!(state.focused_y(), Some(LINE_COUNT - 1));
+        assert_eq!(state.focused_y(), Some(14 - 1));
     }
 }
