@@ -291,11 +291,7 @@ mod tests {
         widget.render(area, &mut buf);
 
         (0..height)
-            .map(|y| {
-                (0..width)
-                    .map(|x| buf[(x, y)].symbol())
-                    .collect::<String>()
-            })
+            .map(|y| (0..width).map(|x| buf[(x, y)].symbol()).collect::<String>())
             .collect()
     }
 
@@ -370,28 +366,60 @@ mod tests {
         let store = store_with_time_entity_activities();
         let mut component = SpentTimeInputPopupComponent::new(&store);
 
-        assert!(component.process_event(key_event(KeyCode::Char('j'))).is_none());
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('j')))
+                .is_none()
+        );
         assert_eq!(component.focused_field, FocusField::Hours);
 
-        assert!(component.process_event(key_event(KeyCode::Char('j'))).is_none());
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('j')))
+                .is_none()
+        );
         assert_eq!(component.focused_field, FocusField::Memo);
 
-        assert!(component.process_event(key_event(KeyCode::Char('j'))).is_none());
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('j')))
+                .is_none()
+        );
         assert_eq!(component.focused_field, FocusField::Submit);
 
-        assert!(component.process_event(key_event(KeyCode::Char('j'))).is_none());
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('j')))
+                .is_none()
+        );
         assert_eq!(component.focused_field, FocusField::Submit);
 
-        assert!(component.process_event(key_event(KeyCode::Char('k'))).is_none());
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('k')))
+                .is_none()
+        );
         assert_eq!(component.focused_field, FocusField::Memo);
 
-        assert!(component.process_event(key_event(KeyCode::Char('k'))).is_none());
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('k')))
+                .is_none()
+        );
         assert_eq!(component.focused_field, FocusField::Hours);
 
-        assert!(component.process_event(key_event(KeyCode::Char('k'))).is_none());
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('k')))
+                .is_none()
+        );
         assert_eq!(component.focused_field, FocusField::Activity);
 
-        assert!(component.process_event(key_event(KeyCode::Char('k'))).is_none());
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('k')))
+                .is_none()
+        );
         assert_eq!(component.focused_field, FocusField::Activity);
     }
 
@@ -403,20 +431,35 @@ mod tests {
 
         assert!(component.process_event(key_event(KeyCode::Enter)).is_none());
         assert_eq!(component.focused_field, FocusField::Hours);
-        assert_eq!(component.input_mode, InputMode::Editing(EditableField::Hours));
+        assert_eq!(
+            component.input_mode,
+            InputMode::Editing(EditableField::Hours)
+        );
 
-        assert!(component.process_event(key_event(KeyCode::Char('1'))).is_none());
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('1')))
+                .is_none()
+        );
         assert_eq!(component.focused_field, FocusField::Hours);
         assert_eq!(component.hours_textarea.lines()[0], "1");
 
-        assert!(component.process_event(key_event(KeyCode::Char('j'))).is_none());
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('j')))
+                .is_none()
+        );
         assert_eq!(component.focused_field, FocusField::Hours);
         assert_eq!(component.hours_textarea.lines()[0], "1j");
 
         assert!(component.process_event(key_event(KeyCode::Enter)).is_none());
         assert_eq!(component.input_mode, InputMode::Navigating);
 
-        assert!(component.process_event(key_event(KeyCode::Char('j'))).is_none());
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('j')))
+                .is_none()
+        );
         assert_eq!(component.focused_field, FocusField::Memo);
     }
 
@@ -429,9 +472,16 @@ mod tests {
 
         assert!(component.process_event(key_event(KeyCode::Enter)).is_none());
         assert_eq!(component.focused_field, FocusField::Memo);
-        assert_eq!(component.input_mode, InputMode::Editing(EditableField::Memo));
+        assert_eq!(
+            component.input_mode,
+            InputMode::Editing(EditableField::Memo)
+        );
 
-        assert!(component.process_event(key_event(KeyCode::Char('a'))).is_none());
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('a')))
+                .is_none()
+        );
         assert_eq!(component.memo_textarea.lines()[0], "a");
 
         assert!(component.process_event(key_event(KeyCode::Enter)).is_none());
