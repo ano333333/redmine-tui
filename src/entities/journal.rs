@@ -12,13 +12,6 @@ pub struct Journal {
 }
 
 #[derive(Clone)]
-pub struct JournalPropertyChange {
-    pub target: String,
-    pub old: String,
-    pub new: String,
-}
-
-#[derive(Clone)]
 pub enum JournalDetailAttr {
     StatusId {
         old: String,
