@@ -39,6 +39,7 @@ impl Dispatcher {
     }
 }
 
+#[derive(PartialEq, Eq)]
 pub enum IssueState {
     Synced,
     Updated,

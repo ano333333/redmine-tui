@@ -3,7 +3,7 @@ use super::widget::HeaderWidget;
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::app::Store;
+use crate::app::{IssueState, Store};
 
 pub struct HeaderComponent {
     id: u16,
@@ -27,10 +27,14 @@ impl HeaderComponent {
     }
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
-        if let Some((issue, _)) = store.get_issue(self.id) {
+        if let Some((issue, issue_status)) = store.get_issue(self.id) {
             // FIXME: Storeのsynced/editedをwidgetに反映
-            let widget =
-                HeaderWidget::new(self.id, &issue.subject, self.focus_state.is_focused(), true);
+            let widget = HeaderWidget::new(
+                self.id,
+                &issue.subject,
+                self.focus_state.is_focused(),
+                *issue_status == IssueState::Synced,
+            );
             widget.line_count(width) as u16
         } else {
             0
@@ -38,12 +42,12 @@ impl HeaderComponent {
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> HeaderWidget<'a> {
-        let (issue, _) = store.get_issue(self.id).unwrap();
+        let (issue, issue_status) = store.get_issue(self.id).unwrap();
         HeaderWidget::new(
             self.id,
             &issue.subject,
             self.focus_state.is_focused(),
-            false,
+            *issue_status == IssueState::Synced,
         )
     }
 
