@@ -11,6 +11,7 @@ pub struct HeaderWidget<'a> {
     id: u16,
     title: &'a str,
     focused_title: bool,
+    synced: bool,
 }
 
 impl<'a> Widget for HeaderWidget<'a> {
@@ -34,11 +35,12 @@ impl<'a> Widget for HeaderWidget<'a> {
 }
 
 impl<'a> HeaderWidget<'a> {
-    pub fn new(id: u16, title: &'a str, focused_title: bool) -> Self {
+    pub fn new(id: u16, title: &'a str, focused_title: bool, synced: bool) -> Self {
         Self {
             id,
             title,
             focused_title,
+            synced,
         }
     }
 
@@ -60,7 +62,12 @@ impl<'a> HeaderWidget<'a> {
 
     fn title_paragraph(&self) -> Paragraph<'a> {
         Paragraph::new(Text::from(
-            Line::from(format!("# {}", self.title)).style(Style::default().bold()),
+            Line::from(format!(
+                "{}{}",
+                if self.synced { "" } else { "*" },
+                self.title
+            ))
+            .style(Style::default().bold()),
         ))
         .wrap(Wrap { trim: true })
     }
@@ -97,7 +104,7 @@ mod tests {
     fn snapshot_header_wide_short_title() {
         let title = "Widget snapshot baseline".to_string();
         let width = 40;
-        let widget = HeaderWidget::new(42, &title, true);
+        let widget = HeaderWidget::new(42, &title, true, true);
         let line_count = widget.line_count(width);
         assert_eq!(line_count, 4);
         render_snapshot("header_wide_short_title", width, line_count as u16, widget);
@@ -107,7 +114,7 @@ mod tests {
     fn snapshot_header_narrow_long_title_wrap() {
         let title = "A very long title for observing current paragraph behavior".to_string();
         let width = 18;
-        let widget = HeaderWidget::new(42, &title, false);
+        let widget = HeaderWidget::new(42, &title, false, true);
         let line_count = widget.line_count(width);
         assert_eq!(line_count, 7);
         render_snapshot(
@@ -121,8 +128,18 @@ mod tests {
     #[test]
     fn line_count_header_grows_when_title_wraps() {
         let title = "A very long title for observing current paragraph behavior".to_string();
-        let widget = HeaderWidget::new(42, &title, false);
+        let widget = HeaderWidget::new(42, &title, false, true);
         assert_eq!(widget.line_count(40), 5);
         assert_eq!(widget.line_count(18), 7);
+    }
+
+    #[test]
+    fn snapshot_header_unsynced_title() {
+        let title = "Widget snapshot baseline".to_string();
+        let width = 40;
+        let widget = HeaderWidget::new(42, &title, true, false);
+        let line_count = widget.line_count(width);
+        assert_eq!(line_count, 4);
+        render_snapshot("header_unsynced_title", width, line_count as u16, widget);
     }
 }
