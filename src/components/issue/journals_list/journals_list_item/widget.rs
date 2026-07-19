@@ -13,6 +13,7 @@ use crate::entities::{Journal, JournalDetail, JournalDetailAttr};
 
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
+const EMPTY_NOTES_PLACEHOLDER: &str = "(none)";
 
 pub struct JournalItemWidgetState {
     comment_buffer: Buffer,
@@ -193,6 +194,11 @@ fn create_header(creator: &String, updated_at: &DateTime<Local>) -> Line<'static
 }
 
 fn render_comment_in_buffer(width: u16, _: &String, _: &DateTime<Local>, body: &String) -> Buffer {
+    let body = if body.is_empty() {
+        EMPTY_NOTES_PLACEHOLDER
+    } else {
+        body
+    };
     let body = Paragraph::new(tui_markdown::from_str(body)).wrap(Wrap { trim: true });
     let body_line_count = body.line_count(width) as u16;
     let area = Rect::new(0, 0, width, body_line_count);
@@ -253,6 +259,27 @@ mod tests {
     }
 
     #[test]
+    fn line_count_for_empty_notes_includes_placeholder_line() {
+        let creator = "alice".to_string();
+        let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
+        let properties = vec![JournalDetail::Attr(JournalDetailAttr::AssignedTo {
+            old: None,
+            new: Some("bob".to_string()),
+        })];
+        let notes = "".to_string();
+        let width = 20;
+
+        let mut state = JournalItemWidgetState::new();
+        state.update(width, &creator, &updated_at, &notes);
+
+        let journal = create_journal(creator, updated_at, properties, &notes);
+        let widget = JournalItemWidget::new(&journal, &state, false);
+
+        assert_eq!(state.comment_line_count(), 1);
+        assert_eq!(widget.line_count(width), 6);
+    }
+
+    #[test]
     fn snapshot_journal_item_matches_expected_section_order() {
         let user = "alice".to_string();
         let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
@@ -291,5 +318,31 @@ mod tests {
         let widget = JournalItemWidget::new(&journal, &state, true);
 
         render_snapshot("journal_item_clipped_height", width, 5, widget);
+    }
+
+    #[test]
+    fn snapshot_journal_item_empty_notes_renders_placeholder() {
+        let user = "alice".to_string();
+        let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
+        let details = vec![JournalDetail::Attr(JournalDetailAttr::AssignedTo {
+            old: None,
+            new: Some("bob".to_string()),
+        })];
+        let notes = "".to_string();
+        let width = 24;
+
+        let mut state = JournalItemWidgetState::new();
+        state.update(width, &user, &updated_on, &notes);
+
+        let journal = create_journal(user, updated_on, details, &notes);
+        let widget = JournalItemWidget::new(&journal, &state, true);
+        let line_count = widget.line_count(width);
+
+        render_snapshot(
+            "journal_item_empty_notes_placeholder",
+            width,
+            line_count,
+            widget,
+        );
     }
 }

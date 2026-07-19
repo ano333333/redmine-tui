@@ -57,11 +57,9 @@ impl JournalsListItemComponent {
                 if let Some(FocusedPosition::Property(index)) = &mut self.focused_position {
                     if *index + 1 < self.journal.details.len() {
                         *index += 1;
-                    } else if self.comment_line_count > 0 {
+                    } else {
                         self.focused_position =
                             Some(FocusedPosition::Comment(Position { x: 0, y: 0 }));
-                    } else {
-                        return Some(EventProcessResult::CursorLeavedFromBelow { x: 0 });
                     }
                 } else if let Some(FocusedPosition::Comment(position)) = &mut self.focused_position
                 {
@@ -119,7 +117,7 @@ impl JournalsListItemComponent {
                         position.y.saturating_sub(2) as usize,
                         property_count.saturating_sub(1),
                     )));
-                } else if self.comment_line_count > 0 {
+                } else {
                     let comment_start_y = 2 + property_count as u16 + 1;
                     self.focused_position = Some(FocusedPosition::Comment(Position {
                         x: min(position.x, self.width.saturating_sub(1)),
@@ -128,9 +126,6 @@ impl JournalsListItemComponent {
                             self.comment_line_count.saturating_sub(1),
                         ),
                     }));
-                } else {
-                    self.focused_position =
-                        Some(FocusedPosition::Property(property_count.saturating_sub(1)));
                 }
             }
             FocusEvent::Unfocused => {
@@ -144,15 +139,10 @@ impl JournalsListItemComponent {
                 }
             }
             FocusEvent::CursorEnteredFromBelow { x } => {
-                if self.comment_line_count == 0 {
-                    self.focused_position =
-                        Some(FocusedPosition::Property(property_count.saturating_sub(1)));
-                } else {
-                    self.focused_position = Some(FocusedPosition::Comment(Position {
-                        x,
-                        y: self.comment_line_count - 1,
-                    }));
-                }
+                self.focused_position = Some(FocusedPosition::Comment(Position {
+                    x,
+                    y: self.comment_line_count.saturating_sub(1),
+                }));
             }
         }
     }
@@ -439,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn focus_event_from_below_without_notes_focuses_last_detail() {
+    fn focus_event_from_below_with_empty_notes_focuses_placeholder_line() {
         let journal = create_journal(1, details(), "");
         let mut component = component_with_update(&journal, WIDE_WIDTH);
 
@@ -450,8 +440,8 @@ mod tests {
             &mut component,
             &journal,
             WIDE_WIDTH,
-            5,
-            Position::new(0, 3),
+            6,
+            Position::new(6, 5),
         );
     }
 
@@ -475,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn focused_position_past_details_without_notes_focuses_last_detail() {
+    fn focused_position_past_details_with_empty_notes_focuses_placeholder_line() {
         let journal = create_journal(1, details(), "");
         let mut component = component_with_update(&journal, WIDE_WIDTH);
 
@@ -488,8 +478,8 @@ mod tests {
             &mut component,
             &journal,
             WIDE_WIDTH,
-            5,
-            Position::new(0, 3),
+            6,
+            Position::new(6, 5),
         );
     }
 
@@ -588,21 +578,21 @@ mod tests {
     }
 
     #[test]
-    fn process_event_j_on_last_detail_without_notes_returns_leave_from_below() {
+    fn process_event_j_on_last_detail_with_empty_notes_moves_to_placeholder_line() {
         let journal = create_journal(1, one_detail(), "");
         let mut component = component_with_update(&journal, WIDE_WIDTH);
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 6 });
 
         let result = component.process_event(key_event(KeyCode::Char('j')));
 
-        assert_leave_from_below(result, 0);
+        assert!(result.is_none());
         update_then_snapshot(
             "journals_list_item_component_process_j_on_last_detail_without_notes",
             &mut component,
             &journal,
             WIDE_WIDTH,
-            4,
-            Position::new(0, 2),
+            5,
+            Position::new(0, 4),
         );
     }
 
@@ -833,8 +823,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "notes が消えたとき comment focus を末尾 detail に移す実装が未対応"]
-    fn update_removed_notes_moves_comment_focus_to_last_detail() {
+    fn update_removed_notes_keeps_comment_focus_on_placeholder_line() {
         let initial_journal = create_journal(1, details(), notes());
         let mut component = component_with_update(&initial_journal, WIDE_WIDTH);
         component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 6 });
@@ -842,7 +831,7 @@ mod tests {
 
         component.update(&updated_journal, WIDE_WIDTH);
 
-        assert_layout_contract(&component, WIDE_WIDTH, 5, Position::new(0, 3));
+        assert_layout_contract(&component, WIDE_WIDTH, 6, Position::new(6, 5));
         render_snapshot(
             "journals_list_item_component_update_removed_notes",
             WIDE_WIDTH,
