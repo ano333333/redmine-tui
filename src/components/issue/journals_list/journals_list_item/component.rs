@@ -76,7 +76,7 @@ impl JournalsListItemComponent {
                 } else if let FocusedPosition::Comment(position) = focused_position {
                     if position.y > 0 {
                         position.y -= 1;
-                    } else if self.journal.details.len() > 0 {
+                    } else if !self.journal.details.is_empty() {
                         *focused_position =
                             FocusedPosition::Property(self.journal.details.len() - 1);
                     } else {
