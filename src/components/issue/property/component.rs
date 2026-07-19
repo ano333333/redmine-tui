@@ -100,3 +100,132 @@ fn create_property_widget<'a>(
         focused_y,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::Action;
+    use crate::test_support::render_snapshot;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::layout::Position;
+
+    const ISSUE_ID: u16 = 1;
+    const WIDTH: u16 = 40;
+    const PROPERTY_LINE_COUNT: u16 = 17;
+    const FOCUSABLE_LAST_LINE: u16 = 13;
+
+    fn key_event(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn store_with_property_issue() -> Store {
+        let mut store = Store::new();
+        store.consume_action(Action::LoadUsers);
+        store.consume_action(Action::LoadIssueStatuses);
+        store.consume_action(Action::LoadPriorities);
+        store.consume_action(Action::LoadProjects);
+        store.consume_action(Action::LoadTrackers);
+        store.consume_action(Action::LoadIssue { id: ISSUE_ID });
+        store
+    }
+
+    fn assert_layout_contract(component: &PropertyComponent, store: &Store, cursor: Position) {
+        assert_eq!(component.line_count(store, WIDTH), PROPERTY_LINE_COUNT);
+        assert_eq!(component.get_cursor_position(), cursor);
+    }
+
+    #[test]
+    fn focus_event_from_above_is_reflected_in_widget_and_cursor() {
+        let store = store_with_property_issue();
+        let mut component = PropertyComponent::new(ISSUE_ID);
+
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        assert_layout_contract(&component, &store, Position::new(20, 0));
+        render_snapshot(
+            "property_component_focus_from_above",
+            WIDTH,
+            component.line_count(&store, WIDTH),
+            component.create_widget(&store),
+        );
+    }
+
+    #[test]
+    fn focus_event_from_below_preserves_current_focusable_line_count() {
+        let store = store_with_property_issue();
+        let mut component = PropertyComponent::new(ISSUE_ID);
+
+        component.focus_event(FocusEvent::CursorEnteredFromBelow);
+
+        assert_layout_contract(&component, &store, Position::new(20, FOCUSABLE_LAST_LINE));
+        render_snapshot(
+            "property_component_focus_from_below",
+            WIDTH,
+            component.line_count(&store, WIDTH),
+            component.create_widget(&store),
+        );
+    }
+
+    #[test]
+    fn process_event_j_updates_widget_focus_and_cursor() {
+        let store = store_with_property_issue();
+        let mut component = PropertyComponent::new(ISSUE_ID);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        let result = component.process_event(key_event(KeyCode::Char('j')));
+
+        assert!(result.is_none());
+        assert_layout_contract(&component, &store, Position::new(20, 1));
+        render_snapshot(
+            "property_component_process_j",
+            WIDTH,
+            component.line_count(&store, WIDTH),
+            component.create_widget(&store),
+        );
+    }
+
+    #[test]
+    fn process_event_e_returns_status_popup_result_without_changing_widget_focus() {
+        let store = store_with_property_issue();
+        let mut component = PropertyComponent::new(ISSUE_ID);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+        for _ in 0..3 {
+            component.process_event(key_event(KeyCode::Char('j')));
+        }
+
+        let result = component.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenIssueStatusPopup)
+        ));
+        assert_layout_contract(&component, &store, Position::new(20, 3));
+        render_snapshot(
+            "property_component_process_e_on_status",
+            WIDTH,
+            component.line_count(&store, WIDTH),
+            component.create_widget(&store),
+        );
+    }
+
+    #[test]
+    fn process_event_a_returns_spent_time_popup_result_without_changing_widget_focus() {
+        let store = store_with_property_issue();
+        let mut component = PropertyComponent::new(ISSUE_ID);
+        component.focus_event(FocusEvent::CursorEnteredFromBelow);
+
+        let result = component.process_event(key_event(KeyCode::Char('a')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenSpentTimeInputPopup)
+        ));
+        assert_layout_contract(&component, &store, Position::new(20, FOCUSABLE_LAST_LINE));
+        render_snapshot(
+            "property_component_process_a_on_spent_time",
+            WIDTH,
+            component.line_count(&store, WIDTH),
+            component.create_widget(&store),
+        );
+    }
+}

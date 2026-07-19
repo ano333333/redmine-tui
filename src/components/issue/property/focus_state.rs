@@ -148,10 +148,7 @@ mod tests {
         assert_eq!(state.get_cursor_position(), Position { x: 20, y: 0 });
 
         state.focus_event(FocusEvent::CursorEnteredFromBelow);
-        assert_eq!(
-            state.get_cursor_position(),
-            Position { x: 20, y: 14 - 1 }
-        );
+        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 14 - 1 });
 
         state.focus_event(FocusEvent::Unfocused);
         assert_eq!(state.get_cursor_position(), Position { x: 20, y: 0 });
@@ -170,10 +167,7 @@ mod tests {
 
         state.process_event(key_event(KeyCode::Char('k')));
 
-        assert_eq!(
-            state.get_cursor_position(),
-            Position { x: 20, y: 14 - 2 }
-        );
+        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 14 - 2 });
     }
 
     #[test]
@@ -199,10 +193,7 @@ mod tests {
             Some(EventProcessResult::CursorLeavedFromBelow)
         ));
         assert_eq!(state.focused_y(), Some(14 - 1));
-        assert_eq!(
-            state.get_cursor_position(),
-            Position { x: 20, y: 14 - 1 }
-        );
+        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 14 - 1 });
     }
 
     #[test]
