@@ -114,19 +114,23 @@ impl JournalsListItemComponent {
         let property_count = self.journal.details.len();
         match event {
             FocusEvent::Focused { position } => {
-                if position.y < property_count as u16 + 2 {
+                if property_count > 0 && position.y < property_count as u16 + 2 {
                     self.focused_position = Some(FocusedPosition::Property(min(
                         position.y.saturating_sub(2) as usize,
                         property_count.saturating_sub(1),
                     )));
-                } else {
+                } else if self.comment_line_count > 0 {
+                    let comment_start_y = 2 + property_count as u16 + 1;
                     self.focused_position = Some(FocusedPosition::Comment(Position {
                         x: min(position.x, self.width.saturating_sub(1)),
                         y: min(
-                            position.y - (property_count as u16 + 2),
-                            self.comment_line_count,
+                            position.y.saturating_sub(comment_start_y),
+                            self.comment_line_count.saturating_sub(1),
                         ),
                     }));
+                } else {
+                    self.focused_position =
+                        Some(FocusedPosition::Property(property_count.saturating_sub(1)));
                 }
             }
             FocusEvent::Unfocused => {
@@ -360,7 +364,7 @@ mod tests {
             &journal,
             NARROW_WIDTH,
             9,
-            Position::new(17, 7),
+            Position::new(17, 6),
         );
     }
 
@@ -471,7 +475,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "details あり notes なしで Focused の y が details より下の場合に末尾 detail へ移す実装が未対応"]
     fn focused_position_past_details_without_notes_focuses_last_detail() {
         let journal = create_journal(1, details(), "");
         let mut component = component_with_update(&journal, WIDE_WIDTH);
@@ -491,7 +494,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "details なし notes ありで Focused の y が上寄りの場合に notes 先頭へ移す実装が未対応"]
     fn focused_position_near_top_without_details_focuses_first_note_line() {
         let journal = create_journal(1, vec![], notes());
         let mut component = component_with_update(&journal, WIDE_WIDTH);
@@ -714,7 +716,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Focused で comment 内の行を指定したときの y 座標変換が期待仕様と一致していない"]
     fn process_event_k_moves_between_note_lines() {
         let journal = create_journal(1, one_detail(), notes());
         let mut component = component_with_update(&journal, WIDE_WIDTH);
