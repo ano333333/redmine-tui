@@ -108,10 +108,9 @@ impl Store {
                 }
             }
             Action::LoadIssue { id } => {
-                if self.issues.get(&id).is_none() {
-                    self.issues
-                        .insert(id, (parse_issue_yaml(id), IssueState::Synced));
-                }
+                self.issues
+                    .entry(id)
+                    .or_insert((parse_issue_yaml(id), IssueState::Synced));
             }
             Action::UpdateIssue { id, body } => {
                 if let Some((issue, state)) = self.issues.get_mut(&id) {
@@ -125,10 +124,9 @@ impl Store {
                 }
             }
             Action::LoadJournal { id } => {
-                if self.journals.get(&id).is_none() {
-                    self.journals
-                        .insert(id, (parse_journal_yaml(id), JournalState::Synced));
-                }
+                self.journals
+                    .entry(id)
+                    .or_insert((parse_journal_yaml(id), JournalState::Synced));
             }
             Action::UpdateJournal { id, notes } => {
                 if let Some((journal, state)) = self.journals.get_mut(&id) {
