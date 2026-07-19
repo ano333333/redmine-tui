@@ -85,3 +85,133 @@ impl ChildrenListComponent {
         self.focus_state.get_cursor_position()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::Action;
+    use crate::test_support::render_snapshot;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::layout::Position;
+
+    const ISSUE_ID: u16 = 3;
+    const WIDTH: u16 = 80;
+    const CHILDREN_LIST_LINE_COUNT: u16 = 5;
+
+    fn store_with_parent_and_children() -> Store {
+        let mut store = Store::new();
+        store.consume_action(Action::LoadUsers);
+        store.consume_action(Action::LoadIssueStatuses);
+        store.consume_action(Action::LoadIssue { id: 1 });
+        store.consume_action(Action::LoadIssue { id: 2 });
+        store.consume_action(Action::LoadIssue { id: ISSUE_ID });
+        store
+    }
+
+    fn key_event(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn assert_layout_contract(component: &ChildrenListComponent, store: &Store, cursor: Position) {
+        assert_eq!(component.line_count(store), CHILDREN_LIST_LINE_COUNT);
+        assert_eq!(component.get_cursor_position(), cursor);
+    }
+
+    #[test]
+    fn focus_event_from_above_is_reflected_in_widget_and_cursor() {
+        let store = store_with_parent_and_children();
+        let mut component = ChildrenListComponent::new(ISSUE_ID);
+        component.update(&store);
+
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        assert_layout_contract(&component, &store, Position { x: 0, y: 2 });
+        render_snapshot(
+            "children_list_component_focus_from_above",
+            WIDTH,
+            component.line_count(&store),
+            component.create_widget(&store),
+        );
+    }
+
+    #[test]
+    fn process_event_j_moves_focus_to_second_child_and_updates_widget_and_cursor() {
+        let store = store_with_parent_and_children();
+        let mut component = ChildrenListComponent::new(ISSUE_ID);
+        component.update(&store);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        let result = component.process_event(&key_event(KeyCode::Char('j')));
+
+        assert!(result.is_none());
+        assert_layout_contract(&component, &store, Position { x: 0, y: 3 });
+        render_snapshot(
+            "children_list_component_process_j",
+            WIDTH,
+            component.line_count(&store),
+            component.create_widget(&store),
+        );
+    }
+
+    #[test]
+    fn process_event_j_on_bottom_child_returns_leave_from_below_and_keeps_widget_coherent() {
+        let store = store_with_parent_and_children();
+        let mut component = ChildrenListComponent::new(ISSUE_ID);
+        component.update(&store);
+        component.focus_event(FocusEvent::CursorEnteredFromBelow);
+
+        let result = component.process_event(&key_event(KeyCode::Char('j')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::CursorLeavedFromBelow)
+        ));
+        assert_layout_contract(&component, &store, Position { x: 0, y: 3 });
+        render_snapshot(
+            "children_list_component_process_j_on_bottom",
+            WIDTH,
+            component.line_count(&store),
+            component.create_widget(&store),
+        );
+    }
+
+    #[test]
+    fn process_event_k_on_top_child_returns_leave_from_above_and_keeps_widget_coherent() {
+        let store = store_with_parent_and_children();
+        let mut component = ChildrenListComponent::new(ISSUE_ID);
+        component.update(&store);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        let result = component.process_event(&key_event(KeyCode::Char('k')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::CursorLeavedFromAbove)
+        ));
+        assert_layout_contract(&component, &store, Position { x: 0, y: 2 });
+        render_snapshot(
+            "children_list_component_process_k_on_top",
+            WIDTH,
+            component.line_count(&store),
+            component.create_widget(&store),
+        );
+    }
+
+    #[test]
+    fn unfocused_after_update_removes_widget_focus() {
+        let store = store_with_parent_and_children();
+        let mut component = ChildrenListComponent::new(ISSUE_ID);
+        component.update(&store);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        component.focus_event(FocusEvent::Unfocused);
+
+        assert_eq!(component.line_count(&store), CHILDREN_LIST_LINE_COUNT);
+        render_snapshot(
+            "children_list_component_unfocused",
+            WIDTH,
+            component.line_count(&store),
+            component.create_widget(&store),
+        );
+    }
+}
