@@ -46,23 +46,19 @@ impl JournalsListItemComponent {
     }
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        if self.focused_position.is_none() {
-            return None;
-        }
+        let focused_position = self.focused_position.as_mut()?;
         let Event::Key(key) = event else {
             return None;
         };
         match key.code {
             KeyCode::Char('j') => {
-                if let Some(FocusedPosition::Property(index)) = &mut self.focused_position {
+                if let FocusedPosition::Property(index) = focused_position {
                     if *index + 1 < self.journal.details.len() {
                         *index += 1;
                     } else {
-                        self.focused_position =
-                            Some(FocusedPosition::Comment(Position { x: 0, y: 0 }));
+                        *focused_position = FocusedPosition::Comment(Position { x: 0, y: 0 });
                     }
-                } else if let Some(FocusedPosition::Comment(position)) = &mut self.focused_position
-                {
+                } else if let FocusedPosition::Comment(position) = focused_position {
                     if position.y + 1 < self.comment_line_count {
                         position.y += 1;
                     } else {
@@ -71,33 +67,32 @@ impl JournalsListItemComponent {
                 }
             }
             KeyCode::Char('k') => {
-                if let Some(FocusedPosition::Property(index)) = &mut self.focused_position {
+                if let FocusedPosition::Property(index) = focused_position {
                     if *index > 0 {
                         *index -= 1;
                     } else {
                         return Some(EventProcessResult::CursorLeavedFromAbove { x: 0 });
                     }
-                } else if let Some(FocusedPosition::Comment(position)) = &mut self.focused_position
-                {
+                } else if let FocusedPosition::Comment(position) = focused_position {
                     if position.y > 0 {
                         position.y -= 1;
                     } else if self.journal.details.len() > 0 {
-                        self.focused_position =
-                            Some(FocusedPosition::Property(self.journal.details.len() - 1));
+                        *focused_position =
+                            FocusedPosition::Property(self.journal.details.len() - 1);
                     } else {
                         return Some(EventProcessResult::CursorLeavedFromAbove { x: position.x });
                     }
                 }
             }
             KeyCode::Char('h') => {
-                if let Some(FocusedPosition::Comment(position)) = &mut self.focused_position
+                if let FocusedPosition::Comment(position) = focused_position
                     && position.x > 0
                 {
                     position.x -= 1;
                 }
             }
             KeyCode::Char('l') => {
-                if let Some(FocusedPosition::Comment(position)) = &mut self.focused_position
+                if let FocusedPosition::Comment(position) = focused_position
                     && position.x + 1 < self.width
                 {
                     position.x += 1;
