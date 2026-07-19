@@ -63,7 +63,7 @@ impl JournalsListItemComponent {
                     }
                 } else if let Some(FocusedPosition::Comment(position)) = &mut self.focused_position
                 {
-                    if position.y + 1 < self.comment_line_count as u16 {
+                    if position.y + 1 < self.comment_line_count {
                         position.y += 1;
                     } else {
                         return Some(EventProcessResult::CursorLeavedFromBelow { x: position.x });
