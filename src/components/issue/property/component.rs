@@ -79,6 +79,10 @@ fn create_property_widget<'a>(
         .get_tracker(issue.tracker_id.get())
         .map(|tracker| tracker.name.as_str())
         .unwrap_or("(unknown)");
+    let target_version = issue
+        .target_version_id
+        .and_then(|target_version_id| store.get_target_version(target_version_id))
+        .map(|target_version| target_version.name.as_str());
     PropertyWidget::new(
         issue.id.get(),
         author,
@@ -89,7 +93,7 @@ fn create_property_widget<'a>(
         priority,
         project,
         assigned_to,
-        &issue.fixed_version,
+        target_version,
         issue.start_date,
         issue.due_date,
         issue.done_ratio,
@@ -126,6 +130,7 @@ mod tests {
         store.consume_action(Action::LoadPriorities);
         store.consume_action(Action::LoadProjects);
         store.consume_action(Action::LoadTrackers);
+        store.consume_action(Action::LoadTargetVersions);
         store.consume_action(Action::LoadIssue { id: ISSUE_ID });
         store
     }

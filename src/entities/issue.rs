@@ -1,6 +1,8 @@
 use chrono::{DateTime, Local};
 
-use crate::vos::{IssueId, IssueStatusId, PriorityId, ProjectId, TrackerId, UserId};
+use crate::vos::{
+    IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
+};
 
 pub struct Issue {
     pub id: IssueId,
@@ -13,7 +15,7 @@ pub struct Issue {
     pub status_id: IssueStatusId,
     pub priority_id: PriorityId,
     pub assigned_to_id: Option<UserId>,
-    pub fixed_version: Option<String>,
+    pub target_version_id: Option<TargetVersionId>,
     pub start_date: Option<DateTime<Local>>,
     pub due_date: Option<DateTime<Local>>,
     pub done_ratio: u16,

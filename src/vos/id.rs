@@ -105,6 +105,8 @@ pub enum TrackerTag {}
 pub enum UserTag {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TimeEntityActivityTag {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TargetVersionTag {}
 
 pub type IssueId = EntityId<IssueTag>;
 pub type IssueStatusId = EntityId<IssueStatusTag>;
@@ -114,3 +116,4 @@ pub type ProjectId = EntityId<ProjectTag>;
 pub type TrackerId = EntityId<TrackerTag>;
 pub type UserId = EntityId<UserTag>;
 pub type TimeEntityActivityId = EntityId<TimeEntityActivityTag>;
+pub type TargetVersionId = EntityId<TargetVersionTag>;

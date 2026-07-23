@@ -270,7 +270,7 @@ mod tests {
                 self.priority.as_str(),
                 self.project.as_str(),
                 self.person_in_charge.as_deref(),
-                &self.target_version,
+                self.target_version.as_deref(),
                 Some(local_datetime("2026-01-10T00:00:00+09:00")),
                 Some(local_datetime("2026-01-20T00:00:00+09:00")),
                 65,

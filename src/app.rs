@@ -1,7 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::entities::{
-    Issue, IssueStatus, Journal, Priority, Project, TimeEntityActivity, Tracker, User,
+    Issue, IssueStatus, Journal, Priority, Project, TargetVersion, TimeEntityActivity, Tracker,
+    User,
 };
 use crate::libs::yaml::{as_u16_array, as_u16_option};
 use crate::libs::{
@@ -13,7 +14,7 @@ use crate::vos::issue_property_diff::{
 };
 use crate::vos::{
     EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalDetail, JournalDetailAttr,
-    PriorityId, ProjectId, TimeEntityActivityId, TrackerId, UserId,
+    PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
 pub struct Dispatcher {
@@ -64,6 +65,7 @@ pub struct Store {
     priorities: HashMap<u16, Priority>,
     projects: HashMap<u16, Project>,
     trackers: HashMap<u16, Tracker>,
+    target_versions: HashMap<TargetVersionId, TargetVersion>,
     time_entity_activities: HashMap<TimeEntityActivityId, TimeEntityActivity>,
 }
 
@@ -78,6 +80,7 @@ impl Store {
             priorities: HashMap::new(),
             projects: HashMap::new(),
             trackers: HashMap::new(),
+            target_versions: HashMap::new(),
             time_entity_activities: HashMap::new(),
         }
     }
@@ -107,6 +110,11 @@ impl Store {
             Action::LoadTrackers => {
                 if self.trackers.is_empty() {
                     self.trackers = parse_trackers_yaml();
+                }
+            }
+            Action::LoadTargetVersions => {
+                if self.target_versions.is_empty() {
+                    self.target_versions = parse_target_versions_yaml();
                 }
             }
             Action::LoadTimeEntityActivities => {
@@ -247,6 +255,14 @@ impl Store {
         self.trackers.get(&tracker_id)
     }
 
+    pub fn get_target_versions(&self) -> &HashMap<TargetVersionId, TargetVersion> {
+        &self.target_versions
+    }
+
+    pub fn get_target_version(&self, target_version_id: TargetVersionId) -> Option<&TargetVersion> {
+        self.target_versions.get(&target_version_id)
+    }
+
     pub fn get_time_entity_activities(&self) -> &HashMap<TimeEntityActivityId, TimeEntityActivity> {
         &self.time_entity_activities
     }
@@ -258,6 +274,7 @@ pub enum Action {
     LoadPriorities,
     LoadProjects,
     LoadTrackers,
+    LoadTargetVersions,
     LoadTimeEntityActivities,
     LoadIssue {
         id: u16,
@@ -360,7 +377,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let status_id = IssueStatusId::new(as_u16(&yaml, "status_id"));
     let priority_id = PriorityId::new(as_u16(&yaml, "priority_id"));
     let assigned_to_id = as_u16_option(&yaml, "assigned_to_id").map(UserId::new);
-    let fixed_version = as_string_option(&yaml, "fixed_version");
+    let target_version_id = as_u16_option(&yaml, "target_version_id").map(TargetVersionId::new);
     let start_date = as_local_datetime_option(&yaml, "start_date");
     let due_date = as_local_datetime_option(&yaml, "due_date");
     let done_ratio = as_u16(&yaml, "done_ratio");
@@ -384,7 +401,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
         status_id,
         priority_id,
         assigned_to_id,
-        fixed_version,
+        target_version_id,
         start_date,
         due_date,
         done_ratio,
@@ -478,6 +495,24 @@ fn parse_trackers_yaml() -> HashMap<u16, Tracker> {
         .collect()
 }
 
+fn parse_target_versions_yaml() -> HashMap<TargetVersionId, TargetVersion> {
+    let yaml = read_yaml("datas/target_versions.yml");
+    let entries = yaml["target_versions"]
+        .as_vec()
+        .expect("no target_versions");
+
+    entries
+        .iter()
+        .map(|entry| {
+            let target_version = TargetVersion {
+                id: TargetVersionId::new(as_u16(entry, "id")),
+                name: as_string(entry, "name"),
+            };
+            (target_version.id, target_version)
+        })
+        .collect()
+}
+
 fn parse_time_entity_activities_yaml() -> HashMap<TimeEntityActivityId, TimeEntityActivity> {
     let yaml = read_yaml("datas/time_entity_activities.yml");
     let entries = yaml["time_entity_activities"]
@@ -495,4 +530,33 @@ fn parse_time_entity_activities_yaml() -> HashMap<TimeEntityActivityId, TimeEnti
             (act.id, act)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vos::TargetVersionId;
+
+    #[test]
+    fn load_target_versions_populates_store() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::LoadTargetVersions);
+
+        let target_version = store
+            .get_target_version(TargetVersionId::new(1))
+            .expect("target version should be loaded");
+        assert_eq!(target_version.name, "v1.2.3");
+        assert_eq!(store.get_target_versions().len(), 1);
+    }
+
+    #[test]
+    fn load_issue_reads_target_version_id_reference() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::LoadIssue { id: 1 });
+
+        let (issue, _) = store.get_issue(1).expect("issue should be loaded");
+        assert_eq!(issue.target_version_id, Some(TargetVersionId::new(1)));
+    }
 }

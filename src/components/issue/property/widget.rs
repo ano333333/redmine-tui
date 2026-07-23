@@ -18,7 +18,7 @@ pub struct PropertyWidget<'a> {
     priority: &'a str,
     project: &'a str,
     person_in_charge: Option<&'a str>,
-    target_version: &'a Option<String>,
+    target_version: Option<&'a str>,
     start_date: Option<DateTime<Local>>,
     due: Option<DateTime<Local>>,
     progress: u16,
@@ -51,7 +51,7 @@ impl<'a> PropertyWidget<'a> {
         priority: &'a str,
         project: &'a str,
         person_in_charge: Option<&'a str>,
-        target_version: &'a Option<String>,
+        target_version: Option<&'a str>,
         start_date: Option<DateTime<Local>>,
         due: Option<DateTime<Local>>,
         progress: u16,
@@ -92,7 +92,7 @@ impl<'a> PropertyWidget<'a> {
             None => "-".to_string(),
         };
         let target_version = match self.target_version {
-            Some(s) => s.clone(),
+            Some(s) => s.to_string(),
             None => "-".to_string(),
         };
         fn datetime_opt_to_str(date_opt: &Option<DateTime<Local>>) -> String {
@@ -188,7 +188,7 @@ mod tests {
                 priority.as_str(),
                 project.as_str(),
                 person_in_charge.as_deref(),
-                &target_version,
+                target_version.as_deref(),
                 Some(local_datetime("2026-01-10T00:00:00+09:00")),
                 Some(local_datetime("2026-01-20T00:00:00+09:00")),
                 65,
@@ -207,7 +207,7 @@ mod tests {
         let priority = "major".to_string();
         let project = "Sample Project".to_string();
         let person_in_charge = None;
-        let target_version = None;
+        let target_version: Option<String> = None;
         let component = "Operations Integration".to_string();
         render_snapshot(
             "property_all_optional_none",
@@ -223,7 +223,7 @@ mod tests {
                 priority.as_str(),
                 project.as_str(),
                 person_in_charge,
-                &target_version,
+                target_version.as_deref(),
                 None,
                 None,
                 0,
@@ -242,7 +242,7 @@ mod tests {
         let priority = "minor".to_string();
         let project = "Sample Project".to_string();
         let person_in_charge = None;
-        let target_version = None;
+        let target_version: Option<String> = None;
         let component = "Operations Integration".to_string();
         let widget = PropertyWidget::new(
             1,
@@ -254,7 +254,7 @@ mod tests {
             priority.as_str(),
             project.as_str(),
             person_in_charge,
-            &target_version,
+            target_version.as_deref(),
             None,
             None,
             0,
@@ -274,7 +274,7 @@ mod tests {
         let priority = "blocker".to_string();
         let project = "Sample Project".to_string();
         let person_in_charge = None;
-        let target_version = None;
+        let target_version: Option<String> = None;
         let component = "Operations Integration".to_string();
         let widget = PropertyWidget::new(
             1,
@@ -286,7 +286,7 @@ mod tests {
             priority.as_str(),
             project.as_str(),
             person_in_charge,
-            &target_version,
+            target_version.as_deref(),
             None,
             None,
             0,
