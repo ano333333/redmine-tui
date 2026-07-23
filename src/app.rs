@@ -366,7 +366,6 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let done_ratio = as_u16(&yaml, "done_ratio");
     let estimated_hours = as_u16_option(&yaml, "estimated_hours");
     let total_spent_hours = as_f64_option(&yaml, "total_spent_hours");
-    let resolve_way = as_string_option(&yaml, "resolve_way");
     let component = as_string(&yaml, "component");
     let description = as_string(&yaml, "description");
     let child_ids = as_u16_array(&yaml, "child_ids")
@@ -391,7 +390,6 @@ fn parse_issue_yaml(id: u16) -> Issue {
         done_ratio,
         estimated_hours,
         total_spent_hours,
-        resolve_way,
         component,
         description,
         child_ids,

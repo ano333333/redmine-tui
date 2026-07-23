@@ -1,7 +1,7 @@
 use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
 
-const LINE_COUNT: u16 = 16;
+const LINE_COUNT: u16 = 15;
 const ISSUE_STATUS_LINE: u16 = 3;
 const ASSIGNED_TO_LINE: u16 = 7;
 const DONE_RATIO_LINE: u16 = 11;

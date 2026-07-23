@@ -24,7 +24,6 @@ pub struct PropertyWidget<'a> {
     progress: u16,
     planned_hours: Option<u16>,
     total_spent_hours: Option<f64>,
-    resolve_way: &'a Option<String>,
     component: &'a String,
     focused_y: Option<u16>,
 }
@@ -58,7 +57,6 @@ impl<'a> PropertyWidget<'a> {
         progress: u16,
         planned_hours: Option<u16>,
         total_spent_hours: Option<f64>,
-        resolve_way: &'a Option<String>,
         component: &'a String,
         focused_y: Option<u16>,
     ) -> Self {
@@ -78,7 +76,6 @@ impl<'a> PropertyWidget<'a> {
             progress,
             planned_hours,
             total_spent_hours,
-            resolve_way,
             component,
             focused_y,
         }
@@ -113,10 +110,6 @@ impl<'a> PropertyWidget<'a> {
             Some(hours) => hours.to_string(),
             None => "".to_string(),
         };
-        let resolve_way = match self.resolve_way {
-            Some(r) => r.clone(),
-            None => "-".to_string(),
-        };
         Paragraph::new(vec![
             Line::from(format!("作成者              {}", self.author)),
             Line::from(format!(
@@ -150,7 +143,6 @@ impl<'a> PropertyWidget<'a> {
             ]),
             Line::from(format!("予定工数            {}", planned_hours)),
             Line::from(format!("実績工数            {}", total_spent_hours)),
-            Line::from(format!("解決方法            {}", resolve_way)),
             Line::from(format!("コンポーネント      {}", self.component)),
         ])
     }
@@ -181,12 +173,11 @@ mod tests {
         let project = "Sample Project".to_string();
         let person_in_charge = Some("alice".to_string());
         let target_version = Some("2026 Spring".to_string());
-        let resolve_way = Some("Patch".to_string());
         let component = "Admin UI".to_string();
         render_snapshot(
             "property_full_values_wide",
             40,
-            16,
+            15,
             PropertyWidget::new(
                 1,
                 "author",
@@ -203,7 +194,6 @@ mod tests {
                 65,
                 Some(13),
                 Some(8.5),
-                &resolve_way,
                 &component,
                 Some(3),
             ),
@@ -218,12 +208,11 @@ mod tests {
         let project = "Sample Project".to_string();
         let person_in_charge = None;
         let target_version = None;
-        let resolve_way = None;
         let component = "Operations Integration".to_string();
         render_snapshot(
             "property_all_optional_none",
             22,
-            18,
+            17,
             PropertyWidget::new(
                 1,
                 "author",
@@ -240,7 +229,6 @@ mod tests {
                 0,
                 None,
                 None,
-                &resolve_way,
                 &component,
                 None,
             ),
@@ -255,7 +243,6 @@ mod tests {
         let project = "Sample Project".to_string();
         let person_in_charge = None;
         let target_version = None;
-        let resolve_way = None;
         let component = "Operations Integration".to_string();
         let widget = PropertyWidget::new(
             1,
@@ -273,12 +260,11 @@ mod tests {
             0,
             None,
             None,
-            &resolve_way,
             &component,
             None,
         );
-        assert_eq!(widget.line_count(40), 16);
-        assert_eq!(widget.line_count(22), 16);
+        assert_eq!(widget.line_count(40), 15);
+        assert_eq!(widget.line_count(22), 15);
     }
 
     #[test]
@@ -289,7 +275,6 @@ mod tests {
         let project = "Sample Project".to_string();
         let person_in_charge = None;
         let target_version = None;
-        let resolve_way = None;
         let component = "Operations Integration".to_string();
         let widget = PropertyWidget::new(
             1,
@@ -307,7 +292,6 @@ mod tests {
             0,
             None,
             None,
-            &resolve_way,
             &component,
             None,
         );

@@ -19,7 +19,6 @@ pub struct Issue {
     pub done_ratio: u16,
     pub estimated_hours: Option<u16>,
     pub total_spent_hours: Option<f64>,
-    pub resolve_way: Option<String>,
     pub component: String,
     pub description: String,
     pub child_ids: Vec<IssueId>,

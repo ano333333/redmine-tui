@@ -2,7 +2,7 @@
 source: src/test_support.rs
 expression: describe_buffer(terminal.backend().buffer())
 ---
-area=Rect { x: 0, y: 0, width: 22, height: 18 }
+area=Rect { x: 0, y: 0, width: 22, height: 17 }
 00: "作 成 者               au" | 0:"作" fg=Reset bg=Reset mod=NONE, 2:"成" fg=Reset bg=Reset mod=NONE, 4:"者" fg=Reset bg=Reset mod=NONE, 20:"a" fg=Reset bg=Reset mod=NONE, 21:"u" fg=Reset bg=Reset mod=NONE
 01: "作 成 日               20" | 0:"作" fg=Reset bg=Reset mod=NONE, 2:"成" fg=Reset bg=Reset mod=NONE, 4:"日" fg=Reset bg=Reset mod=NONE, 20:"2" fg=Reset bg=Reset mod=NONE, 21:"0" fg=Reset bg=Reset mod=NONE
 02: "更 新 日               20" | 0:"更" fg=Reset bg=Reset mod=NONE, 2:"新" fg=Reset bg=Reset mod=NONE, 4:"日" fg=Reset bg=Reset mod=NONE, 20:"2" fg=Reset bg=Reset mod=NONE, 21:"0" fg=Reset bg=Reset mod=NONE
@@ -17,7 +17,6 @@ area=Rect { x: 0, y: 0, width: 22, height: 18 }
 11: "進 捗 率               0 " | 0:"進" fg=Blue bg=Reset mod=NONE, 2:"捗" fg=Blue bg=Reset mod=NONE, 4:"率" fg=Blue bg=Reset mod=NONE, 6:" " fg=Blue bg=Reset mod=NONE, 7:" " fg=Blue bg=Reset mod=NONE, 8:" " fg=Blue bg=Reset mod=NONE, 9:" " fg=Blue bg=Reset mod=NONE, 10:" " fg=Blue bg=Reset mod=NONE, 11:" " fg=Blue bg=Reset mod=NONE, 12:" " fg=Blue bg=Reset mod=NONE, 13:" " fg=Blue bg=Reset mod=NONE, 14:" " fg=Blue bg=Reset mod=NONE, 15:" " fg=Blue bg=Reset mod=NONE, 16:" " fg=Blue bg=Reset mod=NONE, 17:" " fg=Blue bg=Reset mod=NONE, 18:" " fg=Blue bg=Reset mod=NONE, 19:" " fg=Blue bg=Reset mod=NONE, 20:"0" fg=Reset bg=Reset mod=NONE
 12: "予 定 工 数               " | 0:"予" fg=Reset bg=Reset mod=NONE, 2:"定" fg=Reset bg=Reset mod=NONE, 4:"工" fg=Reset bg=Reset mod=NONE, 6:"数" fg=Reset bg=Reset mod=NONE
 13: "実 績 工 数               " | 0:"実" fg=Reset bg=Reset mod=NONE, 2:"績" fg=Reset bg=Reset mod=NONE, 4:"工" fg=Reset bg=Reset mod=NONE, 6:"数" fg=Reset bg=Reset mod=NONE
-14: "解 決 方 法             - " | 0:"解" fg=Reset bg=Reset mod=NONE, 2:"決" fg=Reset bg=Reset mod=NONE, 4:"方" fg=Reset bg=Reset mod=NONE, 6:"法" fg=Reset bg=Reset mod=NONE, 20:"-" fg=Reset bg=Reset mod=NONE
-15: "コ ン ポ ー ネ ン ト       Op" | 0:"コ" fg=Reset bg=Reset mod=NONE, 2:"ン" fg=Reset bg=Reset mod=NONE, 4:"ポ" fg=Reset bg=Reset mod=NONE, 6:"ー" fg=Reset bg=Reset mod=NONE, 8:"ネ" fg=Reset bg=Reset mod=NONE, 10:"ン" fg=Reset bg=Reset mod=NONE, 12:"ト" fg=Reset bg=Reset mod=NONE, 20:"O" fg=Reset bg=Reset mod=NONE, 21:"p" fg=Reset bg=Reset mod=NONE
+14: "コ ン ポ ー ネ ン ト       Op" | 0:"コ" fg=Reset bg=Reset mod=NONE, 2:"ン" fg=Reset bg=Reset mod=NONE, 4:"ポ" fg=Reset bg=Reset mod=NONE, 6:"ー" fg=Reset bg=Reset mod=NONE, 8:"ネ" fg=Reset bg=Reset mod=NONE, 10:"ン" fg=Reset bg=Reset mod=NONE, 12:"ト" fg=Reset bg=Reset mod=NONE, 20:"O" fg=Reset bg=Reset mod=NONE, 21:"p" fg=Reset bg=Reset mod=NONE
+15: "                      "
 16: "                      "
-17: "                      "

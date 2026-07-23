@@ -182,7 +182,6 @@ mod tests {
         project: String,
         person_in_charge: Option<String>,
         target_version: Option<String>,
-        resolve_way: Option<String>,
         component: String,
         body_state: BodyWidgetState,
         child_issue: Issue,
@@ -224,7 +223,6 @@ mod tests {
                 project: "Sample Project".to_string(),
                 person_in_charge: Some("alice".to_string()),
                 target_version: Some("2026 Spring".to_string()),
-                resolve_way: Some("Patch".to_string()),
                 component: "Admin UI".to_string(),
                 body_state,
                 child_issue: sample_issue(
@@ -278,7 +276,6 @@ mod tests {
                 65,
                 Some(13),
                 Some(8.5),
-                &self.resolve_way,
                 &self.component,
                 Some(3),
             )

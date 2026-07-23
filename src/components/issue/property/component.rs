@@ -95,7 +95,6 @@ fn create_property_widget<'a>(
         issue.done_ratio,
         issue.estimated_hours,
         issue.total_spent_hours,
-        &issue.resolve_way,
         &issue.component,
         focused_y,
     )
@@ -111,7 +110,7 @@ mod tests {
 
     const ISSUE_ID: u16 = 1;
     const WIDTH: u16 = 40;
-    const PROPERTY_LINE_COUNT: u16 = 16;
+    const PROPERTY_LINE_COUNT: u16 = 15;
     const DONE_RATIO_LINE: u16 = 11;
     const TOTAL_SPENT_HOURS_LINE: u16 = 13;
     const FOCUSABLE_LAST_LINE: u16 = PROPERTY_LINE_COUNT - 1;
@@ -251,7 +250,6 @@ mod tests {
         let store = store_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromBelow);
-        component.process_event(key_event(KeyCode::Char('k')));
         component.process_event(key_event(KeyCode::Char('k')));
 
         let result = component.process_event(key_event(KeyCode::Char('e')));
