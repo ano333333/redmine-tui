@@ -1,7 +1,9 @@
 use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
 
-const LINE_COUNT: u16 = 14;
+const LINE_COUNT: u16 = 16;
+const ISSUE_STATUS_LINE: u16 = 3;
+const TOTAL_SPENT_HOURS_LINE: u16 = 13;
 
 pub enum FocusEvent {
     Unfocused,
@@ -72,8 +74,10 @@ impl FocusState {
         match key.code {
             KeyCode::Char('j') => Some(Action::MoveDown),
             KeyCode::Char('k') => Some(Action::MoveUp),
-            KeyCode::Char('e') if focused_y == 3 => Some(Action::OpenIssueStatusPopup),
-            KeyCode::Char('a') if focused_y == LINE_COUNT - 1 => {
+            KeyCode::Char('e') if focused_y == ISSUE_STATUS_LINE => {
+                Some(Action::OpenIssueStatusPopup)
+            }
+            KeyCode::Char('a') if focused_y == TOTAL_SPENT_HOURS_LINE => {
                 Some(Action::OpenSpentTimeInputPopup)
             }
             _ => None,
@@ -148,7 +152,13 @@ mod tests {
         assert_eq!(state.get_cursor_position(), Position { x: 20, y: 0 });
 
         state.focus_event(FocusEvent::CursorEnteredFromBelow);
-        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 14 - 1 });
+        assert_eq!(
+            state.get_cursor_position(),
+            Position {
+                x: 20,
+                y: LINE_COUNT - 1
+            }
+        );
 
         state.focus_event(FocusEvent::Unfocused);
         assert_eq!(state.get_cursor_position(), Position { x: 20, y: 0 });
@@ -167,7 +177,13 @@ mod tests {
 
         state.process_event(key_event(KeyCode::Char('k')));
 
-        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 14 - 2 });
+        assert_eq!(
+            state.get_cursor_position(),
+            Position {
+                x: 20,
+                y: LINE_COUNT - 2
+            }
+        );
     }
 
     #[test]
@@ -192,8 +208,14 @@ mod tests {
             result,
             Some(EventProcessResult::CursorLeavedFromBelow)
         ));
-        assert_eq!(state.focused_y(), Some(14 - 1));
-        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 14 - 1 });
+        assert_eq!(state.focused_y(), Some(LINE_COUNT - 1));
+        assert_eq!(
+            state.get_cursor_position(),
+            Position {
+                x: 20,
+                y: LINE_COUNT - 1
+            }
+        );
     }
 
     #[test]
@@ -225,9 +247,9 @@ mod tests {
     }
 
     #[test]
-    fn process_event_a_on_last_line_opens_spent_time_popup() {
+    fn process_event_a_on_total_spent_hours_line_opens_spent_time_popup() {
         let mut state = FocusState {
-            focused_y: Some(14 - 1),
+            focused_y: Some(TOTAL_SPENT_HOURS_LINE),
         };
 
         let result = state.process_event(key_event(KeyCode::Char('a')));
@@ -236,6 +258,6 @@ mod tests {
             result,
             Some(EventProcessResult::OpenSpentTimeInputPopup)
         ));
-        assert_eq!(state.focused_y(), Some(14 - 1));
+        assert_eq!(state.focused_y(), Some(TOTAL_SPENT_HOURS_LINE));
     }
 }

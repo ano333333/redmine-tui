@@ -111,7 +111,8 @@ mod tests {
     const ISSUE_ID: u16 = 1;
     const WIDTH: u16 = 40;
     const PROPERTY_LINE_COUNT: u16 = 16;
-    const FOCUSABLE_LAST_LINE: u16 = 13;
+    const TOTAL_SPENT_HOURS_LINE: u16 = 13;
+    const FOCUSABLE_LAST_LINE: u16 = PROPERTY_LINE_COUNT - 1;
 
     fn key_event(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
@@ -212,6 +213,8 @@ mod tests {
         let store = store_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromBelow);
+        component.process_event(key_event(KeyCode::Char('k')));
+        component.process_event(key_event(KeyCode::Char('k')));
 
         let result = component.process_event(key_event(KeyCode::Char('a')));
 
@@ -219,7 +222,11 @@ mod tests {
             result,
             Some(EventProcessResult::OpenSpentTimeInputPopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(20, FOCUSABLE_LAST_LINE));
+        assert_layout_contract(
+            &component,
+            &store,
+            Position::new(20, TOTAL_SPENT_HOURS_LINE),
+        );
         render_snapshot(
             "property_component_process_a_on_spent_time",
             WIDTH,
