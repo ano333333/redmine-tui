@@ -77,7 +77,7 @@ impl FocusState {
             KeyCode::Char('e') if focused_y == ISSUE_STATUS_LINE => {
                 Some(Action::OpenIssueStatusPopup)
             }
-            KeyCode::Char('a') if focused_y == TOTAL_SPENT_HOURS_LINE => {
+            KeyCode::Char('e') if focused_y == TOTAL_SPENT_HOURS_LINE => {
                 Some(Action::OpenSpentTimeInputPopup)
             }
             _ => None,
@@ -247,12 +247,12 @@ mod tests {
     }
 
     #[test]
-    fn process_event_a_on_total_spent_hours_line_opens_spent_time_popup() {
+    fn process_event_e_on_total_spent_hours_line_opens_spent_time_popup() {
         let mut state = FocusState {
             focused_y: Some(TOTAL_SPENT_HOURS_LINE),
         };
 
-        let result = state.process_event(key_event(KeyCode::Char('a')));
+        let result = state.process_event(key_event(KeyCode::Char('e')));
 
         assert!(matches!(
             result,

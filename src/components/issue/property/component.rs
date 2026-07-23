@@ -209,14 +209,14 @@ mod tests {
     }
 
     #[test]
-    fn process_event_a_returns_spent_time_popup_result_without_changing_widget_focus() {
+    fn process_event_e_returns_spent_time_popup_result_without_changing_widget_focus() {
         let store = store_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromBelow);
         component.process_event(key_event(KeyCode::Char('k')));
         component.process_event(key_event(KeyCode::Char('k')));
 
-        let result = component.process_event(key_event(KeyCode::Char('a')));
+        let result = component.process_event(key_event(KeyCode::Char('e')));
 
         assert!(matches!(
             result,
@@ -228,7 +228,7 @@ mod tests {
             Position::new(20, TOTAL_SPENT_HOURS_LINE),
         );
         render_snapshot(
-            "property_component_process_a_on_spent_time",
+            "property_component_process_e_on_spent_time",
             WIDTH,
             component.line_count(&store, WIDTH),
             component.create_widget(&store),

@@ -1,5 +1,6 @@
 ---
 source: src/test_support.rs
+assertion_line: 23
 expression: describe_buffer(terminal.backend().buffer())
 ---
 area=Rect { x: 0, y: 0, width: 40, height: 16 }
