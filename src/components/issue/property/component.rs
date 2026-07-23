@@ -83,6 +83,10 @@ fn create_property_widget<'a>(
         .target_version_id
         .and_then(|target_version_id| store.get_target_version(target_version_id))
         .map(|target_version| target_version.name.as_str());
+    let component = store
+        .get_component(issue.component_id)
+        .map(|component| component.name.as_str())
+        .unwrap_or("(unknown)");
     PropertyWidget::new(
         issue.id.get(),
         author,
@@ -99,7 +103,7 @@ fn create_property_widget<'a>(
         issue.done_ratio,
         issue.estimated_hours,
         issue.total_spent_hours,
-        &issue.component,
+        component,
         focused_y,
     )
 }
@@ -131,6 +135,7 @@ mod tests {
         store.consume_action(Action::LoadProjects);
         store.consume_action(Action::LoadTrackers);
         store.consume_action(Action::LoadTargetVersions);
+        store.consume_action(Action::LoadComponents);
         store.consume_action(Action::LoadIssue { id: ISSUE_ID });
         store
     }

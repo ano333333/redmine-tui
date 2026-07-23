@@ -1,8 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::entities::{
-    Issue, IssueStatus, Journal, Priority, Project, TargetVersion, TimeEntityActivity, Tracker,
-    User,
+    Component, Issue, IssueStatus, Journal, Priority, Project, TargetVersion, TimeEntityActivity,
+    Tracker, User,
 };
 use crate::libs::yaml::{as_u16_array, as_u16_option};
 use crate::libs::{
@@ -13,8 +13,9 @@ use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff, IssueStatusIdDiff,
 };
 use crate::vos::{
-    EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalDetail, JournalDetailAttr,
-    PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    ComponentId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalDetail,
+    JournalDetailAttr, PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId,
+    UserId,
 };
 
 pub struct Dispatcher {
@@ -66,6 +67,7 @@ pub struct Store {
     projects: HashMap<u16, Project>,
     trackers: HashMap<u16, Tracker>,
     target_versions: HashMap<TargetVersionId, TargetVersion>,
+    components: HashMap<ComponentId, Component>,
     time_entity_activities: HashMap<TimeEntityActivityId, TimeEntityActivity>,
 }
 
@@ -81,6 +83,7 @@ impl Store {
             projects: HashMap::new(),
             trackers: HashMap::new(),
             target_versions: HashMap::new(),
+            components: HashMap::new(),
             time_entity_activities: HashMap::new(),
         }
     }
@@ -115,6 +118,11 @@ impl Store {
             Action::LoadTargetVersions => {
                 if self.target_versions.is_empty() {
                     self.target_versions = parse_target_versions_yaml();
+                }
+            }
+            Action::LoadComponents => {
+                if self.components.is_empty() {
+                    self.components = parse_components_yaml();
                 }
             }
             Action::LoadTimeEntityActivities => {
@@ -263,8 +271,20 @@ impl Store {
         self.target_versions.get(&target_version_id)
     }
 
+    pub fn get_components(&self) -> &HashMap<ComponentId, Component> {
+        &self.components
+    }
+
+    pub fn get_component(&self, component_id: ComponentId) -> Option<&Component> {
+        self.components.get(&component_id)
+    }
+
     pub fn get_time_entity_activities(&self) -> &HashMap<TimeEntityActivityId, TimeEntityActivity> {
         &self.time_entity_activities
+    }
+
+    pub fn projects(&self) -> &HashMap<u16, Project> {
+        &self.projects
     }
 }
 
@@ -275,6 +295,7 @@ pub enum Action {
     LoadProjects,
     LoadTrackers,
     LoadTargetVersions,
+    LoadComponents,
     LoadTimeEntityActivities,
     LoadIssue {
         id: u16,
@@ -383,7 +404,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let done_ratio = as_u16(&yaml, "done_ratio");
     let estimated_hours = as_u16_option(&yaml, "estimated_hours");
     let total_spent_hours = as_f64_option(&yaml, "total_spent_hours");
-    let component = as_string(&yaml, "component");
+    let component_id = ComponentId::new(as_u16(&yaml, "component_id"));
     let description = as_string(&yaml, "description");
     let child_ids = as_u16_array(&yaml, "child_ids")
         .into_iter()
@@ -407,7 +428,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
         done_ratio,
         estimated_hours,
         total_spent_hours,
-        component,
+        component_id,
         description,
         child_ids,
         journal_ids,
@@ -513,6 +534,22 @@ fn parse_target_versions_yaml() -> HashMap<TargetVersionId, TargetVersion> {
         .collect()
 }
 
+fn parse_components_yaml() -> HashMap<ComponentId, Component> {
+    let yaml = read_yaml("datas/components.yml");
+    let entries = yaml["components"].as_vec().expect("no components");
+
+    entries
+        .iter()
+        .map(|entry| {
+            let component = Component {
+                id: ComponentId::new(as_u16(entry, "id")),
+                name: as_string(entry, "name"),
+            };
+            (component.id, component)
+        })
+        .collect()
+}
+
 fn parse_time_entity_activities_yaml() -> HashMap<TimeEntityActivityId, TimeEntityActivity> {
     let yaml = read_yaml("datas/time_entity_activities.yml");
     let entries = yaml["time_entity_activities"]
@@ -535,7 +572,7 @@ fn parse_time_entity_activities_yaml() -> HashMap<TimeEntityActivityId, TimeEnti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vos::TargetVersionId;
+    use crate::vos::{ComponentId, TargetVersionId};
 
     #[test]
     fn load_target_versions_populates_store() {
@@ -558,5 +595,28 @@ mod tests {
 
         let (issue, _) = store.get_issue(1).expect("issue should be loaded");
         assert_eq!(issue.target_version_id, Some(TargetVersionId::new(1)));
+    }
+
+    #[test]
+    fn load_components_populates_store() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::LoadComponents);
+
+        let component = store
+            .get_component(ComponentId::new(1))
+            .expect("component should be loaded");
+        assert_eq!(component.name, "component1");
+        assert_eq!(store.get_components().len(), 1);
+    }
+
+    #[test]
+    fn load_issue_reads_component_id_reference() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::LoadIssue { id: 1 });
+
+        let (issue, _) = store.get_issue(1).expect("issue should be loaded");
+        assert_eq!(issue.component_id, ComponentId::new(1));
     }
 }

@@ -276,7 +276,7 @@ mod tests {
                 65,
                 Some(13),
                 Some(8.5),
-                &self.component,
+                self.component.as_str(),
                 Some(3),
             )
         }

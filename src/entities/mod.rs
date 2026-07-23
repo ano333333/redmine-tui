@@ -1,3 +1,4 @@
+pub mod component;
 pub mod issue;
 pub mod issue_status;
 pub mod journal;
@@ -8,6 +9,7 @@ pub mod time_entity_activity;
 pub mod tracker;
 pub mod user;
 
+pub use component::Component;
 pub use issue::Issue;
 pub use issue_status::IssueStatus;
 pub use journal::Journal;

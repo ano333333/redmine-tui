@@ -5,7 +5,9 @@ use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
 use crate::entities::Issue;
-use crate::vos::{IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, UserId};
+use crate::vos::{
+    ComponentId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, UserId,
+};
 
 pub fn local_datetime(input: &str) -> DateTime<Local> {
     DateTime::parse_from_rfc3339(input)
@@ -83,7 +85,7 @@ pub fn sample_issue(
         done_ratio: progress,
         estimated_hours: Some(8),
         total_spent_hours: Some(3.5),
-        component: "UI".to_string(),
+        component_id: ComponentId::new(1),
         description: "body".to_string(),
         child_ids: vec![],
         journal_ids: vec![],

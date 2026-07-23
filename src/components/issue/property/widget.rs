@@ -24,7 +24,7 @@ pub struct PropertyWidget<'a> {
     progress: u16,
     planned_hours: Option<u16>,
     total_spent_hours: Option<f64>,
-    component: &'a String,
+    component: &'a str,
     focused_y: Option<u16>,
 }
 
@@ -57,7 +57,7 @@ impl<'a> PropertyWidget<'a> {
         progress: u16,
         planned_hours: Option<u16>,
         total_spent_hours: Option<f64>,
-        component: &'a String,
+        component: &'a str,
         focused_y: Option<u16>,
     ) -> Self {
         Self {
@@ -194,7 +194,7 @@ mod tests {
                 65,
                 Some(13),
                 Some(8.5),
-                &component,
+                component.as_str(),
                 Some(3),
             ),
         );
@@ -229,7 +229,7 @@ mod tests {
                 0,
                 None,
                 None,
-                &component,
+                component.as_str(),
                 None,
             ),
         );
@@ -260,7 +260,7 @@ mod tests {
             0,
             None,
             None,
-            &component,
+            component.as_str(),
             None,
         );
         assert_eq!(widget.line_count(40), 15);
@@ -292,7 +292,7 @@ mod tests {
             0,
             None,
             None,
-            &component,
+            component.as_str(),
             None,
         );
         assert_eq!(widget.line_count(40), widget.line_count(22));
