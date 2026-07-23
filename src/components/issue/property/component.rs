@@ -96,7 +96,6 @@ fn create_property_widget<'a>(
         issue.total_spent_hours,
         &issue.resolve_way,
         &issue.component,
-        &issue.tags,
         focused_y,
     )
 }
@@ -111,7 +110,7 @@ mod tests {
 
     const ISSUE_ID: u16 = 1;
     const WIDTH: u16 = 40;
-    const PROPERTY_LINE_COUNT: u16 = 17;
+    const PROPERTY_LINE_COUNT: u16 = 16;
     const FOCUSABLE_LAST_LINE: u16 = 13;
 
     fn key_event(code: KeyCode) -> Event {

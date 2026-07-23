@@ -185,7 +185,6 @@ mod tests {
         target_version: Option<String>,
         resolve_way: Option<String>,
         component: String,
-        tags: Vec<String>,
         body_state: BodyWidgetState,
         child_issue: Issue,
         child_status: IssueStatus,
@@ -228,7 +227,6 @@ mod tests {
                 target_version: Some("2026 Spring".to_string()),
                 resolve_way: Some("Patch".to_string()),
                 component: "Admin UI".to_string(),
-                tags: vec!["frontend".to_string(), "triage".to_string()],
                 body_state,
                 child_issue: sample_issue(
                     7,
@@ -283,7 +281,6 @@ mod tests {
                 Some(8.5),
                 &self.resolve_way,
                 &self.component,
-                &self.tags,
                 Some(3),
             )
         }

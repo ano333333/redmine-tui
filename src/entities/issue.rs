@@ -21,7 +21,6 @@ pub struct Issue {
     pub total_spent_hours: Option<f64>,
     pub resolve_way: Option<String>,
     pub component: String,
-    pub tags: Vec<String>,
     pub description: String,
     pub child_ids: Vec<IssueId>,
     pub journal_ids: Vec<u16>,

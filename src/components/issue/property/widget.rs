@@ -26,7 +26,6 @@ pub struct PropertyWidget<'a> {
     total_spent_hours: Option<f64>,
     resolve_way: &'a Option<String>,
     component: &'a String,
-    tags: &'a Vec<String>,
     focused_y: Option<u16>,
 }
 
@@ -61,7 +60,6 @@ impl<'a> PropertyWidget<'a> {
         total_spent_hours: Option<f64>,
         resolve_way: &'a Option<String>,
         component: &'a String,
-        tags: &'a Vec<String>,
         focused_y: Option<u16>,
     ) -> Self {
         Self {
@@ -82,7 +80,6 @@ impl<'a> PropertyWidget<'a> {
             total_spent_hours,
             resolve_way,
             component,
-            tags,
             focused_y,
         }
     }
@@ -155,7 +152,6 @@ impl<'a> PropertyWidget<'a> {
             Line::from(format!("実績工数            {}", total_spent_hours)),
             Line::from(format!("解決方法            {}", resolve_way)),
             Line::from(format!("コンポーネント      {}", self.component)),
-            Line::from(format!("Tags                {}", self.tags.concat())),
         ])
     }
 }
@@ -187,7 +183,6 @@ mod tests {
         let target_version = Some("2026 Spring".to_string());
         let resolve_way = Some("Patch".to_string());
         let component = "Admin UI".to_string();
-        let tags = vec!["frontend".to_string(), "triage".to_string()];
         render_snapshot(
             "property_full_values_wide",
             40,
@@ -210,7 +205,6 @@ mod tests {
                 Some(8.5),
                 &resolve_way,
                 &component,
-                &tags,
                 Some(3),
             ),
         );
@@ -226,11 +220,10 @@ mod tests {
         let target_version = None;
         let resolve_way = None;
         let component = "Operations Integration".to_string();
-        let tags = vec!["frontend".to_string(), "needs-review".to_string()];
         render_snapshot(
             "property_all_optional_none",
             22,
-            19,
+            18,
             PropertyWidget::new(
                 1,
                 "author",
@@ -249,7 +242,6 @@ mod tests {
                 None,
                 &resolve_way,
                 &component,
-                &tags,
                 None,
             ),
         );
@@ -265,7 +257,6 @@ mod tests {
         let target_version = None;
         let resolve_way = None;
         let component = "Operations Integration".to_string();
-        let tags = vec!["frontend".to_string(), "needs-review".to_string()];
         let widget = PropertyWidget::new(
             1,
             "author",
@@ -284,11 +275,10 @@ mod tests {
             None,
             &resolve_way,
             &component,
-            &tags,
             None,
         );
-        assert_eq!(widget.line_count(40), 17);
-        assert_eq!(widget.line_count(22), 17);
+        assert_eq!(widget.line_count(40), 16);
+        assert_eq!(widget.line_count(22), 16);
     }
 
     #[test]
@@ -301,7 +291,6 @@ mod tests {
         let target_version = None;
         let resolve_way = None;
         let component = "Operations Integration".to_string();
-        let tags = vec!["frontend".to_string(), "needs-review".to_string()];
         let widget = PropertyWidget::new(
             1,
             "author",
@@ -320,7 +309,6 @@ mod tests {
             None,
             &resolve_way,
             &component,
-            &tags,
             None,
         );
         assert_eq!(widget.line_count(40), widget.line_count(22));

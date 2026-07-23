@@ -12,7 +12,6 @@ start_date: 2026/02/16
 due_date: 2026/02/17
 done_ratio: 0
 component: component1
-tags:
 child_ids:
   - 1
   - 2

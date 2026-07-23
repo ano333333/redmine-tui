@@ -84,7 +84,6 @@ pub fn sample_issue(
         total_spent_hours: Some(3.5),
         resolve_way: Some("Fixed".to_string()),
         component: "UI".to_string(),
-        tags: vec!["frontend".to_string(), "urgent".to_string()],
         description: "body".to_string(),
         child_ids: vec![],
         journal_ids: vec![],

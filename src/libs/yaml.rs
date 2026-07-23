@@ -57,16 +57,6 @@ pub fn as_local_datetime_option(yaml: &Yaml, key: &str) -> Option<DateTime<Local
     })
 }
 
-pub fn as_string_array(yaml: &Yaml, key: &str) -> Vec<String> {
-    let mut res = Vec::<String>::new();
-    if let Some(v) = yaml[key].as_vec() {
-        for s in v {
-            res.push(s.as_str().unwrap().to_string());
-        }
-    }
-    res
-}
-
 pub fn as_u16_array(yaml: &Yaml, key: &str) -> Vec<u16> {
     let mut res = Vec::<u16>::new();
     if let Some(v) = yaml[key].as_vec() {
