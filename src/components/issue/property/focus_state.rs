@@ -3,6 +3,7 @@ use ratatui::layout::Position;
 
 const LINE_COUNT: u16 = 16;
 const ISSUE_STATUS_LINE: u16 = 3;
+const ASSIGNED_TO_LINE: u16 = 7;
 const TOTAL_SPENT_HOURS_LINE: u16 = 13;
 
 pub enum FocusEvent {
@@ -15,6 +16,7 @@ pub enum EventProcessResult {
     CursorLeavedFromAbove,
     CursorLeavedFromBelow,
     OpenIssueStatusPopup,
+    OpenAssignedToPopup,
     OpenSpentTimeInputPopup,
 }
 
@@ -22,6 +24,7 @@ enum Action {
     MoveDown,
     MoveUp,
     OpenIssueStatusPopup,
+    OpenAssignedToPopup,
     OpenSpentTimeInputPopup,
 }
 
@@ -77,6 +80,9 @@ impl FocusState {
             KeyCode::Char('e') if focused_y == ISSUE_STATUS_LINE => {
                 Some(Action::OpenIssueStatusPopup)
             }
+            KeyCode::Char('e') if focused_y == ASSIGNED_TO_LINE => {
+                Some(Action::OpenAssignedToPopup)
+            }
             KeyCode::Char('e') if focused_y == TOTAL_SPENT_HOURS_LINE => {
                 Some(Action::OpenSpentTimeInputPopup)
             }
@@ -103,6 +109,7 @@ impl FocusState {
                 None
             }
             Action::OpenIssueStatusPopup => Some(EventProcessResult::OpenIssueStatusPopup),
+            Action::OpenAssignedToPopup => Some(EventProcessResult::OpenAssignedToPopup),
             Action::OpenSpentTimeInputPopup => Some(EventProcessResult::OpenSpentTimeInputPopup),
         }
     }
@@ -244,6 +251,21 @@ mod tests {
             Some(EventProcessResult::OpenIssueStatusPopup)
         ));
         assert_eq!(state.focused_y(), Some(3));
+    }
+
+    #[test]
+    fn process_event_e_on_assigned_to_line_opens_popup() {
+        let mut state = FocusState {
+            focused_y: Some(ASSIGNED_TO_LINE),
+        };
+
+        let result = state.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenAssignedToPopup)
+        ));
+        assert_eq!(state.focused_y(), Some(ASSIGNED_TO_LINE));
     }
 
     #[test]

@@ -209,6 +209,24 @@ mod tests {
     }
 
     #[test]
+    fn process_event_e_returns_assigned_to_popup_result_without_changing_widget_focus() {
+        let store = store_with_property_issue();
+        let mut component = PropertyComponent::new(ISSUE_ID);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+        for _ in 0..7 {
+            component.process_event(key_event(KeyCode::Char('j')));
+        }
+
+        let result = component.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenAssignedToPopup)
+        ));
+        assert_layout_contract(&component, &store, Position::new(20, 7));
+    }
+
+    #[test]
     fn process_event_e_returns_spent_time_popup_result_without_changing_widget_focus() {
         let store = store_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);

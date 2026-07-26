@@ -10,7 +10,7 @@ use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
 };
-use crate::entities::{EntityIdValue, IssueStatusId, TimeEntityActivityId};
+use crate::entities::{EntityIdValue, IssueStatusId, TimeEntityActivityId, UserId};
 
 use super::select_box_popup::{
     EventProcessResult as SelectBoxPopupEventProcessResult, SelectBoxPopupComponent,
@@ -129,6 +129,42 @@ impl<'a> AppComponent<'a> {
                                         status_id: IssueStatusId::new(status_id),
                                     });
                                 }
+                            }),
+                        )),
+                    )));
+                }
+                Some(IssueEventProcessResult::OpenAssignedToPopup) => {
+                    let dispatcher_ref = dispatcher.borrow();
+                    let store = dispatcher_ref.store();
+                    let current_assigned_to_id = store
+                        .get_issue(self.issue_component.id)
+                        .and_then(|(issue, _)| issue.assigned_to_id);
+                    let mut users = store
+                        .get_users()
+                        .iter()
+                        .map(|(id, user)| (id.get(), user.name.clone()))
+                        .collect::<Vec<_>>();
+                    users.sort_by_key(|(id, _)| *id);
+                    let focused_index = current_assigned_to_id
+                        .and_then(|current_id| {
+                            users.iter().position(|(id, _)| *id == current_id.get())
+                        })
+                        .unwrap_or(0);
+                    drop(dispatcher_ref);
+
+                    let issue_id = self.issue_component.id;
+                    self.popup_components.push_back(Rc::new(RefCell::new(
+                        PopupComponent::SelectBox(SelectBoxPopupComponent::new(
+                            &users,
+                            focused_index,
+                            true,
+                            Box::new(move |assigned_to_id| {
+                                dispatcher
+                                    .borrow_mut()
+                                    .dispatch(Action::UpdateIssueAssignedTo {
+                                        id: issue_id,
+                                        assigned_to_id: assigned_to_id.map(UserId::new),
+                                    });
                             }),
                         )),
                     )));
