@@ -33,7 +33,7 @@ impl HeaderComponent {
                 self.id,
                 &issue.subject,
                 self.focus_state.is_focused(),
-                *issue_status == IssueState::Synced,
+                issue_status == IssueState::Synced,
             );
             widget.line_count(width) as u16
         } else {
@@ -47,7 +47,7 @@ impl HeaderComponent {
             self.id,
             &issue.subject,
             self.focus_state.is_focused(),
-            *issue_status == IssueState::Synced,
+            issue_status == IssueState::Synced,
         )
     }
 

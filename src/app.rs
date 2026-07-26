@@ -8,9 +8,12 @@ use crate::libs::{
     as_bool, as_f64_option, as_local_datetime, as_local_datetime_option, as_string,
     as_string_option, as_u16, read_yaml,
 };
+use crate::vos::issue_property_diff::{
+    IssueAssignedToIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff, IssueStatusIdDiff,
+};
 use crate::vos::{
-    EntityIdValue, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, PriorityId, ProjectId,
-    TimeEntityActivityId, TrackerId, UserId,
+    EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalDetail, JournalDetailAttr,
+    PriorityId, ProjectId, TimeEntityActivityId, TrackerId, UserId,
 };
 
 pub struct Dispatcher {
@@ -41,7 +44,7 @@ impl Dispatcher {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum IssueState {
     Synced,
     Updated,
@@ -53,7 +56,8 @@ pub enum JournalState {
 }
 
 pub struct Store {
-    issues: HashMap<u16, (Issue, IssueState)>,
+    issues: HashMap<u16, Issue>,
+    issue_property_diffs: HashMap<u16, Vec<IssuePropertyDiff>>,
     journals: HashMap<u16, (Journal, JournalState)>,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<u16, IssueStatus>,
@@ -67,6 +71,7 @@ impl Store {
     pub fn new() -> Self {
         Self {
             issues: HashMap::new(),
+            issue_property_diffs: HashMap::new(),
             journals: HashMap::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
@@ -110,31 +115,55 @@ impl Store {
                 }
             }
             Action::LoadIssue { id } => {
-                self.issues
-                    .entry(id)
-                    .or_insert((parse_issue_yaml(id), IssueState::Synced));
+                self.issues.entry(id).or_insert(parse_issue_yaml(id));
+                self.issue_property_diffs.entry(id).or_default();
             }
             Action::UpdateIssue { id, body } => {
-                if let Some((issue, state)) = self.issues.get_mut(&id) {
-                    issue.description = body;
-                    *state = IssueState::Updated;
+                if let Some(issue) = self.issues.get_mut(&id) {
+                    let before = issue.description.clone();
+                    issue.description = body.clone();
+                    self.issue_property_diffs.entry(id).or_default().push(
+                        IssuePropertyDiff::Description(IssueDescriptionDiff {
+                            before,
+                            after: body,
+                        }),
+                    );
                 }
             }
             Action::UpdateIssueStatus { id, status_id } => {
-                if let Some((issue, _state)) = self.issues.get_mut(&id) {
-                    issue.status_id = status_id
+                if let Some(issue) = self.issues.get_mut(&id) {
+                    let before = issue.status_id;
+                    issue.status_id = status_id;
+                    self.issue_property_diffs.entry(id).or_default().push(
+                        IssuePropertyDiff::StatusId(IssueStatusIdDiff {
+                            before,
+                            after: status_id,
+                        }),
+                    );
                 }
             }
             Action::UpdateIssueAssignedTo { id, assigned_to_id } => {
-                if let Some((issue, state)) = self.issues.get_mut(&id) {
+                if let Some(issue) = self.issues.get_mut(&id) {
+                    let before = issue.assigned_to_id;
                     issue.assigned_to_id = assigned_to_id;
-                    *state = IssueState::Updated;
+                    self.issue_property_diffs.entry(id).or_default().push(
+                        IssuePropertyDiff::AssignedToId(IssueAssignedToIdDiff {
+                            before,
+                            after: assigned_to_id,
+                        }),
+                    );
                 }
             }
             Action::UpdateIssueDoneRatio { id, done_ratio } => {
-                if let Some((issue, state)) = self.issues.get_mut(&id) {
+                if let Some(issue) = self.issues.get_mut(&id) {
+                    let before = issue.done_ratio;
                     issue.done_ratio = done_ratio;
-                    *state = IssueState::Updated;
+                    self.issue_property_diffs.entry(id).or_default().push(
+                        IssuePropertyDiff::DoneRatio(IssueDoneRatioDiff {
+                            before,
+                            after: done_ratio,
+                        }),
+                    );
                 }
             }
             Action::LoadJournal { id } => {
@@ -151,8 +180,25 @@ impl Store {
         }
     }
 
-    pub fn get_issue(&self, issue_id: u16) -> Option<&(Issue, IssueState)> {
-        self.issues.get(&issue_id)
+    pub fn get_issue(&self, issue_id: u16) -> Option<(&Issue, IssueState)> {
+        self.issues
+            .get(&issue_id)
+            .map(|issue| (issue, self.get_issue_state(issue_id)))
+    }
+
+    pub fn get_issue_property_diffs(&self, issue_id: u16) -> &[IssuePropertyDiff] {
+        self.issue_property_diffs
+            .get(&issue_id)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    fn get_issue_state(&self, issue_id: u16) -> IssueState {
+        if self.get_issue_property_diffs(issue_id).is_empty() {
+            IssueState::Synced
+        } else {
+            IssueState::Updated
+        }
     }
 
     pub fn get_journal(&self, journal_id: u16) -> Option<&(Journal, JournalState)> {
