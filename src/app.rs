@@ -123,6 +123,11 @@ impl Store {
                     issue.status_id = status_id
                 }
             }
+            Action::UpdateIssueAssignedTo { id, assigned_to_id } => {
+                if let Some((issue, _state)) = self.issues.get_mut(&id) {
+                    issue.assigned_to_id = assigned_to_id
+                }
+            }
             Action::LoadJournal { id } => {
                 self.journals
                     .entry(id)
@@ -199,11 +204,28 @@ pub enum Action {
     LoadProjects,
     LoadTrackers,
     LoadTimeEntityActivities,
-    LoadIssue { id: u16 },
-    UpdateIssue { id: u16, body: String },
-    UpdateIssueStatus { id: u16, status_id: IssueStatusId },
-    LoadJournal { id: u16 },
-    UpdateJournal { id: u16, notes: String },
+    LoadIssue {
+        id: u16,
+    },
+    UpdateIssue {
+        id: u16,
+        body: String,
+    },
+    UpdateIssueStatus {
+        id: u16,
+        status_id: IssueStatusId,
+    },
+    UpdateIssueAssignedTo {
+        id: u16,
+        assigned_to_id: Option<UserId>,
+    },
+    LoadJournal {
+        id: u16,
+    },
+    UpdateJournal {
+        id: u16,
+        notes: String,
+    },
 }
 
 fn parse_journal_yaml(id: u16) -> Journal {
