@@ -124,8 +124,9 @@ impl Store {
                 }
             }
             Action::UpdateIssueAssignedTo { id, assigned_to_id } => {
-                if let Some((issue, _state)) = self.issues.get_mut(&id) {
-                    issue.assigned_to_id = assigned_to_id
+                if let Some((issue, state)) = self.issues.get_mut(&id) {
+                    issue.assigned_to_id = assigned_to_id;
+                    *state = IssueState::Updated;
                 }
             }
             Action::LoadJournal { id } => {
