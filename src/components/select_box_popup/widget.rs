@@ -7,12 +7,12 @@ use ratatui::widgets::{Block, Borders, Clear, Widget};
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 
 pub struct SelectBoxPopupWidget<'a> {
-    pub items: &'a [(u16, String)],
+    pub items: &'a [(Option<u16>, String)],
     pub focused_index: usize,
 }
 
 impl<'a> SelectBoxPopupWidget<'a> {
-    pub fn new(items: &'a [(u16, String)], focused_index: usize) -> Self {
+    pub fn new(items: &'a [(Option<u16>, String)], focused_index: usize) -> Self {
         Self {
             items,
             focused_index,
@@ -81,10 +81,13 @@ mod tests {
     #[test]
     fn snapshot_select_box_popup_renders_focus_and_clips_without_wrap() {
         let items = vec![
-            (1, "New".to_string()),
-            (2, "In Progress".to_string()),
-            (3, "Waiting for external review with long label".to_string()),
-            (4, "Closed".to_string()),
+            (Some(1), "New".to_string()),
+            (Some(2), "In Progress".to_string()),
+            (
+                Some(3),
+                "Waiting for external review with long label".to_string(),
+            ),
+            (Some(4), "Closed".to_string()),
         ];
 
         render_snapshot(
@@ -98,9 +101,9 @@ mod tests {
     #[test]
     fn line_count_includes_borders() {
         let items = vec![
-            (1, "A".to_string()),
-            (2, "B".to_string()),
-            (3, "C".to_string()),
+            (Some(1), "A".to_string()),
+            (Some(2), "B".to_string()),
+            (Some(3), "C".to_string()),
         ];
         let widget = SelectBoxPopupWidget::new(&items, 0);
         assert_eq!(widget.line_count(10), 5);

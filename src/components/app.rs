@@ -121,11 +121,14 @@ impl<'a> AppComponent<'a> {
                         PopupComponent::SelectBox(SelectBoxPopupComponent::new(
                             &issue_statuses,
                             0,
+                            false,
                             Box::new(move |status_id| {
-                                dispatcher.borrow_mut().dispatch(Action::UpdateIssueStatus {
-                                    id: issue_id,
-                                    status_id: IssueStatusId::new(status_id),
-                                });
+                                if let Some(status_id) = status_id {
+                                    dispatcher.borrow_mut().dispatch(Action::UpdateIssueStatus {
+                                        id: issue_id,
+                                        status_id: IssueStatusId::new(status_id),
+                                    });
+                                }
                             }),
                         )),
                     )));
@@ -225,8 +228,11 @@ impl<'a> AppComponent<'a> {
             SelectBoxPopupComponent::new(
                 &act_names,
                 focused_index,
+                false,
                 Box::new(move |act_id| {
-                    if let Some(popup_component) = popup_component_weak.upgrade() {
+                    if let (Some(act_id), Some(popup_component)) =
+                        (act_id, popup_component_weak.upgrade())
+                    {
                         let popup_component = &mut *popup_component.borrow_mut();
                         if let PopupComponent::SpentTimeInput(popup_component) = popup_component {
                             popup_component.on_time_entity_activity_selected(
