@@ -166,10 +166,9 @@ mod tests {
     use crate::components::issue::journals_list::journals_list_item::{
         JournalItemWidget, JournalItemWidgetState,
     };
-    use crate::entities::{
-        Issue, IssueStatus, Journal, JournalDetail, JournalDetailAttr, JournalId,
-    };
+    use crate::entities::{Issue, IssueStatus, Journal};
     use crate::test_support::{local_datetime, render_snapshot, sample_issue};
+    use crate::vos::{JournalDetail, JournalDetailAttr, JournalId};
 
     const WIDTH: u16 = 40;
     const HEIGHT: u16 = 10;

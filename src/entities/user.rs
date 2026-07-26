@@ -1,4 +1,4 @@
-use super::UserId;
+use crate::vos::UserId;
 
 pub struct User {
     pub id: UserId,

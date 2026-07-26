@@ -6,6 +6,7 @@ mod libs;
 mod logging;
 #[cfg(test)]
 mod test_support;
+mod vos;
 mod widgets;
 
 use crossterm::event::{self};

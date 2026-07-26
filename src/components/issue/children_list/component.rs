@@ -2,7 +2,7 @@ use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::app::Store;
-use crate::entities::EntityIdValue;
+use crate::vos::EntityIdValue;
 
 use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
 use super::widget::{ChildIssueRow, ChildrenListWidget};

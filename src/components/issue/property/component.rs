@@ -4,7 +4,8 @@ use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::app::Store;
-use crate::entities::{EntityIdValue, Issue, IssueStatus};
+use crate::entities::{Issue, IssueStatus};
+use crate::vos::EntityIdValue;
 
 pub struct PropertyComponent {
     id: u16,

@@ -9,7 +9,8 @@ use ratatui::style::Color;
 use ratatui::text::Text;
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
-use crate::entities::{Journal, JournalDetail, JournalDetailAttr};
+use crate::entities::Journal;
+use crate::vos::{JournalDetail, JournalDetailAttr};
 
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
@@ -213,8 +214,9 @@ mod tests {
 
     use super::*;
     use crate::{
-        entities::{Journal, JournalDetail, JournalDetailAttr, JournalId},
+        entities::Journal,
         test_support::{local_datetime, render_snapshot},
+        vos::{JournalDetail, JournalDetailAttr, JournalId},
     };
 
     fn create_journal(

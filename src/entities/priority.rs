@@ -1,4 +1,4 @@
-use super::PriorityId;
+use crate::vos::PriorityId;
 
 pub struct Priority {
     pub id: PriorityId,

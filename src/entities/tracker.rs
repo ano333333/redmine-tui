@@ -1,4 +1,4 @@
-use super::TrackerId;
+use crate::vos::TrackerId;
 
 pub struct Tracker {
     pub id: TrackerId,

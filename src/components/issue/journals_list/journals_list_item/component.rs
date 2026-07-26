@@ -1,7 +1,8 @@
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::entities::{EntityIdValue, Journal};
+use crate::entities::Journal;
+use crate::vos::EntityIdValue;
 
 use super::focus_state::FocusState;
 pub use super::focus_state::{EventProcessResult, FocusEvent};
@@ -66,8 +67,9 @@ mod tests {
 
     use super::*;
     use crate::{
-        entities::{JournalDetail, JournalDetailAttr, JournalId},
+        entities::Journal,
         test_support::{local_datetime, render_snapshot},
+        vos::{JournalDetail, JournalDetailAttr, JournalId},
     };
 
     const WIDE_WIDTH: u16 = 32;

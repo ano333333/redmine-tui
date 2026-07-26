@@ -5,7 +5,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
-use crate::entities::{EntityIdValue, Issue, IssueStatus};
+use crate::entities::{Issue, IssueStatus};
+use crate::vos::EntityIdValue;
 
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);

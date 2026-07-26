@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local};
 
-use super::{IssueId, IssueStatusId, PriorityId, ProjectId, TrackerId, UserId};
+use crate::vos::{IssueId, IssueStatusId, PriorityId, ProjectId, TrackerId, UserId};
 
 pub struct Issue {
     pub id: IssueId,

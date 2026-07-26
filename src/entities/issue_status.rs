@@ -1,4 +1,4 @@
-use super::IssueStatusId;
+use crate::vos::IssueStatusId;
 
 pub struct IssueStatus {
     pub id: IssueStatusId,

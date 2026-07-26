@@ -1,14 +1,16 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::entities::{
-    EntityIdValue, Issue, IssueId, IssueStatus, IssueStatusId, Journal, JournalDetail,
-    JournalDetailAttr, Priority, PriorityId, Project, ProjectId, TimeEntityActivity,
-    TimeEntityActivityId, Tracker, TrackerId, User, UserId,
+    Issue, IssueStatus, Journal, Priority, Project, TimeEntityActivity, Tracker, User,
 };
 use crate::libs::yaml::{as_u16_array, as_u16_option};
 use crate::libs::{
     as_bool, as_f64_option, as_local_datetime, as_local_datetime_option, as_string,
     as_string_option, as_u16, read_yaml,
+};
+use crate::vos::{
+    EntityIdValue, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, PriorityId, ProjectId,
+    TimeEntityActivityId, TrackerId, UserId,
 };
 
 pub struct Dispatcher {

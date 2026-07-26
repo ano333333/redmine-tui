@@ -48,8 +48,9 @@ mod tests {
     use super::*;
     use crate::components::issue::journals_list::journals_list_item::JournalItemWidgetState;
     use crate::{
-        entities::{Journal, JournalDetail, JournalDetailAttr, JournalId},
+        entities::Journal,
         test_support::{local_datetime, render_snapshot},
+        vos::{JournalDetail, JournalDetailAttr, JournalId},
     };
 
     fn create_journal(

@@ -10,7 +10,7 @@ use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
 };
-use crate::entities::{EntityIdValue, IssueStatusId, TimeEntityActivityId, UserId};
+use crate::vos::{EntityIdValue, IssueStatusId, TimeEntityActivityId, UserId};
 
 use super::select_box_popup::{
     EventProcessResult as SelectBoxPopupEventProcessResult, SelectBoxPopupComponent,

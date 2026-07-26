@@ -1,4 +1,4 @@
-use super::ProjectId;
+use crate::vos::ProjectId;
 
 pub struct Project {
     pub id: ProjectId,

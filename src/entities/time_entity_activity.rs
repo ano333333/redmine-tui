@@ -1,4 +1,4 @@
-use super::TimeEntityActivityId;
+use crate::vos::TimeEntityActivityId;
 
 pub struct TimeEntityActivity {
     pub id: TimeEntityActivityId,

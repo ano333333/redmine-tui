@@ -4,7 +4,8 @@ use chrono::{DateTime, Local};
 use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
-use crate::entities::{Issue, IssueId, IssueStatusId, PriorityId, ProjectId, UserId};
+use crate::entities::Issue;
+use crate::vos::{IssueId, IssueStatusId, PriorityId, ProjectId, UserId};
 
 pub fn local_datetime(input: &str) -> DateTime<Local> {
     DateTime::parse_from_rfc3339(input)

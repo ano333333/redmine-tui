@@ -1,7 +1,7 @@
 use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
 
-use crate::entities::IssueId;
+use crate::vos::IssueId;
 
 pub enum FocusEvent {
     Unfocused,
