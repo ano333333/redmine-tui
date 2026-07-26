@@ -169,6 +169,41 @@ impl<'a> AppComponent<'a> {
                         )),
                     )));
                 }
+                Some(IssueEventProcessResult::OpenDoneRatioPopup) => {
+                    let current_done_ratio = dispatcher
+                        .borrow()
+                        .store()
+                        .get_issue(self.issue_component.id)
+                        .map(|(issue, _)| issue.done_ratio)
+                        .unwrap_or(0);
+                    let done_ratios = (0..=100)
+                        .step_by(10)
+                        .map(|ratio| (ratio, ratio.to_string()))
+                        .collect::<Vec<_>>();
+                    let focused_index = done_ratios
+                        .iter()
+                        .position(|(ratio, _)| *ratio == current_done_ratio)
+                        .unwrap_or(0);
+
+                    let issue_id = self.issue_component.id;
+                    self.popup_components.push_back(Rc::new(RefCell::new(
+                        PopupComponent::SelectBox(SelectBoxPopupComponent::new(
+                            &done_ratios,
+                            focused_index,
+                            false,
+                            Box::new(move |done_ratio| {
+                                if let Some(done_ratio) = done_ratio {
+                                    dispatcher.borrow_mut().dispatch(
+                                        Action::UpdateIssueDoneRatio {
+                                            id: issue_id,
+                                            done_ratio,
+                                        },
+                                    );
+                                }
+                            }),
+                        )),
+                    )));
+                }
                 Some(IssueEventProcessResult::OpenSpentTimeInputPopup) => {
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::SpentTimeInput(SpentTimeInputPopupComponent::new(

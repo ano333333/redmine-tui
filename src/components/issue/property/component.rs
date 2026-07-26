@@ -111,6 +111,7 @@ mod tests {
     const ISSUE_ID: u16 = 1;
     const WIDTH: u16 = 40;
     const PROPERTY_LINE_COUNT: u16 = 16;
+    const DONE_RATIO_LINE: u16 = 11;
     const TOTAL_SPENT_HOURS_LINE: u16 = 13;
     const FOCUSABLE_LAST_LINE: u16 = PROPERTY_LINE_COUNT - 1;
 
@@ -224,6 +225,24 @@ mod tests {
             Some(EventProcessResult::OpenAssignedToPopup)
         ));
         assert_layout_contract(&component, &store, Position::new(20, 7));
+    }
+
+    #[test]
+    fn process_event_e_returns_done_ratio_popup_result_without_changing_widget_focus() {
+        let store = store_with_property_issue();
+        let mut component = PropertyComponent::new(ISSUE_ID);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+        for _ in 0..DONE_RATIO_LINE {
+            component.process_event(key_event(KeyCode::Char('j')));
+        }
+
+        let result = component.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenDoneRatioPopup)
+        ));
+        assert_layout_contract(&component, &store, Position::new(20, DONE_RATIO_LINE));
     }
 
     #[test]

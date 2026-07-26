@@ -129,6 +129,12 @@ impl Store {
                     *state = IssueState::Updated;
                 }
             }
+            Action::UpdateIssueDoneRatio { id, done_ratio } => {
+                if let Some((issue, state)) = self.issues.get_mut(&id) {
+                    issue.done_ratio = done_ratio;
+                    *state = IssueState::Updated;
+                }
+            }
             Action::LoadJournal { id } => {
                 self.journals
                     .entry(id)
@@ -219,6 +225,10 @@ pub enum Action {
     UpdateIssueAssignedTo {
         id: u16,
         assigned_to_id: Option<UserId>,
+    },
+    UpdateIssueDoneRatio {
+        id: u16,
+        done_ratio: u16,
     },
     LoadJournal {
         id: u16,

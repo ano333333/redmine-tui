@@ -31,6 +31,7 @@ pub enum EventProcessResult {
     EditIssueBodyRequested { id: u16, body: String },
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
+    OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
 }
 
@@ -124,6 +125,9 @@ impl IssueDetailComponent {
                     }
                     Some(PropertyEventProcessResult::OpenAssignedToPopup) => {
                         return Some(EventProcessResult::OpenAssignedToPopup);
+                    }
+                    Some(PropertyEventProcessResult::OpenDoneRatioPopup) => {
+                        return Some(EventProcessResult::OpenDoneRatioPopup);
                     }
                     Some(PropertyEventProcessResult::OpenSpentTimeInputPopup) => {
                         return Some(EventProcessResult::OpenSpentTimeInputPopup);

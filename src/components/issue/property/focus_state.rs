@@ -4,6 +4,7 @@ use ratatui::layout::Position;
 const LINE_COUNT: u16 = 16;
 const ISSUE_STATUS_LINE: u16 = 3;
 const ASSIGNED_TO_LINE: u16 = 7;
+const DONE_RATIO_LINE: u16 = 11;
 const TOTAL_SPENT_HOURS_LINE: u16 = 13;
 
 pub enum FocusEvent {
@@ -17,6 +18,7 @@ pub enum EventProcessResult {
     CursorLeavedFromBelow,
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
+    OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
 }
 
@@ -25,6 +27,7 @@ enum Action {
     MoveUp,
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
+    OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
 }
 
@@ -83,6 +86,7 @@ impl FocusState {
             KeyCode::Char('e') if focused_y == ASSIGNED_TO_LINE => {
                 Some(Action::OpenAssignedToPopup)
             }
+            KeyCode::Char('e') if focused_y == DONE_RATIO_LINE => Some(Action::OpenDoneRatioPopup),
             KeyCode::Char('e') if focused_y == TOTAL_SPENT_HOURS_LINE => {
                 Some(Action::OpenSpentTimeInputPopup)
             }
@@ -110,6 +114,7 @@ impl FocusState {
             }
             Action::OpenIssueStatusPopup => Some(EventProcessResult::OpenIssueStatusPopup),
             Action::OpenAssignedToPopup => Some(EventProcessResult::OpenAssignedToPopup),
+            Action::OpenDoneRatioPopup => Some(EventProcessResult::OpenDoneRatioPopup),
             Action::OpenSpentTimeInputPopup => Some(EventProcessResult::OpenSpentTimeInputPopup),
         }
     }
@@ -266,6 +271,21 @@ mod tests {
             Some(EventProcessResult::OpenAssignedToPopup)
         ));
         assert_eq!(state.focused_y(), Some(ASSIGNED_TO_LINE));
+    }
+
+    #[test]
+    fn process_event_e_on_done_ratio_line_opens_popup() {
+        let mut state = FocusState {
+            focused_y: Some(DONE_RATIO_LINE),
+        };
+
+        let result = state.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenDoneRatioPopup)
+        ));
+        assert_eq!(state.focused_y(), Some(DONE_RATIO_LINE));
     }
 
     #[test]
