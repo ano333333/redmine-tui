@@ -4,6 +4,7 @@ use ratatui::layout::Position;
 const LINE_COUNT: u16 = 15;
 const ISSUE_STATUS_LINE: u16 = 3;
 const ASSIGNED_TO_LINE: u16 = 7;
+const TARGET_VERSION_LINE: u16 = 8;
 const DONE_RATIO_LINE: u16 = 11;
 const TOTAL_SPENT_HOURS_LINE: u16 = 13;
 
@@ -18,6 +19,7 @@ pub enum EventProcessResult {
     CursorLeavedFromBelow,
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
+    OpenTargetVersionPopup,
     OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
 }
@@ -27,6 +29,7 @@ enum Action {
     MoveUp,
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
+    OpenTargetVersionPopup,
     OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
 }
@@ -86,6 +89,9 @@ impl FocusState {
             KeyCode::Char('e') if focused_y == ASSIGNED_TO_LINE => {
                 Some(Action::OpenAssignedToPopup)
             }
+            KeyCode::Char('e') if focused_y == TARGET_VERSION_LINE => {
+                Some(Action::OpenTargetVersionPopup)
+            }
             KeyCode::Char('e') if focused_y == DONE_RATIO_LINE => Some(Action::OpenDoneRatioPopup),
             KeyCode::Char('e') if focused_y == TOTAL_SPENT_HOURS_LINE => {
                 Some(Action::OpenSpentTimeInputPopup)
@@ -114,6 +120,7 @@ impl FocusState {
             }
             Action::OpenIssueStatusPopup => Some(EventProcessResult::OpenIssueStatusPopup),
             Action::OpenAssignedToPopup => Some(EventProcessResult::OpenAssignedToPopup),
+            Action::OpenTargetVersionPopup => Some(EventProcessResult::OpenTargetVersionPopup),
             Action::OpenDoneRatioPopup => Some(EventProcessResult::OpenDoneRatioPopup),
             Action::OpenSpentTimeInputPopup => Some(EventProcessResult::OpenSpentTimeInputPopup),
         }
@@ -271,6 +278,21 @@ mod tests {
             Some(EventProcessResult::OpenAssignedToPopup)
         ));
         assert_eq!(state.focused_y(), Some(ASSIGNED_TO_LINE));
+    }
+
+    #[test]
+    fn process_event_e_on_target_version_line_opens_popup() {
+        let mut state = FocusState {
+            focused_y: Some(TARGET_VERSION_LINE),
+        };
+
+        let result = state.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenTargetVersionPopup)
+        ));
+        assert_eq!(state.focused_y(), Some(TARGET_VERSION_LINE));
     }
 
     #[test]

@@ -10,7 +10,7 @@ use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
 };
-use crate::vos::{EntityIdValue, IssueStatusId, TimeEntityActivityId, UserId};
+use crate::vos::{EntityIdValue, IssueStatusId, TargetVersionId, TimeEntityActivityId, UserId};
 
 use super::select_box_popup::{
     EventProcessResult as SelectBoxPopupEventProcessResult, SelectBoxPopupComponent,
@@ -165,6 +165,45 @@ impl<'a> AppComponent<'a> {
                                         id: issue_id,
                                         assigned_to_id: assigned_to_id.map(UserId::new),
                                     });
+                            }),
+                        )),
+                    )));
+                }
+                Some(IssueEventProcessResult::OpenTargetVersionPopup) => {
+                    let dispatcher_ref = dispatcher.borrow();
+                    let store = dispatcher_ref.store();
+                    let current_target_version_id = store
+                        .get_issue(self.issue_component.id)
+                        .and_then(|(issue, _)| issue.target_version_id);
+                    let mut target_versions = store
+                        .get_target_versions()
+                        .iter()
+                        .map(|(id, target_version)| (id.get(), target_version.name.clone()))
+                        .collect::<Vec<_>>();
+                    target_versions.sort_by_key(|(id, _)| *id);
+                    let focused_index = current_target_version_id
+                        .and_then(|current_id| {
+                            target_versions
+                                .iter()
+                                .position(|(id, _)| *id == current_id.get())
+                        })
+                        .unwrap_or(0);
+                    drop(dispatcher_ref);
+
+                    let issue_id = self.issue_component.id;
+                    self.popup_components.push_back(Rc::new(RefCell::new(
+                        PopupComponent::SelectBox(SelectBoxPopupComponent::new(
+                            &target_versions,
+                            focused_index,
+                            true,
+                            Box::new(move |target_version_id| {
+                                dispatcher.borrow_mut().dispatch(
+                                    Action::UpdateIssueTargetVersion {
+                                        id: issue_id,
+                                        target_version_id: target_version_id
+                                            .map(TargetVersionId::new),
+                                    },
+                                );
                             }),
                         )),
                     )));
