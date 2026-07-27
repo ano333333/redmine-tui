@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local};
 
 use crate::vos::{
-    ComponentId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
+    CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -107,9 +107,9 @@ pub struct IssueResolveWayDiff {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct IssueComponentDiff {
-    pub before: Option<ComponentId>,
-    pub after: Option<ComponentId>,
+pub struct IssueCategoryIdDiff {
+    pub before: Option<CategoryId>,
+    pub after: Option<CategoryId>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -149,7 +149,7 @@ pub enum IssuePropertyDiff {
     EstimatedHours(IssueEstimatedHoursDiff),
     TotalSpentHours(IssueTotalSpentHoursDiff),
     ResolveWay(IssueResolveWayDiff),
-    Component(IssueComponentDiff),
+    CategoryId(IssueCategoryIdDiff),
     Description(IssueDescriptionDiff),
     ChildIds(IssueChildIdsDiff),
     JournalIds(IssueJournalIdsDiff),

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::entities::{
-    Component, Issue, IssueStatus, Journal, Priority, Project, TargetVersion, TimeEntityActivity,
+    Category, Issue, IssueStatus, Journal, Priority, Project, TargetVersion, TimeEntityActivity,
     Tracker, User,
 };
 use crate::libs::yaml::{as_u16_array, as_u16_option};
@@ -10,11 +10,11 @@ use crate::libs::{
     as_string_option, as_u16, read_yaml,
 };
 use crate::vos::issue_property_diff::{
-    IssueAssignedToIdDiff, IssueComponentDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
+    IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
     IssueStatusIdDiff, IssueTargetVersionIdDiff,
 };
 use crate::vos::{
-    ComponentId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalDetail,
+    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalDetail,
     JournalDetailAttr, PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId,
     UserId,
 };
@@ -68,7 +68,7 @@ pub struct Store {
     projects: HashMap<u16, Project>,
     trackers: HashMap<u16, Tracker>,
     target_versions: HashMap<TargetVersionId, TargetVersion>,
-    components: HashMap<ComponentId, Component>,
+    categories: HashMap<CategoryId, Category>,
     time_entity_activities: HashMap<TimeEntityActivityId, TimeEntityActivity>,
 }
 
@@ -84,7 +84,7 @@ impl Store {
             projects: HashMap::new(),
             trackers: HashMap::new(),
             target_versions: HashMap::new(),
-            components: HashMap::new(),
+            categories: HashMap::new(),
             time_entity_activities: HashMap::new(),
         }
     }
@@ -121,9 +121,9 @@ impl Store {
                     self.target_versions = parse_target_versions_yaml();
                 }
             }
-            Action::LoadComponents => {
-                if self.components.is_empty() {
-                    self.components = parse_components_yaml();
+            Action::LoadCategories => {
+                if self.categories.is_empty() {
+                    self.categories = parse_categories_yaml();
                 }
             }
             Action::LoadTimeEntityActivities => {
@@ -186,14 +186,14 @@ impl Store {
                     );
                 }
             }
-            Action::UpdateIssueComponent { id, component_id } => {
+            Action::UpdateIssueCategory { id, category_id } => {
                 if let Some(issue) = self.issues.get_mut(&id) {
-                    let before = issue.component_id;
-                    issue.component_id = component_id;
+                    let before = issue.category_id;
+                    issue.category_id = category_id;
                     self.issue_property_diffs.entry(id).or_default().push(
-                        IssuePropertyDiff::Component(IssueComponentDiff {
+                        IssuePropertyDiff::CategoryId(IssueCategoryIdDiff {
                             before,
-                            after: component_id,
+                            after: category_id,
                         }),
                     );
                 }
@@ -299,12 +299,12 @@ impl Store {
         self.target_versions.get(&target_version_id)
     }
 
-    pub fn get_components(&self) -> &HashMap<ComponentId, Component> {
-        &self.components
+    pub fn get_categories(&self) -> &HashMap<CategoryId, Category> {
+        &self.categories
     }
 
-    pub fn get_component(&self, component_id: ComponentId) -> Option<&Component> {
-        self.components.get(&component_id)
+    pub fn get_category(&self, category_id: CategoryId) -> Option<&Category> {
+        self.categories.get(&category_id)
     }
 
     pub fn get_time_entity_activities(&self) -> &HashMap<TimeEntityActivityId, TimeEntityActivity> {
@@ -323,7 +323,7 @@ pub enum Action {
     LoadProjects,
     LoadTrackers,
     LoadTargetVersions,
-    LoadComponents,
+    LoadCategories,
     LoadTimeEntityActivities,
     LoadIssue {
         id: u16,
@@ -344,9 +344,9 @@ pub enum Action {
         id: u16,
         target_version_id: Option<TargetVersionId>,
     },
-    UpdateIssueComponent {
+    UpdateIssueCategory {
         id: u16,
-        component_id: Option<ComponentId>,
+        category_id: Option<CategoryId>,
     },
     UpdateIssueDoneRatio {
         id: u16,
@@ -440,7 +440,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let done_ratio = as_u16(&yaml, "done_ratio");
     let estimated_hours = as_u16_option(&yaml, "estimated_hours");
     let total_spent_hours = as_f64_option(&yaml, "total_spent_hours");
-    let component_id = as_u16_option(&yaml, "component_id").map(ComponentId::new);
+    let category_id = as_u16_option(&yaml, "category_id").map(CategoryId::new);
     let description = as_string(&yaml, "description");
     let child_ids = as_u16_array(&yaml, "child_ids")
         .into_iter()
@@ -464,7 +464,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
         done_ratio,
         estimated_hours,
         total_spent_hours,
-        component_id,
+        category_id,
         description,
         child_ids,
         journal_ids,
@@ -570,18 +570,18 @@ fn parse_target_versions_yaml() -> HashMap<TargetVersionId, TargetVersion> {
         .collect()
 }
 
-fn parse_components_yaml() -> HashMap<ComponentId, Component> {
-    let yaml = read_yaml("datas/components.yml");
-    let entries = yaml["components"].as_vec().expect("no components");
+fn parse_categories_yaml() -> HashMap<CategoryId, Category> {
+    let yaml = read_yaml("datas/categories.yml");
+    let entries = yaml["categories"].as_vec().expect("no categories");
 
     entries
         .iter()
         .map(|entry| {
-            let component = Component {
-                id: ComponentId::new(as_u16(entry, "id")),
+            let category = Category {
+                id: CategoryId::new(as_u16(entry, "id")),
                 name: as_string(entry, "name"),
             };
-            (component.id, component)
+            (category.id, category)
         })
         .collect()
 }
@@ -608,7 +608,7 @@ fn parse_time_entity_activities_yaml() -> HashMap<TimeEntityActivityId, TimeEnti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vos::{ComponentId, TargetVersionId};
+    use crate::vos::{CategoryId, TargetVersionId};
 
     #[test]
     fn load_target_versions_populates_store() {
@@ -664,55 +664,55 @@ mod tests {
     }
 
     #[test]
-    fn load_components_populates_store() {
+    fn load_categories_populates_store() {
         let mut store = Store::new();
 
-        store.consume_action(Action::LoadComponents);
+        store.consume_action(Action::LoadCategories);
 
-        let component = store
-            .get_component(ComponentId::new(1))
-            .expect("component should be loaded");
-        assert_eq!(component.name, "component1");
-        assert_eq!(store.get_components().len(), 1);
+        let category = store
+            .get_category(CategoryId::new(1))
+            .expect("category should be loaded");
+        assert_eq!(category.name, "category1");
+        assert_eq!(store.get_categories().len(), 1);
     }
 
     #[test]
-    fn load_issue_reads_component_id_reference() {
+    fn load_issue_reads_category_id_reference() {
         let mut store = Store::new();
 
         store.consume_action(Action::LoadIssue { id: 1 });
 
         let (issue, _) = store.get_issue(1).expect("issue should be loaded");
-        assert_eq!(issue.component_id, Some(ComponentId::new(1)));
+        assert_eq!(issue.category_id, Some(CategoryId::new(1)));
     }
 
     #[test]
-    fn update_issue_component_sets_selected_component() {
+    fn update_issue_category_sets_selected_category() {
         let mut store = Store::new();
         store.consume_action(Action::LoadIssue { id: 1 });
 
-        store.consume_action(Action::UpdateIssueComponent {
+        store.consume_action(Action::UpdateIssueCategory {
             id: 1,
-            component_id: Some(ComponentId::new(2)),
+            category_id: Some(CategoryId::new(2)),
         });
 
         let (issue, state) = store.get_issue(1).expect("issue should be loaded");
-        assert_eq!(issue.component_id, Some(ComponentId::new(2)));
+        assert_eq!(issue.category_id, Some(CategoryId::new(2)));
         assert_eq!(state, IssueState::Updated);
     }
 
     #[test]
-    fn update_issue_component_can_clear_component() {
+    fn update_issue_category_can_clear_category() {
         let mut store = Store::new();
         store.consume_action(Action::LoadIssue { id: 1 });
 
-        store.consume_action(Action::UpdateIssueComponent {
+        store.consume_action(Action::UpdateIssueCategory {
             id: 1,
-            component_id: None,
+            category_id: None,
         });
 
         let (issue, state) = store.get_issue(1).expect("issue should be loaded");
-        assert_eq!(issue.component_id, None);
+        assert_eq!(issue.category_id, None);
         assert_eq!(state, IssueState::Updated);
     }
 }

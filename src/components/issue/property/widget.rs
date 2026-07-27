@@ -24,7 +24,7 @@ pub struct PropertyWidget<'a> {
     progress: u16,
     planned_hours: Option<u16>,
     total_spent_hours: Option<f64>,
-    component: &'a str,
+    category: &'a str,
     focused_y: Option<u16>,
 }
 
@@ -57,7 +57,7 @@ impl<'a> PropertyWidget<'a> {
         progress: u16,
         planned_hours: Option<u16>,
         total_spent_hours: Option<f64>,
-        component: &'a str,
+        category: &'a str,
         focused_y: Option<u16>,
     ) -> Self {
         Self {
@@ -76,7 +76,7 @@ impl<'a> PropertyWidget<'a> {
             progress,
             planned_hours,
             total_spent_hours,
-            component,
+            category,
             focused_y,
         }
     }
@@ -143,7 +143,7 @@ impl<'a> PropertyWidget<'a> {
             ]),
             Line::from(format!("予定工数            {}", planned_hours)),
             Line::from(format!("実績工数            {}", total_spent_hours)),
-            Line::from(format!("コンポーネント      {}", self.component)),
+            Line::from(format!("カテゴリー          {}", self.category)),
         ])
     }
 }
@@ -173,7 +173,7 @@ mod tests {
         let project = "Sample Project".to_string();
         let person_in_charge = Some("alice".to_string());
         let target_version = Some("2026 Spring".to_string());
-        let component = "Admin UI".to_string();
+        let category = "Admin UI".to_string();
         render_snapshot(
             "property_full_values_wide",
             40,
@@ -194,7 +194,7 @@ mod tests {
                 65,
                 Some(13),
                 Some(8.5),
-                component.as_str(),
+                category.as_str(),
                 Some(3),
             ),
         );
@@ -208,7 +208,7 @@ mod tests {
         let project = "Sample Project".to_string();
         let person_in_charge = None;
         let target_version: Option<String> = None;
-        let component = "Operations Integration".to_string();
+        let category = "Operations Integration".to_string();
         render_snapshot(
             "property_all_optional_none",
             22,
@@ -229,7 +229,7 @@ mod tests {
                 0,
                 None,
                 None,
-                component.as_str(),
+                category.as_str(),
                 None,
             ),
         );
@@ -243,7 +243,7 @@ mod tests {
         let project = "Sample Project".to_string();
         let person_in_charge = None;
         let target_version: Option<String> = None;
-        let component = "Operations Integration".to_string();
+        let category = "Operations Integration".to_string();
         let widget = PropertyWidget::new(
             1,
             "author",
@@ -260,7 +260,7 @@ mod tests {
             0,
             None,
             None,
-            component.as_str(),
+            category.as_str(),
             None,
         );
         assert_eq!(widget.line_count(40), 15);
@@ -275,7 +275,7 @@ mod tests {
         let project = "Sample Project".to_string();
         let person_in_charge = None;
         let target_version: Option<String> = None;
-        let component = "Operations Integration".to_string();
+        let category = "Operations Integration".to_string();
         let widget = PropertyWidget::new(
             1,
             "author",
@@ -292,7 +292,7 @@ mod tests {
             0,
             None,
             None,
-            component.as_str(),
+            category.as_str(),
             None,
         );
         assert_eq!(widget.line_count(40), widget.line_count(22));

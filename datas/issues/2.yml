@@ -11,6 +11,6 @@ assigned_to_id: 1
 start_date: 2025/12/09
 due_date: 2025/12/19
 done_ratio: 100
-component_id: 1
+category_id: 1
 child_ids:
 description: ""

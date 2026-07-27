@@ -83,10 +83,10 @@ fn create_property_widget<'a>(
         .target_version_id
         .and_then(|target_version_id| store.get_target_version(target_version_id))
         .map(|target_version| target_version.name.as_str());
-    let component = match issue.component_id {
-        Some(component_id) => store
-            .get_component(component_id)
-            .map(|component| component.name.as_str())
+    let category = match issue.category_id {
+        Some(category_id) => store
+            .get_category(category_id)
+            .map(|category| category.name.as_str())
             .unwrap_or("(unknown)"),
         None => "-",
     };
@@ -106,7 +106,7 @@ fn create_property_widget<'a>(
         issue.done_ratio,
         issue.estimated_hours,
         issue.total_spent_hours,
-        component,
+        category,
         focused_y,
     )
 }
@@ -125,7 +125,7 @@ mod tests {
     const TARGET_VERSION_LINE: u16 = 8;
     const DONE_RATIO_LINE: u16 = 11;
     const TOTAL_SPENT_HOURS_LINE: u16 = 13;
-    const COMPONENT_LINE: u16 = 14;
+    const CATEGORY_LINE: u16 = 14;
     const FOCUSABLE_LAST_LINE: u16 = PROPERTY_LINE_COUNT - 1;
 
     fn key_event(code: KeyCode) -> Event {
@@ -140,7 +140,7 @@ mod tests {
         store.consume_action(Action::LoadProjects);
         store.consume_action(Action::LoadTrackers);
         store.consume_action(Action::LoadTargetVersions);
-        store.consume_action(Action::LoadComponents);
+        store.consume_action(Action::LoadCategories);
         store.consume_action(Action::LoadIssue { id: ISSUE_ID });
         store
     }
@@ -305,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_e_returns_component_popup_result_without_changing_widget_focus() {
+    fn process_event_e_returns_category_popup_result_without_changing_widget_focus() {
         let store = store_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromBelow);
@@ -314,8 +314,8 @@ mod tests {
 
         assert!(matches!(
             result,
-            Some(EventProcessResult::OpenComponentPopup)
+            Some(EventProcessResult::OpenCategoryPopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(20, COMPONENT_LINE));
+        assert_layout_contract(&component, &store, Position::new(20, CATEGORY_LINE));
     }
 }

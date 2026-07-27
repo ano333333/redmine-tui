@@ -6,7 +6,7 @@ use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
 use crate::entities::Issue;
 use crate::vos::{
-    ComponentId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, UserId,
+    CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, UserId,
 };
 
 pub fn local_datetime(input: &str) -> DateTime<Local> {
@@ -85,7 +85,7 @@ pub fn sample_issue(
         done_ratio: progress,
         estimated_hours: Some(8),
         total_spent_hours: Some(3.5),
-        component_id: Some(ComponentId::new(1)),
+        category_id: Some(CategoryId::new(1)),
         description: "body".to_string(),
         child_ids: vec![],
         journal_ids: vec![],

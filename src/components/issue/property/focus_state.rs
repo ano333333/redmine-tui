@@ -7,7 +7,7 @@ const ASSIGNED_TO_LINE: u16 = 7;
 const TARGET_VERSION_LINE: u16 = 8;
 const DONE_RATIO_LINE: u16 = 11;
 const TOTAL_SPENT_HOURS_LINE: u16 = 13;
-const COMPONENT_LINE: u16 = 14;
+const CATEGORY_LINE: u16 = 14;
 
 pub enum FocusEvent {
     Unfocused,
@@ -23,7 +23,7 @@ pub enum EventProcessResult {
     OpenTargetVersionPopup,
     OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
-    OpenComponentPopup,
+    OpenCategoryPopup,
 }
 
 enum Action {
@@ -34,7 +34,7 @@ enum Action {
     OpenTargetVersionPopup,
     OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
-    OpenComponentPopup,
+    OpenCategoryPopup,
 }
 
 pub struct FocusState {
@@ -99,7 +99,7 @@ impl FocusState {
             KeyCode::Char('e') if focused_y == TOTAL_SPENT_HOURS_LINE => {
                 Some(Action::OpenSpentTimeInputPopup)
             }
-            KeyCode::Char('e') if focused_y == COMPONENT_LINE => Some(Action::OpenComponentPopup),
+            KeyCode::Char('e') if focused_y == CATEGORY_LINE => Some(Action::OpenCategoryPopup),
             _ => None,
         }
     }
@@ -127,7 +127,7 @@ impl FocusState {
             Action::OpenTargetVersionPopup => Some(EventProcessResult::OpenTargetVersionPopup),
             Action::OpenDoneRatioPopup => Some(EventProcessResult::OpenDoneRatioPopup),
             Action::OpenSpentTimeInputPopup => Some(EventProcessResult::OpenSpentTimeInputPopup),
-            Action::OpenComponentPopup => Some(EventProcessResult::OpenComponentPopup),
+            Action::OpenCategoryPopup => Some(EventProcessResult::OpenCategoryPopup),
         }
     }
 }
@@ -331,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_e_on_component_line_opens_popup() {
+    fn process_event_e_on_category_line_opens_popup() {
         let mut state = FocusState {
             focused_y: Some(LINE_COUNT - 1),
         };
@@ -340,8 +340,8 @@ mod tests {
 
         assert!(matches!(
             result,
-            Some(EventProcessResult::OpenComponentPopup)
+            Some(EventProcessResult::OpenCategoryPopup)
         ));
-        assert_eq!(state.focused_y(), Some(COMPONENT_LINE));
+        assert_eq!(state.focused_y(), Some(CATEGORY_LINE));
     }
 }

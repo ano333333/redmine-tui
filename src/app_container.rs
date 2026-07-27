@@ -46,7 +46,7 @@ impl<'a> AppContainer<'a> {
             d.dispatch(Action::LoadProjects);
             d.dispatch(Action::LoadTrackers);
             d.dispatch(Action::LoadTargetVersions);
-            d.dispatch(Action::LoadComponents);
+            d.dispatch(Action::LoadCategories);
             d.dispatch(Action::LoadTimeEntityActivities);
             d.dispatch(Action::LoadIssue { id: 1 });
             d.dispatch(Action::LoadIssue { id: 2 });

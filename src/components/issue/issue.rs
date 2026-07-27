@@ -34,7 +34,7 @@ pub enum EventProcessResult {
     OpenTargetVersionPopup,
     OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
-    OpenComponentPopup,
+    OpenCategoryPopup,
 }
 
 #[derive(PartialEq)]
@@ -137,8 +137,8 @@ impl IssueDetailComponent {
                     Some(PropertyEventProcessResult::OpenSpentTimeInputPopup) => {
                         return Some(EventProcessResult::OpenSpentTimeInputPopup);
                     }
-                    Some(PropertyEventProcessResult::OpenComponentPopup) => {
-                        return Some(EventProcessResult::OpenComponentPopup);
+                    Some(PropertyEventProcessResult::OpenCategoryPopup) => {
+                        return Some(EventProcessResult::OpenCategoryPopup);
                     }
                     None => {}
                 }

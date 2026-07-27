@@ -11,7 +11,7 @@ use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
 };
 use crate::vos::{
-    ComponentId, EntityIdValue, IssueStatusId, TargetVersionId, TimeEntityActivityId, UserId,
+    CategoryId, EntityIdValue, IssueStatusId, TargetVersionId, TimeEntityActivityId, UserId,
 };
 
 use super::select_box_popup::{
@@ -245,21 +245,21 @@ impl<'a> AppComponent<'a> {
                         )),
                     )));
                 }
-                Some(IssueEventProcessResult::OpenComponentPopup) => {
+                Some(IssueEventProcessResult::OpenCategoryPopup) => {
                     let dispatcher_ref = dispatcher.borrow();
                     let store = dispatcher_ref.store();
-                    let current_component_id = store
+                    let current_category_id = store
                         .get_issue(self.issue_component.id)
-                        .and_then(|(issue, _)| issue.component_id);
-                    let mut components = store
-                        .get_components()
+                        .and_then(|(issue, _)| issue.category_id);
+                    let mut categories = store
+                        .get_categories()
                         .iter()
-                        .map(|(id, component)| (id.get(), component.name.clone()))
+                        .map(|(id, category)| (id.get(), category.name.clone()))
                         .collect::<Vec<_>>();
-                    components.sort_by_key(|(id, _)| *id);
-                    let focused_index = current_component_id
+                    categories.sort_by_key(|(id, _)| *id);
+                    let focused_index = current_category_id
                         .and_then(|current_id| {
-                            components
+                            categories
                                 .iter()
                                 .position(|(id, _)| *id == current_id.get())
                         })
@@ -269,15 +269,15 @@ impl<'a> AppComponent<'a> {
                     let issue_id = self.issue_component.id;
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::SelectBox(SelectBoxPopupComponent::new(
-                            &components,
+                            &categories,
                             focused_index,
                             true,
-                            Box::new(move |component_id| {
+                            Box::new(move |category_id| {
                                 dispatcher
                                     .borrow_mut()
-                                    .dispatch(Action::UpdateIssueComponent {
+                                    .dispatch(Action::UpdateIssueCategory {
                                         id: issue_id,
-                                        component_id: component_id.map(ComponentId::new),
+                                        category_id: category_id.map(CategoryId::new),
                                     });
                             }),
                         )),
@@ -393,5 +393,70 @@ impl<'a> AppComponent<'a> {
                 }),
             ),
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key_event(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn loaded_dispatcher() -> Rc<RefCell<Dispatcher>> {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        {
+            let mut dispatcher_ref = dispatcher.borrow_mut();
+            dispatcher_ref.dispatch(Action::LoadUsers);
+            dispatcher_ref.dispatch(Action::LoadIssueStatuses);
+            dispatcher_ref.dispatch(Action::LoadPriorities);
+            dispatcher_ref.dispatch(Action::LoadProjects);
+            dispatcher_ref.dispatch(Action::LoadTrackers);
+            dispatcher_ref.dispatch(Action::LoadTargetVersions);
+            dispatcher_ref.dispatch(Action::LoadCategories);
+            dispatcher_ref.dispatch(Action::LoadIssue { id: 3 });
+            while dispatcher_ref.consume_actinos_len() > 0 {
+                dispatcher_ref.consume_action();
+            }
+        }
+        dispatcher
+    }
+
+    #[test]
+    fn category_popup_includes_none_and_can_clear_issue_category() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone());
+        app.update(dispatcher.clone(), dispatcher.borrow().store());
+
+        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        for _ in 0..14 {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        }
+        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
+
+        let popup = app.popup_components.back().expect("popup should be open");
+        match &*popup.borrow() {
+            PopupComponent::SelectBox(select_box) => {
+                let widget = select_box.create_widget();
+                assert_eq!(widget.items[0], (None, "選択なし(None)".to_string()));
+                assert_eq!(widget.focused_index, 1);
+            }
+            PopupComponent::SpentTimeInput(_) => panic!("category popup should be a select box"),
+        }
+
+        app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+        dispatcher.borrow_mut().consume_action();
+
+        let issue_category_id = dispatcher
+            .borrow()
+            .store()
+            .get_issue(3)
+            .map(|(issue, _)| issue.category_id);
+        assert_eq!(issue_category_id, Some(None));
+        assert!(app.popup_components.is_empty());
     }
 }
