@@ -1,6 +1,8 @@
 use chrono::{DateTime, Local};
 
-use crate::vos::{IssueId, IssueStatusId, PriorityId, ProjectId, TrackerId, UserId};
+use crate::vos::{
+    IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct IssueSubjectDiff {
@@ -60,6 +62,12 @@ pub struct IssueAssignedToIdDiff {
 pub struct IssueFixedVersionDiff {
     pub before: Option<String>,
     pub after: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct IssueTargetVersionIdDiff {
+    pub before: Option<TargetVersionId>,
+    pub after: Option<TargetVersionId>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -133,6 +141,7 @@ pub enum IssuePropertyDiff {
     StatusId(IssueStatusIdDiff),
     PriorityId(IssuePriorityIdDiff),
     AssignedToId(IssueAssignedToIdDiff),
+    TargetVersionId(IssueTargetVersionIdDiff),
     FixedVersion(IssueFixedVersionDiff),
     StartDate(IssueStartDateDiff),
     DueDate(IssueDueDateDiff),

@@ -11,6 +11,7 @@ use crate::libs::{
 };
 use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff, IssueStatusIdDiff,
+    IssueTargetVersionIdDiff,
 };
 use crate::vos::{
     ComponentId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalDetail,
@@ -46,7 +47,7 @@ impl Dispatcher {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IssueState {
     Synced,
     Updated,
@@ -166,6 +167,21 @@ impl Store {
                         IssuePropertyDiff::AssignedToId(IssueAssignedToIdDiff {
                             before,
                             after: assigned_to_id,
+                        }),
+                    );
+                }
+            }
+            Action::UpdateIssueTargetVersion {
+                id,
+                target_version_id,
+            } => {
+                if let Some(issue) = self.issues.get_mut(&id) {
+                    let before = issue.target_version_id;
+                    issue.target_version_id = target_version_id;
+                    self.issue_property_diffs.entry(id).or_default().push(
+                        IssuePropertyDiff::TargetVersionId(IssueTargetVersionIdDiff {
+                            before,
+                            after: target_version_id,
                         }),
                     );
                 }
@@ -311,6 +327,10 @@ pub enum Action {
     UpdateIssueAssignedTo {
         id: u16,
         assigned_to_id: Option<UserId>,
+    },
+    UpdateIssueTargetVersion {
+        id: u16,
+        target_version_id: Option<TargetVersionId>,
     },
     UpdateIssueDoneRatio {
         id: u16,
@@ -595,6 +615,36 @@ mod tests {
 
         let (issue, _) = store.get_issue(1).expect("issue should be loaded");
         assert_eq!(issue.target_version_id, Some(TargetVersionId::new(1)));
+    }
+
+    #[test]
+    fn update_issue_target_version_sets_selected_version() {
+        let mut store = Store::new();
+        store.consume_action(Action::LoadIssue { id: 2 });
+
+        store.consume_action(Action::UpdateIssueTargetVersion {
+            id: 2,
+            target_version_id: Some(TargetVersionId::new(1)),
+        });
+
+        let (issue, state) = store.get_issue(2).expect("issue should be loaded");
+        assert_eq!(issue.target_version_id, Some(TargetVersionId::new(1)));
+        assert_eq!(state, IssueState::Updated);
+    }
+
+    #[test]
+    fn update_issue_target_version_can_clear_version() {
+        let mut store = Store::new();
+        store.consume_action(Action::LoadIssue { id: 1 });
+
+        store.consume_action(Action::UpdateIssueTargetVersion {
+            id: 1,
+            target_version_id: None,
+        });
+
+        let (issue, state) = store.get_issue(1).expect("issue should be loaded");
+        assert_eq!(issue.target_version_id, None);
+        assert_eq!(state, IssueState::Updated);
     }
 
     #[test]
