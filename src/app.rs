@@ -10,8 +10,8 @@ use crate::libs::{
     as_string_option, as_u16, read_yaml,
 };
 use crate::vos::issue_property_diff::{
-    IssueAssignedToIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff, IssueStatusIdDiff,
-    IssueTargetVersionIdDiff,
+    IssueAssignedToIdDiff, IssueComponentDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
+    IssueStatusIdDiff, IssueTargetVersionIdDiff,
 };
 use crate::vos::{
     ComponentId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalDetail,
@@ -186,6 +186,18 @@ impl Store {
                     );
                 }
             }
+            Action::UpdateIssueComponent { id, component_id } => {
+                if let Some(issue) = self.issues.get_mut(&id) {
+                    let before = issue.component_id;
+                    issue.component_id = component_id;
+                    self.issue_property_diffs.entry(id).or_default().push(
+                        IssuePropertyDiff::Component(IssueComponentDiff {
+                            before,
+                            after: component_id,
+                        }),
+                    );
+                }
+            }
             Action::UpdateIssueDoneRatio { id, done_ratio } => {
                 if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.done_ratio;
@@ -332,6 +344,10 @@ pub enum Action {
         id: u16,
         target_version_id: Option<TargetVersionId>,
     },
+    UpdateIssueComponent {
+        id: u16,
+        component_id: Option<ComponentId>,
+    },
     UpdateIssueDoneRatio {
         id: u16,
         done_ratio: u16,
@@ -424,7 +440,7 @@ fn parse_issue_yaml(id: u16) -> Issue {
     let done_ratio = as_u16(&yaml, "done_ratio");
     let estimated_hours = as_u16_option(&yaml, "estimated_hours");
     let total_spent_hours = as_f64_option(&yaml, "total_spent_hours");
-    let component_id = ComponentId::new(as_u16(&yaml, "component_id"));
+    let component_id = as_u16_option(&yaml, "component_id").map(ComponentId::new);
     let description = as_string(&yaml, "description");
     let child_ids = as_u16_array(&yaml, "child_ids")
         .into_iter()
@@ -667,6 +683,36 @@ mod tests {
         store.consume_action(Action::LoadIssue { id: 1 });
 
         let (issue, _) = store.get_issue(1).expect("issue should be loaded");
-        assert_eq!(issue.component_id, ComponentId::new(1));
+        assert_eq!(issue.component_id, Some(ComponentId::new(1)));
+    }
+
+    #[test]
+    fn update_issue_component_sets_selected_component() {
+        let mut store = Store::new();
+        store.consume_action(Action::LoadIssue { id: 1 });
+
+        store.consume_action(Action::UpdateIssueComponent {
+            id: 1,
+            component_id: Some(ComponentId::new(2)),
+        });
+
+        let (issue, state) = store.get_issue(1).expect("issue should be loaded");
+        assert_eq!(issue.component_id, Some(ComponentId::new(2)));
+        assert_eq!(state, IssueState::Updated);
+    }
+
+    #[test]
+    fn update_issue_component_can_clear_component() {
+        let mut store = Store::new();
+        store.consume_action(Action::LoadIssue { id: 1 });
+
+        store.consume_action(Action::UpdateIssueComponent {
+            id: 1,
+            component_id: None,
+        });
+
+        let (issue, state) = store.get_issue(1).expect("issue should be loaded");
+        assert_eq!(issue.component_id, None);
+        assert_eq!(state, IssueState::Updated);
     }
 }

@@ -85,7 +85,7 @@ pub fn sample_issue(
         done_ratio: progress,
         estimated_hours: Some(8),
         total_spent_hours: Some(3.5),
-        component_id: ComponentId::new(1),
+        component_id: Some(ComponentId::new(1)),
         description: "body".to_string(),
         child_ids: vec![],
         journal_ids: vec![],

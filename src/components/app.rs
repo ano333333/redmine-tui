@@ -10,7 +10,9 @@ use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
 };
-use crate::vos::{EntityIdValue, IssueStatusId, TargetVersionId, TimeEntityActivityId, UserId};
+use crate::vos::{
+    ComponentId, EntityIdValue, IssueStatusId, TargetVersionId, TimeEntityActivityId, UserId,
+};
 
 use super::select_box_popup::{
     EventProcessResult as SelectBoxPopupEventProcessResult, SelectBoxPopupComponent,
@@ -239,6 +241,44 @@ impl<'a> AppComponent<'a> {
                                         },
                                     );
                                 }
+                            }),
+                        )),
+                    )));
+                }
+                Some(IssueEventProcessResult::OpenComponentPopup) => {
+                    let dispatcher_ref = dispatcher.borrow();
+                    let store = dispatcher_ref.store();
+                    let current_component_id = store
+                        .get_issue(self.issue_component.id)
+                        .and_then(|(issue, _)| issue.component_id);
+                    let mut components = store
+                        .get_components()
+                        .iter()
+                        .map(|(id, component)| (id.get(), component.name.clone()))
+                        .collect::<Vec<_>>();
+                    components.sort_by_key(|(id, _)| *id);
+                    let focused_index = current_component_id
+                        .and_then(|current_id| {
+                            components
+                                .iter()
+                                .position(|(id, _)| *id == current_id.get())
+                        })
+                        .unwrap_or(0);
+                    drop(dispatcher_ref);
+
+                    let issue_id = self.issue_component.id;
+                    self.popup_components.push_back(Rc::new(RefCell::new(
+                        PopupComponent::SelectBox(SelectBoxPopupComponent::new(
+                            &components,
+                            focused_index,
+                            true,
+                            Box::new(move |component_id| {
+                                dispatcher
+                                    .borrow_mut()
+                                    .dispatch(Action::UpdateIssueComponent {
+                                        id: issue_id,
+                                        component_id: component_id.map(ComponentId::new),
+                                    });
                             }),
                         )),
                     )));

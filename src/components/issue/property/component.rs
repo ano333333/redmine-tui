@@ -83,10 +83,13 @@ fn create_property_widget<'a>(
         .target_version_id
         .and_then(|target_version_id| store.get_target_version(target_version_id))
         .map(|target_version| target_version.name.as_str());
-    let component = store
-        .get_component(issue.component_id)
-        .map(|component| component.name.as_str())
-        .unwrap_or("(unknown)");
+    let component = match issue.component_id {
+        Some(component_id) => store
+            .get_component(component_id)
+            .map(|component| component.name.as_str())
+            .unwrap_or("(unknown)"),
+        None => "-",
+    };
     PropertyWidget::new(
         issue.id.get(),
         author,
@@ -122,6 +125,7 @@ mod tests {
     const TARGET_VERSION_LINE: u16 = 8;
     const DONE_RATIO_LINE: u16 = 11;
     const TOTAL_SPENT_HOURS_LINE: u16 = 13;
+    const COMPONENT_LINE: u16 = 14;
     const FOCUSABLE_LAST_LINE: u16 = PROPERTY_LINE_COUNT - 1;
 
     fn key_event(code: KeyCode) -> Event {
@@ -298,5 +302,20 @@ mod tests {
             component.line_count(&store, WIDTH),
             component.create_widget(&store),
         );
+    }
+
+    #[test]
+    fn process_event_e_returns_component_popup_result_without_changing_widget_focus() {
+        let store = store_with_property_issue();
+        let mut component = PropertyComponent::new(ISSUE_ID);
+        component.focus_event(FocusEvent::CursorEnteredFromBelow);
+
+        let result = component.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenComponentPopup)
+        ));
+        assert_layout_contract(&component, &store, Position::new(20, COMPONENT_LINE));
     }
 }
