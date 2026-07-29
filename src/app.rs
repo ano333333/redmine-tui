@@ -11,7 +11,7 @@ use crate::libs::{
 };
 use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
-    IssueStatusIdDiff, IssueTargetVersionIdDiff,
+    IssueDueDateDiff, IssueStartDateDiff, IssueStatusIdDiff, IssueTargetVersionIdDiff,
 };
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalDetail,
@@ -210,6 +210,30 @@ impl Store {
                     );
                 }
             }
+            Action::UpdateIssueStartDate { id, start_date } => {
+                if let Some(issue) = self.issues.get_mut(&id) {
+                    let before = issue.start_date;
+                    issue.start_date = start_date;
+                    self.issue_property_diffs.entry(id).or_default().push(
+                        IssuePropertyDiff::StartDate(IssueStartDateDiff {
+                            before,
+                            after: start_date,
+                        }),
+                    );
+                }
+            }
+            Action::UpdateIssueDueDate { id, due_date } => {
+                if let Some(issue) = self.issues.get_mut(&id) {
+                    let before = issue.due_date;
+                    issue.due_date = due_date;
+                    self.issue_property_diffs.entry(id).or_default().push(
+                        IssuePropertyDiff::DueDate(IssueDueDateDiff {
+                            before,
+                            after: due_date,
+                        }),
+                    );
+                }
+            }
             Action::LoadJournal { id } => {
                 self.journals
                     .entry(id)
@@ -351,6 +375,14 @@ pub enum Action {
     UpdateIssueDoneRatio {
         id: u16,
         done_ratio: u16,
+    },
+    UpdateIssueStartDate {
+        id: u16,
+        start_date: Option<chrono::DateTime<chrono::Local>>,
+    },
+    UpdateIssueDueDate {
+        id: u16,
+        due_date: Option<chrono::DateTime<chrono::Local>>,
     },
     LoadJournal {
         id: u16,
@@ -608,6 +640,9 @@ fn parse_time_entity_activities_yaml() -> HashMap<TimeEntityActivityId, TimeEnti
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::local_datetime;
+    use crate::vos::IssuePropertyDiff;
+    use crate::vos::issue_property_diff::{IssueDueDateDiff, IssueStartDateDiff};
     use crate::vos::{CategoryId, TargetVersionId};
 
     #[test]
@@ -714,5 +749,49 @@ mod tests {
         let (issue, state) = store.get_issue(1).expect("issue should be loaded");
         assert_eq!(issue.category_id, None);
         assert_eq!(state, IssueState::Updated);
+    }
+
+    #[test]
+    fn update_issue_start_date_updates_issue_and_records_diff() {
+        let mut store = Store::new();
+        store.consume_action(Action::LoadIssue { id: 1 });
+        let before = store.get_issue(1).unwrap().0.start_date;
+        let after = Some(local_datetime("2026-04-30T00:00:00+09:00"));
+
+        store.consume_action(Action::UpdateIssueStartDate {
+            id: 1,
+            start_date: after,
+        });
+
+        assert_eq!(store.get_issue(1).unwrap().0.start_date, after);
+        assert_eq!(
+            store.get_issue_property_diffs(1).last(),
+            Some(&IssuePropertyDiff::StartDate(IssueStartDateDiff {
+                before,
+                after
+            }))
+        );
+    }
+
+    #[test]
+    fn update_issue_due_date_updates_issue_and_records_diff() {
+        let mut store = Store::new();
+        store.consume_action(Action::LoadIssue { id: 1 });
+        let before = store.get_issue(1).unwrap().0.due_date;
+        let after = Some(local_datetime("2026-05-01T00:00:00+09:00"));
+
+        store.consume_action(Action::UpdateIssueDueDate {
+            id: 1,
+            due_date: after,
+        });
+
+        assert_eq!(store.get_issue(1).unwrap().0.due_date, after);
+        assert_eq!(
+            store.get_issue_property_diffs(1).last(),
+            Some(&IssuePropertyDiff::DueDate(IssueDueDateDiff {
+                before,
+                after
+            }))
+        );
     }
 }
