@@ -5,6 +5,8 @@ const LINE_COUNT: u16 = 15;
 const ISSUE_STATUS_LINE: u16 = 3;
 const ASSIGNED_TO_LINE: u16 = 7;
 const TARGET_VERSION_LINE: u16 = 8;
+const START_DATE_LINE: u16 = 9;
+const DUE_DATE_LINE: u16 = 10;
 const DONE_RATIO_LINE: u16 = 11;
 const TOTAL_SPENT_HOURS_LINE: u16 = 13;
 const CATEGORY_LINE: u16 = 14;
@@ -21,6 +23,8 @@ pub enum EventProcessResult {
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
+    OpenStartDatePopup,
+    OpenDueDatePopup,
     OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
     OpenCategoryPopup,
@@ -32,6 +36,8 @@ enum Action {
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
+    OpenStartDatePopup,
+    OpenDueDatePopup,
     OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
     OpenCategoryPopup,
@@ -95,6 +101,8 @@ impl FocusState {
             KeyCode::Char('e') if focused_y == TARGET_VERSION_LINE => {
                 Some(Action::OpenTargetVersionPopup)
             }
+            KeyCode::Char('e') if focused_y == START_DATE_LINE => Some(Action::OpenStartDatePopup),
+            KeyCode::Char('e') if focused_y == DUE_DATE_LINE => Some(Action::OpenDueDatePopup),
             KeyCode::Char('e') if focused_y == DONE_RATIO_LINE => Some(Action::OpenDoneRatioPopup),
             KeyCode::Char('e') if focused_y == TOTAL_SPENT_HOURS_LINE => {
                 Some(Action::OpenSpentTimeInputPopup)
@@ -125,6 +133,8 @@ impl FocusState {
             Action::OpenIssueStatusPopup => Some(EventProcessResult::OpenIssueStatusPopup),
             Action::OpenAssignedToPopup => Some(EventProcessResult::OpenAssignedToPopup),
             Action::OpenTargetVersionPopup => Some(EventProcessResult::OpenTargetVersionPopup),
+            Action::OpenStartDatePopup => Some(EventProcessResult::OpenStartDatePopup),
+            Action::OpenDueDatePopup => Some(EventProcessResult::OpenDueDatePopup),
             Action::OpenDoneRatioPopup => Some(EventProcessResult::OpenDoneRatioPopup),
             Action::OpenSpentTimeInputPopup => Some(EventProcessResult::OpenSpentTimeInputPopup),
             Action::OpenCategoryPopup => Some(EventProcessResult::OpenCategoryPopup),
@@ -298,6 +308,33 @@ mod tests {
             Some(EventProcessResult::OpenTargetVersionPopup)
         ));
         assert_eq!(state.focused_y(), Some(TARGET_VERSION_LINE));
+    }
+
+    #[test]
+    fn process_event_e_on_start_date_line_opens_date_picker_popup() {
+        let mut state = FocusState {
+            focused_y: Some(START_DATE_LINE),
+        };
+
+        let result = state.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenStartDatePopup)
+        ));
+        assert_eq!(state.focused_y(), Some(START_DATE_LINE));
+    }
+
+    #[test]
+    fn process_event_e_on_due_date_line_opens_date_picker_popup() {
+        let mut state = FocusState {
+            focused_y: Some(DUE_DATE_LINE),
+        };
+
+        let result = state.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(result, Some(EventProcessResult::OpenDueDatePopup)));
+        assert_eq!(state.focused_y(), Some(DUE_DATE_LINE));
     }
 
     #[test]

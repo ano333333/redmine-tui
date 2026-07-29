@@ -32,6 +32,8 @@ pub enum EventProcessResult {
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
+    OpenStartDatePopup,
+    OpenDueDatePopup,
     OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
     OpenCategoryPopup,
@@ -130,6 +132,12 @@ impl IssueDetailComponent {
                     }
                     Some(PropertyEventProcessResult::OpenTargetVersionPopup) => {
                         return Some(EventProcessResult::OpenTargetVersionPopup);
+                    }
+                    Some(PropertyEventProcessResult::OpenStartDatePopup) => {
+                        return Some(EventProcessResult::OpenStartDatePopup);
+                    }
+                    Some(PropertyEventProcessResult::OpenDueDatePopup) => {
+                        return Some(EventProcessResult::OpenDueDatePopup);
                     }
                     Some(PropertyEventProcessResult::OpenDoneRatioPopup) => {
                         return Some(EventProcessResult::OpenDoneRatioPopup);

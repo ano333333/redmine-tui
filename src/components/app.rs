@@ -14,6 +14,9 @@ use crate::vos::{
     CategoryId, EntityIdValue, IssueStatusId, TargetVersionId, TimeEntityActivityId, UserId,
 };
 
+use super::date_picker_popup::component::{
+    DatePickerPopupComponent, EventProcessResult as DatePickerPopupEventProcessResult,
+};
 use super::select_box_popup::{
     EventProcessResult as SelectBoxPopupEventProcessResult, SelectBoxPopupComponent,
 };
@@ -40,6 +43,7 @@ enum PendingEditorContext {
 enum PopupComponent<'a> {
     SelectBox(SelectBoxPopupComponent<'a>),
     SpentTimeInput(SpentTimeInputPopupComponent<'a>),
+    DatePicker(DatePickerPopupComponent<'a>),
 }
 
 pub struct AppComponent<'a> {
@@ -94,6 +98,16 @@ impl<'a> AppComponent<'a> {
                         }
                         Some(SpentTimeInputPopupEventProcessResult::Submited) => {
                             // FIXME: Storeの更新
+                            self.popup_components.pop_back();
+                        }
+                        None => {}
+                    }
+                }
+                PopupComponent::DatePicker(popup_component) => {
+                    let result = popup_component.process_event(event);
+                    match result {
+                        Some(DatePickerPopupEventProcessResult::Entered)
+                        | Some(DatePickerPopupEventProcessResult::Canceled) => {
                             self.popup_components.pop_back();
                         }
                         None => {}
@@ -206,6 +220,54 @@ impl<'a> AppComponent<'a> {
                                             .map(TargetVersionId::new),
                                     },
                                 );
+                            }),
+                        )),
+                    )));
+                }
+                Some(IssueEventProcessResult::OpenStartDatePopup) => {
+                    let selected_date = dispatcher
+                        .borrow()
+                        .store()
+                        .get_issue(self.issue_component.id)
+                        .and_then(|(issue, _)| issue.start_date);
+
+                    let issue_id = self.issue_component.id;
+                    self.popup_components.push_back(Rc::new(RefCell::new(
+                        PopupComponent::DatePicker(DatePickerPopupComponent::new(
+                            selected_date,
+                            Box::new(move |date| {
+                                if let Some(date) = date {
+                                    dispatcher.borrow_mut().dispatch(
+                                        Action::UpdateIssueStartDate {
+                                            id: issue_id,
+                                            start_date: Some(date),
+                                        },
+                                    );
+                                }
+                            }),
+                        )),
+                    )));
+                }
+                Some(IssueEventProcessResult::OpenDueDatePopup) => {
+                    let selected_date = dispatcher
+                        .borrow()
+                        .store()
+                        .get_issue(self.issue_component.id)
+                        .and_then(|(issue, _)| issue.due_date);
+
+                    let issue_id = self.issue_component.id;
+                    self.popup_components.push_back(Rc::new(RefCell::new(
+                        PopupComponent::DatePicker(DatePickerPopupComponent::new(
+                            selected_date,
+                            Box::new(move |date| {
+                                if let Some(date) = date {
+                                    dispatcher
+                                        .borrow_mut()
+                                        .dispatch(Action::UpdateIssueDueDate {
+                                            id: issue_id,
+                                            due_date: Some(date),
+                                        });
+                                }
                             }),
                         )),
                     )));
@@ -339,6 +401,10 @@ impl<'a> AppComponent<'a> {
                     let widget = popup_component.create_widget(store);
                     frame.render_widget(widget, area);
                 }
+                PopupComponent::DatePicker(popup_component) => {
+                    let widget = popup_component.create_widget();
+                    frame.render_widget(widget, area);
+                }
             }
         }
     }
@@ -351,6 +417,7 @@ impl<'a> AppComponent<'a> {
                 PopupComponent::SpentTimeInput(popup_component) => {
                     popup_component.cursor_position(area)
                 }
+                PopupComponent::DatePicker(_) => None,
             }
         } else {
             Some(self.issue_component.calc_cursor_position(store, area))
@@ -400,7 +467,7 @@ impl<'a> AppComponent<'a> {
 mod tests {
     use super::*;
 
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
     fn key_event(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
@@ -425,6 +492,37 @@ mod tests {
         dispatcher
     }
 
+    fn dispatcher_with_issue() -> Rc<RefCell<Dispatcher>> {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        dispatcher
+            .borrow_mut()
+            .dispatch(Action::LoadIssue { id: 3 });
+        dispatcher.borrow_mut().consume_action();
+        dispatcher
+    }
+
+    fn focus_property_line(
+        app: &mut AppComponent<'_>,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+        line: u16,
+    ) {
+        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        for _ in 0..line {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        }
+    }
+
+    fn select_next_day_in_open_date_picker(
+        app: &mut AppComponent<'_>,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+    ) {
+        for _ in 0..3 {
+            app.process_event(key_event(KeyCode::Tab), dispatcher.clone());
+        }
+        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher);
+    }
+
     #[test]
     fn category_popup_includes_none_and_can_clear_issue_category() {
         let dispatcher = loaded_dispatcher();
@@ -445,6 +543,7 @@ mod tests {
                 assert_eq!(widget.focused_index, 1);
             }
             PopupComponent::SpentTimeInput(_) => panic!("category popup should be a select box"),
+            _ => {}
         }
 
         app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
@@ -458,5 +557,67 @@ mod tests {
             .map(|(issue, _)| issue.category_id);
         assert_eq!(issue_category_id, Some(None));
         assert!(app.popup_components.is_empty());
+    }
+
+    #[test]
+    fn start_date_property_opens_date_picker_and_updates_store_through_dispatcher() {
+        let dispatcher = dispatcher_with_issue();
+        let mut app = AppComponent::new(dispatcher.clone());
+
+        focus_property_line(&mut app, dispatcher.clone(), 9);
+        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
+
+        assert_eq!(app.popup_components.len(), 1);
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::DatePicker(_)
+        ));
+
+        select_next_day_in_open_date_picker(&mut app, dispatcher.clone());
+        assert_eq!(app.popup_components.len(), 0);
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+
+        dispatcher.borrow_mut().consume_action();
+        let selected = dispatcher
+            .borrow()
+            .store()
+            .get_issue(3)
+            .unwrap()
+            .0
+            .start_date;
+        assert_eq!(
+            selected,
+            Some(crate::test_support::local_datetime(
+                "2026-02-17T00:00:00+09:00"
+            ))
+        );
+    }
+
+    #[test]
+    fn due_date_property_opens_date_picker_and_updates_store_through_dispatcher() {
+        let dispatcher = dispatcher_with_issue();
+        let mut app = AppComponent::new(dispatcher.clone());
+
+        focus_property_line(&mut app, dispatcher.clone(), 10);
+        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
+
+        assert_eq!(app.popup_components.len(), 1);
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::DatePicker(_)
+        ));
+
+        select_next_day_in_open_date_picker(&mut app, dispatcher.clone());
+        assert_eq!(app.popup_components.len(), 0);
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+
+        dispatcher.borrow_mut().consume_action();
+        let selected = dispatcher.borrow().store().get_issue(3).unwrap().0.due_date;
+        assert_eq!(
+            selected,
+            Some(crate::test_support::local_datetime(
+                "2026-02-18T00:00:00+09:00"
+            ))
+        );
     }
 }

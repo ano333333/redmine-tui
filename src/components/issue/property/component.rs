@@ -123,6 +123,8 @@ mod tests {
     const WIDTH: u16 = 40;
     const PROPERTY_LINE_COUNT: u16 = 15;
     const TARGET_VERSION_LINE: u16 = 8;
+    const START_DATE_LINE: u16 = 9;
+    const DUE_DATE_LINE: u16 = 10;
     const DONE_RATIO_LINE: u16 = 11;
     const TOTAL_SPENT_HOURS_LINE: u16 = 13;
     const CATEGORY_LINE: u16 = 14;
@@ -276,6 +278,39 @@ mod tests {
             Some(EventProcessResult::OpenDoneRatioPopup)
         ));
         assert_layout_contract(&component, &store, Position::new(20, DONE_RATIO_LINE));
+    }
+
+    #[test]
+    fn process_event_e_returns_start_date_popup_result_without_changing_widget_focus() {
+        let store = store_with_property_issue();
+        let mut component = PropertyComponent::new(ISSUE_ID);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+        for _ in 0..START_DATE_LINE {
+            component.process_event(key_event(KeyCode::Char('j')));
+        }
+
+        let result = component.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenStartDatePopup)
+        ));
+        assert_layout_contract(&component, &store, Position::new(20, START_DATE_LINE));
+    }
+
+    #[test]
+    fn process_event_e_returns_due_date_popup_result_without_changing_widget_focus() {
+        let store = store_with_property_issue();
+        let mut component = PropertyComponent::new(ISSUE_ID);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+        for _ in 0..DUE_DATE_LINE {
+            component.process_event(key_event(KeyCode::Char('j')));
+        }
+
+        let result = component.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(result, Some(EventProcessResult::OpenDueDatePopup)));
+        assert_layout_contract(&component, &store, Position::new(20, DUE_DATE_LINE));
     }
 
     #[test]
