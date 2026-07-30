@@ -1,0 +1,37 @@
+services:
+  redmine:
+    image: ${REDMINE_IMAGE:-redmine:6.1}
+    restart: unless-stopped
+    ports:
+      - "${REDMINE_PORT:-8080}:3000"
+    environment:
+      REDMINE_DB_MYSQL: db
+      REDMINE_DB_DATABASE: ${REDMINE_DB_DATABASE:-redmine}
+      REDMINE_DB_USERNAME: ${REDMINE_DB_USERNAME:-redmine}
+      REDMINE_DB_PASSWORD: ${REDMINE_DB_PASSWORD:-redmine}
+      REDMINE_SECRET_KEY_BASE: ${REDMINE_SECRET_KEY_BASE:-redmine-tui-local-test-secret}
+    volumes:
+      - redmine_files:/usr/src/redmine/files
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: ${REDMINE_DB_IMAGE:-mysql:8.0}
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${REDMINE_DB_ROOT_PASSWORD:-redmine-root}
+      MYSQL_DATABASE: ${REDMINE_DB_DATABASE:-redmine}
+      MYSQL_USER: ${REDMINE_DB_USERNAME:-redmine}
+      MYSQL_PASSWORD: ${REDMINE_DB_PASSWORD:-redmine}
+    volumes:
+      - redmine_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$${MYSQL_ROOT_PASSWORD}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  redmine_files:
+  redmine_mysql:
