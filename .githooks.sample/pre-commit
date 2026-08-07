@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+set -eu
+
+echo "Formatting..."
+cargo fmt
+
+echo "Running cargo test..."
+cargo test
+
+echo "cargo test passed; generating HTML coverage..."
+cargo llvm-cov --html
