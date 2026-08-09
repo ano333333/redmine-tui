@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crossterm::event::Event;
+use crossterm::event::{Event, KeyCode};
 use ratatui::Frame;
 use ratatui::layout::{Offset, Position, Rect};
 use ratatui::widgets::Widget;
@@ -29,6 +29,7 @@ use super::{IssueDetailWidget, IssueDetailWidgetState};
 
 pub enum EventProcessResult {
     EditIssueBodyRequested { id: u16, body: String },
+    OpenIssueSelectPopup,
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
@@ -37,6 +38,34 @@ pub enum EventProcessResult {
     OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
     OpenCategoryPopup,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key_event(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn dispatcher() -> Rc<RefCell<Dispatcher>> {
+        Rc::new(RefCell::new(Dispatcher::new()))
+    }
+
+    #[test]
+    fn process_event_y_requests_issue_select_popup() {
+        let dispatcher = dispatcher();
+        let mut component = IssueDetailComponent::new(dispatcher.clone(), 3);
+
+        let result = component.process_event(key_event(KeyCode::Char('y')), dispatcher);
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenIssueSelectPopup)
+        ));
+    }
 }
 
 #[derive(PartialEq)]
@@ -93,6 +122,15 @@ impl IssueDetailComponent {
         event: crossterm::event::Event,
         _: Rc<RefCell<Dispatcher>>,
     ) -> Option<EventProcessResult> {
+        if let Event::Key(key) = &event {
+            match key.code {
+                KeyCode::Char('y') => {
+                    return Some(EventProcessResult::OpenIssueSelectPopup);
+                }
+                _ => {}
+            }
+        }
+
         // FIXME:
         // process_eventでComponentのprocess_event呼び出しからその結果に基づくフォーカス処理を行っているが、
         // Storeの更新契機で子componentからイベントが来る可能性を踏まえ、updateがフォーカス関連を含めたイベントを返すようにしたい

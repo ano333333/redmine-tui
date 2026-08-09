@@ -10,6 +10,9 @@ use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
 };
+use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
+use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
+use crate::components::issue_select_popup::widget::IssueSelectPopupIssue;
 use crate::vos::{
     CategoryId, EntityIdValue, IssueStatusId, TargetVersionId, TimeEntityActivityId, UserId,
 };
@@ -44,6 +47,7 @@ enum PopupComponent<'a> {
     SelectBox(SelectBoxPopupComponent<'a>),
     SpentTimeInput(SpentTimeInputPopupComponent<'a>),
     DatePicker(DatePickerPopupComponent<'a>),
+    IssueSelect(IssueSelectPopupComponent),
 }
 
 pub struct AppComponent<'a> {
@@ -113,12 +117,66 @@ impl<'a> AppComponent<'a> {
                         None => {}
                     }
                 }
+                PopupComponent::IssueSelect(popup_component) => {
+                    let result = popup_component.process_event(event);
+                    match result {
+                        Some(IssueSelectPopupEventProcessResult::Quited) => {
+                            self.popup_components.pop_back();
+                        }
+                        None => {}
+                    }
+                }
             }
         } else {
             let result = self
                 .issue_component
                 .process_event(event, self.dispatcher.clone());
             match result {
+                Some(IssueEventProcessResult::OpenIssueSelectPopup) => {
+                    let dispatcher_ref = dispatcher.borrow();
+                    let store = dispatcher_ref.store();
+                    let mut projects = store
+                        .get_projects()
+                        .iter()
+                        .map(|(id, project)| (*id, project.name.clone()))
+                        .collect::<Vec<_>>();
+                    projects.sort_by_key(|(id, _)| *id);
+                    let mut issues = store
+                        .get_issues()
+                        .iter()
+                        .map(|(id, issue)| {
+                            IssueSelectPopupIssue::new(
+                                issue.project_id.get(),
+                                *id,
+                                issue.subject.clone(),
+                                issue.description.clone(),
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    issues.sort_by_key(|issue| issue.issue_id);
+                    let focused_issue_index = issues
+                        .iter()
+                        .position(|issue| issue.issue_id == self.issue_component.id)
+                        .unwrap_or(0);
+                    let focused_project_index = issues
+                        .get(focused_issue_index)
+                        .and_then(|issue| {
+                            projects
+                                .iter()
+                                .position(|(project_id, _)| *project_id == issue.project_id)
+                        })
+                        .unwrap_or(0);
+                    drop(dispatcher_ref);
+
+                    self.popup_components.push_back(Rc::new(RefCell::new(
+                        PopupComponent::IssueSelect(IssueSelectPopupComponent::new(
+                            &projects,
+                            &issues,
+                            focused_project_index,
+                            focused_issue_index,
+                        )),
+                    )));
+                }
                 Some(IssueEventProcessResult::EditIssueBodyRequested { id, body }) => {
                     self.pending_editor_context = Some(PendingEditorContext::IssueBody { id });
                     self.pending_effect =
@@ -405,6 +463,10 @@ impl<'a> AppComponent<'a> {
                     let widget = popup_component.create_widget();
                     frame.render_widget(widget, area);
                 }
+                PopupComponent::IssueSelect(popup_component) => {
+                    let widget = popup_component.create_widget();
+                    frame.render_widget(widget, area);
+                }
             }
         }
     }
@@ -418,6 +480,7 @@ impl<'a> AppComponent<'a> {
                     popup_component.cursor_position(area)
                 }
                 PopupComponent::DatePicker(_) => None,
+                PopupComponent::IssueSelect(_) => None,
             }
         } else {
             Some(self.issue_component.calc_cursor_position(store, area))
@@ -619,5 +682,50 @@ mod tests {
                 "2026-02-18T00:00:00+09:00"
             ))
         );
+    }
+
+    #[test]
+    fn y_key_opens_issue_select_popup_with_loaded_projects_and_issues() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone());
+        app.update(dispatcher.clone(), dispatcher.borrow().store());
+
+        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
+
+        assert_eq!(app.popup_components.len(), 1);
+        let expected_subject = dispatcher
+            .borrow()
+            .store()
+            .get_issue(3)
+            .expect("issue should be loaded")
+            .0
+            .subject
+            .clone();
+        let popup = app.popup_components.back().expect("popup should be open");
+        match &*popup.borrow() {
+            PopupComponent::IssueSelect(popup_component) => {
+                let widget = popup_component.create_widget();
+                assert_eq!(widget.projects.len(), 1);
+                assert_eq!(widget.projects[0].id, 1);
+                assert_eq!(widget.projects[0].name, "Sample Project");
+                assert_eq!(widget.issues.len(), 1);
+                assert_eq!(widget.issues[0].project_id, 1);
+                assert_eq!(widget.issues[0].issue_id, 3);
+                assert_eq!(widget.issues[0].subject, expected_subject);
+            }
+            _ => panic!("issue select popup should be open"),
+        }
+    }
+
+    #[test]
+    fn q_key_closes_open_issue_select_popup() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone());
+        app.update(dispatcher.clone(), dispatcher.borrow().store());
+
+        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+
+        assert!(app.popup_components.is_empty());
     }
 }

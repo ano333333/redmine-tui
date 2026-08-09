@@ -52,6 +52,9 @@ impl IssueSelectPopupComponent {
             KeyCode::Char('l') => {
                 self.focused_column = IssueSelectPopupFocusColumn::Issue;
             }
+            KeyCode::Char('q') => {
+                return Some(EventProcessResult::Quited);
+            }
             _ => {}
         }
 
@@ -106,7 +109,9 @@ impl IssueSelectPopupComponent {
     }
 }
 
-pub enum EventProcessResult {}
+pub enum EventProcessResult {
+    Quited,
+}
 
 #[cfg(test)]
 mod tests {
@@ -219,5 +224,14 @@ mod tests {
                 .is_none()
         );
         assert_eq!(component.create_widget().focused_issue_index, 0);
+    }
+
+    #[test]
+    fn process_event_q_returns_quited() {
+        let mut component = IssueSelectPopupComponent::new(&projects(), &issues(), 1, 0);
+
+        let result = component.process_event(key_event(KeyCode::Char('q')));
+
+        assert!(matches!(result, Some(EventProcessResult::Quited)));
     }
 }
