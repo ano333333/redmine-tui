@@ -253,6 +253,10 @@ impl Store {
             .map(|issue| (issue, self.get_issue_state(issue_id)))
     }
 
+    pub fn get_issues(&self) -> &HashMap<u16, Issue> {
+        &self.issues
+    }
+
     pub fn get_issue_property_diffs(&self, issue_id: u16) -> &[IssuePropertyDiff] {
         self.issue_property_diffs
             .get(&issue_id)
