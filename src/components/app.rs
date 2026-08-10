@@ -120,6 +120,13 @@ impl<'a> AppComponent<'a> {
                 PopupComponent::IssueSelect(popup_component) => {
                     let result = popup_component.process_event(event);
                     match result {
+                        Some(IssueSelectPopupEventProcessResult::Entered { issue_id }) => {
+                            self.popup_components.pop_back();
+                            if issue_id != self.issue_component.id {
+                                self.issue_component =
+                                    IssueDetailComponent::new(dispatcher.clone(), issue_id);
+                            }
+                        }
                         Some(IssueSelectPopupEventProcessResult::Quited) => {
                             self.popup_components.pop_back();
                         }
@@ -564,6 +571,20 @@ mod tests {
         dispatcher
     }
 
+    fn dispatcher_with_selectable_issues() -> Rc<RefCell<Dispatcher>> {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        {
+            let mut dispatcher_ref = dispatcher.borrow_mut();
+            dispatcher_ref.dispatch(Action::LoadProjects);
+            dispatcher_ref.dispatch(Action::LoadIssue { id: 1 });
+            dispatcher_ref.dispatch(Action::LoadIssue { id: 3 });
+            while dispatcher_ref.consume_actinos_len() > 0 {
+                dispatcher_ref.consume_action();
+            }
+        }
+        dispatcher
+    }
+
     fn focus_property_line(
         app: &mut AppComponent<'_>,
         dispatcher: Rc<RefCell<Dispatcher>>,
@@ -727,5 +748,20 @@ mod tests {
         app.process_event(key_event(KeyCode::Char('q')), dispatcher.clone());
 
         assert!(app.popup_components.is_empty());
+    }
+
+    #[test]
+    fn enter_on_different_issue_in_issue_select_popup_replaces_issue_detail_component() {
+        let dispatcher = dispatcher_with_selectable_issues();
+        let mut app = AppComponent::new(dispatcher.clone());
+        app.update(dispatcher.clone(), dispatcher.borrow().store());
+
+        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+
+        assert!(app.popup_components.is_empty());
+        assert_eq!(app.issue_component.id, 1);
     }
 }
