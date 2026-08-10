@@ -55,6 +55,11 @@ impl IssueSelectPopupComponent {
             KeyCode::Char('q') => {
                 return Some(EventProcessResult::Quited);
             }
+            KeyCode::Enter => {
+                if let Some(issue_id) = self.focused_issue_id() {
+                    return Some(EventProcessResult::Entered { issue_id });
+                }
+            }
             _ => {}
         }
 
@@ -107,9 +112,20 @@ impl IssueSelectPopupComponent {
             .filter(|issue| issue.project_id == project.id)
             .count()
     }
+
+    fn focused_issue_id(&self) -> Option<u16> {
+        let project = self.projects.get(self.focused_project_index)?;
+
+        self.issues
+            .iter()
+            .filter(|issue| issue.project_id == project.id)
+            .nth(self.focused_issue_index)
+            .map(|issue| issue.issue_id)
+    }
 }
 
 pub enum EventProcessResult {
+    Entered { issue_id: u16 },
     Quited,
 }
 
@@ -233,5 +249,27 @@ mod tests {
         let result = component.process_event(key_event(KeyCode::Char('q')));
 
         assert!(matches!(result, Some(EventProcessResult::Quited)));
+    }
+
+    #[test]
+    fn process_event_enter_returns_focused_issue_id() {
+        let mut component = IssueSelectPopupComponent::new(&projects(), &issues(), 1, 0);
+
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('l')))
+                .is_none()
+        );
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('j')))
+                .is_none()
+        );
+        let result = component.process_event(key_event(KeyCode::Enter));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::Entered { issue_id: 205 })
+        ));
     }
 }
