@@ -2,7 +2,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Clear, Widget};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 const SELECTED_BG: Color = Color::Rgb(0x22, 0x22, 0x22);
@@ -192,23 +192,40 @@ impl Widget for IssueSelectPopupWidget<'_> {
         }
 
         if let Some(issue) = focused_issue {
-            render_single_line(
-                buf,
-                columns[2].x,
-                inner.y + 1,
-                columns[2].width,
-                &issue.subject,
-                Style::default(),
-            );
-            if body_height >= 2 {
-                render_single_line(
+            let issue_area = Rect {
+                x: columns[2].x,
+                y: inner.y + 1,
+                width: columns[2].width,
+                height: inner.height.saturating_sub(1),
+            };
+            if issue_area.height > 0 {
+                let subject = Paragraph::new(issue.subject.as_str()).wrap(Wrap { trim: true });
+                let subject_height =
+                    (subject.line_count(issue_area.width) as u16).min(issue_area.height);
+                subject.render(
+                    Rect {
+                        height: subject_height,
+                        ..issue_area
+                    },
                     buf,
-                    columns[2].x,
-                    inner.y + 2,
-                    columns[2].width,
-                    &issue.description,
-                    Style::default(),
                 );
+
+                let description_y = issue_area
+                    .y
+                    .saturating_add(subject_height)
+                    .saturating_add(1);
+                let issue_area_bottom = issue_area.y.saturating_add(issue_area.height);
+                if description_y < issue_area_bottom {
+                    let description_area = Rect {
+                        x: issue_area.x,
+                        y: description_y,
+                        width: issue_area.width,
+                        height: issue_area_bottom.saturating_sub(description_y),
+                    };
+                    let description = Paragraph::new(tui_markdown::from_str(&issue.description))
+                        .wrap(Wrap { trim: true });
+                    description.render(description_area, buf);
+                }
             }
         }
     }
@@ -248,6 +265,7 @@ fn render_single_line(buf: &mut Buffer, x: u16, y: u16, width: u16, text: &str, 
 mod tests {
     use super::*;
     use crate::test_support::render_snapshot;
+    use ratatui::style::Modifier;
 
     fn projects() -> Vec<IssueSelectPopupProject> {
         vec![
@@ -315,5 +333,101 @@ mod tests {
         );
 
         assert_eq!(widget.line_count(80), 6);
+    }
+
+    #[test]
+    fn render_formats_issue_preview_body_as_markdown() {
+        let projects = vec![IssueSelectPopupProject::new(1, "redmine-tui")];
+        let issues = vec![IssueSelectPopupIssue::new(
+            1,
+            101,
+            "Markdown preview",
+            "Preview has **bold** text",
+        )];
+        let widget = IssueSelectPopupWidget::new(
+            &projects,
+            &issues,
+            0,
+            0,
+            IssueSelectPopupFocusColumn::Issue,
+        );
+        let area = Rect::new(0, 0, 80, 20);
+        let mut buffer = Buffer::empty(area);
+
+        widget.render(area, &mut buffer);
+
+        let rendered = (0..area.height)
+            .map(|y| {
+                (0..area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!rendered.contains("**bold**"));
+
+        let bold_cell = (0..area.height)
+            .flat_map(|y| (0..area.width).map(move |x| (x, y)))
+            .find(|&(x, y)| buffer[(x, y)].symbol() == "b")
+            .expect("bold text should be rendered");
+        assert!(buffer[bold_cell].modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn render_wraps_subject_and_leaves_blank_line_before_description() {
+        let projects = vec![IssueSelectPopupProject::new(1, "redmine-tui")];
+        let issues = vec![IssueSelectPopupIssue::new(
+            1,
+            101,
+            "Subject words that must wrap onto another preview line",
+            "Description starts after blank line",
+        )];
+        let widget = IssueSelectPopupWidget::new(
+            &projects,
+            &issues,
+            0,
+            0,
+            IssueSelectPopupFocusColumn::Issue,
+        );
+        let area = Rect::new(0, 0, 80, 20);
+        let mut buffer = Buffer::empty(area);
+
+        widget.render(area, &mut buffer);
+
+        let issue_column = issue_column(area);
+        assert_eq!(
+            line_text(&buffer, issue_column, issue_column.y + 1).trim_end(),
+            "Subject words that must wrap onto"
+        );
+        assert_eq!(
+            line_text(&buffer, issue_column, issue_column.y + 2).trim_end(),
+            "another preview line"
+        );
+        assert!(
+            line_text(&buffer, issue_column, issue_column.y + 3)
+                .trim()
+                .is_empty()
+        );
+        assert_eq!(
+            line_text(&buffer, issue_column, issue_column.y + 4).trim_end(),
+            "Description starts after blank line"
+        );
+    }
+
+    fn issue_column(area: Rect) -> Rect {
+        let area = IssueSelectPopupWidget::popup_area(area);
+        let inner = Rect {
+            x: area.x + 1,
+            y: area.y + 1,
+            width: area.width.saturating_sub(2),
+            height: area.height.saturating_sub(2),
+        };
+        split_columns(inner)[2]
+    }
+
+    fn line_text(buffer: &Buffer, area: Rect, y: u16) -> String {
+        (area.x..area.x + area.width)
+            .map(|x| buffer[(x, y)].symbol())
+            .collect::<String>()
     }
 }
