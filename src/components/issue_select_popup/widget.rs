@@ -1,3 +1,6 @@
+use std::cmp::min;
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -58,6 +61,71 @@ pub struct IssueSelectPopupWidget<'a> {
     pub focused_project_index: usize,
     pub focused_issue_index: usize,
     pub focused_column: IssueSelectPopupFocusColumn,
+    state: &'a IssueSelectPopupWidgetState,
+}
+
+pub struct IssueSelectPopupWidgetState {
+    subject_buffer: Buffer,
+    description_buffer: Buffer,
+    preview_hash: Option<u64>,
+    preview_generation: u64,
+}
+
+impl IssueSelectPopupWidgetState {
+    pub fn new() -> Self {
+        Self {
+            subject_buffer: Buffer::empty(Rect::new(0, 0, 0, 0)),
+            description_buffer: Buffer::empty(Rect::new(0, 0, 0, 0)),
+            preview_hash: None,
+            preview_generation: 0,
+        }
+    }
+
+    pub fn update(&mut self, width: u16, issue: &IssueSelectPopupIssue) {
+        let hash = preview_hash(width, issue);
+        if self.preview_hash == Some(hash) {
+            return;
+        }
+
+        self.subject_buffer = render_plain_text_in_buffer(width, &issue.subject);
+        self.description_buffer = render_markdown_in_buffer(width, &issue.description);
+        self.preview_hash = Some(hash);
+        self.preview_generation = self.preview_generation.saturating_add(1);
+    }
+
+    fn render_preview(&self, area: Rect, buf: &mut Buffer) {
+        let subject_height = self.subject_buffer.area.height.min(area.height);
+        copy_buffer(&self.subject_buffer, area, buf, subject_height);
+
+        let description_y = area.y.saturating_add(subject_height).saturating_add(1);
+        let area_bottom = area.y.saturating_add(area.height);
+        if description_y >= area_bottom {
+            return;
+        }
+
+        let description_area = Rect {
+            x: area.x,
+            y: description_y,
+            width: area.width,
+            height: area_bottom.saturating_sub(description_y),
+        };
+        let description_height = self
+            .description_buffer
+            .area
+            .height
+            .min(description_area.height);
+        copy_buffer(
+            &self.description_buffer,
+            description_area,
+            buf,
+            description_height,
+        );
+    }
+
+    #[cfg(test)]
+    fn preview_generation(&self) -> u64 {
+        self.preview_generation
+    }
 }
 
 impl<'a> IssueSelectPopupWidget<'a> {
@@ -67,6 +135,7 @@ impl<'a> IssueSelectPopupWidget<'a> {
         focused_project_index: usize,
         focused_issue_index: usize,
         focused_column: IssueSelectPopupFocusColumn,
+        state: &'a IssueSelectPopupWidgetState,
     ) -> Self {
         Self {
             projects,
@@ -74,6 +143,7 @@ impl<'a> IssueSelectPopupWidget<'a> {
             focused_project_index,
             focused_issue_index,
             focused_column,
+            state,
         }
     }
 
@@ -87,6 +157,18 @@ impl<'a> IssueSelectPopupWidget<'a> {
             width,
             height,
         }
+    }
+
+    /// クライアント領域から、issueのプレビューを描画するカラムの幅を求める。
+    /// IssueSelectPopupWidgetStateのキャッシュ更新に使う。
+    pub fn preview_width(area: Rect) -> u16 {
+        let area = Self::popup_area(area);
+        let inner = Block::default().borders(Borders::ALL).inner(area);
+        if inner.width == 0 || inner.height == 0 {
+            return 0;
+        }
+
+        split_columns(inner)[2].width
     }
 
     pub fn line_count(&self, _: u16) -> usize {
@@ -112,121 +194,99 @@ impl<'a> IssueSelectPopupWidget<'a> {
 impl Widget for IssueSelectPopupWidget<'_> {
     /// クライアント領域に対する描画(したがってClearの責務がある)
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let area = Self::popup_area(area);
-        if area.width < 6 || area.height < 4 {
-            return;
-        }
+        render_issue_select_popup(self, area, buf);
+    }
+}
 
-        Clear.render(area, buf);
+fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf: &mut Buffer) {
+    let area = IssueSelectPopupWidget::popup_area(area);
+    if area.width < 6 || area.height < 4 {
+        return;
+    }
 
-        let block = Block::default().borders(Borders::ALL).title("Issue選択");
-        let inner = block.inner(area);
-        block.render(area, buf);
+    Clear.render(area, buf);
 
-        if inner.width == 0 || inner.height == 0 {
-            return;
-        }
+    let block = Block::default().borders(Borders::ALL).title("Issue選択");
+    let inner = block.inner(area);
+    block.render(area, buf);
 
-        let columns = split_columns(inner);
-        let header_style = Style::default()
-            .fg(Color::LightGreen)
-            .add_modifier(Modifier::BOLD);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let columns = split_columns(inner);
+    let header_style = Style::default()
+        .fg(Color::LightGreen)
+        .add_modifier(Modifier::BOLD);
+    render_single_line(
+        buf,
+        columns[0].x,
+        inner.y,
+        columns[0].width,
+        "Project",
+        header_style,
+    );
+    render_single_line(
+        buf,
+        columns[1].x,
+        inner.y,
+        columns[1].width,
+        "ID",
+        header_style,
+    );
+    render_single_line(
+        buf,
+        columns[2].x,
+        inner.y,
+        columns[2].width,
+        "Issue",
+        header_style,
+    );
+
+    let body_height = inner.height.saturating_sub(1) as usize;
+    let issues = widget.focused_project_issues();
+    let focused_issue = issues.get(widget.focused_issue_index).copied();
+
+    for (row, project) in widget.projects.iter().take(body_height).enumerate() {
+        let style = selected_row_style(
+            row == widget.focused_project_index,
+            widget.focused_column == IssueSelectPopupFocusColumn::Project,
+        );
         render_single_line(
             buf,
             columns[0].x,
-            inner.y,
+            inner.y + 1 + row as u16,
             columns[0].width,
-            "Project",
-            header_style,
+            &project.name,
+            style,
         );
+    }
+
+    for (row, issue) in issues.iter().take(body_height).enumerate() {
+        let style = selected_row_style(
+            row == widget.focused_issue_index,
+            widget.focused_column == IssueSelectPopupFocusColumn::Issue,
+        );
+
         render_single_line(
             buf,
             columns[1].x,
-            inner.y,
+            inner.y + 1 + row as u16,
             columns[1].width,
-            "ID",
-            header_style,
+            &issue.issue_id.to_string(),
+            style,
         );
-        render_single_line(
-            buf,
-            columns[2].x,
-            inner.y,
-            columns[2].width,
-            "Issue",
-            header_style,
-        );
+    }
 
-        let body_height = inner.height.saturating_sub(1) as usize;
-        let issues = self.focused_project_issues();
-        let focused_issue = issues.get(self.focused_issue_index).copied();
-
-        for (row, project) in self.projects.iter().take(body_height).enumerate() {
-            let style = selected_row_style(
-                row == self.focused_project_index,
-                self.focused_column == IssueSelectPopupFocusColumn::Project,
-            );
-            render_single_line(
-                buf,
-                columns[0].x,
-                inner.y + 1 + row as u16,
-                columns[0].width,
-                &project.name,
-                style,
-            );
-        }
-
-        for (row, issue) in issues.iter().take(body_height).enumerate() {
-            let style = selected_row_style(
-                row == self.focused_issue_index,
-                self.focused_column == IssueSelectPopupFocusColumn::Issue,
-            );
-
-            render_single_line(
-                buf,
-                columns[1].x,
-                inner.y + 1 + row as u16,
-                columns[1].width,
-                &issue.issue_id.to_string(),
-                style,
-            );
-        }
-
-        if let Some(issue) = focused_issue {
-            let issue_area = Rect {
-                x: columns[2].x,
-                y: inner.y + 1,
-                width: columns[2].width,
-                height: inner.height.saturating_sub(1),
-            };
-            if issue_area.height > 0 {
-                let subject = Paragraph::new(issue.subject.as_str()).wrap(Wrap { trim: true });
-                let subject_height =
-                    (subject.line_count(issue_area.width) as u16).min(issue_area.height);
-                subject.render(
-                    Rect {
-                        height: subject_height,
-                        ..issue_area
-                    },
-                    buf,
-                );
-
-                let description_y = issue_area
-                    .y
-                    .saturating_add(subject_height)
-                    .saturating_add(1);
-                let issue_area_bottom = issue_area.y.saturating_add(issue_area.height);
-                if description_y < issue_area_bottom {
-                    let description_area = Rect {
-                        x: issue_area.x,
-                        y: description_y,
-                        width: issue_area.width,
-                        height: issue_area_bottom.saturating_sub(description_y),
-                    };
-                    let description = Paragraph::new(tui_markdown::from_str(&issue.description))
-                        .wrap(Wrap { trim: true });
-                    description.render(description_area, buf);
-                }
-            }
+    if focused_issue.is_some() {
+        let issue_area = Rect {
+            x: columns[2].x,
+            y: inner.y + 1,
+            width: columns[2].width,
+            height: inner.height.saturating_sub(1),
+        };
+        if issue_area.height > 0 {
+            widget.state.render_preview(issue_area, buf);
         }
     }
 }
@@ -259,6 +319,56 @@ fn render_single_line(buf: &mut Buffer, x: u16, y: u16, width: u16, text: &str, 
 
     let clipped = text.chars().take(width as usize).collect::<String>();
     buf.set_line(x, y, &Line::styled(clipped, style), width);
+}
+
+fn preview_hash(width: u16, issue: &IssueSelectPopupIssue) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    width.hash(&mut hasher);
+    issue.subject.hash(&mut hasher);
+    issue.description.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn render_plain_text_in_buffer(width: u16, text: &str) -> Buffer {
+    if width == 0 {
+        return Buffer::empty(Rect::new(0, 0, 0, 0));
+    }
+
+    let paragraph = Paragraph::new(text.to_string()).wrap(Wrap { trim: true });
+    render_paragraph_in_buffer(paragraph, width)
+}
+
+fn render_markdown_in_buffer(width: u16, text: &str) -> Buffer {
+    if width == 0 {
+        return Buffer::empty(Rect::new(0, 0, 0, 0));
+    }
+
+    let paragraph = Paragraph::new(tui_markdown::from_str(text)).wrap(Wrap { trim: true });
+    render_paragraph_in_buffer(paragraph, width)
+}
+
+fn render_paragraph_in_buffer(paragraph: Paragraph<'_>, width: u16) -> Buffer {
+    let area = Rect::new(0, 0, width, paragraph.line_count(width) as u16);
+    let mut buffer = Buffer::empty(area);
+    paragraph.render(area, &mut buffer);
+    buffer
+}
+
+fn copy_buffer(src: &Buffer, dst_area: Rect, dst: &mut Buffer, height: u16) {
+    let width = min(src.area.width, dst_area.width);
+
+    for y in 0..height {
+        for x in 0..width {
+            let Some(src_cell) = src.cell((x, y)).cloned() else {
+                continue;
+            };
+            let dst_x = dst_area.x + x;
+            let dst_y = dst_area.y + y;
+            if let Some(dst_cell) = dst.cell_mut((dst_x, dst_y)) {
+                *dst_cell = src_cell;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -296,27 +406,44 @@ mod tests {
 
     #[test]
     fn snapshot_issue_select_popup_renders_three_columns_with_focused_issue() {
+        let projects = projects();
+        let issues = issues();
+        let mut state = IssueSelectPopupWidgetState::new();
+        state.update(
+            IssueSelectPopupWidget::preview_width(Rect::new(0, 0, 80, 24)),
+            &issues[1],
+        );
         render_snapshot(
             "issue_select_popup_three_columns_with_focus",
             80,
             24,
             IssueSelectPopupWidget::new(
-                &projects(),
-                &issues(),
+                &projects,
+                &issues,
                 1,
                 0,
                 IssueSelectPopupFocusColumn::Issue,
+                &state,
             ),
         );
     }
 
     #[test]
     fn snapshot_issue_select_popup_renders_empty_issue_columns_when_issue_list_is_empty() {
+        let projects = projects();
+        let state = IssueSelectPopupWidgetState::new();
         render_snapshot(
             "issue_select_popup_empty_issue_list",
             80,
             24,
-            IssueSelectPopupWidget::new(&projects(), &[], 1, 0, IssueSelectPopupFocusColumn::Issue),
+            IssueSelectPopupWidget::new(
+                &projects,
+                &[],
+                1,
+                0,
+                IssueSelectPopupFocusColumn::Issue,
+                &state,
+            ),
         );
     }
 
@@ -324,12 +451,14 @@ mod tests {
     fn line_count_includes_header_item_rows_and_borders() {
         let projects = projects();
         let issues = issues();
+        let state = IssueSelectPopupWidgetState::new();
         let widget = IssueSelectPopupWidget::new(
             &projects,
             &issues,
             1,
             0,
             IssueSelectPopupFocusColumn::Project,
+            &state,
         );
 
         assert_eq!(widget.line_count(80), 6);
@@ -344,17 +473,20 @@ mod tests {
             "Markdown preview",
             "Preview has **bold** text",
         )];
+        let area = Rect::new(0, 0, 80, 20);
+        let mut state = IssueSelectPopupWidgetState::new();
+        state.update(IssueSelectPopupWidget::preview_width(area), &issues[0]);
         let widget = IssueSelectPopupWidget::new(
             &projects,
             &issues,
             0,
             0,
             IssueSelectPopupFocusColumn::Issue,
+            &state,
         );
-        let area = Rect::new(0, 0, 80, 20);
         let mut buffer = Buffer::empty(area);
 
-        widget.render(area, &mut buffer);
+        Widget::render(widget, area, &mut buffer);
 
         let rendered = (0..area.height)
             .map(|y| {
@@ -382,19 +514,22 @@ mod tests {
             "Subject words that must wrap onto another preview line",
             "Description starts after blank line",
         )];
+        let area = Rect::new(0, 0, 80, 20);
+        let issue_column = issue_column(area);
+        let mut state = IssueSelectPopupWidgetState::new();
+        state.update(IssueSelectPopupWidget::preview_width(area), &issues[0]);
         let widget = IssueSelectPopupWidget::new(
             &projects,
             &issues,
             0,
             0,
             IssueSelectPopupFocusColumn::Issue,
+            &state,
         );
-        let area = Rect::new(0, 0, 80, 20);
         let mut buffer = Buffer::empty(area);
 
-        widget.render(area, &mut buffer);
+        Widget::render(widget, area, &mut buffer);
 
-        let issue_column = issue_column(area);
         assert_eq!(
             line_text(&buffer, issue_column, issue_column.y + 1).trim_end(),
             "Subject words that must wrap onto"
@@ -414,14 +549,73 @@ mod tests {
         );
     }
 
+    /// preview_widthはStateのキャッシュ生成に使われるので、実際に描画されるカラム幅と一致している必要がある
+    #[test]
+    fn preview_width_matches_rendered_issue_column_width() {
+        for area in [
+            Rect::new(0, 0, 80, 24),
+            Rect::new(0, 0, 40, 20),
+            Rect::new(4, 2, 100, 30),
+        ] {
+            assert_eq!(
+                IssueSelectPopupWidget::preview_width(area),
+                issue_column(area).width,
+                "preview width should match the issue column width for {area:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn preview_state_reuses_cache_for_same_visible_issue_and_width() {
+        let mut state = IssueSelectPopupWidgetState::new();
+        let issue =
+            IssueSelectPopupIssue::new(1, 101, "Cached subject", "Cached **markdown** description");
+
+        state.update(24, &issue);
+        let first_generation = state.preview_generation();
+
+        state.update(24, &issue);
+        assert_eq!(state.preview_generation(), first_generation);
+
+        state.update(25, &issue);
+        assert!(state.preview_generation() > first_generation);
+    }
+
+    #[test]
+    fn preview_state_cache_key_uses_visible_subject_and_description() {
+        let mut state = IssueSelectPopupWidgetState::new();
+        let issue = IssueSelectPopupIssue::new(
+            1,
+            101,
+            "Same visible subject",
+            "Same visible **description**",
+        );
+        let same_preview_issue = IssueSelectPopupIssue::new(
+            2,
+            202,
+            "Same visible subject",
+            "Same visible **description**",
+        );
+        let changed_preview_issue = IssueSelectPopupIssue::new(
+            2,
+            202,
+            "Changed visible subject",
+            "Same visible **description**",
+        );
+
+        state.update(24, &issue);
+        let first_generation = state.preview_generation();
+
+        state.update(24, &same_preview_issue);
+        assert_eq!(state.preview_generation(), first_generation);
+
+        state.update(24, &changed_preview_issue);
+        assert!(state.preview_generation() > first_generation);
+    }
+
     fn issue_column(area: Rect) -> Rect {
         let area = IssueSelectPopupWidget::popup_area(area);
-        let inner = Rect {
-            x: area.x + 1,
-            y: area.y + 1,
-            width: area.width.saturating_sub(2),
-            height: area.height.saturating_sub(2),
-        };
+        let inner = Block::default().borders(Borders::ALL).inner(area);
         split_columns(inner)[2]
     }
 

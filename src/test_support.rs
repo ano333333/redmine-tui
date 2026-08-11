@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Local};
 use insta::assert_snapshot;
-use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
+use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
 use crate::entities::Issue;
 use crate::vos::{
@@ -19,10 +19,18 @@ pub fn render_snapshot<W>(name: &str, width: u16, height: u16, widget: W)
 where
     W: Widget,
 {
+    render_frame_snapshot(name, width, height, |frame| {
+        frame.render_widget(widget, frame.area())
+    });
+}
+
+/// Widgetを直接渡せないComponent(Frame越しに描画するもの)向けのスナップショット
+pub fn render_frame_snapshot<F>(name: &str, width: u16, height: u16, render: F)
+where
+    F: FnOnce(&mut Frame<'_>),
+{
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-    terminal
-        .draw(|frame| frame.render_widget(widget, frame.area()))
-        .unwrap();
+    terminal.draw(render).unwrap();
     assert_snapshot!(name, describe_buffer(terminal.backend().buffer()));
 }
 

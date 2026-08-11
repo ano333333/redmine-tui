@@ -1,8 +1,12 @@
 use crossterm::event::{Event, KeyCode};
+use ratatui::layout::Rect;
+
+use crate::app::Store;
+use crate::vos::EntityIdValue;
 
 use super::widget::{
     IssueSelectPopupFocusColumn, IssueSelectPopupIssue, IssueSelectPopupProject,
-    IssueSelectPopupWidget,
+    IssueSelectPopupWidget, IssueSelectPopupWidgetState,
 };
 
 pub struct IssueSelectPopupComponent {
@@ -11,24 +15,41 @@ pub struct IssueSelectPopupComponent {
     focused_project_index: usize,
     focused_issue_index: usize,
     focused_column: IssueSelectPopupFocusColumn,
+    widget_state: IssueSelectPopupWidgetState,
 }
 
 impl IssueSelectPopupComponent {
-    pub fn new(
-        projects: &[(u16, String)],
-        issues: &[IssueSelectPopupIssue],
-        focused_project_index: usize,
-        focused_issue_index: usize,
-    ) -> Self {
-        Self {
-            projects: projects
-                .iter()
-                .map(|(id, name)| IssueSelectPopupProject::new(*id, name.clone()))
-                .collect(),
-            issues: issues.to_vec(),
-            focused_project_index,
-            focused_issue_index,
+    /// ポップアップを開いた時点で表示していたissueにフォーカスを合わせて初期化する。
+    /// projects/issuesの一覧はupdateでStoreから取得する。
+    pub fn new(store: &Store, focused_issue_id: u16) -> Self {
+        let mut component = Self {
+            projects: Vec::new(),
+            issues: Vec::new(),
+            focused_project_index: 0,
+            focused_issue_index: 0,
             focused_column: IssueSelectPopupFocusColumn::Project,
+            widget_state: IssueSelectPopupWidgetState::new(),
+        };
+        component.load_from_store(store);
+        component.focus_issue(focused_issue_id);
+        component
+    }
+
+    /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
+    pub fn update(&mut self, store: &Store, area: Rect) {
+        let focused_issue_id = self.focused_issue_id();
+
+        self.load_from_store(store);
+
+        // Storeの更新で一覧の並びが変わってもフォーカス中のissueを維持する
+        match focused_issue_id {
+            Some(issue_id) => self.focus_issue(issue_id),
+            None => self.clamp_focus(),
+        }
+
+        if let Some(issue) = self.focused_issue().cloned() {
+            self.widget_state
+                .update(IssueSelectPopupWidget::preview_width(area), &issue);
         }
     }
 
@@ -73,7 +94,73 @@ impl IssueSelectPopupComponent {
             self.focused_project_index,
             self.focused_issue_index,
             self.focused_column,
+            &self.widget_state,
         )
+    }
+
+    fn load_from_store(&mut self, store: &Store) {
+        self.projects = {
+            let mut projects = store
+                .get_projects()
+                .iter()
+                .map(|(id, project)| IssueSelectPopupProject::new(*id, project.name.clone()))
+                .collect::<Vec<_>>();
+            projects.sort_by_key(|project| project.id);
+            projects
+        };
+
+        self.issues = {
+            let mut issues = store
+                .get_issues()
+                .iter()
+                .map(|(id, issue)| {
+                    IssueSelectPopupIssue::new(
+                        issue.project_id.get(),
+                        *id,
+                        issue.subject.clone(),
+                        issue.description.clone(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            issues.sort_by_key(|issue| issue.issue_id);
+            issues
+        };
+    }
+
+    /// issue_idを持つissueとその所属projectにフォーカスを合わせる。
+    /// 見つからない場合は現在のフォーカスを一覧の範囲内に丸める。
+    fn focus_issue(&mut self, issue_id: u16) {
+        let Some(issue) = self.issues.iter().find(|issue| issue.issue_id == issue_id) else {
+            self.clamp_focus();
+            return;
+        };
+
+        let project_id = issue.project_id;
+        let Some(project_index) = self
+            .projects
+            .iter()
+            .position(|project| project.id == project_id)
+        else {
+            self.clamp_focus();
+            return;
+        };
+
+        self.focused_project_index = project_index;
+        self.focused_issue_index = self
+            .issues
+            .iter()
+            .filter(|issue| issue.project_id == project_id)
+            .position(|issue| issue.issue_id == issue_id)
+            .unwrap_or(0);
+    }
+
+    fn clamp_focus(&mut self) {
+        self.focused_project_index = self
+            .focused_project_index
+            .min(self.projects.len().saturating_sub(1));
+        self.focused_issue_index = self
+            .focused_issue_index
+            .min(self.focused_project_issue_count().saturating_sub(1));
     }
 
     fn focus_next_project(&mut self) {
@@ -113,14 +200,17 @@ impl IssueSelectPopupComponent {
             .count()
     }
 
-    fn focused_issue_id(&self) -> Option<u16> {
+    fn focused_issue(&self) -> Option<&IssueSelectPopupIssue> {
         let project = self.projects.get(self.focused_project_index)?;
 
         self.issues
             .iter()
             .filter(|issue| issue.project_id == project.id)
             .nth(self.focused_issue_index)
-            .map(|issue| issue.issue_id)
+    }
+
+    fn focused_issue_id(&self) -> Option<u16> {
+        self.focused_issue().map(|issue| issue.issue_id)
     }
 }
 
@@ -135,42 +225,92 @@ mod tests {
 
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
+    use crate::app::Action;
+
+    // TODO: 以下はStoreに任意のproject/issueを積むActionが追加されたら結合テストを追加する
+    //   - 複数projectでのj/kによるproject列のフォーカス移動とissue列フォーカスのリセット
+    //   - project切り替えに追従してプレビュー(widget_state)が更新されること
+    //   - updateでStoreから消えたissueにフォーカスしていた場合のフォーカス丸め込み
+
+    const AREA: Rect = Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 24,
+    };
+
     fn key_event(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
-    fn projects() -> Vec<(u16, String)> {
-        vec![
-            (1, "redmine-tui".to_string()),
-            (2, "backend".to_string()),
-            (3, "docs".to_string()),
-        ]
-    }
-
-    fn issues() -> Vec<IssueSelectPopupIssue> {
-        vec![
-            IssueSelectPopupIssue::new(1, 101, "Issue selector popup", "description"),
-            IssueSelectPopupIssue::new(2, 204, "API shape", "description"),
-            IssueSelectPopupIssue::new(2, 205, "Keyboard flow", "description"),
-        ]
+    fn store() -> Store {
+        let mut store = Store::new();
+        store.consume_action(Action::LoadProjects);
+        store.consume_action(Action::LoadIssue { id: 1 });
+        store.consume_action(Action::LoadIssue { id: 2 });
+        store.consume_action(Action::LoadIssue { id: 3 });
+        store
     }
 
     #[test]
-    fn create_widget_splits_projects_and_issues_with_focus_state() {
-        let component = IssueSelectPopupComponent::new(&projects(), &issues(), 1, 0);
+    fn new_focuses_given_issue_and_its_project() {
+        let component = IssueSelectPopupComponent::new(&store(), 2);
 
         let widget = component.create_widget();
 
-        assert_eq!(widget.focused_project_index, 1);
-        assert_eq!(widget.focused_issue_index, 0);
+        assert_eq!(widget.focused_project_index, 0);
+        assert_eq!(widget.focused_issue_index, 1);
         assert_eq!(widget.focused_column, IssueSelectPopupFocusColumn::Project);
-        assert_eq!(widget.projects[1].name, "backend");
-        assert_eq!(widget.issues[1].issue_id, 204);
+        assert_eq!(widget.projects[0].name, "Sample Project");
+        assert_eq!(
+            widget
+                .issues
+                .iter()
+                .map(|issue| issue.issue_id)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn new_falls_back_to_first_issue_when_focused_issue_is_not_in_store() {
+        let component = IssueSelectPopupComponent::new(&store(), 404);
+
+        let widget = component.create_widget();
+
+        assert_eq!(widget.focused_project_index, 0);
+        assert_eq!(widget.focused_issue_index, 0);
+    }
+
+    #[test]
+    fn update_keeps_focused_issue_across_store_updates() {
+        let mut component = IssueSelectPopupComponent::new(&store(), 3);
+
+        component.update(&store(), AREA);
+
+        let widget = component.create_widget();
+        assert_eq!(widget.focused_issue_index, 2);
+        assert_eq!(widget.issues[widget.focused_issue_index].issue_id, 3);
+    }
+
+    #[test]
+    fn update_reflects_issue_subject_updated_in_store() {
+        let mut component = IssueSelectPopupComponent::new(&store(), 1);
+        let mut store = store();
+        store.consume_action(Action::UpdateIssue {
+            id: 1,
+            body: "updated description".to_string(),
+        });
+
+        component.update(&store, AREA);
+
+        let widget = component.create_widget();
+        assert_eq!(widget.issues[0].description, "updated description");
     }
 
     #[test]
     fn process_event_l_and_h_move_between_project_and_issue_columns() {
-        let mut component = IssueSelectPopupComponent::new(&projects(), &issues(), 1, 0);
+        let mut component = IssueSelectPopupComponent::new(&store(), 1);
 
         assert!(
             component
@@ -194,33 +334,8 @@ mod tests {
     }
 
     #[test]
-    fn process_event_j_and_k_move_project_focus_and_reset_issue_focus() {
-        let mut component = IssueSelectPopupComponent::new(&projects(), &issues(), 0, 1);
-
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('j')))
-                .is_none()
-        );
-
-        let widget = component.create_widget();
-        assert_eq!(widget.focused_project_index, 1);
-        assert_eq!(widget.focused_issue_index, 0);
-
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('k')))
-                .is_none()
-        );
-
-        let widget = component.create_widget();
-        assert_eq!(widget.focused_project_index, 0);
-        assert_eq!(widget.focused_issue_index, 0);
-    }
-
-    #[test]
     fn process_event_j_and_k_move_issue_focus_when_issue_column_is_focused() {
-        let mut component = IssueSelectPopupComponent::new(&projects(), &issues(), 1, 0);
+        let mut component = IssueSelectPopupComponent::new(&store(), 1);
         assert!(
             component
                 .process_event(key_event(KeyCode::Char('l')))
@@ -243,8 +358,26 @@ mod tests {
     }
 
     #[test]
+    fn process_event_j_stops_at_last_issue() {
+        let mut component = IssueSelectPopupComponent::new(&store(), 3);
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('l')))
+                .is_none()
+        );
+
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('j')))
+                .is_none()
+        );
+
+        assert_eq!(component.create_widget().focused_issue_index, 2);
+    }
+
+    #[test]
     fn process_event_q_returns_quited() {
-        let mut component = IssueSelectPopupComponent::new(&projects(), &issues(), 1, 0);
+        let mut component = IssueSelectPopupComponent::new(&store(), 1);
 
         let result = component.process_event(key_event(KeyCode::Char('q')));
 
@@ -253,7 +386,7 @@ mod tests {
 
     #[test]
     fn process_event_enter_returns_focused_issue_id() {
-        let mut component = IssueSelectPopupComponent::new(&projects(), &issues(), 1, 0);
+        let mut component = IssueSelectPopupComponent::new(&store(), 1);
 
         assert!(
             component
@@ -269,7 +402,26 @@ mod tests {
 
         assert!(matches!(
             result,
-            Some(EventProcessResult::Entered { issue_id: 205 })
+            Some(EventProcessResult::Entered { issue_id: 2 })
         ));
+    }
+
+    #[test]
+    fn process_event_returns_none_for_non_key_event() {
+        let mut component = IssueSelectPopupComponent::new(&store(), 1);
+
+        let result = component.process_event(Event::Resize(80, 24));
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn process_event_ignores_unhandled_key() {
+        let mut component = IssueSelectPopupComponent::new(&store(), 2);
+
+        let result = component.process_event(key_event(KeyCode::Char('x')));
+
+        assert!(result.is_none());
+        assert_eq!(component.create_widget().focused_issue_index, 1);
     }
 }
