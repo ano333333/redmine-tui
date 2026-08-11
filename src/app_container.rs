@@ -59,7 +59,11 @@ impl<'a> AppContainer<'a> {
             }
         }
         let mut app_component = AppComponent::new(dispatcher.clone());
-        app_component.update(dispatcher.clone(), dispatcher.borrow().store());
+        app_component.update(
+            dispatcher.clone(),
+            dispatcher.borrow().store(),
+            Rect::new(0, 0, APP_INITIAL_WIDTH, APP_INITIAL_HEIGHT),
+        );
         AppContainer {
             width: APP_INITIAL_WIDTH,
             height: APP_INITIAL_HEIGHT,
@@ -109,8 +113,11 @@ impl<'a> AppContainer<'a> {
                 }
             }
         }
-        self.app_component
-            .update(self.dispatcher.clone(), self.dispatcher.borrow().store());
+        self.app_component.update(
+            self.dispatcher.clone(),
+            self.dispatcher.borrow().store(),
+            self.area(),
+        );
         if let Some(effect) = self.app_component.take_effect() {
             if let Err(err) = self.handle_app_effect(effect, terminal) {
                 tracing::event!(
@@ -127,9 +134,16 @@ impl<'a> AppContainer<'a> {
     pub fn update(&mut self) {
         while self.dispatcher.borrow().consume_actinos_len() > 0 {
             self.dispatcher.borrow_mut().consume_action();
-            self.app_component
-                .update(self.dispatcher.clone(), self.dispatcher.borrow().store());
+            self.app_component.update(
+                self.dispatcher.clone(),
+                self.dispatcher.borrow().store(),
+                self.area(),
+            );
         }
+    }
+
+    fn area(&self) -> Rect {
+        Rect::new(0, 0, self.width, self.height)
     }
 
     pub fn render(&self, frame: &mut Frame, area: Rect) {
@@ -156,8 +170,11 @@ impl<'a> AppContainer<'a> {
             AppEffect::OpenEditor(request) => {
                 let response = self.run_editor(terminal, request)?;
                 self.app_component.handle_editor_response(response);
-                self.app_component
-                    .update(self.dispatcher.clone(), self.dispatcher.borrow().store());
+                self.app_component.update(
+                    self.dispatcher.clone(),
+                    self.dispatcher.borrow().store(),
+                    self.area(),
+                );
             }
         }
         Ok(())
