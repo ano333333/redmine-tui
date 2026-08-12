@@ -2,7 +2,7 @@ use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Rect;
 
 use crate::app::Store;
-use crate::vos::EntityIdValue;
+use crate::vos::{EntityIdValue, IssueId};
 
 use super::widget::{
     IssueSelectPopupFocusColumn, IssueSelectPopupIssue, IssueSelectPopupProject,
@@ -21,7 +21,7 @@ pub struct IssueSelectPopupComponent {
 impl IssueSelectPopupComponent {
     /// ポップアップを開いた時点で表示していたissueにフォーカスを合わせて初期化する。
     /// projects/issuesの一覧はupdateでStoreから取得する。
-    pub fn new(store: &Store, focused_issue_id: u16) -> Self {
+    pub fn new(store: &Store, focused_issue_id: impl Into<IssueId>) -> Self {
         let mut component = Self {
             projects: Vec::new(),
             issues: Vec::new(),
@@ -129,7 +129,8 @@ impl IssueSelectPopupComponent {
 
     /// issue_idを持つissueとその所属projectにフォーカスを合わせる。
     /// 見つからない場合は現在のフォーカスを一覧の範囲内に丸める。
-    fn focus_issue(&mut self, issue_id: u16) {
+    fn focus_issue(&mut self, issue_id: impl Into<IssueId>) {
+        let issue_id = issue_id.into();
         let Some(issue) = self.issues.iter().find(|issue| issue.issue_id == issue_id) else {
             self.clamp_focus();
             return;
@@ -210,7 +211,7 @@ impl IssueSelectPopupComponent {
     }
 
     fn focused_issue_id(&self) -> Option<u16> {
-        self.focused_issue().map(|issue| issue.issue_id)
+        self.focused_issue().map(|issue| issue.issue_id.get())
     }
 }
 

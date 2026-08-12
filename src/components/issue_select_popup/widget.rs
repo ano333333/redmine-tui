@@ -7,19 +7,21 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
+use crate::vos::{IssueId, ProjectId};
+
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 const SELECTED_BG: Color = Color::Rgb(0x22, 0x22, 0x22);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IssueSelectPopupProject {
-    pub id: u16,
+    pub id: ProjectId,
     pub name: String,
 }
 
 impl IssueSelectPopupProject {
-    pub fn new(id: u16, name: impl Into<String>) -> Self {
+    pub fn new(id: impl Into<ProjectId>, name: impl Into<String>) -> Self {
         Self {
-            id,
+            id: id.into(),
             name: name.into(),
         }
     }
@@ -33,22 +35,22 @@ pub enum IssueSelectPopupFocusColumn {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IssueSelectPopupIssue {
-    pub project_id: u16,
-    pub issue_id: u16,
+    pub project_id: ProjectId,
+    pub issue_id: IssueId,
     pub subject: String,
     pub description: String,
 }
 
 impl IssueSelectPopupIssue {
     pub fn new(
-        project_id: u16,
-        issue_id: u16,
+        project_id: impl Into<ProjectId>,
+        issue_id: impl Into<IssueId>,
         subject: impl Into<String>,
         description: impl Into<String>,
     ) -> Self {
         Self {
-            project_id,
-            issue_id,
+            project_id: project_id.into(),
+            issue_id: issue_id.into(),
             subject: subject.into(),
             description: description.into(),
         }
