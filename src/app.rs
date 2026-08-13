@@ -14,8 +14,8 @@ use crate::vos::issue_property_diff::{
     IssueDueDateDiff, IssueStartDateDiff, IssueStatusIdDiff, IssueTargetVersionIdDiff,
 };
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, PriorityId, ProjectId,
-    TargetVersionId, TimeEntityActivityId, UserId,
+    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, PriorityId,
+    ProjectId, TargetVersionId, TimeEntityActivityId, UserId,
 };
 
 pub struct Dispatcher {
@@ -60,7 +60,7 @@ pub enum JournalState {
 pub struct Store {
     issues: HashMap<IssueId, Issue>,
     issue_property_diffs: HashMap<IssueId, Vec<IssuePropertyDiff>>,
-    journals: HashMap<u16, (Journal, JournalState)>,
+    journals: HashMap<JournalId, (Journal, JournalState)>,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
     priorities: HashMap<u16, Priority>,
@@ -235,11 +235,11 @@ impl Store {
             }
             Action::LoadJournal { id } => {
                 self.journals
-                    .entry(id)
+                    .entry(id.into())
                     .or_insert((parse_journal_yaml(id), JournalState::Synced));
             }
             Action::UpdateJournal { id, notes } => {
-                if let Some((journal, state)) = self.journals.get_mut(&id) {
+                if let Some((journal, state)) = self.journals.get_mut(&id.into()) {
                     journal.notes = notes;
                     *state = JournalState::Updated;
                 }
@@ -273,8 +273,11 @@ impl Store {
         }
     }
 
-    pub fn get_journal(&self, journal_id: u16) -> Option<&(Journal, JournalState)> {
-        self.journals.get(&journal_id)
+    pub fn get_journal(
+        &self,
+        journal_id: impl Into<JournalId>,
+    ) -> Option<&(Journal, JournalState)> {
+        self.journals.get(&journal_id.into())
     }
 
     pub fn get_users(&self) -> &HashMap<UserId, User> {
