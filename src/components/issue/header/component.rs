@@ -43,7 +43,9 @@ impl HeaderComponent {
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> HeaderWidget<'a> {
-        let (issue, issue_status) = store.get_issue(self.id).unwrap();
+        let (issue, issue_status) = store
+            .get_issue(self.id)
+            .expect("HeaderComponent requires its issue to exist in Store");
         HeaderWidget::new(
             self.id,
             &issue.subject,

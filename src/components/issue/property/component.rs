@@ -39,7 +39,9 @@ impl PropertyComponent {
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> PropertyWidget<'a> {
-        let (issue, _) = store.get_issue(self.id).unwrap();
+        let (issue, _) = store
+            .get_issue(self.id)
+            .expect("PropertyComponent requires its issue to exist in Store");
         create_property_widget(
             issue,
             store,

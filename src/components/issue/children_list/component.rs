@@ -27,7 +27,9 @@ impl ChildrenListComponent {
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> ChildrenListWidget<'a> {
-        let (issue, _) = store.get_issue(self.id).unwrap();
+        let (issue, _) = store
+            .get_issue(self.id)
+            .expect("ChildrenListComponent requires its issue to exist in Store");
 
         let child_all_num = issue.child_ids.len() as u16;
         let child_closed_num = issue

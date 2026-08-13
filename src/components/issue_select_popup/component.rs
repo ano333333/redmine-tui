@@ -49,7 +49,11 @@ impl IssueSelectPopupComponent {
         }
 
         if let Some(issue) = self.focused_issue().cloned() {
-            let description = &store.get_issues().get(&issue.issue_id).unwrap().description;
+            let description = &store
+                .get_issues()
+                .get(&issue.issue_id)
+                .expect("IssueSelectPopupCopmonent requires its issue to exist in Store")
+                .description;
             self.widget_state.update(
                 IssueSelectPopupWidget::preview_width(area),
                 &issue,
@@ -74,7 +78,13 @@ impl IssueSelectPopupComponent {
         let empty_description = String::new();
         let description = self
             .focused_issue_id()
-            .map(|issue_id| &store.get_issues().get(&issue_id).unwrap().description)
+            .map(|issue_id| {
+                &store
+                    .get_issues()
+                    .get(&issue_id)
+                    .expect("IssueSelectPopupComponent requires its issue to exist in Store")
+                    .description
+            })
             .unwrap_or(&empty_description);
         IssueSelectPopupWidget::new(
             &self.projects,
