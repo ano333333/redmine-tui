@@ -203,7 +203,7 @@ pub fn parse_users_yaml() -> HashMap<UserId, User> {
         .collect()
 }
 
-pub fn parse_issue_statuses_yaml() -> HashMap<u16, IssueStatus> {
+pub fn parse_issue_statuses_yaml() -> HashMap<IssueStatusId, IssueStatus> {
     let yaml = read_yaml("datas/issue_statuses.yml");
     let entries = yaml["issue_statuses"].as_vec().expect("no issue_statuses");
 
@@ -215,7 +215,7 @@ pub fn parse_issue_statuses_yaml() -> HashMap<u16, IssueStatus> {
                 name: as_string(entry, "name"),
                 is_closed: as_bool(entry, "is_closed"),
             };
-            (status.id.get(), status)
+            (status.id, status)
         })
         .collect()
 }

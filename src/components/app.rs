@@ -163,7 +163,7 @@ impl<'a> AppComponent<'a> {
                         .store()
                         .get_issue_statuses()
                         .iter()
-                        .map(|(id, status)| (*id, status.name.clone()))
+                        .map(|(id, status)| (id.get(), status.name.clone()))
                         .collect::<Vec<_>>();
                     let issue_id = self.issue_component.id;
                     self.popup_components.push_back(Rc::new(RefCell::new(
@@ -174,7 +174,7 @@ impl<'a> AppComponent<'a> {
                             Box::new(move |status_id| {
                                 if let Some(status_id) = status_id {
                                     dispatcher.borrow_mut().dispatch(Action::UpdateIssueStatus {
-                                        id: issue_id.into(),
+                                        id: issue_id,
                                         status_id: IssueStatusId::new(status_id),
                                     });
                                 }

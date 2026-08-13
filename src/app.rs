@@ -62,7 +62,7 @@ pub struct Store {
     issue_property_diffs: HashMap<IssueId, Vec<IssuePropertyDiff>>,
     journals: HashMap<u16, (Journal, JournalState)>,
     users: HashMap<UserId, User>,
-    issue_statuses: HashMap<u16, IssueStatus>,
+    issue_statuses: HashMap<IssueStatusId, IssueStatus>,
     priorities: HashMap<u16, Priority>,
     projects: HashMap<u16, Project>,
     trackers: HashMap<u16, Tracker>,
@@ -285,13 +285,13 @@ impl Store {
         self.users.get(&user_id)
     }
 
-    pub fn get_issue_statuses(&self) -> &HashMap<u16, IssueStatus> {
+    pub fn get_issue_statuses(&self) -> &HashMap<IssueStatusId, IssueStatus> {
         &self.issue_statuses
     }
 
     pub fn get_issue_status(&self, issue_status_id: IssueStatusId) -> &IssueStatus {
         self.issue_statuses
-            .get(&issue_status_id.get())
+            .get(&issue_status_id)
             .expect("issue status must exist")
     }
 
