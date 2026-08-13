@@ -38,7 +38,6 @@ pub struct IssueSelectPopupIssue {
     pub project_id: ProjectId,
     pub issue_id: IssueId,
     pub subject: String,
-    pub description: String,
 }
 
 impl IssueSelectPopupIssue {
@@ -46,13 +45,11 @@ impl IssueSelectPopupIssue {
         project_id: impl Into<ProjectId>,
         issue_id: impl Into<IssueId>,
         subject: impl Into<String>,
-        description: impl Into<String>,
     ) -> Self {
         Self {
             project_id: project_id.into(),
             issue_id: issue_id.into(),
             subject: subject.into(),
-            description: description.into(),
         }
     }
 }
@@ -83,14 +80,14 @@ impl IssueSelectPopupWidgetState {
         }
     }
 
-    pub fn update(&mut self, width: u16, issue: &IssueSelectPopupIssue) {
-        let hash = preview_hash(width, issue);
+    pub fn update(&mut self, width: u16, issue: &IssueSelectPopupIssue, description: &String) {
+        let hash = preview_hash(width, issue, description);
         if self.preview_hash == Some(hash) {
             return;
         }
 
         self.subject_buffer = render_plain_text_in_buffer(width, &issue.subject);
-        self.description_buffer = render_markdown_in_buffer(width, &issue.description);
+        self.description_buffer = render_markdown_in_buffer(width, description);
         self.preview_hash = Some(hash);
         self.preview_generation = self.preview_generation.saturating_add(1);
     }
@@ -138,6 +135,7 @@ impl<'a> IssueSelectPopupWidget<'a> {
         focused_issue_index: usize,
         focused_column: IssueSelectPopupFocusColumn,
         state: &'a IssueSelectPopupWidgetState,
+        _description: &String,
     ) -> Self {
         Self {
             projects: projects.into_iter().collect(),
@@ -311,11 +309,11 @@ fn render_single_line(buf: &mut Buffer, x: u16, y: u16, width: u16, text: &str, 
     buf.set_line(x, y, &Line::styled(clipped, style), width);
 }
 
-fn preview_hash(width: u16, issue: &IssueSelectPopupIssue) -> u64 {
+fn preview_hash(width: u16, issue: &IssueSelectPopupIssue, description: &String) -> u64 {
     let mut hasher = DefaultHasher::new();
     width.hash(&mut hasher);
     issue.subject.hash(&mut hasher);
-    issue.description.hash(&mut hasher);
+    description.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -377,20 +375,14 @@ mod tests {
 
     fn issues() -> Vec<IssueSelectPopupIssue> {
         vec![
-            IssueSelectPopupIssue::new(
-                1,
-                101,
-                "Issue selector popup",
-                "3列でproject、ID、subjectとdescriptionを確認できる",
-            ),
+            IssueSelectPopupIssue::new(1, 101, "Issue selector popup"),
             IssueSelectPopupIssue::new(
                 2,
                 204,
                 "Long subject that should be clipped by the issue column",
-                "Description also needs clipping so the row never wraps unexpectedly",
             ),
-            IssueSelectPopupIssue::new(2, 205, "API shape", "projectとissueを別々の一覧で渡す"),
-            IssueSelectPopupIssue::new(3, 305, "README更新", "手順と設定例を追加する"),
+            IssueSelectPopupIssue::new(2, 205, "API shape"),
+            IssueSelectPopupIssue::new(3, 305, "README更新"),
         ]
     }
 
@@ -401,10 +393,13 @@ mod tests {
             .into_iter()
             .filter(|issue| issue.project_id == ProjectId::new(2))
             .collect::<Vec<_>>();
+        let description =
+            "Description also needs clipping so the row never wraps unexpectedly".to_string();
         let mut state = IssueSelectPopupWidgetState::new();
         state.update(
             IssueSelectPopupWidget::preview_width(Rect::new(0, 0, 80, 24)),
             &issues[0],
+            &description,
         );
         render_snapshot(
             "issue_select_popup_three_columns_with_focus",
@@ -417,6 +412,7 @@ mod tests {
                 0,
                 IssueSelectPopupFocusColumn::Issue,
                 &state,
+                &description,
             ),
         );
     }
@@ -436,6 +432,7 @@ mod tests {
                 0,
                 IssueSelectPopupFocusColumn::Issue,
                 &state,
+                &String::new(),
             ),
         );
     }
@@ -444,11 +441,12 @@ mod tests {
     fn line_count_includes_header_item_rows_and_borders() {
         let projects = vec![IssueSelectPopupProject::new(1, "redmine-tui")];
         let issues = vec![
-            IssueSelectPopupIssue::new(2, 201, "Displayed issue 1", ""),
-            IssueSelectPopupIssue::new(2, 202, "Displayed issue 2", ""),
-            IssueSelectPopupIssue::new(2, 203, "Displayed issue 3", ""),
+            IssueSelectPopupIssue::new(2, 201, "Displayed issue 1"),
+            IssueSelectPopupIssue::new(2, 202, "Displayed issue 2"),
+            IssueSelectPopupIssue::new(2, 203, "Displayed issue 3"),
         ];
         let state = IssueSelectPopupWidgetState::new();
+        let description = String::new();
         let widget = IssueSelectPopupWidget::new(
             &projects,
             &issues,
@@ -456,6 +454,7 @@ mod tests {
             0,
             IssueSelectPopupFocusColumn::Project,
             &state,
+            &description,
         );
 
         assert_eq!(widget.line_count(80), 6);
@@ -470,8 +469,14 @@ mod tests {
             .collect::<Vec<_>>();
         let area = Rect::new(0, 0, 80, 24);
         let project_column = project_column(area);
+        let description =
+            "Description also needs clipping so the row never wraps unexpectedly".to_string();
         let mut state = IssueSelectPopupWidgetState::new();
-        state.update(IssueSelectPopupWidget::preview_width(area), &issues[0]);
+        state.update(
+            IssueSelectPopupWidget::preview_width(area),
+            &issues[0],
+            &description,
+        );
         let widget = IssueSelectPopupWidget::new(
             &projects,
             &issues,
@@ -479,6 +484,7 @@ mod tests {
             0,
             IssueSelectPopupFocusColumn::Issue,
             &state,
+            &description,
         );
         let mut buffer = Buffer::empty(area);
 
@@ -493,15 +499,15 @@ mod tests {
     #[test]
     fn render_formats_issue_preview_body_as_markdown() {
         let projects = vec![IssueSelectPopupProject::new(1, "redmine-tui")];
-        let issues = vec![IssueSelectPopupIssue::new(
-            1,
-            101,
-            "Markdown preview",
-            "Preview has **bold** text",
-        )];
+        let issues = vec![IssueSelectPopupIssue::new(1, 101, "Markdown preview")];
+        let description = "Preview has **bold** text".to_string();
         let area = Rect::new(0, 0, 80, 20);
         let mut state = IssueSelectPopupWidgetState::new();
-        state.update(IssueSelectPopupWidget::preview_width(area), &issues[0]);
+        state.update(
+            IssueSelectPopupWidget::preview_width(area),
+            &issues[0],
+            &description,
+        );
         let widget = IssueSelectPopupWidget::new(
             &projects,
             &issues,
@@ -509,6 +515,7 @@ mod tests {
             0,
             IssueSelectPopupFocusColumn::Issue,
             &state,
+            &description,
         );
         let mut buffer = Buffer::empty(area);
 
@@ -538,12 +545,16 @@ mod tests {
             1,
             101,
             "Subject words that must wrap onto another preview line",
-            "Description starts after blank line",
         )];
+        let description = "Description starts after blank line".to_string();
         let area = Rect::new(0, 0, 80, 20);
         let issue_column = issue_column(area);
         let mut state = IssueSelectPopupWidgetState::new();
-        state.update(IssueSelectPopupWidget::preview_width(area), &issues[0]);
+        state.update(
+            IssueSelectPopupWidget::preview_width(area),
+            &issues[0],
+            &description,
+        );
         let widget = IssueSelectPopupWidget::new(
             &projects,
             &issues,
@@ -551,6 +562,7 @@ mod tests {
             0,
             IssueSelectPopupFocusColumn::Issue,
             &state,
+            &description,
         );
         let mut buffer = Buffer::empty(area);
 
@@ -594,48 +606,34 @@ mod tests {
     #[test]
     fn preview_state_reuses_cache_for_same_visible_issue_and_width() {
         let mut state = IssueSelectPopupWidgetState::new();
-        let issue =
-            IssueSelectPopupIssue::new(1, 101, "Cached subject", "Cached **markdown** description");
+        let issue = IssueSelectPopupIssue::new(1, 101, "Cached subject");
+        let description = "Cached **markdown** description".to_string();
 
-        state.update(24, &issue);
+        state.update(24, &issue, &description);
         let first_generation = state.preview_generation();
 
-        state.update(24, &issue);
+        state.update(24, &issue, &description);
         assert_eq!(state.preview_generation(), first_generation);
 
-        state.update(25, &issue);
+        state.update(25, &issue, &description);
         assert!(state.preview_generation() > first_generation);
     }
 
     #[test]
     fn preview_state_cache_key_uses_visible_subject_and_description() {
         let mut state = IssueSelectPopupWidgetState::new();
-        let issue = IssueSelectPopupIssue::new(
-            1,
-            101,
-            "Same visible subject",
-            "Same visible **description**",
-        );
-        let same_preview_issue = IssueSelectPopupIssue::new(
-            2,
-            202,
-            "Same visible subject",
-            "Same visible **description**",
-        );
-        let changed_preview_issue = IssueSelectPopupIssue::new(
-            2,
-            202,
-            "Changed visible subject",
-            "Same visible **description**",
-        );
+        let issue = IssueSelectPopupIssue::new(1, 101, "Same visible subject");
+        let same_preview_issue = IssueSelectPopupIssue::new(2, 202, "Same visible subject");
+        let changed_preview_issue = IssueSelectPopupIssue::new(2, 202, "Changed visible subject");
+        let description = "Same visible **description**".to_string();
 
-        state.update(24, &issue);
+        state.update(24, &issue, &description);
         let first_generation = state.preview_generation();
 
-        state.update(24, &same_preview_issue);
+        state.update(24, &same_preview_issue, &description);
         assert_eq!(state.preview_generation(), first_generation);
 
-        state.update(24, &changed_preview_issue);
+        state.update(24, &changed_preview_issue, &description);
         assert!(state.preview_generation() > first_generation);
     }
 

@@ -445,7 +445,7 @@ impl<'a> AppComponent<'a> {
                     frame.render_widget(widget, area);
                 }
                 PopupComponent::IssueSelect(popup_component) => {
-                    let widget = popup_component.create_widget();
+                    let widget = popup_component.create_widget(store);
                     frame.render_widget(widget, area);
                 }
             }
@@ -712,7 +712,8 @@ mod tests {
         let popup = app.popup_components.back().expect("popup should be open");
         match &*popup.borrow() {
             PopupComponent::IssueSelect(popup_component) => {
-                let widget = popup_component.create_widget();
+                let dispatcher_ref = dispatcher.borrow();
+                let widget = popup_component.create_widget(dispatcher_ref.store());
                 assert_eq!(widget.projects.len(), 2);
                 assert_eq!(widget.projects[0].id, 1);
                 assert_eq!(widget.projects[0].name, "Sample Project");
