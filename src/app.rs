@@ -63,7 +63,7 @@ pub struct Store {
     journals: HashMap<JournalId, (Journal, JournalState)>,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
-    priorities: HashMap<u16, Priority>,
+    priorities: HashMap<PriorityId, Priority>,
     projects: HashMap<u16, Project>,
     trackers: HashMap<u16, Tracker>,
     target_versions: HashMap<TargetVersionId, TargetVersion>,
@@ -298,12 +298,12 @@ impl Store {
             .expect("issue status must exist")
     }
 
-    pub fn get_priorities(&self) -> &HashMap<u16, Priority> {
+    pub fn get_priorities(&self) -> &HashMap<PriorityId, Priority> {
         &self.priorities
     }
 
-    pub fn get_priority(&self, priority_id: PriorityId) -> Option<&Priority> {
-        self.priorities.get(&priority_id.get())
+    pub fn get_priority(&self, priority_id: impl Into<PriorityId>) -> Option<&Priority> {
+        self.priorities.get(&priority_id.into())
     }
 
     pub fn get_projects(&self) -> &HashMap<u16, Project> {
