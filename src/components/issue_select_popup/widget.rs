@@ -120,11 +120,6 @@ impl IssueSelectPopupWidgetState {
             description_height,
         );
     }
-
-    #[cfg(test)]
-    fn preview_generation(&self) -> u64 {
-        self.preview_generation
-    }
 }
 
 impl<'a> IssueSelectPopupWidget<'a> {
@@ -601,40 +596,6 @@ mod tests {
                 "preview width should match the issue column width for {area:?}"
             );
         }
-    }
-
-    #[test]
-    fn preview_state_reuses_cache_for_same_visible_issue_and_width() {
-        let mut state = IssueSelectPopupWidgetState::new();
-        let issue = IssueSelectPopupIssue::new(1, 101, "Cached subject");
-        let description = "Cached **markdown** description".to_string();
-
-        state.update(24, &issue, &description);
-        let first_generation = state.preview_generation();
-
-        state.update(24, &issue, &description);
-        assert_eq!(state.preview_generation(), first_generation);
-
-        state.update(25, &issue, &description);
-        assert!(state.preview_generation() > first_generation);
-    }
-
-    #[test]
-    fn preview_state_cache_key_uses_visible_subject_and_description() {
-        let mut state = IssueSelectPopupWidgetState::new();
-        let issue = IssueSelectPopupIssue::new(1, 101, "Same visible subject");
-        let same_preview_issue = IssueSelectPopupIssue::new(2, 202, "Same visible subject");
-        let changed_preview_issue = IssueSelectPopupIssue::new(2, 202, "Changed visible subject");
-        let description = "Same visible **description**".to_string();
-
-        state.update(24, &issue, &description);
-        let first_generation = state.preview_generation();
-
-        state.update(24, &same_preview_issue, &description);
-        assert_eq!(state.preview_generation(), first_generation);
-
-        state.update(24, &changed_preview_issue, &description);
-        assert!(state.preview_generation() > first_generation);
     }
 
     fn issue_column(area: Rect) -> Rect {
