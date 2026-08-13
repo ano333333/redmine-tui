@@ -77,14 +77,16 @@ fn as_u16_array(yaml: &Yaml, key: &str) -> Vec<u16> {
     res
 }
 
-pub fn parse_journal_yaml(id: u16) -> Journal {
+pub fn parse_journal_yaml(id: JournalId) -> Journal {
     let path = format!("datas/journals/{}.yml", id);
     let yaml = read_yaml(path.as_str());
     let parsed_id = as_u16(&yaml, "id");
     assert_eq!(
-        parsed_id, id,
+        parsed_id,
+        id.get(),
         "journal id mismatch: {} != {}",
-        parsed_id, id
+        parsed_id,
+        id
     );
     let user = as_string(&yaml, "user");
     let updated_on = as_local_datetime(&yaml, "updated_on");
@@ -97,7 +99,7 @@ pub fn parse_journal_yaml(id: u16) -> Journal {
         .collect();
 
     Journal {
-        id: id.into(),
+        id,
         user,
         updated_on,
         details,

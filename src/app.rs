@@ -235,7 +235,7 @@ impl Store {
             }
             Action::LoadJournal { id } => {
                 self.journals
-                    .entry(id.into())
+                    .entry(id)
                     .or_insert((parse_journal_yaml(id), JournalState::Synced));
             }
             Action::UpdateJournal { id, notes } => {
@@ -392,10 +392,10 @@ pub enum Action {
         due_date: Option<chrono::DateTime<chrono::Local>>,
     },
     LoadJournal {
-        id: u16,
+        id: JournalId,
     },
     UpdateJournal {
-        id: u16,
+        id: JournalId,
         notes: String,
     },
 }
