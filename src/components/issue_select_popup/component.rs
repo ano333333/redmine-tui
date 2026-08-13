@@ -11,7 +11,7 @@ use super::widget::{
 };
 
 pub enum EventProcessResult {
-    Entered { issue_id: u16 },
+    Selected { issue_id: u16 },
     Quited,
 }
 
@@ -58,9 +58,9 @@ impl IssueSelectPopupComponent {
         self.focus_state
             .process_event(event)
             .and_then(|result| match result {
-                focus_state::EventProcessResult::Entered => self
+                focus_state::EventProcessResult::Selected => self
                     .focused_issue_id()
-                    .map(|issue_id| EventProcessResult::Entered { issue_id }),
+                    .map(|issue_id| EventProcessResult::Selected { issue_id }),
                 focus_state::EventProcessResult::Quited => Some(EventProcessResult::Quited),
             })
     }
@@ -268,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_enter_returns_focused_issue_id() {
+    fn process_event_enter_returns_selected_issue_id() {
         let mut component = IssueSelectPopupComponent::new(&store(), 1);
 
         component.process_event(key_event(KeyCode::Char('l')));
@@ -277,7 +277,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Some(EventProcessResult::Entered { issue_id: 2 })
+            Some(EventProcessResult::Selected { issue_id: 2 })
         ));
     }
 

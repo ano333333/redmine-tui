@@ -119,7 +119,7 @@ impl<'a> AppComponent<'a> {
                 PopupComponent::IssueSelect(popup_component) => {
                     let result = popup_component.process_event(event);
                     match result {
-                        Some(IssueSelectPopupEventProcessResult::Entered { issue_id }) => {
+                        Some(IssueSelectPopupEventProcessResult::Selected { issue_id }) => {
                             self.popup_components.pop_back();
                             if issue_id != self.issue_component.id {
                                 self.issue_component =
@@ -147,10 +147,9 @@ impl<'a> AppComponent<'a> {
                         )
                     };
 
-                    self.popup_components
-                        .push_back(Rc::new(RefCell::new(PopupComponent::IssueSelect(
-                            popup_component,
-                        ))));
+                    self.popup_components.push_back(Rc::new(RefCell::new(
+                        PopupComponent::IssueSelect(popup_component),
+                    )));
                 }
                 Some(IssueEventProcessResult::EditIssueBodyRequested { id, body }) => {
                     self.pending_editor_context = Some(PendingEditorContext::IssueBody { id });
@@ -395,8 +394,7 @@ impl<'a> AppComponent<'a> {
         self.issue_component.update(dispatcher, store);
 
         for popup_component in &self.popup_components {
-            if let PopupComponent::IssueSelect(popup_component) =
-                &mut *popup_component.borrow_mut()
+            if let PopupComponent::IssueSelect(popup_component) = &mut *popup_component.borrow_mut()
             {
                 popup_component.update(store, area);
             }
@@ -525,7 +523,6 @@ mod tests {
     fn key_event(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
-
 
     fn loaded_dispatcher() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));

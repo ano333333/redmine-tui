@@ -3,7 +3,7 @@ use crossterm::event::{Event, KeyCode};
 use super::widget::IssueSelectPopupFocusColumn;
 
 pub enum EventProcessResult {
-    Entered,
+    Selected,
     Quited,
 }
 
@@ -98,7 +98,7 @@ impl FocusState {
             }
             Action::Enter => {
                 if self.focused_project_issue_count() > 0 {
-                    return Some(EventProcessResult::Entered);
+                    return Some(EventProcessResult::Selected);
                 }
             }
         }
@@ -248,12 +248,12 @@ mod tests {
     }
 
     #[test]
-    fn process_event_enter_returns_entered_when_issue_is_focused() {
+    fn process_event_enter_returns_selected_when_issue_is_focused() {
         let mut state = state_focused_on(1, 0);
 
         let result = state.process_event(key_event(KeyCode::Enter));
 
-        assert!(matches!(result, Some(EventProcessResult::Entered)));
+        assert!(matches!(result, Some(EventProcessResult::Selected)));
     }
 
     #[test]
