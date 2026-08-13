@@ -64,7 +64,7 @@ pub struct Store {
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
     priorities: HashMap<PriorityId, Priority>,
-    projects: HashMap<u16, Project>,
+    projects: HashMap<ProjectId, Project>,
     trackers: HashMap<u16, Tracker>,
     target_versions: HashMap<TargetVersionId, TargetVersion>,
     categories: HashMap<CategoryId, Category>,
@@ -306,12 +306,12 @@ impl Store {
         self.priorities.get(&priority_id.into())
     }
 
-    pub fn get_projects(&self) -> &HashMap<u16, Project> {
+    pub fn get_projects(&self) -> &HashMap<ProjectId, Project> {
         &self.projects
     }
 
-    pub fn get_project(&self, project_id: ProjectId) -> Option<&Project> {
-        self.projects.get(&project_id.get())
+    pub fn get_project(&self, project_id: impl Into<ProjectId>) -> Option<&Project> {
+        self.projects.get(&project_id.into())
     }
 
     pub fn get_trackers(&self) -> &HashMap<u16, Tracker> {
@@ -342,7 +342,7 @@ impl Store {
         &self.time_entity_activities
     }
 
-    pub fn projects(&self) -> &HashMap<u16, Project> {
+    pub fn projects(&self) -> &HashMap<ProjectId, Project> {
         &self.projects
     }
 }

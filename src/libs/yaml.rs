@@ -236,7 +236,7 @@ pub fn parse_priorities_yaml() -> HashMap<PriorityId, Priority> {
         .collect()
 }
 
-pub fn parse_projects_yaml() -> HashMap<u16, Project> {
+pub fn parse_projects_yaml() -> HashMap<ProjectId, Project> {
     let yaml = read_yaml("datas/projects.yml");
     let entries = yaml["projects"].as_vec().expect("no projects");
 
@@ -247,7 +247,7 @@ pub fn parse_projects_yaml() -> HashMap<u16, Project> {
                 id: ProjectId::new(as_u16(entry, "id")),
                 name: as_string(entry, "name"),
             };
-            (project.id.get(), project)
+            (project.id, project)
         })
         .collect()
 }
