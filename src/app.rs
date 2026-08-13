@@ -59,7 +59,7 @@ pub enum JournalState {
 
 pub struct Store {
     issues: HashMap<IssueId, Issue>,
-    issue_property_diffs: HashMap<u16, Vec<IssuePropertyDiff>>,
+    issue_property_diffs: HashMap<IssueId, Vec<IssuePropertyDiff>>,
     journals: HashMap<u16, (Journal, JournalState)>,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<u16, IssueStatus>,
@@ -131,16 +131,14 @@ impl Store {
                 }
             }
             Action::LoadIssue { id } => {
-                self.issues
-                    .entry(id.into())
-                    .or_insert(parse_issue_yaml(id.get()));
-                self.issue_property_diffs.entry(id.get()).or_default();
+                self.issues.entry(id).or_insert(parse_issue_yaml(id.get()));
+                self.issue_property_diffs.entry(id).or_default();
             }
             Action::UpdateIssue { id, body } => {
-                if let Some(issue) = self.issues.get_mut(&id.into()) {
+                if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.description.clone();
                     issue.description = body.clone();
-                    self.issue_property_diffs.entry(id.get()).or_default().push(
+                    self.issue_property_diffs.entry(id).or_default().push(
                         IssuePropertyDiff::Description(IssueDescriptionDiff {
                             before,
                             after: body,
@@ -149,10 +147,10 @@ impl Store {
                 }
             }
             Action::UpdateIssueStatus { id, status_id } => {
-                if let Some(issue) = self.issues.get_mut(&id.into()) {
+                if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.status_id;
                     issue.status_id = status_id;
-                    self.issue_property_diffs.entry(id.get()).or_default().push(
+                    self.issue_property_diffs.entry(id).or_default().push(
                         IssuePropertyDiff::StatusId(IssueStatusIdDiff {
                             before,
                             after: status_id,
@@ -164,7 +162,7 @@ impl Store {
                 if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.assigned_to_id;
                     issue.assigned_to_id = assigned_to_id;
-                    self.issue_property_diffs.entry(id.get()).or_default().push(
+                    self.issue_property_diffs.entry(id).or_default().push(
                         IssuePropertyDiff::AssignedToId(IssueAssignedToIdDiff {
                             before,
                             after: assigned_to_id,
@@ -179,7 +177,7 @@ impl Store {
                 if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.target_version_id;
                     issue.target_version_id = target_version_id;
-                    self.issue_property_diffs.entry(id.get()).or_default().push(
+                    self.issue_property_diffs.entry(id).or_default().push(
                         IssuePropertyDiff::TargetVersionId(IssueTargetVersionIdDiff {
                             before,
                             after: target_version_id,
@@ -191,7 +189,7 @@ impl Store {
                 if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.category_id;
                     issue.category_id = category_id;
-                    self.issue_property_diffs.entry(id.get()).or_default().push(
+                    self.issue_property_diffs.entry(id).or_default().push(
                         IssuePropertyDiff::CategoryId(IssueCategoryIdDiff {
                             before,
                             after: category_id,
@@ -203,7 +201,7 @@ impl Store {
                 if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.done_ratio;
                     issue.done_ratio = done_ratio;
-                    self.issue_property_diffs.entry(id.get()).or_default().push(
+                    self.issue_property_diffs.entry(id).or_default().push(
                         IssuePropertyDiff::DoneRatio(IssueDoneRatioDiff {
                             before,
                             after: done_ratio,
@@ -215,7 +213,7 @@ impl Store {
                 if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.start_date;
                     issue.start_date = start_date;
-                    self.issue_property_diffs.entry(id.get()).or_default().push(
+                    self.issue_property_diffs.entry(id).or_default().push(
                         IssuePropertyDiff::StartDate(IssueStartDateDiff {
                             before,
                             after: start_date,
@@ -227,7 +225,7 @@ impl Store {
                 if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.due_date;
                     issue.due_date = due_date;
-                    self.issue_property_diffs.entry(id.get()).or_default().push(
+                    self.issue_property_diffs.entry(id).or_default().push(
                         IssuePropertyDiff::DueDate(IssueDueDateDiff {
                             before,
                             after: due_date,
@@ -250,8 +248,9 @@ impl Store {
     }
 
     pub fn get_issue(&self, issue_id: u16) -> Option<(&Issue, IssueState)> {
+        let issue_id = IssueId::new(issue_id);
         self.issues
-            .get(&issue_id.into())
+            .get(&issue_id)
             .map(|issue| (issue, self.get_issue_state(issue_id)))
     }
 
@@ -259,14 +258,14 @@ impl Store {
         &self.issues
     }
 
-    pub fn get_issue_property_diffs(&self, issue_id: u16) -> &[IssuePropertyDiff] {
+    pub fn get_issue_property_diffs(&self, issue_id: IssueId) -> &[IssuePropertyDiff] {
         self.issue_property_diffs
             .get(&issue_id)
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }
 
-    fn get_issue_state(&self, issue_id: u16) -> IssueState {
+    fn get_issue_state(&self, issue_id: IssueId) -> IssueState {
         if self.get_issue_property_diffs(issue_id).is_empty() {
             IssueState::Synced
         } else {
@@ -526,7 +525,7 @@ mod tests {
 
         assert_eq!(store.get_issue(1).unwrap().0.start_date, after);
         assert_eq!(
-            store.get_issue_property_diffs(1).last(),
+            store.get_issue_property_diffs(IssueId::new(1)).last(),
             Some(&IssuePropertyDiff::StartDate(IssueStartDateDiff {
                 before,
                 after
@@ -548,7 +547,7 @@ mod tests {
 
         assert_eq!(store.get_issue(1).unwrap().0.due_date, after);
         assert_eq!(
-            store.get_issue_property_diffs(1).last(),
+            store.get_issue_property_diffs(IssueId::new(1)).last(),
             Some(&IssuePropertyDiff::DueDate(IssueDueDateDiff {
                 before,
                 after
