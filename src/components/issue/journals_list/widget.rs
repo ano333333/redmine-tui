@@ -57,14 +57,14 @@ mod tests {
         user: String,
         updated_on: DateTime<Local>,
         details: Vec<JournalDetail>,
-        notes: &String,
+        notes: &str,
     ) -> Journal {
         Journal {
             id: JournalId::new(1),
             user,
             updated_on,
             details,
-            notes: notes.clone(),
+            notes: notes.to_owned(),
         }
     }
 

@@ -29,13 +29,7 @@ impl JournalItemWidgetState {
         }
     }
 
-    pub fn update(
-        &mut self,
-        width: u16,
-        user: &String,
-        updated_on: &DateTime<Local>,
-        notes: &String,
-    ) {
+    pub fn update(&mut self, width: u16, user: &str, updated_on: &DateTime<Local>, notes: &str) {
         let mut hasher = DefaultHasher::new();
         user.hash(&mut hasher);
         updated_on.hash(&mut hasher);
@@ -130,7 +124,7 @@ impl<'a> JournalItemWidget<'a> {
 }
 
 fn create_property_paragraph(
-    user: &String,
+    user: &str,
     details: &[JournalDetail],
     updated_on: &DateTime<Local>,
 ) -> Paragraph<'static> {
@@ -185,16 +179,16 @@ fn create_property_paragraph(
     Paragraph::new(Text::from(lines))
 }
 
-fn create_header(creator: &String, updated_at: &DateTime<Local>) -> Line<'static> {
+fn create_header(creator: &str, updated_at: &DateTime<Local>) -> Line<'static> {
     Line::from(vec![
-        Span::from(creator.clone()).blue(),
+        Span::from(creator.to_owned()).blue(),
         Span::from("が"),
         Span::from(updated_at.format("%Y/%m/%d").to_string()).blue(),
         Span::from("に更新"),
     ])
 }
 
-fn render_comment_in_buffer(width: u16, _: &String, _: &DateTime<Local>, body: &String) -> Buffer {
+fn render_comment_in_buffer(width: u16, _: &str, _: &DateTime<Local>, body: &str) -> Buffer {
     let body = if body.is_empty() {
         EMPTY_NOTES_PLACEHOLDER
     } else {
@@ -223,14 +217,14 @@ mod tests {
         user: String,
         updated_on: DateTime<Local>,
         details: Vec<JournalDetail>,
-        notes: &String,
+        notes: &str,
     ) -> Journal {
         Journal {
             id: JournalId::new(1),
             user,
             updated_on,
             details,
-            notes: notes.clone(),
+            notes: notes.to_owned(),
         }
     }
 

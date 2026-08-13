@@ -135,8 +135,8 @@ fn create_id_widget(id: IssueId, is_closed: bool) -> Paragraph<'static> {
     Paragraph::new(Text::from(format!("#{}", id))).style(id_style)
 }
 
-fn create_title_widget(title: &String) -> Paragraph<'static> {
-    Paragraph::new(Text::from(title.clone())).wrap(Wrap { trim: true })
+fn create_title_widget(title: &str) -> Paragraph<'static> {
+    Paragraph::new(Text::from(title.to_string())).wrap(Wrap { trim: true })
 }
 
 fn create_status_widget(status: &str) -> Paragraph<'static> {

@@ -51,11 +51,11 @@ impl BodyWidgetState {
         self.buffer.area.height as usize
     }
 
-    pub fn update(&mut self, width: u16, body: &String) {
+    pub fn update(&mut self, width: u16, body: &str) {
         self.buffer = Self::render_in_buffer(body, width);
     }
 
-    fn render_in_buffer(body: &String, width: u16) -> Buffer {
+    fn render_in_buffer(body: &str, width: u16) -> Buffer {
         let paragraph = Paragraph::new(tui_markdown::from_str(body)).wrap(Wrap { trim: true });
         let area = Rect::new(0, 0, width, paragraph.line_count(width) as u16);
         let mut buffer = Buffer::empty(area);

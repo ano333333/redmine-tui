@@ -80,7 +80,7 @@ impl IssueSelectPopupWidgetState {
         }
     }
 
-    pub fn update(&mut self, width: u16, issue: &IssueSelectPopupIssue, description: &String) {
+    pub fn update(&mut self, width: u16, issue: &IssueSelectPopupIssue, description: &str) {
         let hash = preview_hash(width, issue, description);
         if self.preview_hash == Some(hash) {
             return;
@@ -130,7 +130,7 @@ impl<'a> IssueSelectPopupWidget<'a> {
         focused_issue_index: usize,
         focused_column: IssueSelectPopupFocusColumn,
         state: &'a IssueSelectPopupWidgetState,
-        _description: &String,
+        _description: &str,
     ) -> Self {
         Self {
             projects: projects.into_iter().collect(),
@@ -304,7 +304,7 @@ fn render_single_line(buf: &mut Buffer, x: u16, y: u16, width: u16, text: &str, 
     buf.set_line(x, y, &Line::styled(clipped, style), width);
 }
 
-fn preview_hash(width: u16, issue: &IssueSelectPopupIssue, description: &String) -> u64 {
+fn preview_hash(width: u16, issue: &IssueSelectPopupIssue, description: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     width.hash(&mut hasher);
     issue.subject.hash(&mut hasher);
@@ -427,7 +427,7 @@ mod tests {
                 0,
                 IssueSelectPopupFocusColumn::Issue,
                 &state,
-                &String::new(),
+                "",
             ),
         );
     }
