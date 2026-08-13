@@ -2,20 +2,20 @@ use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::app::Store;
-use crate::vos::EntityIdValue;
+use crate::vos::IssueId;
 
 use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
 use super::widget::{ChildIssueRow, ChildrenListWidget};
 
 pub struct ChildrenListComponent {
-    id: u16,
+    id: IssueId,
     focus_state: FocusState,
 }
 
 impl ChildrenListComponent {
-    pub fn new(id: u16) -> Self {
+    pub fn new(id: impl Into<IssueId>) -> Self {
         Self {
-            id,
+            id: id.into(),
             focus_state: FocusState::new(),
         }
     }
@@ -34,7 +34,7 @@ impl ChildrenListComponent {
             .child_ids
             .iter()
             .filter(|id| {
-                store.get_issue(id.get()).is_some_and(|(issue, _)| {
+                store.get_issue(**id).is_some_and(|(issue, _)| {
                     let issue_status = store.get_issue_status(issue.status_id);
                     issue_status.is_closed
                 })
@@ -45,7 +45,7 @@ impl ChildrenListComponent {
         let children: Vec<_> = issue
             .child_ids
             .iter()
-            .filter_map(|id| store.get_issue(id.get()))
+            .filter_map(|id| store.get_issue(*id))
             .map(|(issue, _)| ChildIssueRow {
                 issue,
                 issue_status: store.get_issue_status(issue.status_id),
@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn focus_event_from_above_is_reflected_in_widget_and_cursor() {
         let store = store_with_parent_and_children();
-        let mut component = ChildrenListComponent::new(ISSUE_ID.into());
+        let mut component = ChildrenListComponent::new(ISSUE_ID);
         component.update(&store);
 
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn process_event_j_moves_focus_to_second_child_and_updates_widget_and_cursor() {
         let store = store_with_parent_and_children();
-        let mut component = ChildrenListComponent::new(ISSUE_ID.into());
+        let mut component = ChildrenListComponent::new(ISSUE_ID);
         component.update(&store);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
 
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn process_event_j_on_bottom_child_returns_leave_from_below_and_keeps_widget_coherent() {
         let store = store_with_parent_and_children();
-        let mut component = ChildrenListComponent::new(ISSUE_ID.into());
+        let mut component = ChildrenListComponent::new(ISSUE_ID);
         component.update(&store);
         component.focus_event(FocusEvent::CursorEnteredFromBelow);
 
@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn process_event_k_on_top_child_returns_leave_from_above_and_keeps_widget_coherent() {
         let store = store_with_parent_and_children();
-        let mut component = ChildrenListComponent::new(ISSUE_ID.into());
+        let mut component = ChildrenListComponent::new(ISSUE_ID);
         component.update(&store);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
 
@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn unfocused_after_update_removes_widget_focus() {
         let store = store_with_parent_and_children();
-        let mut component = ChildrenListComponent::new(ISSUE_ID.into());
+        let mut component = ChildrenListComponent::new(ISSUE_ID);
         component.update(&store);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
 

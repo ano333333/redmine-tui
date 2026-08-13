@@ -5,11 +5,13 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
+use crate::vos::IssueId;
+
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 
 pub struct PropertyWidget<'a> {
-    id: u16,
+    id: IssueId,
     author: &'a str,
     created_on: DateTime<Local>,
     updated_on: DateTime<Local>,
@@ -42,7 +44,7 @@ impl<'a> Widget for PropertyWidget<'a> {
 impl<'a> PropertyWidget<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        id: u16,
+        id: impl Into<IssueId>,
         author: &'a str,
         created_on: DateTime<Local>,
         updated_on: DateTime<Local>,
@@ -61,7 +63,7 @@ impl<'a> PropertyWidget<'a> {
         focused_y: Option<u16>,
     ) -> Self {
         Self {
-            id,
+            id: id.into(),
             author,
             created_on,
             updated_on,

@@ -9,6 +9,7 @@ use ratatui::widgets::Widget;
 use crate::AppContainer;
 use crate::app::{Dispatcher, Store};
 use crate::entities::Journal;
+use crate::vos::IssueId;
 
 use super::body::BodyComponent;
 use super::body::EventProcessResult as BodyEventProcessResult;
@@ -28,7 +29,7 @@ use super::property::PropertyComponent;
 use super::{IssueDetailWidget, IssueDetailWidgetState};
 
 pub enum EventProcessResult {
-    EditIssueBodyRequested { id: u16, body: String },
+    EditIssueBodyRequested { id: IssueId, body: String },
     OpenIssueSelectPopup,
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
@@ -78,7 +79,7 @@ enum FocusedComponent {
 }
 
 pub struct IssueDetailComponent {
-    pub id: u16,
+    pub id: IssueId,
     header: HeaderComponent,
     property: PropertyComponent,
     body: BodyComponent,
@@ -93,7 +94,8 @@ pub struct IssueDetailComponent {
 }
 
 impl IssueDetailComponent {
-    pub fn new(_: Rc<RefCell<Dispatcher>>, issue_id: u16) -> Self {
+    pub fn new(_: Rc<RefCell<Dispatcher>>, issue_id: impl Into<IssueId>) -> Self {
+        let issue_id = issue_id.into();
         let size = AppContainer::size();
         match size {
             Ok((width, height)) => {

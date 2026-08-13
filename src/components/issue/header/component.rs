@@ -4,16 +4,17 @@ use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::app::{IssueState, Store};
+use crate::vos::IssueId;
 
 pub struct HeaderComponent {
-    id: u16,
+    id: IssueId,
     focus_state: FocusState,
 }
 
 impl HeaderComponent {
-    pub fn new(id: u16) -> Self {
+    pub fn new(id: impl Into<IssueId>) -> Self {
         Self {
-            id,
+            id: id.into(),
             focus_state: FocusState::new(),
         }
     }

@@ -4,11 +4,13 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
+use crate::vos::IssueId;
+
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 
 pub struct HeaderWidget<'a> {
-    id: u16,
+    id: IssueId,
     title: &'a str,
     focused_title: bool,
     synced: bool,
@@ -35,9 +37,9 @@ impl<'a> Widget for HeaderWidget<'a> {
 }
 
 impl<'a> HeaderWidget<'a> {
-    pub fn new(id: u16, title: &'a str, focused_title: bool, synced: bool) -> Self {
+    pub fn new(id: impl Into<IssueId>, title: &'a str, focused_title: bool, synced: bool) -> Self {
         Self {
-            id,
+            id: id.into(),
             title,
             focused_title,
             synced,

@@ -5,24 +5,25 @@ use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::entities::Issue;
+use crate::vos::IssueId;
 
 pub enum EventProcessResult {
     CursorLeavedFromBelow { x: u16 },
     CursorLeavedFromAbove { x: u16 },
-    EditRequested { id: u16, body: String },
+    EditRequested { id: IssueId, body: String },
 }
 
 pub struct BodyComponent {
-    id: u16,
+    id: IssueId,
     focus_state: FocusState,
     body: String,
     widget_state: BodyWidgetState,
 }
 
 impl BodyComponent {
-    pub fn new(id: u16, width: u16, height: u16) -> Self {
+    pub fn new(id: impl Into<IssueId>, width: u16, height: u16) -> Self {
         Self {
-            id,
+            id: id.into(),
             focus_state: FocusState::new(width, height),
             body: String::new(),
             widget_state: BodyWidgetState::new(),

@@ -13,7 +13,8 @@ use crate::components::issue::{
 use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
 use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueStatusId, TargetVersionId, TimeEntityActivityId, UserId,
+    CategoryId, EntityIdValue, IssueId, IssueStatusId, TargetVersionId, TimeEntityActivityId,
+    UserId,
 };
 
 use super::date_picker_popup::component::{
@@ -39,7 +40,7 @@ pub enum AppEffect {
 }
 
 enum PendingEditorContext {
-    IssueBody { id: u16 },
+    IssueBody { id: IssueId },
 }
 
 enum PopupComponent<'a> {
@@ -420,7 +421,7 @@ impl<'a> AppComponent<'a> {
                 self.dispatcher
                     .borrow_mut()
                     .dispatch(crate::app::Action::UpdateIssue {
-                        id: id.into(),
+                        id,
                         body: response.edited_text,
                     });
             }

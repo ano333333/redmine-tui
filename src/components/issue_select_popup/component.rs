@@ -11,7 +11,7 @@ use super::widget::{
 };
 
 pub enum EventProcessResult {
-    Selected { issue_id: u16 },
+    Selected { issue_id: IssueId },
     Quited,
 }
 
@@ -74,13 +74,7 @@ impl IssueSelectPopupComponent {
         let empty_description = String::new();
         let description = self
             .focused_issue_id()
-            .map(|issue_id| {
-                &store
-                    .get_issues()
-                    .get(&issue_id.into())
-                    .unwrap()
-                    .description
-            })
+            .map(|issue_id| &store.get_issues().get(&issue_id).unwrap().description)
             .unwrap_or(&empty_description);
         IssueSelectPopupWidget::new(
             &self.projects,
@@ -182,8 +176,8 @@ impl IssueSelectPopupComponent {
             .collect()
     }
 
-    fn focused_issue_id(&self) -> Option<u16> {
-        self.focused_issue().map(|issue| issue.issue_id.get())
+    fn focused_issue_id(&self) -> Option<IssueId> {
+        self.focused_issue().map(|issue| issue.issue_id)
     }
 }
 
@@ -309,10 +303,12 @@ mod tests {
         component.process_event(key_event(KeyCode::Char('j')));
         let result = component.process_event(key_event(KeyCode::Enter));
 
-        assert!(matches!(
-            result,
-            Some(EventProcessResult::Selected { issue_id: 2 })
-        ));
+        match result {
+            Some(EventProcessResult::Selected { issue_id }) => {
+                assert_eq!(issue_id, IssueId::new(2));
+            }
+            _ => panic!("expected selected issue"),
+        }
     }
 
     #[test]
