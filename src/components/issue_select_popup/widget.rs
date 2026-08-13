@@ -238,10 +238,10 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
     let focused_issue = widget.issues.get(widget.focused_issue_index).copied();
 
     for (row, project) in widget.projects.iter().take(body_height).enumerate() {
-        let style = selected_row_style(
-            row == widget.focused_project_index,
-            widget.focused_column == IssueSelectPopupFocusColumn::Project,
-        );
+        let active_project = widget.focused_column == IssueSelectPopupFocusColumn::Project
+            || (widget.focused_column == IssueSelectPopupFocusColumn::Issue
+                && focused_issue.is_some_and(|issue| issue.project_id == project.id));
+        let style = selected_row_style(row == widget.focused_project_index, active_project);
         render_single_line(
             buf,
             columns[0].x,
@@ -462,6 +462,35 @@ mod tests {
     }
 
     #[test]
+    fn render_highlights_focused_issue_project_when_issue_column_is_active() {
+        let projects = projects();
+        let issues = issues()
+            .into_iter()
+            .filter(|issue| issue.project_id == ProjectId::new(2))
+            .collect::<Vec<_>>();
+        let area = Rect::new(0, 0, 80, 24);
+        let project_column = project_column(area);
+        let mut state = IssueSelectPopupWidgetState::new();
+        state.update(IssueSelectPopupWidget::preview_width(area), &issues[0]);
+        let widget = IssueSelectPopupWidget::new(
+            &projects,
+            &issues,
+            1,
+            0,
+            IssueSelectPopupFocusColumn::Issue,
+            &state,
+        );
+        let mut buffer = Buffer::empty(area);
+
+        Widget::render(widget, area, &mut buffer);
+
+        let project_row = project_column.y + 1 + 1;
+        for x in project_column.x..project_column.x + project_column.width {
+            assert_eq!(buffer[(x, project_row)].bg, FOCUS_BG);
+        }
+    }
+
+    #[test]
     fn render_formats_issue_preview_body_as_markdown() {
         let projects = vec![IssueSelectPopupProject::new(1, "redmine-tui")];
         let issues = vec![IssueSelectPopupIssue::new(
@@ -614,6 +643,12 @@ mod tests {
         let area = IssueSelectPopupWidget::popup_area(area);
         let inner = Block::default().borders(Borders::ALL).inner(area);
         split_columns(inner)[2]
+    }
+
+    fn project_column(area: Rect) -> Rect {
+        let area = IssueSelectPopupWidget::popup_area(area);
+        let inner = Block::default().borders(Borders::ALL).inner(area);
+        split_columns(inner)[0]
     }
 
     fn line_text(buffer: &Buffer, area: Rect, y: u16) -> String {
