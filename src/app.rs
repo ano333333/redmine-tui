@@ -247,8 +247,8 @@ impl Store {
         }
     }
 
-    pub fn get_issue(&self, issue_id: u16) -> Option<(&Issue, IssueState)> {
-        let issue_id = IssueId::new(issue_id);
+    pub fn get_issue(&self, issue_id: impl Into<IssueId>) -> Option<(&Issue, IssueState)> {
+        let issue_id = issue_id.into();
         self.issues
             .get(&issue_id)
             .map(|issue| (issue, self.get_issue_state(issue_id)))
@@ -258,14 +258,14 @@ impl Store {
         &self.issues
     }
 
-    pub fn get_issue_property_diffs(&self, issue_id: IssueId) -> &[IssuePropertyDiff] {
+    pub fn get_issue_property_diffs(&self, issue_id: impl Into<IssueId>) -> &[IssuePropertyDiff] {
         self.issue_property_diffs
-            .get(&issue_id)
+            .get(&issue_id.into())
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }
 
-    fn get_issue_state(&self, issue_id: IssueId) -> IssueState {
+    fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> IssueState {
         if self.get_issue_property_diffs(issue_id).is_empty() {
             IssueState::Synced
         } else {
