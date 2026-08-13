@@ -2,7 +2,7 @@ use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Rect;
 
 use crate::app::Store;
-use crate::vos::{EntityIdValue, IssueId};
+use crate::vos::{EntityIdValue, IssueId, ProjectId};
 
 use super::widget::{
     IssueSelectPopupFocusColumn, IssueSelectPopupIssue, IssueSelectPopupProject,
@@ -88,9 +88,10 @@ impl IssueSelectPopupComponent {
     }
 
     pub fn create_widget<'a>(&'a self) -> IssueSelectPopupWidget<'a> {
+        let visible_issues = self.visible_issues();
         IssueSelectPopupWidget::new(
             &self.projects,
-            &self.issues,
+            visible_issues,
             self.focused_project_index,
             self.focused_issue_index,
             self.focused_column,
@@ -99,16 +100,6 @@ impl IssueSelectPopupComponent {
     }
 
     fn load_from_store(&mut self, store: &Store) {
-        self.projects = {
-            let mut projects = store
-                .get_projects()
-                .iter()
-                .map(|(id, project)| IssueSelectPopupProject::new(*id, project.name.clone()))
-                .collect::<Vec<_>>();
-            projects.sort_by_key(|project| project.id);
-            projects
-        };
-
         self.issues = {
             let mut issues = store
                 .get_issues()
@@ -124,6 +115,21 @@ impl IssueSelectPopupComponent {
                 .collect::<Vec<_>>();
             issues.sort_by_key(|issue| issue.issue_id);
             issues
+        };
+
+        self.projects = {
+            let mut projects = store
+                .get_projects()
+                .iter()
+                .filter(|(id, _)| {
+                    self.issues
+                        .iter()
+                        .any(|issue| issue.project_id == ProjectId::new(**id))
+                })
+                .map(|(id, project)| IssueSelectPopupProject::new(*id, project.name.clone()))
+                .collect::<Vec<_>>();
+            projects.sort_by_key(|project| project.id);
+            projects
         };
     }
 
@@ -191,23 +197,22 @@ impl IssueSelectPopupComponent {
     }
 
     fn focused_project_issue_count(&self) -> usize {
+        self.visible_issues().len()
+    }
+
+    fn focused_issue(&self) -> Option<&IssueSelectPopupIssue> {
+        self.visible_issues().get(self.focused_issue_index).copied()
+    }
+
+    fn visible_issues(&self) -> Vec<&IssueSelectPopupIssue> {
         let Some(project) = self.projects.get(self.focused_project_index) else {
-            return 0;
+            return Vec::new();
         };
 
         self.issues
             .iter()
             .filter(|issue| issue.project_id == project.id)
-            .count()
-    }
-
-    fn focused_issue(&self) -> Option<&IssueSelectPopupIssue> {
-        let project = self.projects.get(self.focused_project_index)?;
-
-        self.issues
-            .iter()
-            .filter(|issue| issue.project_id == project.id)
-            .nth(self.focused_issue_index)
+            .collect()
     }
 
     fn focused_issue_id(&self) -> Option<u16> {
@@ -307,6 +312,36 @@ mod tests {
 
         let widget = component.create_widget();
         assert_eq!(widget.issues[0].description, "updated description");
+    }
+
+    #[test]
+    fn create_widget_passes_only_focused_project_issues() {
+        let component = IssueSelectPopupComponent {
+            projects: vec![
+                IssueSelectPopupProject::new(1, "frontend"),
+                IssueSelectPopupProject::new(2, "backend"),
+            ],
+            issues: vec![
+                IssueSelectPopupIssue::new(1, 101, "Frontend issue", ""),
+                IssueSelectPopupIssue::new(2, 201, "Backend issue 1", ""),
+                IssueSelectPopupIssue::new(2, 202, "Backend issue 2", ""),
+            ],
+            focused_project_index: 1,
+            focused_issue_index: 0,
+            focused_column: IssueSelectPopupFocusColumn::Issue,
+            widget_state: IssueSelectPopupWidgetState::new(),
+        };
+
+        let widget = component.create_widget();
+
+        assert_eq!(
+            widget
+                .issues
+                .iter()
+                .map(|issue| issue.issue_id.get())
+                .collect::<Vec<_>>(),
+            vec![201, 202]
+        );
     }
 
     #[test]

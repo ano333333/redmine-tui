@@ -58,8 +58,8 @@ impl IssueSelectPopupIssue {
 }
 
 pub struct IssueSelectPopupWidget<'a> {
-    pub projects: &'a [IssueSelectPopupProject],
-    pub issues: &'a [IssueSelectPopupIssue],
+    pub projects: Vec<&'a IssueSelectPopupProject>,
+    pub issues: Vec<&'a IssueSelectPopupIssue>,
     pub focused_project_index: usize,
     pub focused_issue_index: usize,
     pub focused_column: IssueSelectPopupFocusColumn,
@@ -132,16 +132,16 @@ impl IssueSelectPopupWidgetState {
 
 impl<'a> IssueSelectPopupWidget<'a> {
     pub fn new(
-        projects: &'a [IssueSelectPopupProject],
-        issues: &'a [IssueSelectPopupIssue],
+        projects: impl IntoIterator<Item = &'a IssueSelectPopupProject>,
+        issues: impl IntoIterator<Item = &'a IssueSelectPopupIssue>,
         focused_project_index: usize,
         focused_issue_index: usize,
         focused_column: IssueSelectPopupFocusColumn,
         state: &'a IssueSelectPopupWidgetState,
     ) -> Self {
         Self {
-            projects,
-            issues,
+            projects: projects.into_iter().collect(),
+            issues: issues.into_iter().collect(),
             focused_project_index,
             focused_issue_index,
             focused_column,
@@ -176,20 +176,9 @@ impl<'a> IssueSelectPopupWidget<'a> {
     pub fn line_count(&self, _: u16) -> usize {
         self.projects
             .len()
-            .max(self.focused_project_issues().len())
+            .max(self.issues.len())
             .max(2)
             .saturating_add(3)
-    }
-
-    fn focused_project_issues(&self) -> Vec<&IssueSelectPopupIssue> {
-        let Some(project) = self.projects.get(self.focused_project_index) else {
-            return Vec::new();
-        };
-
-        self.issues
-            .iter()
-            .filter(|issue| issue.project_id == project.id)
-            .collect()
     }
 }
 
@@ -246,8 +235,7 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
     );
 
     let body_height = inner.height.saturating_sub(1) as usize;
-    let issues = widget.focused_project_issues();
-    let focused_issue = issues.get(widget.focused_issue_index).copied();
+    let focused_issue = widget.issues.get(widget.focused_issue_index).copied();
 
     for (row, project) in widget.projects.iter().take(body_height).enumerate() {
         let style = selected_row_style(
@@ -264,7 +252,7 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
         );
     }
 
-    for (row, issue) in issues.iter().take(body_height).enumerate() {
+    for (row, issue) in widget.issues.iter().take(body_height).enumerate() {
         let style = selected_row_style(
             row == widget.focused_issue_index,
             widget.focused_column == IssueSelectPopupFocusColumn::Issue,
@@ -409,11 +397,14 @@ mod tests {
     #[test]
     fn snapshot_issue_select_popup_renders_three_columns_with_focused_issue() {
         let projects = projects();
-        let issues = issues();
+        let issues = issues()
+            .into_iter()
+            .filter(|issue| issue.project_id == ProjectId::new(2))
+            .collect::<Vec<_>>();
         let mut state = IssueSelectPopupWidgetState::new();
         state.update(
             IssueSelectPopupWidget::preview_width(Rect::new(0, 0, 80, 24)),
-            &issues[1],
+            &issues[0],
         );
         render_snapshot(
             "issue_select_popup_three_columns_with_focus",
@@ -440,7 +431,7 @@ mod tests {
             24,
             IssueSelectPopupWidget::new(
                 &projects,
-                &[],
+                &Vec::new(),
                 1,
                 0,
                 IssueSelectPopupFocusColumn::Issue,
@@ -451,13 +442,17 @@ mod tests {
 
     #[test]
     fn line_count_includes_header_item_rows_and_borders() {
-        let projects = projects();
-        let issues = issues();
+        let projects = vec![IssueSelectPopupProject::new(1, "redmine-tui")];
+        let issues = vec![
+            IssueSelectPopupIssue::new(2, 201, "Displayed issue 1", ""),
+            IssueSelectPopupIssue::new(2, 202, "Displayed issue 2", ""),
+            IssueSelectPopupIssue::new(2, 203, "Displayed issue 3", ""),
+        ];
         let state = IssueSelectPopupWidgetState::new();
         let widget = IssueSelectPopupWidget::new(
             &projects,
             &issues,
-            1,
+            0,
             0,
             IssueSelectPopupFocusColumn::Project,
             &state,
