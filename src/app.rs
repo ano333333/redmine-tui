@@ -15,7 +15,7 @@ use crate::vos::issue_property_diff::{
 };
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, PriorityId,
-    ProjectId, TargetVersionId, TimeEntityActivityId, UserId,
+    ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
 pub struct Dispatcher {
@@ -65,7 +65,7 @@ pub struct Store {
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
     priorities: HashMap<PriorityId, Priority>,
     projects: HashMap<ProjectId, Project>,
-    trackers: HashMap<u16, Tracker>,
+    trackers: HashMap<TrackerId, Tracker>,
     target_versions: HashMap<TargetVersionId, TargetVersion>,
     categories: HashMap<CategoryId, Category>,
     time_entity_activities: HashMap<TimeEntityActivityId, TimeEntityActivity>,
@@ -314,12 +314,12 @@ impl Store {
         self.projects.get(&project_id.into())
     }
 
-    pub fn get_trackers(&self) -> &HashMap<u16, Tracker> {
+    pub fn get_trackers(&self) -> &HashMap<TrackerId, Tracker> {
         &self.trackers
     }
 
-    pub fn get_tracker(&self, tracker_id: u16) -> Option<&Tracker> {
-        self.trackers.get(&tracker_id)
+    pub fn get_tracker(&self, tracker_id: impl Into<TrackerId>) -> Option<&Tracker> {
+        self.trackers.get(&tracker_id.into())
     }
 
     pub fn get_target_versions(&self) -> &HashMap<TargetVersionId, TargetVersion> {

@@ -76,7 +76,7 @@ fn create_property_widget<'a>(
         .map(|project| project.name.as_str())
         .unwrap_or("(unknown)");
     let tracker = store
-        .get_tracker(issue.tracker_id.get())
+        .get_tracker(issue.tracker_id)
         .map(|tracker| tracker.name.as_str())
         .unwrap_or("(unknown)");
     let target_version = issue

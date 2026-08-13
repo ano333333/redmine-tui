@@ -252,7 +252,7 @@ pub fn parse_projects_yaml() -> HashMap<ProjectId, Project> {
         .collect()
 }
 
-pub fn parse_trackers_yaml() -> HashMap<u16, Tracker> {
+pub fn parse_trackers_yaml() -> HashMap<TrackerId, Tracker> {
     let yaml = read_yaml("datas/trackers.yml");
     let entries = yaml["trackers"].as_vec().expect("no trackers");
 
@@ -263,7 +263,7 @@ pub fn parse_trackers_yaml() -> HashMap<u16, Tracker> {
                 id: TrackerId::new(as_u16(entry, "id")),
                 name: as_string(entry, "name"),
             };
-            (tracker.id.get(), tracker)
+            (tracker.id, tracker)
         })
         .collect()
 }
