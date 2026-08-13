@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use crate::entities::{Issue, IssueStatus};
-use crate::vos::EntityIdValue;
+use crate::vos::IssueId;
 
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
@@ -109,7 +109,7 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
             Constraint::Length(4), // progress
         ])
         .split(row);
-    create_id_widget(issue.id.get(), is_closed).render(cols[0], buffer);
+    create_id_widget(issue.id, is_closed).render(cols[0], buffer);
     create_title_widget(&issue.subject).render(cols[2], buffer);
     create_status_widget(status_name).render(cols[4], buffer);
     create_person_in_charge_widget(child.assigned_to_name).render(cols[6], buffer);
@@ -126,7 +126,7 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
     }
 }
 
-fn create_id_widget(id: u16, is_closed: bool) -> Paragraph<'static> {
+fn create_id_widget(id: IssueId, is_closed: bool) -> Paragraph<'static> {
     let id_style = if is_closed {
         Style::default().add_modifier(Modifier::CROSSED_OUT).gray()
     } else {
