@@ -2,7 +2,7 @@ use crossterm::event::Event;
 use ratatui::layout::Rect;
 
 use crate::app::Store;
-use crate::vos::{EntityIdValue, IssueId, ProjectId};
+use crate::vos::{EntityIdValue, IssueId};
 
 use super::focus_state::{self, FocusState};
 use super::widget::{
@@ -99,11 +99,6 @@ impl IssueSelectPopupComponent {
             let mut projects = store
                 .get_projects()
                 .iter()
-                .filter(|(id, _)| {
-                    self.issues
-                        .iter()
-                        .any(|issue| issue.project_id == ProjectId::new(**id))
-                })
                 .map(|(id, project)| IssueSelectPopupProject::new(*id, project.name.clone()))
                 .collect::<Vec<_>>();
             projects.sort_by_key(|project| project.id);
@@ -186,6 +181,7 @@ mod tests {
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
     use crate::app::Action;
+    use crate::components::issue_select_popup::widget::IssueSelectPopupFocusColumn;
     use crate::test_support::render_snapshot;
 
     const AREA: Rect = Rect {
@@ -256,6 +252,28 @@ mod tests {
             AREA.height,
             component.create_widget(),
         );
+    }
+
+    #[test]
+    fn create_widget_includes_projects_with_no_issues() {
+        let component = IssueSelectPopupComponent::new(&store(), 1);
+        let widget = component.create_widget();
+
+        assert_eq!(widget.projects.len(), 2);
+        assert_eq!(widget.projects[0].name, "Sample Project");
+        assert_eq!(widget.projects[1].name, "Sample Project 2");
+    }
+
+    #[test]
+    fn process_event_l_ignores_empty_project_focus() {
+        let mut component = IssueSelectPopupComponent::new(&store(), 1);
+
+        component.process_event(key_event(KeyCode::Char('j')));
+        component.process_event(key_event(KeyCode::Char('l')));
+        let widget = component.create_widget();
+
+        assert_eq!(widget.focused_project_index, 1);
+        assert_eq!(widget.focused_column, IssueSelectPopupFocusColumn::Project);
     }
 
     #[test]

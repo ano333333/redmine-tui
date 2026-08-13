@@ -713,9 +713,11 @@ mod tests {
         match &*popup.borrow() {
             PopupComponent::IssueSelect(popup_component) => {
                 let widget = popup_component.create_widget();
-                assert_eq!(widget.projects.len(), 1);
+                assert_eq!(widget.projects.len(), 2);
                 assert_eq!(widget.projects[0].id, 1);
                 assert_eq!(widget.projects[0].name, "Sample Project");
+                assert_eq!(widget.projects[1].id, 2);
+                assert_eq!(widget.projects[1].name, "Sample Project 2");
                 assert_eq!(widget.issues.len(), 1);
                 assert_eq!(widget.issues[0].project_id, 1);
                 assert_eq!(widget.issues[0].issue_id, 3);

@@ -91,7 +91,9 @@ impl FocusState {
                 self.focused_column = IssueSelectPopupFocusColumn::Project;
             }
             Action::MoveRight => {
-                self.focused_column = IssueSelectPopupFocusColumn::Issue;
+                if self.focused_project_issue_count() > 0 {
+                    self.focused_column = IssueSelectPopupFocusColumn::Issue;
+                }
             }
             Action::Quit => {
                 return Some(EventProcessResult::Quited);
@@ -200,6 +202,16 @@ mod tests {
         assert_eq!(state.focused_column(), IssueSelectPopupFocusColumn::Issue);
 
         assert!(state.process_event(key_event(KeyCode::Char('h'))).is_none());
+        assert_eq!(state.focused_column(), IssueSelectPopupFocusColumn::Project);
+    }
+
+    #[test]
+    fn process_event_l_keeps_project_column_focused_when_project_has_no_issues() {
+        let mut state = FocusState::new();
+        state.replace_project_issue_counts(vec![0]);
+
+        assert!(state.process_event(key_event(KeyCode::Char('l'))).is_none());
+
         assert_eq!(state.focused_column(), IssueSelectPopupFocusColumn::Project);
     }
 
