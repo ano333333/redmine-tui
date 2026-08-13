@@ -9,7 +9,7 @@ use crate::entities::{
     Tracker, User,
 };
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr,
+    CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId,
     PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
@@ -162,7 +162,10 @@ pub fn parse_issue_yaml(id: u16) -> Issue {
         .into_iter()
         .map(IssueId::new)
         .collect();
-    let journal_ids = as_u16_array(&yaml, "journal_ids");
+    let journal_ids = as_u16_array(&yaml, "journal_ids")
+        .iter()
+        .map(|id| JournalId::new(*id))
+        .collect();
     Issue {
         id,
         subject,

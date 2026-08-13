@@ -1,7 +1,8 @@
 use chrono::{DateTime, Local};
 
 use crate::vos::{
-    CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
+    CategoryId, IssueId, IssueStatusId, JournalId, PriorityId, ProjectId, TargetVersionId,
+    TrackerId, UserId,
 };
 
 pub struct Issue {
@@ -24,5 +25,5 @@ pub struct Issue {
     pub category_id: Option<CategoryId>,
     pub description: String,
     pub child_ids: Vec<IssueId>,
-    pub journal_ids: Vec<u16>,
+    pub journal_ids: Vec<JournalId>,
 }
