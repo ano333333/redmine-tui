@@ -102,9 +102,11 @@ mod tests {
         let mut store = Store::new();
         store.consume_action(Action::LoadUsers);
         store.consume_action(Action::LoadIssueStatuses);
-        store.consume_action(Action::LoadIssue { id: 1 });
-        store.consume_action(Action::LoadIssue { id: 2 });
-        store.consume_action(Action::LoadIssue { id: ISSUE_ID });
+        store.consume_action(Action::LoadIssue { id: 1.into() });
+        store.consume_action(Action::LoadIssue { id: 2.into() });
+        store.consume_action(Action::LoadIssue {
+            id: ISSUE_ID.into(),
+        });
         store
     }
 
@@ -120,7 +122,7 @@ mod tests {
     #[test]
     fn focus_event_from_above_is_reflected_in_widget_and_cursor() {
         let store = store_with_parent_and_children();
-        let mut component = ChildrenListComponent::new(ISSUE_ID);
+        let mut component = ChildrenListComponent::new(ISSUE_ID.into());
         component.update(&store);
 
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
@@ -137,7 +139,7 @@ mod tests {
     #[test]
     fn process_event_j_moves_focus_to_second_child_and_updates_widget_and_cursor() {
         let store = store_with_parent_and_children();
-        let mut component = ChildrenListComponent::new(ISSUE_ID);
+        let mut component = ChildrenListComponent::new(ISSUE_ID.into());
         component.update(&store);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
 
@@ -156,7 +158,7 @@ mod tests {
     #[test]
     fn process_event_j_on_bottom_child_returns_leave_from_below_and_keeps_widget_coherent() {
         let store = store_with_parent_and_children();
-        let mut component = ChildrenListComponent::new(ISSUE_ID);
+        let mut component = ChildrenListComponent::new(ISSUE_ID.into());
         component.update(&store);
         component.focus_event(FocusEvent::CursorEnteredFromBelow);
 
@@ -178,7 +180,7 @@ mod tests {
     #[test]
     fn process_event_k_on_top_child_returns_leave_from_above_and_keeps_widget_coherent() {
         let store = store_with_parent_and_children();
-        let mut component = ChildrenListComponent::new(ISSUE_ID);
+        let mut component = ChildrenListComponent::new(ISSUE_ID.into());
         component.update(&store);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
 
@@ -200,7 +202,7 @@ mod tests {
     #[test]
     fn unfocused_after_update_removes_widget_focus() {
         let store = store_with_parent_and_children();
-        let mut component = ChildrenListComponent::new(ISSUE_ID);
+        let mut component = ChildrenListComponent::new(ISSUE_ID.into());
         component.update(&store);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
 

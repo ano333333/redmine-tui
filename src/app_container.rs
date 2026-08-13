@@ -48,9 +48,9 @@ impl<'a> AppContainer<'a> {
             d.dispatch(Action::LoadTargetVersions);
             d.dispatch(Action::LoadCategories);
             d.dispatch(Action::LoadTimeEntityActivities);
-            d.dispatch(Action::LoadIssue { id: 1 });
-            d.dispatch(Action::LoadIssue { id: 2 });
-            d.dispatch(Action::LoadIssue { id: 3 });
+            d.dispatch(Action::LoadIssue { id: 1.into() });
+            d.dispatch(Action::LoadIssue { id: 2.into() });
+            d.dispatch(Action::LoadIssue { id: 3.into() });
             d.dispatch(Action::LoadJournal { id: 1 });
             d.dispatch(Action::LoadJournal { id: 2 });
             d.dispatch(Action::LoadJournal { id: 3 });

@@ -211,9 +211,9 @@ mod tests {
     fn store() -> Store {
         let mut store = Store::new();
         store.consume_action(Action::LoadProjects);
-        store.consume_action(Action::LoadIssue { id: 1 });
-        store.consume_action(Action::LoadIssue { id: 2 });
-        store.consume_action(Action::LoadIssue { id: 3 });
+        store.consume_action(Action::LoadIssue { id: 1.into() });
+        store.consume_action(Action::LoadIssue { id: 2.into() });
+        store.consume_action(Action::LoadIssue { id: 3.into() });
         store
     }
 
@@ -255,7 +255,7 @@ mod tests {
         let mut component = IssueSelectPopupComponent::new(&store, 1);
 
         store.consume_action(Action::UpdateIssue {
-            id: 1,
+            id: 1.into(),
             body: "updated description".to_string(),
         });
         component.update(&store, AREA);

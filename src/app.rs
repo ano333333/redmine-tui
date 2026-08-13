@@ -131,14 +131,16 @@ impl Store {
                 }
             }
             Action::LoadIssue { id } => {
-                self.issues.entry(id.into()).or_insert(parse_issue_yaml(id));
-                self.issue_property_diffs.entry(id).or_default();
+                self.issues
+                    .entry(id.into())
+                    .or_insert(parse_issue_yaml(id.get()));
+                self.issue_property_diffs.entry(id.get()).or_default();
             }
             Action::UpdateIssue { id, body } => {
                 if let Some(issue) = self.issues.get_mut(&id.into()) {
                     let before = issue.description.clone();
                     issue.description = body.clone();
-                    self.issue_property_diffs.entry(id).or_default().push(
+                    self.issue_property_diffs.entry(id.get()).or_default().push(
                         IssuePropertyDiff::Description(IssueDescriptionDiff {
                             before,
                             after: body,
@@ -150,7 +152,7 @@ impl Store {
                 if let Some(issue) = self.issues.get_mut(&id.into()) {
                     let before = issue.status_id;
                     issue.status_id = status_id;
-                    self.issue_property_diffs.entry(id).or_default().push(
+                    self.issue_property_diffs.entry(id.get()).or_default().push(
                         IssuePropertyDiff::StatusId(IssueStatusIdDiff {
                             before,
                             after: status_id,
@@ -159,10 +161,10 @@ impl Store {
                 }
             }
             Action::UpdateIssueAssignedTo { id, assigned_to_id } => {
-                if let Some(issue) = self.issues.get_mut(&id.into()) {
+                if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.assigned_to_id;
                     issue.assigned_to_id = assigned_to_id;
-                    self.issue_property_diffs.entry(id).or_default().push(
+                    self.issue_property_diffs.entry(id.get()).or_default().push(
                         IssuePropertyDiff::AssignedToId(IssueAssignedToIdDiff {
                             before,
                             after: assigned_to_id,
@@ -174,10 +176,10 @@ impl Store {
                 id,
                 target_version_id,
             } => {
-                if let Some(issue) = self.issues.get_mut(&id.into()) {
+                if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.target_version_id;
                     issue.target_version_id = target_version_id;
-                    self.issue_property_diffs.entry(id).or_default().push(
+                    self.issue_property_diffs.entry(id.get()).or_default().push(
                         IssuePropertyDiff::TargetVersionId(IssueTargetVersionIdDiff {
                             before,
                             after: target_version_id,
@@ -186,10 +188,10 @@ impl Store {
                 }
             }
             Action::UpdateIssueCategory { id, category_id } => {
-                if let Some(issue) = self.issues.get_mut(&id.into()) {
+                if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.category_id;
                     issue.category_id = category_id;
-                    self.issue_property_diffs.entry(id).or_default().push(
+                    self.issue_property_diffs.entry(id.get()).or_default().push(
                         IssuePropertyDiff::CategoryId(IssueCategoryIdDiff {
                             before,
                             after: category_id,
@@ -198,10 +200,10 @@ impl Store {
                 }
             }
             Action::UpdateIssueDoneRatio { id, done_ratio } => {
-                if let Some(issue) = self.issues.get_mut(&id.into()) {
+                if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.done_ratio;
                     issue.done_ratio = done_ratio;
-                    self.issue_property_diffs.entry(id).or_default().push(
+                    self.issue_property_diffs.entry(id.get()).or_default().push(
                         IssuePropertyDiff::DoneRatio(IssueDoneRatioDiff {
                             before,
                             after: done_ratio,
@@ -210,10 +212,10 @@ impl Store {
                 }
             }
             Action::UpdateIssueStartDate { id, start_date } => {
-                if let Some(issue) = self.issues.get_mut(&id.into()) {
+                if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.start_date;
                     issue.start_date = start_date;
-                    self.issue_property_diffs.entry(id).or_default().push(
+                    self.issue_property_diffs.entry(id.get()).or_default().push(
                         IssuePropertyDiff::StartDate(IssueStartDateDiff {
                             before,
                             after: start_date,
@@ -222,10 +224,10 @@ impl Store {
                 }
             }
             Action::UpdateIssueDueDate { id, due_date } => {
-                if let Some(issue) = self.issues.get_mut(&id.into()) {
+                if let Some(issue) = self.issues.get_mut(&id) {
                     let before = issue.due_date;
                     issue.due_date = due_date;
-                    self.issue_property_diffs.entry(id).or_default().push(
+                    self.issue_property_diffs.entry(id.get()).or_default().push(
                         IssuePropertyDiff::DueDate(IssueDueDateDiff {
                             before,
                             after: due_date,
@@ -353,38 +355,38 @@ pub enum Action {
     LoadCategories,
     LoadTimeEntityActivities,
     LoadIssue {
-        id: u16,
+        id: IssueId,
     },
     UpdateIssue {
-        id: u16,
+        id: IssueId,
         body: String,
     },
     UpdateIssueStatus {
-        id: u16,
+        id: IssueId,
         status_id: IssueStatusId,
     },
     UpdateIssueAssignedTo {
-        id: u16,
+        id: IssueId,
         assigned_to_id: Option<UserId>,
     },
     UpdateIssueTargetVersion {
-        id: u16,
+        id: IssueId,
         target_version_id: Option<TargetVersionId>,
     },
     UpdateIssueCategory {
-        id: u16,
+        id: IssueId,
         category_id: Option<CategoryId>,
     },
     UpdateIssueDoneRatio {
-        id: u16,
+        id: IssueId,
         done_ratio: u16,
     },
     UpdateIssueStartDate {
-        id: u16,
+        id: IssueId,
         start_date: Option<chrono::DateTime<chrono::Local>>,
     },
     UpdateIssueDueDate {
-        id: u16,
+        id: IssueId,
         due_date: Option<chrono::DateTime<chrono::Local>>,
     },
     LoadJournal {
@@ -421,7 +423,7 @@ mod tests {
     fn load_issue_reads_target_version_id_reference() {
         let mut store = Store::new();
 
-        store.consume_action(Action::LoadIssue { id: 1 });
+        store.consume_action(Action::LoadIssue { id: 1.into() });
 
         let (issue, _) = store.get_issue(1).expect("issue should be loaded");
         assert_eq!(issue.target_version_id, Some(TargetVersionId::new(1)));
@@ -430,10 +432,10 @@ mod tests {
     #[test]
     fn update_issue_target_version_sets_selected_version() {
         let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 2 });
+        store.consume_action(Action::LoadIssue { id: 2.into() });
 
         store.consume_action(Action::UpdateIssueTargetVersion {
-            id: 2,
+            id: 2.into(),
             target_version_id: Some(TargetVersionId::new(1)),
         });
 
@@ -445,10 +447,10 @@ mod tests {
     #[test]
     fn update_issue_target_version_can_clear_version() {
         let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1 });
+        store.consume_action(Action::LoadIssue { id: 1.into() });
 
         store.consume_action(Action::UpdateIssueTargetVersion {
-            id: 1,
+            id: 1.into(),
             target_version_id: None,
         });
 
@@ -474,7 +476,7 @@ mod tests {
     fn load_issue_reads_category_id_reference() {
         let mut store = Store::new();
 
-        store.consume_action(Action::LoadIssue { id: 1 });
+        store.consume_action(Action::LoadIssue { id: 1.into() });
 
         let (issue, _) = store.get_issue(1).expect("issue should be loaded");
         assert_eq!(issue.category_id, Some(CategoryId::new(1)));
@@ -483,10 +485,10 @@ mod tests {
     #[test]
     fn update_issue_category_sets_selected_category() {
         let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1 });
+        store.consume_action(Action::LoadIssue { id: 1.into() });
 
         store.consume_action(Action::UpdateIssueCategory {
-            id: 1,
+            id: 1.into(),
             category_id: Some(CategoryId::new(2)),
         });
 
@@ -498,10 +500,10 @@ mod tests {
     #[test]
     fn update_issue_category_can_clear_category() {
         let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1 });
+        store.consume_action(Action::LoadIssue { id: 1.into() });
 
         store.consume_action(Action::UpdateIssueCategory {
-            id: 1,
+            id: 1.into(),
             category_id: None,
         });
 
@@ -513,12 +515,12 @@ mod tests {
     #[test]
     fn update_issue_start_date_updates_issue_and_records_diff() {
         let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1 });
+        store.consume_action(Action::LoadIssue { id: 1.into() });
         let before = store.get_issue(1).unwrap().0.start_date;
         let after = Some(local_datetime("2026-04-30T00:00:00+09:00"));
 
         store.consume_action(Action::UpdateIssueStartDate {
-            id: 1,
+            id: 1.into(),
             start_date: after,
         });
 
@@ -535,12 +537,12 @@ mod tests {
     #[test]
     fn update_issue_due_date_updates_issue_and_records_diff() {
         let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1 });
+        store.consume_action(Action::LoadIssue { id: 1.into() });
         let before = store.get_issue(1).unwrap().0.due_date;
         let after = Some(local_datetime("2026-05-01T00:00:00+09:00"));
 
         store.consume_action(Action::UpdateIssueDueDate {
-            id: 1,
+            id: 1.into(),
             due_date: after,
         });
 

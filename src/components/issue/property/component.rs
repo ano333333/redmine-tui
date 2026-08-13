@@ -143,7 +143,9 @@ mod tests {
         store.consume_action(Action::LoadTrackers);
         store.consume_action(Action::LoadTargetVersions);
         store.consume_action(Action::LoadCategories);
-        store.consume_action(Action::LoadIssue { id: ISSUE_ID });
+        store.consume_action(Action::LoadIssue {
+            id: ISSUE_ID.into(),
+        });
         store
     }
 
@@ -155,7 +157,7 @@ mod tests {
     #[test]
     fn focus_event_from_above_is_reflected_in_widget_and_cursor() {
         let store = store_with_property_issue();
-        let mut component = PropertyComponent::new(ISSUE_ID);
+        let mut component = PropertyComponent::new(ISSUE_ID.into());
 
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
 
@@ -171,7 +173,7 @@ mod tests {
     #[test]
     fn focus_event_from_below_preserves_current_focusable_line_count() {
         let store = store_with_property_issue();
-        let mut component = PropertyComponent::new(ISSUE_ID);
+        let mut component = PropertyComponent::new(ISSUE_ID.into());
 
         component.focus_event(FocusEvent::CursorEnteredFromBelow);
 
@@ -187,7 +189,7 @@ mod tests {
     #[test]
     fn process_event_j_updates_widget_focus_and_cursor() {
         let store = store_with_property_issue();
-        let mut component = PropertyComponent::new(ISSUE_ID);
+        let mut component = PropertyComponent::new(ISSUE_ID.into());
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
 
         let result = component.process_event(key_event(KeyCode::Char('j')));
@@ -205,7 +207,7 @@ mod tests {
     #[test]
     fn process_event_e_returns_status_popup_result_without_changing_widget_focus() {
         let store = store_with_property_issue();
-        let mut component = PropertyComponent::new(ISSUE_ID);
+        let mut component = PropertyComponent::new(ISSUE_ID.into());
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
         for _ in 0..3 {
             component.process_event(key_event(KeyCode::Char('j')));
@@ -229,7 +231,7 @@ mod tests {
     #[test]
     fn process_event_e_returns_assigned_to_popup_result_without_changing_widget_focus() {
         let store = store_with_property_issue();
-        let mut component = PropertyComponent::new(ISSUE_ID);
+        let mut component = PropertyComponent::new(ISSUE_ID.into());
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
         for _ in 0..7 {
             component.process_event(key_event(KeyCode::Char('j')));
@@ -247,7 +249,7 @@ mod tests {
     #[test]
     fn process_event_e_returns_target_version_popup_result_without_changing_widget_focus() {
         let store = store_with_property_issue();
-        let mut component = PropertyComponent::new(ISSUE_ID);
+        let mut component = PropertyComponent::new(ISSUE_ID.into());
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
         for _ in 0..TARGET_VERSION_LINE {
             component.process_event(key_event(KeyCode::Char('j')));
@@ -265,7 +267,7 @@ mod tests {
     #[test]
     fn process_event_e_returns_done_ratio_popup_result_without_changing_widget_focus() {
         let store = store_with_property_issue();
-        let mut component = PropertyComponent::new(ISSUE_ID);
+        let mut component = PropertyComponent::new(ISSUE_ID.into());
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
         for _ in 0..DONE_RATIO_LINE {
             component.process_event(key_event(KeyCode::Char('j')));
@@ -283,7 +285,7 @@ mod tests {
     #[test]
     fn process_event_e_returns_start_date_popup_result_without_changing_widget_focus() {
         let store = store_with_property_issue();
-        let mut component = PropertyComponent::new(ISSUE_ID);
+        let mut component = PropertyComponent::new(ISSUE_ID.into());
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
         for _ in 0..START_DATE_LINE {
             component.process_event(key_event(KeyCode::Char('j')));
@@ -301,7 +303,7 @@ mod tests {
     #[test]
     fn process_event_e_returns_due_date_popup_result_without_changing_widget_focus() {
         let store = store_with_property_issue();
-        let mut component = PropertyComponent::new(ISSUE_ID);
+        let mut component = PropertyComponent::new(ISSUE_ID.into());
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
         for _ in 0..DUE_DATE_LINE {
             component.process_event(key_event(KeyCode::Char('j')));
@@ -316,7 +318,7 @@ mod tests {
     #[test]
     fn process_event_e_returns_spent_time_popup_result_without_changing_widget_focus() {
         let store = store_with_property_issue();
-        let mut component = PropertyComponent::new(ISSUE_ID);
+        let mut component = PropertyComponent::new(ISSUE_ID.into());
         component.focus_event(FocusEvent::CursorEnteredFromBelow);
         component.process_event(key_event(KeyCode::Char('k')));
 
@@ -342,7 +344,7 @@ mod tests {
     #[test]
     fn process_event_e_returns_category_popup_result_without_changing_widget_focus() {
         let store = store_with_property_issue();
-        let mut component = PropertyComponent::new(ISSUE_ID);
+        let mut component = PropertyComponent::new(ISSUE_ID.into());
         component.focus_event(FocusEvent::CursorEnteredFromBelow);
 
         let result = component.process_event(key_event(KeyCode::Char('e')));

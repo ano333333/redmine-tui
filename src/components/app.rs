@@ -173,7 +173,7 @@ impl<'a> AppComponent<'a> {
                             Box::new(move |status_id| {
                                 if let Some(status_id) = status_id {
                                     dispatcher.borrow_mut().dispatch(Action::UpdateIssueStatus {
-                                        id: issue_id,
+                                        id: issue_id.into(),
                                         status_id: IssueStatusId::new(status_id),
                                     });
                                 }
@@ -210,7 +210,7 @@ impl<'a> AppComponent<'a> {
                                 dispatcher
                                     .borrow_mut()
                                     .dispatch(Action::UpdateIssueAssignedTo {
-                                        id: issue_id,
+                                        id: issue_id.into(),
                                         assigned_to_id: assigned_to_id.map(UserId::new),
                                     });
                             }),
@@ -247,7 +247,7 @@ impl<'a> AppComponent<'a> {
                             Box::new(move |target_version_id| {
                                 dispatcher.borrow_mut().dispatch(
                                     Action::UpdateIssueTargetVersion {
-                                        id: issue_id,
+                                        id: issue_id.into(),
                                         target_version_id: target_version_id
                                             .map(TargetVersionId::new),
                                     },
@@ -271,7 +271,7 @@ impl<'a> AppComponent<'a> {
                                 if let Some(date) = date {
                                     dispatcher.borrow_mut().dispatch(
                                         Action::UpdateIssueStartDate {
-                                            id: issue_id,
+                                            id: issue_id.into(),
                                             start_date: Some(date),
                                         },
                                     );
@@ -296,7 +296,7 @@ impl<'a> AppComponent<'a> {
                                     dispatcher
                                         .borrow_mut()
                                         .dispatch(Action::UpdateIssueDueDate {
-                                            id: issue_id,
+                                            id: issue_id.into(),
                                             due_date: Some(date),
                                         });
                                 }
@@ -330,7 +330,7 @@ impl<'a> AppComponent<'a> {
                                 if let Some(done_ratio) = done_ratio {
                                     dispatcher.borrow_mut().dispatch(
                                         Action::UpdateIssueDoneRatio {
-                                            id: issue_id,
+                                            id: issue_id.into(),
                                             done_ratio,
                                         },
                                     );
@@ -370,7 +370,7 @@ impl<'a> AppComponent<'a> {
                                 dispatcher
                                     .borrow_mut()
                                     .dispatch(Action::UpdateIssueCategory {
-                                        id: issue_id,
+                                        id: issue_id.into(),
                                         category_id: category_id.map(CategoryId::new),
                                     });
                             }),
@@ -420,7 +420,7 @@ impl<'a> AppComponent<'a> {
                 self.dispatcher
                     .borrow_mut()
                     .dispatch(crate::app::Action::UpdateIssue {
-                        id,
+                        id: id.into(),
                         body: response.edited_text,
                     });
             }
@@ -535,7 +535,7 @@ mod tests {
             dispatcher_ref.dispatch(Action::LoadTrackers);
             dispatcher_ref.dispatch(Action::LoadTargetVersions);
             dispatcher_ref.dispatch(Action::LoadCategories);
-            dispatcher_ref.dispatch(Action::LoadIssue { id: 3 });
+            dispatcher_ref.dispatch(Action::LoadIssue { id: 3.into() });
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }
@@ -547,7 +547,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         dispatcher
             .borrow_mut()
-            .dispatch(Action::LoadIssue { id: 3 });
+            .dispatch(Action::LoadIssue { id: 3.into() });
         dispatcher.borrow_mut().consume_action();
         dispatcher
     }
@@ -563,8 +563,8 @@ mod tests {
             dispatcher_ref.dispatch(Action::LoadTrackers);
             dispatcher_ref.dispatch(Action::LoadTargetVersions);
             dispatcher_ref.dispatch(Action::LoadCategories);
-            dispatcher_ref.dispatch(Action::LoadIssue { id: 1 });
-            dispatcher_ref.dispatch(Action::LoadIssue { id: 3 });
+            dispatcher_ref.dispatch(Action::LoadIssue { id: 1.into() });
+            dispatcher_ref.dispatch(Action::LoadIssue { id: 3.into() });
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }
