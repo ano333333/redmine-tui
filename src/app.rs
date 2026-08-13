@@ -14,7 +14,7 @@ use crate::vos::issue_property_diff::{
     IssueDueDateDiff, IssueStartDateDiff, IssueStatusIdDiff, IssueTargetVersionIdDiff,
 };
 use crate::vos::{
-    CategoryId, EntityIdValue, IssuePropertyDiff, IssueStatusId, PriorityId, ProjectId,
+    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, PriorityId, ProjectId,
     TargetVersionId, TimeEntityActivityId, UserId,
 };
 
@@ -58,7 +58,7 @@ pub enum JournalState {
 }
 
 pub struct Store {
-    issues: HashMap<u16, Issue>,
+    issues: HashMap<IssueId, Issue>,
     issue_property_diffs: HashMap<u16, Vec<IssuePropertyDiff>>,
     journals: HashMap<u16, (Journal, JournalState)>,
     users: HashMap<UserId, User>,
@@ -131,11 +131,11 @@ impl Store {
                 }
             }
             Action::LoadIssue { id } => {
-                self.issues.entry(id).or_insert(parse_issue_yaml(id));
+                self.issues.entry(id.into()).or_insert(parse_issue_yaml(id));
                 self.issue_property_diffs.entry(id).or_default();
             }
             Action::UpdateIssue { id, body } => {
-                if let Some(issue) = self.issues.get_mut(&id) {
+                if let Some(issue) = self.issues.get_mut(&id.into()) {
                     let before = issue.description.clone();
                     issue.description = body.clone();
                     self.issue_property_diffs.entry(id).or_default().push(
@@ -147,7 +147,7 @@ impl Store {
                 }
             }
             Action::UpdateIssueStatus { id, status_id } => {
-                if let Some(issue) = self.issues.get_mut(&id) {
+                if let Some(issue) = self.issues.get_mut(&id.into()) {
                     let before = issue.status_id;
                     issue.status_id = status_id;
                     self.issue_property_diffs.entry(id).or_default().push(
@@ -159,7 +159,7 @@ impl Store {
                 }
             }
             Action::UpdateIssueAssignedTo { id, assigned_to_id } => {
-                if let Some(issue) = self.issues.get_mut(&id) {
+                if let Some(issue) = self.issues.get_mut(&id.into()) {
                     let before = issue.assigned_to_id;
                     issue.assigned_to_id = assigned_to_id;
                     self.issue_property_diffs.entry(id).or_default().push(
@@ -174,7 +174,7 @@ impl Store {
                 id,
                 target_version_id,
             } => {
-                if let Some(issue) = self.issues.get_mut(&id) {
+                if let Some(issue) = self.issues.get_mut(&id.into()) {
                     let before = issue.target_version_id;
                     issue.target_version_id = target_version_id;
                     self.issue_property_diffs.entry(id).or_default().push(
@@ -186,7 +186,7 @@ impl Store {
                 }
             }
             Action::UpdateIssueCategory { id, category_id } => {
-                if let Some(issue) = self.issues.get_mut(&id) {
+                if let Some(issue) = self.issues.get_mut(&id.into()) {
                     let before = issue.category_id;
                     issue.category_id = category_id;
                     self.issue_property_diffs.entry(id).or_default().push(
@@ -198,7 +198,7 @@ impl Store {
                 }
             }
             Action::UpdateIssueDoneRatio { id, done_ratio } => {
-                if let Some(issue) = self.issues.get_mut(&id) {
+                if let Some(issue) = self.issues.get_mut(&id.into()) {
                     let before = issue.done_ratio;
                     issue.done_ratio = done_ratio;
                     self.issue_property_diffs.entry(id).or_default().push(
@@ -210,7 +210,7 @@ impl Store {
                 }
             }
             Action::UpdateIssueStartDate { id, start_date } => {
-                if let Some(issue) = self.issues.get_mut(&id) {
+                if let Some(issue) = self.issues.get_mut(&id.into()) {
                     let before = issue.start_date;
                     issue.start_date = start_date;
                     self.issue_property_diffs.entry(id).or_default().push(
@@ -222,7 +222,7 @@ impl Store {
                 }
             }
             Action::UpdateIssueDueDate { id, due_date } => {
-                if let Some(issue) = self.issues.get_mut(&id) {
+                if let Some(issue) = self.issues.get_mut(&id.into()) {
                     let before = issue.due_date;
                     issue.due_date = due_date;
                     self.issue_property_diffs.entry(id).or_default().push(
@@ -249,11 +249,11 @@ impl Store {
 
     pub fn get_issue(&self, issue_id: u16) -> Option<(&Issue, IssueState)> {
         self.issues
-            .get(&issue_id)
+            .get(&issue_id.into())
             .map(|issue| (issue, self.get_issue_state(issue_id)))
     }
 
-    pub fn get_issues(&self) -> &HashMap<u16, Issue> {
+    pub fn get_issues(&self) -> &HashMap<IssueId, Issue> {
         &self.issues
     }
 
