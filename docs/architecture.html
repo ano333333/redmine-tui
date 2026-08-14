@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent 実装ガイド</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #0f1117;
+        --surface: #1a1d27;
+        --surface-2: #22263a;
+        --border: #2e3350;
+        --accent: #6c8efb;
+        --accent-dim: #3d4f8a;
+        --text: #d0d4e8;
+        --text-muted: #7a80a0;
+        --text-heading: #e8eaf6;
+        --code-bg: #13151f;
+        --code-border: #2a2e45;
+        --tag-bg: #1e2540;
+        --tag-text: #8ba3f5;
+        --marker: #f0b429;
+      }
+
+      body {
+        font-family: "Inter", "Noto Sans JP", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.75;
+        font-size: 15px;
+      }
+
+      /* Layout */
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+
+      nav {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        width: 240px;
+        flex-shrink: 0;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+        padding: 28px 0;
+      }
+
+      nav .nav-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 0 20px 12px;
+      }
+
+      nav a {
+        display: block;
+        padding: 6px 20px;
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: 13px;
+        border-left: 2px solid transparent;
+        transition:
+          color 0.15s,
+          border-color 0.15s;
+      }
+
+      nav a:hover {
+        color: var(--text);
+        border-left-color: var(--accent-dim);
+      }
+
+      nav a.active {
+        color: var(--accent);
+        border-left-color: var(--accent);
+      }
+
+      nav .nav-section {
+        margin-top: 16px;
+      }
+
+      main {
+        flex: 1;
+        min-width: 0;
+        padding: 56px 64px;
+        max-width: 900px;
+      }
+
+      /* Header */
+      .page-header {
+        margin-bottom: 48px;
+        padding-bottom: 32px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .page-header .eyebrow {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 10px;
+      }
+
+      h1 {
+        font-size: 30px;
+        font-weight: 700;
+        color: var(--text-heading);
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+      }
+
+      /* Sections */
+      section {
+        margin-bottom: 56px;
+      }
+
+      h2 {
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin-bottom: 16px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+        letter-spacing: -0.01em;
+      }
+
+      h3 {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text-heading);
+        margin: 24px 0 10px;
+      }
+
+      p {
+        margin-bottom: 14px;
+        color: var(--text);
+      }
+
+      /* Directory tree */
+      .dir-tree {
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .dir-item {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 12px;
+        padding: 10px 20px;
+        border-bottom: 1px solid var(--code-border);
+        align-items: start;
+      }
+
+      .dir-item:last-child {
+        border-bottom: none;
+      }
+
+      .dir-item:hover {
+        background: var(--surface-2);
+      }
+
+      .dir-path {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 13px;
+        color: var(--accent);
+        white-space: nowrap;
+      }
+
+      .dir-desc {
+        font-size: 13px;
+        color: var(--text-muted);
+        padding-top: 1px;
+      }
+
+      /* Lifecycle steps */
+      .lifecycle {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .lifecycle-step {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 10px 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+
+      .step-num {
+        width: 22px;
+        height: 22px;
+        background: var(--accent-dim);
+        color: var(--accent);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 700;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+
+      .step-body {
+        flex: 1;
+      }
+
+      .step-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-heading);
+        margin-bottom: 4px;
+      }
+
+      .step-chain {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+
+      .chain-item {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 12px;
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 2px 8px;
+        border-radius: 4px;
+        border: 1px solid var(--accent-dim);
+      }
+
+      .chain-arrow {
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+
+      /* Responsibility cards */
+      .resp-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+
+      @media (max-width: 700px) {
+        .resp-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .resp-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px 18px;
+      }
+
+      .resp-card.allowed {
+        border-top: 2px solid #4caf8a;
+      }
+      .resp-card.denied {
+        border-top: 2px solid #e05b5b;
+      }
+
+      .resp-card-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      }
+
+      .allowed .resp-card-title {
+        color: #4caf8a;
+      }
+      .denied .resp-card-title {
+        color: #e05b5b;
+      }
+
+      .resp-list {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .resp-list li {
+        font-size: 13px;
+        color: var(--text);
+        padding-left: 16px;
+        position: relative;
+      }
+
+      .allowed .resp-list li::before {
+        content: "✓";
+        position: absolute;
+        left: 0;
+        color: #4caf8a;
+        font-weight: 700;
+      }
+
+      .denied .resp-list li::before {
+        content: "✗";
+        position: absolute;
+        left: 0;
+        color: #e05b5b;
+        font-weight: 700;
+      }
+
+      /* Code blocks */
+      pre {
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 8px;
+        padding: 18px 20px;
+        overflow-x: auto;
+        margin: 16px 0;
+      }
+
+      code {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #b0bce8;
+      }
+
+      p code,
+      li code {
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-size: 12.5px;
+      }
+
+      /* Callout */
+      .callout {
+        background: var(--surface);
+        border-left: 3px solid var(--marker);
+        border-radius: 0 6px 6px 0;
+        padding: 12px 16px;
+        margin: 16px 0;
+        font-size: 13.5px;
+        color: var(--text);
+      }
+
+      .callout strong {
+        color: var(--marker);
+      }
+
+      /* Diff rules */
+      .diff-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin: 12px 0;
+      }
+
+      .diff-item {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 13px;
+      }
+
+      .diff-bullet {
+        width: 6px;
+        height: 6px;
+        background: var(--accent-dim);
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-top: 7px;
+      }
+
+      /* Test section */
+      .test-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+      }
+
+      @media (max-width: 700px) {
+        .test-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .test-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      .test-card-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 10px;
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+      }
+
+      .test-card ul {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      .test-card li {
+        font-size: 12.5px;
+        color: var(--text-muted);
+        padding-left: 14px;
+        position: relative;
+      }
+
+      .test-card li::before {
+        content: "·";
+        position: absolute;
+        left: 4px;
+        color: var(--text-muted);
+      }
+
+      /* Link to ADR */
+      .adr-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+        font-size: 13px;
+        color: var(--accent);
+        text-decoration: none;
+        padding: 4px 10px;
+        border: 1px solid var(--accent-dim);
+        border-radius: 4px;
+        transition: background 0.15s;
+      }
+      .adr-link:hover {
+        background: var(--tag-bg);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <div class="nav-title">Architecture</div>
+        <a href="#directory">ディレクトリ構成</a>
+        <a href="#flux">Flux を参考にした構成</a>
+        <a href="#lifecycle">Component lifecycle</a>
+        <a href="#split">実装分割</a>
+        <a href="#widget">Widget</a>
+        <a href="#focusstate">FocusState</a>
+        <a href="#component">Component</a>
+        <a href="#testing">テスト方針</a>
+        <div class="nav-section">
+          <div class="nav-title" style="margin-top: 0">ADR</div>
+          <a href="adrs/1.html">ADR 1 — String/str 方針</a>
+        </div>
+      </nav>
+
+      <main>
+        <div class="page-header">
+          <div class="eyebrow">Agent 実装ガイド</div>
+          <h1>アーキテクチャ前提</h1>
+          <p
+            style="margin-top: 12px; color: var(--text-muted); font-size: 14px"
+          >
+            agent
+            がこのリポジトリを読む・変更する際の前提をまとめる。詳細な意思決定の背景は
+            <a href="adrs/1.html" class="adr-link">docs/adrs/</a> を参照する。
+          </p>
+        </div>
+
+        <!-- Directory -->
+        <section id="directory">
+          <h2>ディレクトリ構成</h2>
+          <div class="dir-tree">
+            <div class="dir-item">
+              <span class="dir-path">src/main.rs</span>
+              <span class="dir-desc"
+                >terminal 初期化、main loop、最上位 layout を持つ。loop は
+                AppContainer::update、draw、crossterm event
+                read、AppContainer::handle_key_event の順に進む。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/app_container.rs</span>
+              <span class="dir-desc"
+                >terminal と application component の接続点。Dispatcher と
+                AppComponent を保持する。editor 起動など terminal
+                外部副作用を扱う。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/app.rs</span>
+              <span class="dir-desc"
+                >Action、Dispatcher、Store を定義する。Store は entity
+                と差分状態を保持する。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/components/</span>
+              <span class="dir-desc"
+                >TUI の画面部品を置く。app.rs は全体 component と popup stack
+                を統括する。issue/ は issue detail 画面とその子 component
+                を置く。*_popup/ は popup component を置く。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/entities/</span>
+              <span class="dir-desc"
+                >Redmine 由来の永続的な domain entity を置く。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/vos/</span>
+              <span class="dir-desc"
+                >ID、差分、journal detail などの value object を置く。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/widgets/</span>
+              <span class="dir-desc"
+                >複数 component から使う汎用 widget を置く。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/libs/</span>
+              <span class="dir-desc"
+                >YAML読み込みなど、外部表現から domain data
+                へ変換する補助処理を置く。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/test_support.rs</span>
+              <span class="dir-desc"
+                >snapshot rendering や test fixture を置く。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/snapshots/</span>
+              <span class="dir-desc">insta snapshot を置く。</span>
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">docs/adrs/</span>
+              <span class="dir-desc">アーキテクチャ判断の記録を置く。</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Flux -->
+        <section id="flux">
+          <h2>Flux を参考にした構成</h2>
+          <p>
+            本リポジトリは厳密なFlux実装ではない。Action を Dispatcher
+            へ送り、Dispatcher が Store を更新し、Store 更新後に Component を
+            update する、という一方向データフローを基本にした構成である。
+          </p>
+          <p>
+            Store の更新は原則として Dispatcher
+            を介して行う。初期セットアップを除き、action の処理と component の
+            <code>update</code> は交互に行う。これは意図した lifecycle
+            であり、全 action を drain してから一度だけ update
+            する設計ではない。
+          </p>
+          <p
+            style="
+              color: var(--text-muted);
+              font-size: 13px;
+              margin-bottom: 10px;
+            "
+          >
+            厳密なFluxとの差分として、以下を許容する:
+          </p>
+          <div class="diff-list">
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                Store 更新通知は pub/sub ではなく、上位層が
+                <code>consume_action → update</code> を明示的に呼ぶ。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                <code>Dispatcher</code> は action queue と
+                <code>Store</code> を内部に持つ。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                focus、cursor、scroll、render cache などの同期的な UI state は
+                Store ではなく Component / FocusState に保持する。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                親子 Component 間の focus 遷移は Store / Action
+                を経由せず、<code>process_event</code> の戻り値と
+                <code>focus_event</code> で直接処理する。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                editor 起動などの外部副作用は <code>AppEffect</code> として
+                Component から取り出し、<code>AppContainer</code> 側で実行する。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                <code>create_widget(&amp;Store)</code> で Store を参照して表示用
+                entity を取得してよい。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Lifecycle -->
+        <section id="lifecycle">
+          <h2>Component lifecycle</h2>
+          <p>Component は以下の lifecycle を前提に実装する。</p>
+          <div class="lifecycle">
+            <div class="lifecycle-step">
+              <div class="step-num">1</div>
+              <div class="step-body">
+                <div class="step-label">Store action 処理時</div>
+                <div class="step-chain">
+                  <span class="chain-item">Dispatcher::consume_action</span>
+                  <span class="chain-arrow">→</span>
+                  <span class="chain-item">Store 更新</span>
+                  <span class="chain-arrow">→</span>
+                  <span class="chain-item">Component::update</span>
+                  <span class="chain-arrow">→</span>
+                  <span class="chain-item">Component::create_widget</span>
+                  <span class="chain-arrow">→</span>
+                  <span class="chain-item">Widget::render</span>
+                </div>
+              </div>
+            </div>
+            <div class="lifecycle-step">
+              <div class="step-num">2</div>
+              <div class="step-body">
+                <div class="step-label">同期的なキーイベント処理時</div>
+                <div class="step-chain">
+                  <span class="chain-item">Component::process_event</span>
+                  <span class="chain-arrow">→</span>
+                  <span class="chain-item"
+                    >action dispatch / popup / effect</span
+                  >
+                  <span class="chain-arrow">→</span>
+                  <span class="chain-item">Component::update</span>
+                  <span class="chain-arrow">→</span>
+                  <span class="chain-item">create_widget</span>
+                  <span class="chain-arrow">→</span>
+                  <span class="chain-item">Widget::render</span>
+                </div>
+              </div>
+            </div>
+            <div class="lifecycle-step">
+              <div class="step-num">3</div>
+              <div class="step-body">
+                <div class="step-label">
+                  他 Component のキーイベント処理による focus 遷移時
+                </div>
+                <div class="step-chain">
+                  <span class="chain-item">focused child::process_event</span>
+                  <span class="chain-arrow">→</span>
+                  <span class="chain-item">parent →別child::focus_event</span>
+                  <span class="chain-arrow">→</span>
+                  <span class="chain-item">Component::update</span>
+                  <span class="chain-arrow">→</span>
+                  <span class="chain-item">create_widget</span>
+                  <span class="chain-arrow">→</span>
+                  <span class="chain-item">Widget::render</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="callout" style="margin-top: 16px">
+            <strong>規則:</strong> <code>create_widget</code> は
+            <code>Widget</code> を実装した concrete struct を返す。<code
+              >Option&lt;Widget&gt;</code
+            >
+            にはしない。
+          </div>
+          <div class="callout">
+            <strong>規則:</strong>
+            <code>create_widget(&amp;Store)</code> は許容する。主な用途は Store
+            から描画に必要な entity を取得すること。幅依存の buffer、markdown
+            render cache、scroll/focus 補正などの重い派生状態は
+            <code>update</code> 側で扱う。
+          </div>
+          <div class="callout">
+            <strong>不変条件:</strong> <code>src/components/issue/</code> 配下の
+            component では、<code>create_widget</code> 時点で対象 issue が Store
+            に存在することを設計上の不変条件とする。無言の
+            <code>unwrap()</code> ではなく、不変条件を説明する
+            <code>expect(...)</code> を使う。
+          </div>
+          <pre><code>let (issue, _) = store
+    .get_issue(self.id)
+    .expect("PropertyComponent requires its issue to exist in Store");</code></pre>
+        </section>
+
+        <!-- Split -->
+        <section id="split">
+          <h2>Component の実装分割</h2>
+          <p>
+            Component は原則として
+            <code>widget.rs</code>、<code>focus_state.rs</code>、<code
+              >component.rs</code
+            >
+            に分割する。focus を持たない component では
+            <code>focus_state.rs</code> を省略してよい。
+          </p>
+        </section>
+
+        <!-- Widget -->
+        <section id="widget">
+          <h2>Widget</h2>
+          <p>
+            Widget は表示に直接関わるデータのみを受け取り、各 frame での render
+            を行う。
+          </p>
+          <div class="resp-grid">
+            <div class="resp-card allowed">
+              <div class="resp-card-title">責務あり</div>
+              <ul class="resp-list">
+                <li><code>ratatui::widgets::Widget</code> を実装する</li>
+                <li>
+                  <code>render(self, area, buf)</code> で Buffer へ描画する
+                </li>
+                <li>
+                  表示に必要な文字列、数値、選択状態、focus状態、事前計算済み
+                  buffer を受け取る
+                </li>
+                <li>layout と style を決める</li>
+                <li>snapshot test の対象になる表示を作る</li>
+                <li>
+                  <code>line_count</code>
+                  など表示に密接な計算メソッドを持ってよい
+                </li>
+              </ul>
+            </div>
+            <div class="resp-card denied">
+              <div class="resp-card-title">責務なし</div>
+              <ul class="resp-list">
+                <li>crossterm key event の解釈</li>
+                <li>Store action の dispatch</li>
+                <li>focus 遷移の決定</li>
+                <li>外部I/O</li>
+                <li>重い永続データ取得</li>
+                <li>Component や FocusState と同じ計算の重複</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- FocusState -->
+        <section id="focusstate">
+          <h2>FocusState</h2>
+          <p>
+            FocusState
+            はキー入力とその処理に関わるデータのみを持つ。フォーカス位置計算、カーソル表示位置計算、focus
+            入退場の同期処理を行う。
+          </p>
+          <div class="resp-grid">
+            <div class="resp-card allowed">
+              <div class="resp-card-title">責務あり</div>
+              <ul class="resp-list">
+                <li><code>process_event</code> で key event を解釈する</li>
+                <li>
+                  <code>focus_event</code> で親 component からの focus
+                  入退場を処理する
+                </li>
+                <li>
+                  <code>update</code> で focus
+                  可能範囲・幅・高さ・行数などを最新状態へ補正する
+                </li>
+                <li>cursor position を返す</li>
+                <li>
+                  上下左右移動、境界到達、編集開始などを
+                  <code>EventProcessResult</code> として返す
+                </li>
+              </ul>
+            </div>
+            <div class="resp-card denied">
+              <div class="resp-card-title">責務なし</div>
+              <ul class="resp-list">
+                <li>Store 参照</li>
+                <li>Widget 生成</li>
+                <li>entity の保持</li>
+                <li>表示文字列の組み立て</li>
+                <li>action dispatch</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- Component -->
+        <section id="component">
+          <h2>Component</h2>
+          <p>
+            Component は Widget と FocusState を統括し、lifecycle
+            に関わるメソッドをある程度統一した形式で公開する。
+          </p>
+          <div class="resp-card allowed" style="margin-bottom: 14px">
+            <div class="resp-card-title">責務あり</div>
+            <ul class="resp-list">
+              <li><code>new</code> で component 固有 state を初期化する</li>
+              <li>
+                <code>process_event</code> で FocusState や子 component へ event
+                を委譲し、親へ返す同期イベントを決める
+              </li>
+              <li><code>focus_event</code> で親からの focus 遷移を受け取る</li>
+              <li>
+                <code>update</code> で Store や entity から component
+                state、FocusState、render cache を更新する
+              </li>
+              <li><code>create_widget</code> で Widget を構築する</li>
+              <li>
+                子 component を持つ場合は、子の process_event / focus_event /
+                update / create_widget を統括する
+              </li>
+            </ul>
+          </div>
+          <div class="callout">
+            <strong>注意:</strong> Component は Store から entity を取得して
+            Widget に参照を渡してよい。ただし、Component field に frame をまたぐ
+            entity 参照を保持しない。entity の owned copy を field
+            に持つ場合は、Store との二重管理と clone cost
+            が妥当かを先に検討する。
+          </div>
+        </section>
+
+        <!-- Testing -->
+        <section id="testing">
+          <h2>テスト方針</h2>
+          <p>Widget、FocusState、Component は責務ごとにテストする。</p>
+          <div class="test-grid">
+            <div class="test-card">
+              <div class="test-card-title">Widget test</div>
+              <ul>
+                <li>render結果の snapshot</li>
+                <li>layout、clip、wrap、style、focus表示</li>
+                <li>line_count など表示計算</li>
+                <li>Store や Dispatcher に依存させない</li>
+                <li>必要な表示データを直接渡す</li>
+              </ul>
+            </div>
+            <div class="test-card">
+              <div class="test-card-title">FocusState test</div>
+              <ul>
+                <li>key event による focus/cursor 移動</li>
+                <li>境界到達時の EventProcessResult</li>
+                <li>focus_event による入退場</li>
+                <li>update による範囲補正</li>
+                <li>unfocused 時に入力を無視すること</li>
+                <li>Widget や Store に依存させない</li>
+              </ul>
+            </div>
+            <div class="test-card">
+              <div class="test-card-title">Component test</div>
+              <ul>
+                <li>
+                  process_event 後に create_widget の表示状態へ反映されること
+                </li>
+                <li>
+                  focus_event 後に Widget の focus 表示と cursor
+                  位置が一致すること
+                </li>
+                <li>
+                  update 後に FocusState の補正・Widget の表示・line count
+                  が整合すること
+                </li>
+                <li>
+                  子→親の EventProcessResult と親→別子の focus_event
+                  がつながること
+                </li>
+                <li>必要に応じて Store fixture を使ってよい</li>
+                <li>表示の最終確認には snapshot test を使う</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,879 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 1 — String/str 方針</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #0f1117;
+        --surface: #1a1d27;
+        --surface-2: #22263a;
+        --border: #2e3350;
+        --accent: #6c8efb;
+        --accent-dim: #3d4f8a;
+        --text: #d0d4e8;
+        --text-muted: #7a80a0;
+        --text-heading: #e8eaf6;
+        --code-bg: #13151f;
+        --code-border: #2a2e45;
+        --tag-bg: #1e2540;
+        --tag-text: #8ba3f5;
+        --status-accepted-bg: #0e2a1e;
+        --status-accepted-border: #2a7a50;
+        --status-accepted-text: #4caf8a;
+      }
+
+      body {
+        font-family: "Inter", "Noto Sans JP", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.75;
+        font-size: 15px;
+      }
+
+      /* Layout */
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+
+      nav {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        width: 240px;
+        flex-shrink: 0;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+        padding: 28px 0;
+      }
+
+      nav .nav-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 0 20px 12px;
+      }
+
+      nav a {
+        display: block;
+        padding: 6px 20px;
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: 13px;
+        border-left: 2px solid transparent;
+        transition:
+          color 0.15s,
+          border-color 0.15s;
+      }
+
+      nav a:hover {
+        color: var(--text);
+        border-left-color: var(--accent-dim);
+      }
+
+      nav .nav-section {
+        margin-top: 16px;
+      }
+
+      main {
+        flex: 1;
+        min-width: 0;
+        padding: 56px 64px;
+        max-width: 900px;
+      }
+
+      /* Header */
+      .page-header {
+        margin-bottom: 48px;
+        padding-bottom: 32px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .breadcrumb {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .breadcrumb a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      .breadcrumb a:hover {
+        text-decoration: underline;
+      }
+
+      .breadcrumb span {
+        color: var(--text-muted);
+      }
+
+      .header-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .adr-number {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 8px;
+      }
+
+      h1 {
+        font-size: 26px;
+        font-weight: 700;
+        color: var(--text-heading);
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        flex-shrink: 0;
+        background: var(--status-accepted-bg);
+        border: 1px solid var(--status-accepted-border);
+        color: var(--status-accepted-text);
+      }
+
+      .status-badge::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        background: var(--status-accepted-text);
+        border-radius: 50%;
+      }
+
+      /* Sections */
+      section {
+        margin-bottom: 52px;
+      }
+
+      h2 {
+        font-size: 17px;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin-bottom: 16px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+        letter-spacing: -0.01em;
+      }
+
+      h3 {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin: 24px 0 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      p {
+        margin-bottom: 14px;
+        color: var(--text);
+      }
+
+      /* Decision rules table */
+      .rules-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .rules-table thead {
+        background: var(--surface-2);
+      }
+
+      .rules-table th {
+        padding: 10px 16px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        text-align: left;
+      }
+
+      .rules-table td {
+        padding: 10px 16px;
+        font-size: 13px;
+        color: var(--text);
+        border-top: 1px solid var(--border);
+        vertical-align: top;
+      }
+
+      .rules-table tr:hover td {
+        background: var(--surface-2);
+      }
+
+      .rule-num {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--accent);
+        width: 36px;
+      }
+
+      .rule-type {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 12.5px;
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 2px 7px;
+        border-radius: 4px;
+        border: 1px solid var(--accent-dim);
+        white-space: nowrap;
+      }
+
+      .rule-use {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 12.5px;
+        color: #4caf8a;
+      }
+
+      .rule-nouse {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 12.5px;
+        color: #e05b5b;
+      }
+
+      /* Code blocks */
+      pre {
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 8px;
+        padding: 18px 20px;
+        overflow-x: auto;
+        margin: 14px 0;
+      }
+
+      code {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #b0bce8;
+      }
+
+      p code,
+      li code,
+      td code {
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-size: 12.5px;
+      }
+
+      /* Diff block */
+      .diff-block {
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 8px;
+        overflow: hidden;
+        margin: 14px 0;
+      }
+
+      .diff-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .diff-col {
+        padding: 14px 18px;
+      }
+
+      .diff-col + .diff-col {
+        border-left: 1px solid var(--code-border);
+      }
+
+      .diff-label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+
+      .diff-before .diff-label {
+        color: #e05b5b;
+      }
+      .diff-after .diff-label {
+        color: #4caf8a;
+      }
+
+      /* Rationale list */
+      .rationale-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .rationale-item {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px 18px;
+      }
+
+      .rationale-item-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-heading);
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .rationale-item-title .badge {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 11px;
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 1px 6px;
+        border-radius: 3px;
+        border: 1px solid var(--accent-dim);
+      }
+
+      .rationale-item p {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin: 0;
+      }
+
+      /* Consequences list */
+      .consequence-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .consequence-item {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        font-size: 13.5px;
+        padding: 9px 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+
+      .consequence-item .dot {
+        width: 6px;
+        height: 6px;
+        background: var(--accent-dim);
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-top: 8px;
+      }
+
+      /* Subsection */
+      .subsection {
+        margin-top: 36px;
+        padding-top: 24px;
+        border-top: 1px solid var(--border);
+      }
+
+      .subsection h3 {
+        margin-top: 0;
+      }
+
+      /* Callout */
+      .callout {
+        background: var(--surface);
+        border-left: 3px solid var(--accent-dim);
+        border-radius: 0 6px 6px 0;
+        padding: 12px 16px;
+        margin: 14px 0;
+        font-size: 13.5px;
+        color: var(--text);
+      }
+
+      .callout strong {
+        color: var(--accent);
+      }
+
+      /* Back link */
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--accent);
+        text-decoration: none;
+        padding: 4px 10px;
+        border: 1px solid var(--accent-dim);
+        border-radius: 4px;
+        transition: background 0.15s;
+        margin-top: 8px;
+      }
+
+      .back-link:hover {
+        background: var(--tag-bg);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <div class="nav-title">ADR 1</div>
+        <a href="#context">Context</a>
+        <a href="#decision">Decision</a>
+        <a href="#rationale">Rationale</a>
+        <a href="#consequences">Consequences</a>
+        <a href="#lifecycle">Component lifecycle と Widget 生成</a>
+        <div class="nav-section">
+          <div class="nav-title" style="margin-top: 0">ドキュメント</div>
+          <a href="../architecture.html">アーキテクチャガイド</a>
+        </div>
+      </nav>
+
+      <main>
+        <div class="page-header">
+          <div class="breadcrumb">
+            <a href="../architecture.html">docs</a>
+            <span>/</span>
+            <span>adrs</span>
+            <span>/</span>
+            <span>1</span>
+          </div>
+          <div class="header-top">
+            <div>
+              <div class="adr-number">ADR 1</div>
+              <h1>リファクタリング初期方針</h1>
+            </div>
+            <span class="status-badge">Accepted</span>
+          </div>
+        </div>
+
+        <!-- Context -->
+        <section id="context">
+          <h2>Context</h2>
+          <p>
+            現在のコードには、文字列を読むだけの関数・メソッドでも
+            <code>&amp;String</code> を受け取っている箇所がある。
+          </p>
+
+          <h3>問題のある箇所の例</h3>
+          <pre><code>BodyWidgetState::update(width, body: &amp;String)
+render_in_buffer(body: &amp;String, width)
+create_title_widget(title: &amp;String)
+create_header(creator: &amp;String, ...)</code></pre>
+
+          <p>
+            一方で、<code>Issue</code> や
+            <code>Journal</code> などのアプリ状態・エンティティは
+            <code>String</code>
+            を保持している。これは、YAMLや編集結果から読み込んだ文字列をアプリ内部で所有する必要があるため自然である。
+          </p>
+
+          <p>
+            <code>cargo clippy --all-targets --all-features</code> では、<code
+              >&amp;String</code
+            >
+            を受け取る箇所に <code>clippy::ptr_arg</code> の警告が出ている。
+          </p>
+
+          <div class="callout">
+            <strong>Clippy の警告:</strong><br />
+            <code>&amp;String</code> の代わりに
+            <code>&amp;str</code> を使うべき。<code>String</code>
+            への参照を要求すると不要に具体的になり、文字列スライスで足りる場面でも
+            <code>String</code> しか受け取れなくなる。
+          </div>
+
+          <pre><code>warning: writing `&amp;String` instead of `&amp;str` involves a new object where a slice will do
+help: change this to: `&amp;str`</code></pre>
+        </section>
+
+        <!-- Decision -->
+        <section id="decision">
+          <h2>Decision</h2>
+          <p>文字列型の方針を以下にする。</p>
+          <table class="rules-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>場面</th>
+                <th>使う型</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="rule-num">1</td>
+                <td>
+                  アプリ状態・エンティティ・イベント payload
+                  など、文字列を所有して保持する型
+                </td>
+                <td><span class="rule-use">String</span></td>
+              </tr>
+              <tr>
+                <td class="rule-num">2</td>
+                <td>文字列を読むだけの関数・メソッド引数</td>
+                <td><span class="rule-use">&amp;str</span></td>
+              </tr>
+              <tr>
+                <td class="rule-num">3</td>
+                <td>文字列を受け取って内部で所有する constructor / builder</td>
+                <td><span class="rule-use">impl Into&lt;String&gt;</span></td>
+              </tr>
+              <tr>
+                <td class="rule-num">4</td>
+                <td>&amp;String</td>
+                <td><span class="rule-nouse">原則として使わない</span></td>
+              </tr>
+              <tr>
+                <td class="rule-num">5</td>
+                <td>Into&lt;str&gt;</td>
+                <td><span class="rule-nouse">使わない</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- Rationale -->
+        <section id="rationale">
+          <h2>Rationale</h2>
+          <div class="rationale-list">
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">String</span>
+                所有する文字列はエンティティに保持する
+              </div>
+              <p>
+                <code>Issue.subject</code> や
+                <code>Journal.notes</code>
+                のようなフィールドはアプリ状態として保持されるため
+                <code>String</code> が適している。<code>str</code> は unsized
+                type なので通常の struct field として保持できない。また、struct
+                に <code>&amp;str</code> を持たせると lifetime
+                が状態管理全体に伝播し、TUI の component / widget / store
+                の境界が扱いづらくなる。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">&amp;str</span>
+                読むだけの処理には借用スライスを使う
+              </div>
+              <p>
+                描画・markdown変換・hash計算・ラベル生成のように文字列を読むだけの処理では
+                <code>&amp;str</code> が適している。<code>&amp;str</code> は
+                <code>String</code>、文字列リテラル、slice
+                のどれからでも自然に渡せる。<code>&amp;String</code>
+                にすると呼び出し側へ
+                <code>String</code>
+                の存在を要求してしまい、APIが不要に狭くなる。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">impl Into&lt;String&gt;</span>
+                最終的に所有化する constructor に限定する
+              </div>
+              <p>
+                例えば
+                <code
+                  >IssueSelectPopupProject::new(id, name: impl
+                  Into&lt;String&gt;)</code
+                >
+                のような constructor では、呼び出し側が <code>&amp;str</code> と
+                <code>String</code>
+                のどちらでも渡せるためテストや変換コードが書きやすくなる。ただし、読むだけの関数に
+                <code>impl Into&lt;String&gt;</code> を使うと不要な allocation
+                や clone
+                を発生させやすく、所有するかどうかがAPIから分かりにくくなるため、所有化する境界に限定する。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">Into&lt;str&gt;</span>
+                使わない理由
+              </div>
+              <p>
+                <code>Into&lt;str&gt;</code> は実用上ほとんど使わない。<code
+                  >str</code
+                >
+                は unsized type
+                であり、通常の値として受け取れないためである。必要なら
+                <code>Into&lt;String&gt;</code
+                >、特殊な所有スライス最適化が必要になった場合のみ
+                <code>Into&lt;Box&lt;str&gt;&gt;</code> を検討する。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Consequences -->
+        <section id="consequences">
+          <h2>Consequences</h2>
+          <p>
+            今後のリファクタリングでは、まず
+            <code>clippy::ptr_arg</code> の警告が出ている
+            <code>&amp;String</code> 引数を <code>&amp;str</code> に置き換える。
+          </p>
+
+          <div class="diff-block">
+            <div class="diff-row">
+              <div class="diff-col diff-before">
+                <div class="diff-label">Before</div>
+                <pre
+                  style="margin: 0; background: none; border: none; padding: 0"
+                ><code>fn render_in_buffer(body: &amp;String, width: u16) -> Buffer</code></pre>
+              </div>
+              <div class="diff-col diff-after">
+                <div class="diff-label">After</div>
+                <pre
+                  style="margin: 0; background: none; border: none; padding: 0"
+                ><code>fn render_in_buffer(body: &amp;str, width: u16) -> Buffer</code></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="consequence-list">
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                <code>String</code> を保持する struct
+                のフィールドは、明確な理由がない限り変更しない。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                constructor が必要になった場合は、所有フィールドに対応する引数を
+                <code>impl Into&lt;String&gt;</code> として受け取り、内部で
+                <code>.into()</code> する。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                所有する場所と借用する場所が分かれ、APIが柔軟になり、Clippy の
+                <code>ptr_arg</code> 警告も解消しやすくなる。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Lifecycle subsection -->
+        <section id="lifecycle">
+          <h2>Component lifecycle と Widget 生成</h2>
+
+          <h3>Context</h3>
+          <p>
+            <code>src/components/issue/</code> 配下の component は、<code
+              >create_widget</code
+            >
+            で <code>Widget</code> を実装した struct を返し、その
+            <code>Widget::render</code> が描画を行う形で揃っている。
+          </p>
+
+          <p>component の基本 lifecycle は以下とする。</p>
+
+          <div class="consequence-list" style="margin-bottom: 16px">
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                Store の action 処理時は、dispatcher が action
+                を1件処理し、そのたびに component の
+                <code>update</code> を呼ぶ。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                同期的なキーイベント処理時は、<code
+                  >process_event → update → render</code
+                >
+                の順に進む。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                他 component のキーイベント処理に伴う同期的な focus
+                遷移は、<code>focus_event → update → render</code> の順に進む。
+              </div>
+            </div>
+          </div>
+
+          <p>
+            Store の更新は dispatcher
+            を介して行う。初期セットアップを除き、action の処理と
+            <code>update</code> が交互に行われることは意図した設計である。
+          </p>
+
+          <p>
+            <code>create_widget</code> が <code>&amp;Store</code> を受け取る
+            component がある。これは描画に必要な entity を Store
+            から取得するためである。これを
+            <code>update</code>
+            側に寄せる案もあるが、その場合は以下の問題がある。
+          </p>
+
+          <div class="consequence-list" style="margin-bottom: 16px">
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                component が entity 参照を保持すると、frame 間をまたがる
+                lifetime の管理が重くなる。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                component が entity の一部を所有して保持すると、毎回の
+                clone/copy と Store との二重管理が増える。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                Store 更新と component 内 view model
+                の同期漏れを気にする必要が出る。
+              </div>
+            </div>
+          </div>
+
+          <p
+            style="
+              color: var(--text-muted);
+              font-size: 13.5px;
+              margin-bottom: 12px;
+            "
+          >
+            一方で、<code>create_widget(&amp;Store)</code>
+            には以下の注意点がある。
+          </p>
+
+          <div class="consequence-list" style="margin-bottom: 16px">
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>component が Store の構造に結合する。</div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                <code>create_widget</code> 時点で必要な entity
+                が欠損している場合の扱いを決める必要がある。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                テストで widget を作る際に Store fixture が必要になりやすい。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                重い派生処理を <code>create_widget</code> に入れると render path
+                が重くなる。
+              </div>
+            </div>
+          </div>
+
+          <div class="subsection">
+            <h3>Decision</h3>
+            <p>
+              <code>create_widget</code> の返り値は
+              <code>Widget</code> を実装した concrete struct とし、<code
+                >Option&lt;Widget&gt;</code
+              >
+              にはしない。
+            </p>
+            <p>
+              <code>create_widget(&amp;Store)</code> は許容する。ただし、<code
+                >create_widget</code
+              >
+              で行う Store 利用は、描画に必要な entity
+              の取得と軽い関連解決に留める。幅依存の buffer、markdown render
+              cache、scroll/focus 補正などの重い派生状態は
+              <code>update</code> 側で扱う。
+            </p>
+            <div class="callout">
+              <strong>不変条件:</strong>
+              <code>src/components/issue/</code> 配下の component では、<code
+                >create_widget</code
+              >
+              時点で対象 issue が Store
+              に存在することを設計上の不変条件とする。この不変条件に依存する箇所では、無言の
+              <code>unwrap()</code> ではなく、不変条件を説明する
+              <code>expect(...)</code> を使う。
+            </div>
+            <pre><code>let (issue, _) = store
+    .get_issue(self.id)
+    .expect("PropertyComponent requires its issue to exist in Store");</code></pre>
+            <p>
+              将来的には、<code>IssueDetailComponent</code> が対象 issue
+              の欠損を検知した場合、子 component
+              をインスタンス化しない方針へ移行する。この移行後も、子 component
+              の <code>create_widget</code> は「対象 issue
+              が存在する」前提でよい。
+            </p>
+          </div>
+
+          <div class="subsection">
+            <h3>Consequences</h3>
+            <p>
+              現時点では
+              <code>create_widget(&amp;Store)</code>
+              を無理に排除しない。これにより、component に entity 参照や entity
+              のコピーを保持する必要がなくなり、Store を single source of truth
+              として扱いやすくなる。
+            </p>
+            <p>
+              一方で、<code>create_widget</code> 内の Store lookup
+              は設計不変条件に依存するため、panic する場合は何が破れたか分かる
+              message を残す。
+            </p>
+            <pre><code>let (issue, _) = store
+    .get_issue(self.id)
+    .expect("PropertyComponent requires its issue to exist in Store");</code></pre>
+            <p>
+              今後
+              <code>IssueDetailComponent</code> の欠損時処理を整理する際は、子
+              component 側で
+              <code>Option&lt;Widget&gt;</code> を返すのではなく、親 component
+              が子 component の生成・描画対象を制御する。
+            </p>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
