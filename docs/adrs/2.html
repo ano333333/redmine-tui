@@ -1,0 +1,1120 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 2 — Issue 保存フローと IssueState</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #0f1117;
+        --surface: #1a1d27;
+        --surface-2: #22263a;
+        --border: #2e3350;
+        --accent: #6c8efb;
+        --accent-dim: #3d4f8a;
+        --text: #d0d4e8;
+        --text-muted: #7a80a0;
+        --text-heading: #e8eaf6;
+        --code-bg: #13151f;
+        --code-border: #2a2e45;
+        --tag-bg: #1e2540;
+        --tag-text: #8ba3f5;
+        --marker: #f0b429;
+        --green: #4caf8a;
+        --red: #e05b5b;
+        --status-accepted-bg: #0e2a1e;
+        --status-accepted-border: #2a7a50;
+        --status-accepted-text: #4caf8a;
+      }
+
+      body {
+        font-family: "Inter", "Noto Sans JP", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.75;
+        font-size: 15px;
+      }
+
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+
+      nav {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        width: 240px;
+        flex-shrink: 0;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+        padding: 28px 0;
+      }
+
+      nav .nav-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 0 20px 12px;
+      }
+
+      nav a {
+        display: block;
+        padding: 6px 20px;
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: 13px;
+        border-left: 2px solid transparent;
+        transition:
+          color 0.15s,
+          border-color 0.15s;
+      }
+
+      nav a:hover {
+        color: var(--text);
+        border-left-color: var(--accent-dim);
+      }
+
+      nav a.active {
+        color: var(--accent);
+        border-left-color: var(--accent);
+      }
+
+      nav .nav-section {
+        margin-top: 16px;
+      }
+
+      main {
+        flex: 1;
+        min-width: 0;
+        padding: 56px 64px;
+        max-width: 980px;
+      }
+
+      .page-header {
+        margin-bottom: 48px;
+        padding-bottom: 32px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .breadcrumb {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .breadcrumb a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      .breadcrumb a:hover {
+        text-decoration: underline;
+      }
+      .breadcrumb span {
+        color: var(--text-muted);
+      }
+
+      .header-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .adr-number {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 8px;
+      }
+
+      h1 {
+        font-size: 26px;
+        font-weight: 700;
+        color: var(--text-heading);
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        flex-shrink: 0;
+        background: var(--status-accepted-bg);
+        border: 1px solid var(--status-accepted-border);
+        color: var(--status-accepted-text);
+      }
+
+      .status-badge::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        background: var(--status-accepted-text);
+        border-radius: 50%;
+      }
+
+      section {
+        margin-bottom: 52px;
+      }
+
+      h2 {
+        font-size: 17px;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin-bottom: 16px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+        letter-spacing: -0.01em;
+      }
+
+      h3 {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin: 24px 0 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      p {
+        margin-bottom: 14px;
+        color: var(--text);
+      }
+
+      code {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #b0bce8;
+      }
+
+      p code,
+      li code,
+      td code {
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-size: 12.5px;
+      }
+
+      .callout {
+        background: var(--surface);
+        border-left: 3px solid var(--marker);
+        border-radius: 0 6px 6px 0;
+        padding: 12px 16px;
+        margin: 16px 0;
+        font-size: 13.5px;
+        color: var(--text);
+      }
+
+      .callout strong {
+        color: var(--marker);
+      }
+
+      .tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 8px 0 18px;
+      }
+
+      .tag {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 12px;
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 3px 8px;
+        border-radius: 4px;
+        border: 1px solid var(--accent-dim);
+      }
+
+      .flow {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 14px;
+      }
+
+      .flow-step {
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        gap: 12px;
+        align-items: start;
+        padding: 10px 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+
+      .flow-num {
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: var(--accent-dim);
+        color: var(--accent);
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 11px;
+        font-weight: 700;
+        margin-top: 1px;
+      }
+
+      .flow-label {
+        font-size: 13.5px;
+        color: var(--text);
+      }
+
+      .flow-label strong {
+        color: var(--text-heading);
+        font-weight: 700;
+      }
+
+      .state-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin-top: 16px;
+      }
+
+      .state-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-top: 2px solid var(--accent);
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      .state-title {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 10px;
+      }
+
+      .state-card p {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+      }
+
+      .state-card p:last-child {
+        margin-bottom: 0;
+      }
+
+      .mermaid-block {
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 8px;
+        padding: 16px 18px;
+        overflow-x: auto;
+        margin: 18px 0;
+      }
+
+      .mermaid-block code {
+        display: block;
+        color: var(--text);
+        white-space: pre;
+        font-size: 12.5px;
+        line-height: 1.55;
+      }
+
+      .rules-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        margin-top: 14px;
+      }
+
+      .rules-table thead {
+        background: var(--surface-2);
+      }
+
+      .rules-table th {
+        padding: 10px 16px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        text-align: left;
+      }
+
+      .rules-table td {
+        padding: 10px 16px;
+        font-size: 13px;
+        color: var(--text);
+        border-top: 1px solid var(--border);
+        vertical-align: top;
+      }
+
+      .rules-table tr:hover td {
+        background: var(--surface-2);
+      }
+
+      .action-list,
+      .consequence-list,
+      .question-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .action-item,
+      .consequence-item,
+      .question-item {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        font-size: 13.5px;
+        padding: 10px 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+
+      .action-name {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 12px;
+        color: var(--accent);
+        white-space: nowrap;
+        min-width: 150px;
+      }
+
+      .dot {
+        width: 6px;
+        height: 6px;
+        background: var(--accent-dim);
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-top: 8px;
+      }
+
+      .layer-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-top: 14px;
+      }
+
+      .layer-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px 18px;
+      }
+
+      .layer-card.allowed {
+        border-top: 2px solid var(--green);
+      }
+      .layer-card.denied {
+        border-top: 2px solid var(--red);
+      }
+
+      .layer-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      }
+
+      .allowed .layer-title {
+        color: var(--green);
+      }
+      .denied .layer-title {
+        color: var(--red);
+      }
+
+      .layer-card p {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+      }
+
+      .layer-card p:last-child {
+        margin-bottom: 0;
+      }
+
+      .rationale-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .rationale-item {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px 18px;
+      }
+
+      .rationale-item-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-heading);
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .rationale-item-title .badge {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 11px;
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 1px 6px;
+        border-radius: 3px;
+        border: 1px solid var(--accent-dim);
+      }
+
+      .rationale-item p {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin: 0;
+      }
+
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--accent);
+        text-decoration: none;
+        padding: 4px 10px;
+        border: 1px solid var(--accent-dim);
+        border-radius: 4px;
+        transition: background 0.15s;
+        margin-top: 8px;
+      }
+
+      .back-link:hover {
+        background: var(--tag-bg);
+      }
+
+      @media (max-width: 820px) {
+        .layout {
+          flex-direction: column;
+        }
+        nav {
+          position: static;
+          width: 100%;
+          height: auto;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+          padding: 18px 0;
+        }
+        main {
+          padding: 36px 24px;
+        }
+        .state-grid,
+        .layer-grid {
+          grid-template-columns: 1fr;
+        }
+        .action-item {
+          flex-direction: column;
+          gap: 4px;
+        }
+        .action-name {
+          min-width: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <div class="nav-title">ADR 2</div>
+        <a href="#context">Context</a>
+        <a href="#decision">Decision</a>
+        <a href="#states">IssueState</a>
+        <a href="#state-diagram">状態遷移図</a>
+        <a href="#conflicts">競合判定</a>
+        <a href="#actions">Actions</a>
+        <a href="#diffs">IssuePropertyDiff</a>
+        <a href="#rationale">Rationale</a>
+        <a href="#consequences">Consequences</a>
+        <a href="#open-questions">Open Questions</a>
+        <div class="nav-section">
+          <div class="nav-title" style="margin-top: 0">ドキュメント</div>
+          <a href="../architecture.html">アーキテクチャガイド</a>
+          <a href="1.html">ADR 1 — String/str 方針</a>
+        </div>
+      </nav>
+
+      <main>
+        <div class="page-header">
+          <div class="breadcrumb">
+            <a href="../architecture.html">docs</a>
+            <span>/</span>
+            <span>adrs</span>
+            <span>/</span>
+            <span>2</span>
+          </div>
+          <div class="header-top">
+            <div>
+              <div class="adr-number">ADR 2</div>
+              <h1>Issue 保存フローと IssueState の管理方針</h1>
+            </div>
+            <span class="status-badge">Accepted</span>
+          </div>
+        </div>
+
+        <section id="context">
+          <h2>Context</h2>
+          <p>
+            <code>redmine-tui</code> は現在、<code>datas/</code> の YAML fixture
+            を読み込むローカルプロトタイプとして実装されている。今後 Redmine
+            サーバーへ接続し、TUI 上で編集した内容を保存できるようにする。
+          </p>
+          <p>
+            この TUI から編集可能な Redmine 由来の entity は、当面
+            <code>Issue</code> と <code>Journal</code> に限定する。
+          </p>
+          <div class="tag-list">
+            <span class="tag">Issue</span>
+            <span class="tag">Journal</span>
+          </div>
+          <p>
+            <code>IssueDetailComponent</code> 表示中に
+            <code>Ctrl+S</code> が押された場合、最終的には issue とその journal
+            の双方を保存対象にする。ただし本ADRでは issue の保存、特に既存 issue
+            の更新フローだけを扱い、Journal
+            の新規追加・編集・削除は対象外とする。
+          </p>
+          <p>
+            保存処理では、ローカル編集後にサーバー側でも同じ issue
+            が変更されている可能性がある。そのため、保存開始時にサーバーから現在の
+            issue を取得し、property 単位で競合を検出する。
+          </p>
+          <div class="callout">
+            <strong>API 境界:</strong> Redmine REST API では既存 issue の更新は
+            <code>PUT /issues/{id}.json</code>
+            に相当する。アプリ内部では「upload」または「save」と呼び、API
+            adapter 層で HTTP method に変換する。
+          </div>
+          <p>
+            現状の <code>IssueState</code> は
+            <code>issue_property_diffs</code> の有無から <code>Synced</code> /
+            <code>Updated</code> を導出している。しかし保存中状態は diff
+            の有無だけでは表現できないため、Redmine 接続対応に向けて
+            <code>IssueState</code> を Store が管理する明示的な状態として扱う。
+          </p>
+        </section>
+
+        <section id="decision">
+          <h2>Decision</h2>
+          <p>Issue の保存フローを以下のように定義する。</p>
+          <div class="flow">
+            <div class="flow-step">
+              <div class="flow-num">1</div>
+              <div class="flow-label">
+                <strong>保存開始:</strong>
+                <code>IssueDetailComponent</code> 表示中に
+                <code>Ctrl+S</code> が押され、保存開始 action を dispatch
+                して対象 issue を <code>Uploading</code> にする。
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">2</div>
+              <div class="flow-label">
+                <strong>再取得:</strong> サーバーから現在の issue
+                を取得する。取得エラー時は保存を中断し、Store 上の issue と
+                <code>issue_property_diffs</code> は更新せず、<code
+                  >IssueState</code
+                >
+                を <code>Edited</code> に戻す。
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">3</div>
+              <div class="flow-label">
+                <strong>diff 畳み込み:</strong>
+                <code>issue_property_diffs</code> を property
+                ごとに畳み込み、「どの property
+                が、何の状態から、最終的に何に変更されたか」を計算する。
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">4</div>
+              <div class="flow-label">
+                <strong>競合検出:</strong> net change がない property
+                を除外し、保存対象 property
+                ごとにローカル編集前状態、ローカル編集後状態、サーバー現在状態を比較する。
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">5</div>
+              <div class="flow-label">
+                <strong>競合解決:</strong> 競合がある property は競合解決
+                component
+                に表示し、サーバー現在状態を優先するか、ローカル編集後状態を優先するかをユーザーに選択させる。中断時は
+                <code>Edited</code> に戻す。
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">6</div>
+              <div class="flow-label">
+                <strong>upload:</strong> 競合解決後の payload
+                をサーバーへ送信する。upload エラー時は保存を中断し、Store 上の
+                issue と diff は更新せず、<code>Edited</code> に戻す。
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">7</div>
+              <div class="flow-label">
+                <strong>sync:</strong> upload 成功時は、Redmine
+                の更新レスポンスに含まれる issue を
+                <code>SyncIssue</code> action に詰めて dispatch する。Store 上の
+                issue を丸ごと置き換え、diff を破棄し、<code>Synced</code>
+                にする。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="states">
+          <h2>IssueState</h2>
+          <p>
+            <code>IssueState</code> は Store で定義する enum とし、<code
+              >Issue</code
+            >
+            entity や value object
+            とは別レイヤで管理する。永続データそのものではなく、TUI
+            の同期状態と保存プロセス状態を表す application state として扱う。
+          </p>
+          <div class="state-grid">
+            <div class="state-card">
+              <div class="state-title">Synced</div>
+              <p>
+                サーバーから読み出した issue で Store
+                が更新された後、ローカル編集が加わっていない状態。
+              </p>
+              <p><code>issue_property_diffs</code> は空である。</p>
+            </div>
+            <div class="state-card">
+              <div class="state-title">Edited</div>
+              <p><code>Synced</code> からローカル編集が行われた状態。</p>
+              <p><code>issue_property_diffs</code> は非空である。</p>
+            </div>
+            <div class="state-card">
+              <div class="state-title">Uploading</div>
+              <p>
+                <code>Edited</code> から
+                <code>Ctrl+S</code> が押され、保存プロセスを実行中の状態。
+              </p>
+              <p>
+                diff
+                は保持し、成功・失敗・取得失敗・ユーザー中断のいずれかで別状態へ遷移する。
+              </p>
+            </div>
+          </div>
+          <div class="callout">
+            <strong>入力制御:</strong> <code>Uploading</code> 中は同じ issue
+            への追加編集を禁止する。UI 側では編集操作を無効化し、Store 側でも
+            <code>Uploading</code> 中の issue 更新 action を適用しない。
+          </div>
+        </section>
+
+        <section id="state-diagram">
+          <h2>状態遷移図</h2>
+          <p>
+            <code>IssueState</code> の状態遷移は以下とする。遷移ラベルは Store
+            に dispatch される action を表す。
+          </p>
+          <pre class="mermaid mermaid-block">
+stateDiagram-v2
+    [*] --&gt; Synced: LoadIssue / SyncIssue
+    Synced --&gt; Edited: UpdateIssue*
+    Edited --&gt; Uploading: StartIssueUpload
+    Uploading --&gt; Synced: SyncIssue
+    Uploading --&gt; Edited: CancelIssueUpload
+    Uploading --&gt; Edited: FailIssueUpload
+    Edited --&gt; Synced: SyncIssue
+
+    note right of Synced
+      issue_property_diffs is empty
+    end note
+
+    note right of Edited
+      issue_property_diffs is non-empty
+    end note
+
+    note right of Uploading
+      upload process is running
+      issue_property_diffs is retained
+      extra edits are rejected
+    end note</pre
+          >
+        </section>
+
+        <section id="conflicts">
+          <h2>競合判定</h2>
+          <p>
+            競合判定は property 単位で行う。畳み込み後の property diff を
+            <code>(before, after)</code>、サーバーから取得した値を
+            <code>server</code> としたとき、扱いは以下とする。
+          </p>
+          <table class="rules-table">
+            <thead>
+              <tr>
+                <th>条件</th>
+                <th>扱い</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>before == after</code></td>
+                <td>net change なしとして保存対象から除外する。</td>
+              </tr>
+              <tr>
+                <td><code>server == before</code></td>
+                <td>
+                  競合なし。<code>after</code> を upload payload に含める。
+                </td>
+              </tr>
+              <tr>
+                <td><code>server == after</code></td>
+                <td>
+                  競合なし。すでに同じ状態なので upload payload
+                  から省略してよい。
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>server != before &amp;&amp; server != after</code>
+                </td>
+                <td>
+                  競合あり。ユーザーに <code>server</code> と
+                  <code>after</code> のどちらを採用するか選択させる。
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="actions">
+          <h2>Actions</h2>
+          <p>
+            Issue 保存に関わる action は、既存の
+            <code>LoadIssue</code> とは分けて定義する。
+          </p>
+          <div class="action-list">
+            <div class="action-item">
+              <div class="action-name">StartIssueUpload</div>
+              <div>
+                保存プロセス開始を Store に反映し、対象 issue を
+                <code>Uploading</code> にする。
+              </div>
+            </div>
+            <div class="action-item">
+              <div class="action-name">CancelIssueUpload</div>
+              <div>
+                保存中断を Store に反映し、対象 issue を
+                <code>Edited</code> に戻す。
+              </div>
+            </div>
+            <div class="action-item">
+              <div class="action-name">FailIssueUpload</div>
+              <div>
+                取得エラーまたは upload エラーを Store に反映し、対象 issue を
+                <code>Edited</code> に戻して表示用エラー状態を更新する。
+              </div>
+            </div>
+            <div class="action-item">
+              <div class="action-name">SyncIssue</div>
+              <div>
+                保存成功後、サーバー由来の issue を Store に反映する。Store 上の
+                issue を丸ごと置き換え、対象 issue の diff を破棄し、状態を
+                <code>Synced</code> にする。Redmine
+                接続後は、初期ロードや結合テストの Store 準備にも使用する。
+              </div>
+            </div>
+          </div>
+          <p style="margin-top: 16px">
+            <code>LoadIssue</code> は fixture からの読み込み専用の暫定 action
+            として扱い、Redmine 接続後に削除する。結合テストで Store に issue
+            を準備する場合は <code>SyncIssue</code> を使用する。万が一 fixture
+            由来の issue を使う必要がある場合も、fixture から作った
+            <code>Issue</code> を <code>SyncIssue</code> に渡して対応する。
+          </p>
+          <p>
+            保存成功後の <code>SyncIssue</code> には、Redmine
+            の更新レスポンスに含まれる issue を使用する。更新後に再度 GET
+            すると、保存プロセスの不安定性とターンアラウンドタイムが増えるため、初期実装では採用しない。
+          </p>
+          <p>
+            保存中、保存失敗、競合ありなどのメッセージは component local state
+            として管理する。現時点では i18n を考慮していないため、Store
+            にメッセージ文言を持たせる設計は採用しない。
+          </p>
+        </section>
+
+        <section id="diffs">
+          <h2>IssuePropertyDiff</h2>
+          <p>
+            <code>IssuePropertyDiff</code> は value object として扱い、<code
+              >Issue</code
+            >
+            entity に未保存 diff を保持させない。
+          </p>
+          <div class="layer-grid">
+            <div class="layer-card allowed">
+              <div class="layer-title">許容する</div>
+              <p>
+                <code>IssuePropertyDiff</code> を <code>Issue</code> に apply /
+                revert する純粋関数を <code>Issue</code> entity に追加する。
+              </p>
+              <p>
+                この関数は外部I/Oや Store 更新を含まず、<code>Issue</code> と
+                diff から新しい <code>Issue</code> または変更後の値を得る domain
+                logic として扱う。
+              </p>
+            </div>
+            <div class="layer-card denied">
+              <div class="layer-title">許容しない</div>
+              <p><code>Issue</code> entity が未保存 diff を所有すること。</p>
+              <p>
+                <code>IssueState</code> や保存プロセス状態を
+                <code>Issue</code> entity に含めること。
+              </p>
+            </div>
+          </div>
+          <div class="callout">
+            <strong>境界:</strong> <code>Issue</code> が
+            <code>IssuePropertyDiff</code> の型を知ることは許容するが、未保存
+            diff の所有と lifecycle 管理は Store / usecase 側に残す。
+          </div>
+        </section>
+
+        <section id="rationale">
+          <h2>Rationale</h2>
+          <div class="rationale-list">
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">再取得</span>保存前にサーバー状態を確認する
+              </div>
+              <p>
+                保存前にサーバーから issue
+                を再取得することで、ローカル編集開始後にサーバー側で変更された
+                property を検出できる。Issue
+                全体を単純に上書きすると、他ユーザーまたは別クライアントの変更を失う可能性がある。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">property</span>必要な差分だけを比較する
+              </div>
+              <p>
+                property 単位で diff を畳み込み、必要な property
+                だけを比較すれば、競合していない変更はそのまま保存できる。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">conflict</span>不要な競合解決を避ける
+              </div>
+              <p>
+                競合条件を
+                <code>server != before</code>
+                だけにすると、サーバーがすでにローカル編集後と同じ値になっている場合まで競合として扱ってしまう。そのため、競合は
+                <code>server != before &amp;&amp; server != after</code>
+                の場合だけとする。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">state</span><code>Uploading</code> は
+                application state とする
+              </div>
+              <p>
+                <code>Uploading</code> を Store の
+                <code>IssueState</code> として持つのは、保存中であることを
+                <code>IssueDetailComponent</code>
+                の表示や入力制御に反映するためである。この状態は domain entity
+                の性質ではないため <code>Issue</code> entity には含めない。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">sync</span
+                >保存成功時はサーバー由来の正規状態に戻す
+              </div>
+              <p>
+                保存成功時に <code>SyncIssue</code> で issue
+                を丸ごと置き換えるのは、サーバー側で
+                <code>updated_on</code>
+                や関連表示値が変わる可能性があるためである。更新レスポンスを使えば、保存成功後の再取得を避けられる。追加の
+                GET
+                はネットワークエラー、レスポンス順序、処理時間の揺らぎを増やすため、保存フローを不必要に不安定にする。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">simple</span>保存中編集は禁止する
+              </div>
+              <p>
+                <code>Uploading</code>
+                中の追加編集を禁止することで、保存開始時点の diff
+                と保存中に追加された diff
+                を分ける世代管理を初期実装から外し、競合解決、エラー復帰、成功時の
+                diff 破棄条件を単純に保つ。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">message</span>保存メッセージは component
+                local state に置く
+              </div>
+              <p>
+                保存メッセージは現在の表示都合に近い。今後 i18n
+                や通知履歴を扱う場合は Store
+                側に状態を持つ可能性があるが、現時点では対象外とする。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="consequences">
+          <h2>Consequences</h2>
+          <div class="consequence-list">
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                Store は issue 本体と
+                <code>issue_property_diffs</code> に加え、issue ごとの明示的な
+                <code>IssueState</code> を管理する。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                diff の有無だけから
+                <code>IssueState</code> を導出する設計は変更する。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                <code>IssueDetailComponent</code> は
+                <code>IssueState::Uploading</code>
+                を見て、保存中表示と編集不可状態を表現する。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                Widget へは単純な
+                <code>synced: bool</code>
+                ではなく、表示用に変換した状態を渡すことを検討する。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                保存フローに含まれるサーバー取得、競合判定、競合解決
+                UI、upload、Store sync は render path に入れず、component から
+                action または effect を発行し、usecase / adapter
+                層で非同期処理として扱う。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                保存成功後に再取得を行わないため、Redmine 更新レスポンスから
+                Store 更新に必要な issue を構築できる adapter 実装が必要になる。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                保存メッセージは component local state に置くため、複数
+                component
+                から同じメッセージを参照する用途には向かない。その要件が出た場合は、Store
+                に通知状態を持つ設計を再検討する。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                <code>LoadIssue</code> は Redmine
+                接続後に削除する。初期ロードとテスト準備は
+                <code>SyncIssue</code> に集約される。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                Issue に関連する action が増えるため、将来的に Issue 専用の子
+                Store へ切り出す余地がある。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                Journal の保存はこのADRでは扱わない。ただし
+                <code>Ctrl+S</code> の最終的な意味は issue と journal
+                の双方の保存であるため、今後 journal
+                保存設計との合成を検討する。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="open-questions">
+          <h2>Open Questions</h2>
+          <div class="question-list">
+            <div class="question-item">
+              <div class="dot"></div>
+              <div>競合解決 component の具体的な表示形式とキー操作。</div>
+            </div>
+          </div>
+          <a href="../architecture.html" class="back-link"
+            >← アーキテクチャガイドへ戻る</a
+          >
+        </section>
+      </main>
+    </div>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/+esm";
+      mermaid.initialize({
+        securityLevel: "loose",
+        theme: "dark",
+      });
+    </script>
+  </body>
+</html>
