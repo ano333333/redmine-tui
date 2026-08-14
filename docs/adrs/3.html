@@ -1,0 +1,1011 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 3 — 非同期I/O worker と Dispatcher 所有方針</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #0f1117;
+        --surface: #1a1d27;
+        --surface-2: #22263a;
+        --border: #2e3350;
+        --accent: #6c8efb;
+        --accent-dim: #3d4f8a;
+        --text: #d0d4e8;
+        --text-muted: #7a80a0;
+        --text-heading: #e8eaf6;
+        --code-bg: #13151f;
+        --code-border: #2a2e45;
+        --tag-bg: #1e2540;
+        --tag-text: #8ba3f5;
+        --marker: #f0b429;
+        --green: #4caf8a;
+        --red: #e05b5b;
+        --status-accepted-bg: #0e2a1e;
+        --status-accepted-border: #2a7a50;
+        --status-accepted-text: #4caf8a;
+      }
+
+      body {
+        font-family: "Inter", "Noto Sans JP", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.75;
+        font-size: 15px;
+      }
+
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+
+      nav {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        width: 240px;
+        flex-shrink: 0;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+        padding: 28px 0;
+      }
+
+      nav .nav-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 0 20px 12px;
+      }
+
+      nav a {
+        display: block;
+        padding: 6px 20px;
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: 13px;
+        border-left: 2px solid transparent;
+        transition:
+          color 0.15s,
+          border-color 0.15s;
+      }
+
+      nav a:hover {
+        color: var(--text);
+        border-left-color: var(--accent-dim);
+      }
+
+      nav a.active {
+        color: var(--accent);
+        border-left-color: var(--accent);
+      }
+
+      nav .nav-section {
+        margin-top: 16px;
+      }
+
+      main {
+        flex: 1;
+        min-width: 0;
+        padding: 56px 64px;
+        max-width: 980px;
+      }
+
+      .page-header {
+        margin-bottom: 48px;
+        padding-bottom: 32px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .breadcrumb {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .breadcrumb a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      .breadcrumb a:hover {
+        text-decoration: underline;
+      }
+
+      .breadcrumb span {
+        color: var(--text-muted);
+      }
+
+      .header-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .adr-number {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 8px;
+      }
+
+      h1 {
+        font-size: 26px;
+        font-weight: 700;
+        color: var(--text-heading);
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        flex-shrink: 0;
+        background: var(--status-accepted-bg);
+        border: 1px solid var(--status-accepted-border);
+        color: var(--status-accepted-text);
+      }
+
+      .status-badge::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        background: var(--status-accepted-text);
+        border-radius: 50%;
+      }
+
+      section {
+        margin-bottom: 52px;
+      }
+
+      h2 {
+        font-size: 17px;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin-bottom: 16px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+        letter-spacing: -0.01em;
+      }
+
+      h3 {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin: 24px 0 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      p {
+        margin-bottom: 14px;
+        color: var(--text);
+      }
+
+      code {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #b0bce8;
+      }
+
+      p code,
+      li code,
+      td code {
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-size: 12.5px;
+      }
+
+      ul {
+        margin: 10px 0 18px 20px;
+      }
+
+      li {
+        margin-bottom: 6px;
+        color: var(--text);
+      }
+
+      .tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 8px 0 18px;
+      }
+
+      .tag {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 12px;
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 3px 8px;
+        border-radius: 4px;
+        border: 1px solid var(--accent-dim);
+      }
+
+      .callout {
+        background: var(--surface);
+        border-left: 3px solid var(--marker);
+        border-radius: 0 6px 6px 0;
+        padding: 12px 16px;
+        margin: 16px 0;
+        font-size: 13.5px;
+        color: var(--text);
+      }
+
+      .callout strong {
+        color: var(--marker);
+      }
+
+      .boundary-grid,
+      .policy-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-top: 14px;
+      }
+
+      .boundary-card,
+      .policy-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px 18px;
+      }
+
+      .boundary-card.main,
+      .policy-card.target {
+        border-top: 2px solid var(--accent);
+      }
+
+      .boundary-card.worker,
+      .policy-card.transition {
+        border-top: 2px solid var(--green);
+      }
+
+      .boundary-title,
+      .policy-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+        color: var(--text-heading);
+      }
+
+      .boundary-card p,
+      .policy-card p {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+      }
+
+      .boundary-card p:last-child,
+      .policy-card p:last-child {
+        margin-bottom: 0;
+      }
+
+      .flow {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 14px;
+      }
+
+      .flow-step {
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        gap: 12px;
+        align-items: start;
+        padding: 10px 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+
+      .flow-num {
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: var(--accent-dim);
+        color: var(--accent);
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 11px;
+        font-weight: 700;
+        margin-top: 1px;
+      }
+
+      .flow-label {
+        font-size: 13.5px;
+        color: var(--text);
+      }
+
+      .flow-label strong {
+        color: var(--text-heading);
+        font-weight: 700;
+      }
+
+      .code-block {
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 8px;
+        padding: 16px 18px;
+        overflow-x: auto;
+        margin: 18px 0;
+      }
+
+      .code-block code {
+        display: block;
+        color: var(--text);
+        white-space: pre;
+        font-size: 12.5px;
+        line-height: 1.55;
+      }
+
+      .rules-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        margin-top: 14px;
+      }
+
+      .rules-table thead {
+        background: var(--surface-2);
+      }
+
+      .rules-table th {
+        padding: 10px 16px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        text-align: left;
+      }
+
+      .rules-table td {
+        padding: 10px 16px;
+        font-size: 13px;
+        color: var(--text);
+        border-top: 1px solid var(--border);
+        vertical-align: top;
+      }
+
+      .rules-table tr:hover td {
+        background: var(--surface-2);
+      }
+
+      .decision-list,
+      .consequence-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .decision-item,
+      .consequence-item {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        font-size: 13.5px;
+        padding: 10px 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+
+      .dot {
+        width: 6px;
+        height: 6px;
+        background: var(--accent-dim);
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-top: 8px;
+      }
+
+      .rationale-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .rationale-item {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px 18px;
+      }
+
+      .rationale-item-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-heading);
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .rationale-item-title .badge {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 11px;
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 1px 6px;
+        border-radius: 3px;
+        border: 1px solid var(--accent-dim);
+      }
+
+      .rationale-item p {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin: 0;
+      }
+
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--accent);
+        text-decoration: none;
+        padding: 4px 10px;
+        border: 1px solid var(--accent-dim);
+        border-radius: 4px;
+        transition: background 0.15s;
+        margin-top: 8px;
+      }
+
+      .back-link:hover {
+        background: var(--tag-bg);
+      }
+
+      @media (max-width: 820px) {
+        .layout {
+          flex-direction: column;
+        }
+        nav {
+          position: static;
+          width: 100%;
+          height: auto;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+          padding: 18px 0;
+        }
+        main {
+          padding: 36px 24px;
+        }
+        .boundary-grid,
+        .policy-grid {
+          grid-template-columns: 1fr;
+        }
+        .decision-item,
+        .consequence-item {
+          flex-direction: column;
+          gap: 4px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <div class="nav-title">ADR 3</div>
+        <a href="#context">Context</a>
+        <a href="#decision">Decision</a>
+        <a href="#boundary">Main / Worker 境界</a>
+        <a href="#app-effect">AppEffect</a>
+        <a href="#main-loop">Main Loop</a>
+        <a href="#ordering">順序保証</a>
+        <a href="#mermaid">Mermaid 処理</a>
+        <a href="#dispatcher">Dispatcher 所有</a>
+        <a href="#rationale">Rationale</a>
+        <a href="#consequences">Consequences</a>
+        <a href="#future-work">Future Work</a>
+        <a href="#open-questions">Open Questions</a>
+        <div class="nav-section">
+          <div class="nav-title" style="margin-top: 0">ドキュメント</div>
+          <a href="../architecture.html">アーキテクチャガイド</a>
+          <a href="1.html">ADR 1 — String/str 方針</a>
+          <a href="2.html">ADR 2 — Issue 保存フロー</a>
+        </div>
+      </nav>
+
+      <main>
+        <div class="page-header">
+          <div class="breadcrumb">
+            <a href="../architecture.html">docs</a>
+            <span>/</span>
+            <span>adrs</span>
+            <span>/</span>
+            <span>3</span>
+          </div>
+          <div class="header-top">
+            <div>
+              <div class="adr-number">ADR 3</div>
+              <h1>非同期I/O worker と Dispatcher 所有方針</h1>
+            </div>
+            <span class="status-badge">Accepted</span>
+          </div>
+        </div>
+
+        <section id="context">
+          <h2>Context</h2>
+          <p>
+            <code>redmine-tui</code> は <code>ratatui</code> /
+            <code>crossterm</code> を使う TUI であり、キー・マウス入力の解釈、
+            Store 更新、Component 更新、描画を main thread の event loop で行っている。
+          </p>
+          <p>
+            現在の実装では <code>crossterm::event::read()</code>
+            が入力待ちでブロックし、<code>AppContainer</code> が
+            <code>AppComponent</code> と <code>Dispatcher</code> を接続している。
+          </p>
+          <p>今後 Redmine サーバー接続により、以下の外部I/Oや長時間処理が必要になる。</p>
+          <div class="tag-list">
+            <span class="tag">Redmine network I/O</span>
+            <span class="tag">file I/O</span>
+            <span class="tag">mermaid rendering</span>
+          </div>
+          <p>
+            ADR 2 では、issue 保存中に <code>IssueState::Uploading</code>
+            を Store で管理し、保存完了時に <code>SyncIssue</code>
+            などの action で Store を更新する方針を決めた。この ADR では、
+            その保存処理や将来の外部I/Oを Rust の非同期処理としてどう扱うかを決める。
+          </p>
+          <div class="callout">
+            <strong>懸念:</strong> worker から <code>Dispatcher</code> / Store
+            を直接更新すると、main thread の描画・入力処理と排他制御が必要になり、
+            Component や property 単位に lock の都合が漏れる。
+          </div>
+        </section>
+
+        <section id="decision">
+          <h2>Decision</h2>
+          <p>
+            Tokio を使用して、外部I/O専用の worker を1つ導入する。ただし、
+            キー・マウス入力の解釈と描画は main thread に残す。
+            ここでいう worker は、main thread から見た非同期処理の入口を1つに集約するという意味である。
+            Tokio runtime の内部 thread 数や、mermaid 画像化のために起動する子 process は実装上の詳細として扱う。
+          </p>
+          <div class="decision-list">
+            <div class="decision-item">
+              <div class="dot"></div>
+              <div>
+                worker は <code>Dispatcher</code> / Store / Component に直接触れない。
+              </div>
+            </div>
+            <div class="decision-item">
+              <div class="dot"></div>
+              <div>
+                <code>Arc&lt;Mutex&lt;Dispatcher&gt;&gt;</code> は採用しない。
+              </div>
+            </div>
+            <div class="decision-item">
+              <div class="dot"></div>
+              <div>
+                非同期処理の完了結果は channel 経由で main thread に返し、
+                main thread が action として dispatch する。
+              </div>
+            </div>
+            <div class="decision-item">
+              <div class="dot"></div>
+              <div>
+                初期実装では <code>event::poll(Duration)</code> により、
+                同期的なキー入力処理を維持しながら worker action を定期的に取り込む。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="boundary">
+          <h2>Main / Worker 境界</h2>
+          <div class="boundary-grid">
+            <div class="boundary-card main">
+              <div class="boundary-title">main thread</div>
+              <p><code>crossterm</code> の terminal event を受け取る。</p>
+              <p>terminal event を既存の Component 親子関係に沿って <code>process_event</code> へ渡す。</p>
+              <p><code>Dispatcher</code> / Store を所有する。</p>
+              <p>worker から返った action を <code>Dispatcher</code> へ dispatch する。</p>
+              <p><code>Component::update</code> と render を実行する。</p>
+            </div>
+            <div class="boundary-card worker">
+              <div class="boundary-title">worker</div>
+              <p>Redmine network I/O を実行する。</p>
+              <p>file I/O を実行する。</p>
+              <p>mermaid の画像化などの外部 process を実行する。</p>
+              <p>完了結果を action として main thread へ返す。</p>
+              <p>Store 更新や Component 更新には関与しない。</p>
+            </div>
+          </div>
+          <div class="flow">
+            <div class="flow-step">
+              <div class="flow-num">1</div>
+              <div class="flow-label">
+                <strong>入力:</strong> main thread が <code>Ctrl+S</code>
+                などの terminal event を受け取る。
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">2</div>
+              <div class="flow-label">
+                <strong>開始:</strong> Component が <code>AppEffect</code>
+                を返し、<code>AppContainer</code> が保存開始 action を dispatch する。
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">3</div>
+              <div class="flow-label">
+                <strong>実行:</strong> worker が外部I/O task を実行する。
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">4</div>
+              <div class="flow-label">
+                <strong>完了:</strong> worker が完了 action を channel へ送る。
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">5</div>
+              <div class="flow-label">
+                <strong>反映:</strong> main thread が action を受理し、
+                <code>Dispatcher</code> へ dispatch する。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="app-effect">
+          <h2>AppEffect</h2>
+          <p>
+            初期実装では、<code>AppContainer</code> が Tokio runtime と worker action
+            receiver を持つ。<code>AppEffect</code> は非同期処理の開始要求を表す。
+            <code>AppContainer::handle_app_effect</code> は effect を受け取り、
+            必要な action を main thread で先に dispatch したうえで、
+            非同期 task を1つ queue する。非同期 task は完了時に1つの
+            <code>Action</code> を返す。
+          </p>
+          <pre class="code-block"><code>pub struct AppContainer&lt;'a&gt; {
+    dispatcher: Dispatcher,
+    app_component: AppComponent&lt;'a&gt;,
+    runtime: tokio::runtime::Runtime,
+    worker_action_rx: std::sync::mpsc::Receiver&lt;Action&gt;,
+    worker_action_tx: std::sync::mpsc::Sender&lt;Action&gt;,
+}
+
+impl&lt;'a&gt; AppContainer&lt;'a&gt; {
+    fn handle_app_effect(&amp;mut self, effect: AppEffect) {
+        match effect {
+            AppEffect::SaveIssueRequested { id } =&gt; {
+                self.dispatcher
+                    .dispatch(Action::StartIssueUpload { id });
+
+                let tx = self.worker_action_tx.clone();
+                self.runtime.spawn(async move {
+                    let action = save_issue(id).await;
+                    let _ = tx.send(action);
+                });
+            }
+            AppEffect::OpenEditor(request) =&gt; {
+                // 既存の同期的な editor 起動処理を扱う。
+            }
+        }
+    }
+
+    pub fn update(&amp;mut self) {
+        while let Ok(action) = self.worker_action_rx.try_recv() {
+            self.dispatcher.dispatch(action);
+        }
+
+        while self.dispatcher.consume_actinos_len() &gt; 0 {
+            self.dispatcher.consume_action();
+            self.app_component
+                .update(self.dispatcher.store(), self.area());
+        }
+    }
+}
+
+async fn save_issue(id: IssueId) -&gt; Action {
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    Action::FailIssueUpload { id }
+}</code></pre>
+          <p>
+            このコードは方針を示すための例であり、実際の型名や
+            <code>AppComponent::update</code> の引数は移行時に調整する。
+          </p>
+        </section>
+
+        <section id="main-loop">
+          <h2>Main Loop</h2>
+          <p>
+            キー入力処理は非同期 task にしない。main loop は
+            <code>crossterm::event::poll(Duration)</code> で短い間隔の待ち受けを行い、
+            入力がある場合だけ <code>event::read()</code> で取得する。
+            これにより、入力がない場合でも worker action を定期的に取り込める。
+          </p>
+          <pre class="code-block"><code>loop:
+  app.update()
+  draw
+  if event::poll(timeout):
+    event = event::read()
+    app.handle_key_event(event)</code></pre>
+          <p>
+            入力読み取り task 化は初期実装では採用しない。必要になった場合は、
+            入力待ちの <code>crossterm::event::read()</code> だけを別 task に逃がし、
+            生の terminal event を main thread に channel で戻す。その場合でも、
+            Component による event 解釈、Store 更新、描画は main thread に残す。
+          </p>
+        </section>
+
+        <section id="ordering">
+          <h2>順序保証</h2>
+          <p>
+            worker action と terminal event の厳密な物理時刻順序は保証しない。
+            アプリケーション上の順序は、main loop が channel と terminal event から受理し、
+            <code>Dispatcher</code> に dispatch した順序とする。
+          </p>
+          <div class="callout">
+            <strong>worker の数:</strong> 「1つの worker」は設計上の入口を指す。
+            実行時に Tokio runtime が何本の内部 thread を使うか、また mermaid
+            rendering が子 process を起動するかは、この境界の外側にある実装詳細として扱う。
+          </div>
+          <div class="callout">
+            <strong>保存中の競合抑止:</strong> ADR 2 の
+            <code>IssueState::Uploading</code> 中の編集禁止により、
+            保存中のローカル編集と保存完了 action の競合は UI 状態として抑止する。
+          </div>
+        </section>
+
+        <section id="mermaid">
+          <h2>Mermaid 処理</h2>
+          <p>
+            mermaid の画像化処理は非同期 task として扱う。
+            <code>mermaid-cli</code> や <code>mermaid-rs-renderer</code>
+            などの外部 command / renderer を使う場合、worker が process を起動し、
+            終了 status と成果物 file の存在確認をもって完了と見なす。
+          </p>
+          <table class="rules-table">
+            <thead>
+              <tr>
+                <th>結果</th>
+                <th>main thread に返す action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>process が成功し、成果物 file が存在する</td>
+                <td>成果物 path を含む成功 action</td>
+              </tr>
+              <tr>
+                <td>process が失敗した、または成果物 file が存在しない</td>
+                <td>原因を含む error action</td>
+              </tr>
+            </tbody>
+          </table>
+          <p style="margin-top: 16px">
+            外部 process の起動と完了待ちは render path では行わない。
+          </p>
+        </section>
+
+        <section id="dispatcher">
+          <h2>Dispatcher 所有</h2>
+          <div class="policy-grid">
+            <div class="policy-card target">
+              <div class="policy-title">最終形</div>
+              <p><code>AppContainer</code> が <code>Dispatcher</code> を直接所有する。</p>
+              <p><code>Dispatcher</code> / Store は main thread のみが更新する。</p>
+              <p>Component は原則として <code>Dispatcher</code> を保持しない。</p>
+              <p>
+                Component は同期的な <code>EventProcessResult</code> または
+                <code>AppEffect</code> を返し、親 Component または
+                <code>AppContainer</code> が action dispatch / effect 起動へ変換する。
+              </p>
+            </div>
+            <div class="policy-card transition">
+              <div class="policy-title">移行方針</div>
+              <p>
+                初期移行では既存の <code>Rc&lt;RefCell&lt;Dispatcher&gt;&gt;</code>
+                を main thread 内に閉じて維持してよい。
+              </p>
+              <p>
+                <code>Rc&lt;RefCell&lt;Dispatcher&gt;&gt;</code> から
+                <code>AppContainer</code> 所有の <code>Dispatcher</code> と
+                <code>&amp;mut Dispatcher</code> 受け渡しへ段階的に移行する。
+              </p>
+              <p>
+                <code>Arc&lt;Mutex&lt;Dispatcher&gt;&gt;</code> は worker との共有手段として採用しない。
+              </p>
+            </div>
+          </div>
+          <p style="margin-top: 16px">
+            非同期 task が返せる action は型で明示する。たとえば issue 保存 task は
+            <code>Future&lt;Output = Action&gt;</code>、またはより限定した
+            <code>Future&lt;Output = IssueUploadResultAction&gt;</code>
+            のように扱い、worker が返せる action の種類を絞る。
+          </p>
+        </section>
+
+        <section id="rationale">
+          <h2>Rationale</h2>
+          <div class="rationale-list">
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">render</span>
+                render path を軽く保つ
+              </div>
+              <p>
+                <code>ratatui</code> の immediate mode rendering では、I/O や長時間処理を
+                render 中に行わないことが重要である。外部I/Oを worker に逃がし、
+                完了結果だけを action として main thread に戻す構成は、
+                既存の <code>Action -&gt; Store -&gt; Component::update -&gt; render</code>
+                の流れに合う。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">input</span>
+                入力解釈を main thread に残す
+              </div>
+              <p>
+                現在の Component 親子関係、focus 遷移、popup 処理を維持できる。
+                キー入力処理そのものを非同期 task 化すると、Component と Store の間に
+                排他制御や順序制御が漏れやすい。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">state</span>
+                Store 更新を main thread に集約する
+              </div>
+              <p>
+                <code>Arc&lt;Mutex&lt;Dispatcher&gt;&gt;</code> を worker に渡すと、
+                Store 更新順序が複数 thread に分散し、<code>.await</code>
+                をまたいだ lock 保持や UI 停止のリスクを生む。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">issue</span>
+                <code>IssueState::Uploading</code> と相性がよい
+              </div>
+              <p>
+                保存処理中であることを Store が main thread 上で表現し、
+                Component はそれを見て編集操作を受け付けない。
+                worker 側は保存処理を進めるだけで、UI の排他制御や Store 更新には関与しない。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="consequences">
+          <h2>Consequences</h2>
+          <div class="consequence-list">
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                <code>Cargo.toml</code> に Tokio 依存を追加する必要がある。
+                初期実装では <code>rt</code> / <code>rt-multi-thread</code>、
+                <code>time</code>、<code>sync</code>、<code>process</code>
+                を中心に feature を選ぶ。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                main loop は <code>event::read()</code> の永久ブロックから、
+                <code>event::poll(Duration)</code> を使う短い待ち受けへ変更する。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                <code>AppContainer::handle_app_effect</code> は、
+                同期 effect と非同期 effect の両方を扱う境界になる。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                worker task は <code>Dispatcher</code> / Store を参照できないため、
+                必要な入力値は task 起動時に owned data として渡す必要がある。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                worker task の結果が Store に反映されるまで最大で main loop の poll interval 分だけ遅延する。
+                この遅延は許容する。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                Redmine 接続前でも、数秒 sleep する task を network I/O の代替として使い、
+                <code>IssueState::Uploading</code> の表示、編集禁止、完了 action の dispatch、
+                失敗 action の dispatch を確認できる。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="future-work">
+          <h2>Future Work</h2>
+          <div class="decision-list">
+            <div class="decision-item">
+              <div class="dot"></div>
+              <div>
+                <code>Rc&lt;RefCell&lt;Dispatcher&gt;&gt;</code> から
+                <code>AppContainer</code> 所有の <code>Dispatcher</code> と
+                <code>&amp;mut Dispatcher</code> 受け渡しへ段階的に移行する。
+              </div>
+            </div>
+            <div class="decision-item">
+              <div class="dot"></div>
+              <div>
+                入力読み取り task 化は必要になるまで採用しない。採用する場合も、
+                生 event の待ち受けだけを分離し、Component による解釈は main thread に残す。
+              </div>
+            </div>
+            <div class="decision-item">
+              <div class="dot"></div>
+              <div>
+                worker command / worker result が増えた場合、<code>Action</code>
+                を直接 channel で返す形から、より限定された <code>WorkerResult</code>
+                を main thread で action に変換する形へ移行する。
+              </div>
+            </div>
+            <div class="decision-item">
+              <div class="dot"></div>
+              <div>
+                mermaid 画像化の具体的な backend は、<code>mermaid-cli</code>、
+                Rust renderer、または他の外部 command のどれを採用するかを別途判断する。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="open-questions">
+          <h2>Open Questions</h2>
+          <p>なし。</p>
+        </section>
+
+        <a class="back-link" href="../architecture.html">← アーキテクチャガイドへ戻る</a>
+      </main>
+    </div>
+  </body>
+</html>
