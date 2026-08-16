@@ -1,5 +1,5 @@
 use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
-use super::widget::HeaderWidget;
+use super::widget::{HeaderWidget, TitleDecorater};
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
@@ -28,13 +28,12 @@ impl HeaderComponent {
     }
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
-        if let Some((issue, issue_status)) = store.get_issue(self.id) {
-            // FIXME: Storeのsynced/editedをwidgetに反映
+        if let Some((issue, issue_state)) = store.get_issue(self.id) {
             let widget = HeaderWidget::new(
                 self.id,
                 &issue.subject,
                 self.focus_state.is_focused(),
-                issue_status == IssueState::Synced,
+                Self::title_decorator(issue_state),
             );
             widget.line_count(width) as u16
         } else {
@@ -50,11 +49,52 @@ impl HeaderComponent {
             self.id,
             &issue.subject,
             self.focus_state.is_focused(),
-            issue_status == IssueState::Synced,
+            Self::title_decorator(issue_status),
         )
     }
 
     pub fn get_cursor_position(&self) -> Position {
         self.focus_state.get_cursor_position()
+    }
+
+    fn title_decorator(issue_state: IssueState) -> Option<TitleDecorater> {
+        match issue_state {
+            IssueState::Synced => None,
+            IssueState::Edited => Some(TitleDecorater::Edited),
+            IssueState::Uploading => Some(TitleDecorater::Uploading),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::{Action, Store};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::widgets::Widget;
+
+    #[test]
+    fn uploading_issue_renders_uploading_decorator() {
+        let mut store = Store::new();
+        store.consume_action(Action::LoadIssue { id: 1.into() });
+        store.consume_action(Action::UpdateIssue {
+            id: 1.into(),
+            body: "edited body".to_string(),
+        });
+        store.consume_action(Action::StartIssueUpload { id: 1.into() });
+
+        let component = HeaderComponent::new(1);
+        let widget = component.create_widget(&store);
+
+        let mut terminal = Terminal::new(TestBackend::new(40, 4)).unwrap();
+        terminal
+            .draw(|frame| widget.render(frame.area(), frame.buffer_mut()))
+            .unwrap();
+        let title_line = (0..40)
+            .map(|x| terminal.backend().buffer()[(x, 2)].symbol())
+            .collect::<String>();
+
+        assert!(title_line.starts_with("↑issue1"));
     }
 }

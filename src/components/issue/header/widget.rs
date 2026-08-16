@@ -9,11 +9,17 @@ use crate::vos::IssueId;
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 
+#[derive(Debug, Clone, Copy)]
+pub enum TitleDecorater {
+    Edited,
+    Uploading,
+}
+
 pub struct HeaderWidget<'a> {
     id: IssueId,
     title: &'a str,
     focused_title: bool,
-    synced: bool,
+    title_decorator: Option<TitleDecorater>,
 }
 
 impl<'a> Widget for HeaderWidget<'a> {
@@ -37,12 +43,17 @@ impl<'a> Widget for HeaderWidget<'a> {
 }
 
 impl<'a> HeaderWidget<'a> {
-    pub fn new(id: impl Into<IssueId>, title: &'a str, focused_title: bool, synced: bool) -> Self {
+    pub fn new(
+        id: impl Into<IssueId>,
+        title: &'a str,
+        focused_title: bool,
+        title_decorator: Option<TitleDecorater>,
+    ) -> Self {
         Self {
             id: id.into(),
             title,
             focused_title,
-            synced,
+            title_decorator,
         }
     }
 
@@ -62,11 +73,20 @@ impl<'a> HeaderWidget<'a> {
         self.title_paragraph().line_count(width) as u16
     }
 
+    fn title_decorator_str(decorator: Option<TitleDecorater>) -> &'static str {
+        match decorator {
+            // FIXME: Nerd font対応
+            Some(TitleDecorater::Edited) => "＊",
+            Some(TitleDecorater::Uploading) => "↑",
+            None => "",
+        }
+    }
+
     fn title_paragraph(&self) -> Paragraph<'a> {
         Paragraph::new(Text::from(
             Line::from(format!(
                 "{}{}",
-                if self.synced { "" } else { "*" },
+                Self::title_decorator_str(self.title_decorator),
                 self.title
             ))
             .style(Style::default().bold()),
@@ -106,7 +126,7 @@ mod tests {
     fn snapshot_header_wide_short_title() {
         let title = "Widget snapshot baseline".to_string();
         let width = 40;
-        let widget = HeaderWidget::new(42, &title, true, true);
+        let widget = HeaderWidget::new(42, &title, true, None);
         let line_count = widget.line_count(width);
         assert_eq!(line_count, 4);
         render_snapshot("header_wide_short_title", width, line_count as u16, widget);
@@ -116,7 +136,7 @@ mod tests {
     fn snapshot_header_narrow_long_title_wrap() {
         let title = "A very long title for observing current paragraph behavior".to_string();
         let width = 18;
-        let widget = HeaderWidget::new(42, &title, false, true);
+        let widget = HeaderWidget::new(42, &title, false, None);
         let line_count = widget.line_count(width);
         assert_eq!(line_count, 7);
         render_snapshot(
@@ -130,7 +150,7 @@ mod tests {
     #[test]
     fn line_count_header_grows_when_title_wraps() {
         let title = "A very long title for observing current paragraph behavior".to_string();
-        let widget = HeaderWidget::new(42, &title, false, true);
+        let widget = HeaderWidget::new(42, &title, false, None);
         assert_eq!(widget.line_count(40), 5);
         assert_eq!(widget.line_count(18), 7);
     }
@@ -139,9 +159,19 @@ mod tests {
     fn snapshot_header_unsynced_title() {
         let title = "Widget snapshot baseline".to_string();
         let width = 40;
-        let widget = HeaderWidget::new(42, &title, true, false);
+        let widget = HeaderWidget::new(42, &title, true, Some(TitleDecorater::Edited));
         let line_count = widget.line_count(width);
         assert_eq!(line_count, 4);
         render_snapshot("header_unsynced_title", width, line_count as u16, widget);
+    }
+
+    #[test]
+    fn snapshot_header_uploading_title() {
+        let title = "Widget snapshot baseline".to_string();
+        let width = 40;
+        let widget = HeaderWidget::new(42, &title, true, Some(TitleDecorater::Uploading));
+        let line_count = widget.line_count(width);
+        assert_eq!(line_count, 4);
+        render_snapshot("header_uploading_title", width, line_count as u16, widget);
     }
 }
