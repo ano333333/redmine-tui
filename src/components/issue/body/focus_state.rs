@@ -30,10 +30,13 @@ pub struct FocusState {
 }
 
 impl FocusState {
-    pub fn new(width: u16, height: u16) -> Self {
+    pub fn new() -> Self {
         Self {
-            width,
-            height,
+            // アプリ開始直後の新規作成時も、IssueポップアップでのIssue選択時も、
+            // process_eventやfocus_eventの前にupdateが呼び出されるので、
+            // ターミナル実サイズでの初期化をそこまで遅延する
+            width: 0,
+            height: 0,
             cursor_position: None,
         }
     }
@@ -162,7 +165,8 @@ mod tests {
 
     #[test]
     fn process_event_ignores_key_when_unfocused() {
-        let mut state = FocusState::new(10, 5);
+        let mut state = FocusState::new();
+        state.update(10, 5);
 
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
@@ -173,7 +177,8 @@ mod tests {
 
     #[test]
     fn process_event_h_moves_cursor_left() {
-        let mut state = FocusState::new(10, 5);
+        let mut state = FocusState::new();
+        state.update(10, 5);
         state.focus_event(FocusEvent::Focused {
             position: Position::new(3, 2),
         });
@@ -186,7 +191,8 @@ mod tests {
 
     #[test]
     fn process_event_l_moves_cursor_right_within_width() {
-        let mut state = FocusState::new(10, 5);
+        let mut state = FocusState::new();
+        state.update(10, 5);
         state.focus_event(FocusEvent::Focused {
             position: Position::new(3, 2),
         });
@@ -199,7 +205,8 @@ mod tests {
 
     #[test]
     fn process_event_j_moves_cursor_down() {
-        let mut state = FocusState::new(10, 5);
+        let mut state = FocusState::new();
+        state.update(10, 5);
         state.focus_event(FocusEvent::Focused {
             position: Position::new(3, 2),
         });
@@ -212,7 +219,8 @@ mod tests {
 
     #[test]
     fn process_event_k_moves_cursor_up() {
-        let mut state = FocusState::new(10, 5);
+        let mut state = FocusState::new();
+        state.update(10, 5);
         state.focus_event(FocusEvent::Focused {
             position: Position::new(3, 2),
         });
@@ -225,7 +233,8 @@ mod tests {
 
     #[test]
     fn process_event_j_on_last_line_returns_leave_from_below() {
-        let mut state = FocusState::new(10, 5);
+        let mut state = FocusState::new();
+        state.update(10, 5);
         state.focus_event(FocusEvent::CursorEnteredFromBelow { x: 4 });
 
         let result = state.process_event(key_event(KeyCode::Char('j')));
@@ -239,7 +248,8 @@ mod tests {
 
     #[test]
     fn process_event_k_on_first_line_returns_leave_from_above() {
-        let mut state = FocusState::new(10, 5);
+        let mut state = FocusState::new();
+        state.update(10, 5);
         state.focus_event(FocusEvent::CursorEnteredFromAbove { x: 4 });
 
         let result = state.process_event(key_event(KeyCode::Char('k')));
@@ -253,7 +263,8 @@ mod tests {
 
     #[test]
     fn process_event_e_returns_edit() {
-        let mut state = FocusState::new(10, 5);
+        let mut state = FocusState::new();
+        state.update(10, 5);
         state.focus_event(FocusEvent::Focused {
             position: Position::new(3, 2),
         });
@@ -266,7 +277,8 @@ mod tests {
 
     #[test]
     fn focus_event_clamps_position_to_bounds() {
-        let mut state = FocusState::new(10, 5);
+        let mut state = FocusState::new();
+        state.update(10, 5);
 
         state.focus_event(FocusEvent::Focused {
             position: Position::new(20, 9),
@@ -278,7 +290,8 @@ mod tests {
 
     #[test]
     fn update_clamps_existing_cursor_to_new_size() {
-        let mut state = FocusState::new(10, 5);
+        let mut state = FocusState::new();
+        state.update(10, 5);
         state.focus_event(FocusEvent::Focused {
             position: Position::new(8, 4),
         });
@@ -290,7 +303,8 @@ mod tests {
 
     #[test]
     fn focus_event_unfocused_clears_focus() {
-        let mut state = FocusState::new(10, 5);
+        let mut state = FocusState::new();
+        state.update(10, 5);
         state.focus_event(FocusEvent::Focused {
             position: Position::new(3, 2),
         });

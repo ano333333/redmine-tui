@@ -392,7 +392,8 @@ impl<'a> AppComponent<'a> {
 
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store, area: Rect) {
-        self.issue_component.update(dispatcher, store);
+        self.issue_component
+            .update(dispatcher, store, (area.width, area.height));
 
         for popup_component in &self.popup_components {
             if let PopupComponent::IssueSelect(popup_component) = &mut *popup_component.borrow_mut()

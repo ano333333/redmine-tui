@@ -21,10 +21,10 @@ pub struct BodyComponent {
 }
 
 impl BodyComponent {
-    pub fn new(id: impl Into<IssueId>, width: u16, height: u16) -> Self {
+    pub fn new(id: impl Into<IssueId>) -> Self {
         Self {
             id: id.into(),
-            focus_state: FocusState::new(width, height),
+            focus_state: FocusState::new(),
             body: String::new(),
             widget_state: BodyWidgetState::new(),
         }
@@ -113,7 +113,7 @@ mod tests {
 
     fn updated_component(width: u16, body: &str) -> BodyComponent {
         let issue = issue_with_body(body);
-        let mut component = BodyComponent::new(ISSUE_ID, width, 0);
+        let mut component = BodyComponent::new(ISSUE_ID);
         component.update(&issue, width);
         component
     }
@@ -240,7 +240,7 @@ mod tests {
     #[test]
     fn update_to_narrower_width_tracks_line_count_and_current_cursor_clamp() {
         let issue = issue_with_body(wrapping_body());
-        let mut component = BodyComponent::new(ISSUE_ID, WIDE_WIDTH, 0);
+        let mut component = BodyComponent::new(ISSUE_ID);
         component.update(&issue, WIDE_WIDTH);
         component.focus_event(FocusEvent::Focused {
             position: Position::new(31, 5),

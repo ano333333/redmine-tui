@@ -6,7 +6,6 @@ use ratatui::Frame;
 use ratatui::layout::{Offset, Position, Rect};
 use ratatui::widgets::Widget;
 
-use crate::AppContainer;
 use crate::app::{Dispatcher, Store};
 use crate::entities::Journal;
 use crate::vos::IssueId;
@@ -96,26 +95,21 @@ pub struct IssueDetailComponent {
 impl IssueDetailComponent {
     pub fn new(_: Rc<RefCell<Dispatcher>>, issue_id: impl Into<IssueId>) -> Self {
         let issue_id = issue_id.into();
-        let size = AppContainer::size();
-        match size {
-            Ok((width, height)) => {
-                let mut i = IssueDetailComponent {
-                    id: issue_id,
-                    header: HeaderComponent::new(issue_id),
-                    property: PropertyComponent::new(issue_id),
-                    body: BodyComponent::new(issue_id, width, height),
-                    children_list: ChildrenListComponent::new(issue_id),
-                    journals_list: JournalsListComponent::new(),
-                    widget_state: IssueDetailWidgetState::new(),
-                    width,
-                    height,
-                    focused_component: FocusedComponent::Header,
-                };
-                i.header.focus_event(HeaderFocusEvent::Focused);
-                i
-            }
-            Err(_) => panic!(),
-        }
+        let mut i = IssueDetailComponent {
+            id: issue_id,
+            header: HeaderComponent::new(issue_id),
+            property: PropertyComponent::new(issue_id),
+            body: BodyComponent::new(issue_id),
+            children_list: ChildrenListComponent::new(issue_id),
+            journals_list: JournalsListComponent::new(),
+            widget_state: IssueDetailWidgetState::new(),
+            // 初期化の直後のupdateに初期化を遅延する
+            width: 0,
+            height: 0,
+            focused_component: FocusedComponent::Header,
+        };
+        i.header.focus_event(HeaderFocusEvent::Focused);
+        i
     }
 
     /// crosstermの同期イベントを処理する。updateとrenderがこの順で後続する
@@ -248,15 +242,12 @@ impl IssueDetailComponent {
                 }
             }
         }
-        if let Event::Resize(cols, rows) = event {
-            self.width = cols;
-            self.height = rows;
-        }
         None
     }
 
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
-    pub fn update(&mut self, _: Rc<RefCell<Dispatcher>>, store: &Store) {
+    pub fn update(&mut self, _: Rc<RefCell<Dispatcher>>, store: &Store, frame_size: (u16, u16)) {
+        (self.width, self.height) = frame_size;
         if let Some((issue, _)) = store.get_issue(self.id) {
             self.body.update(issue, self.width);
             self.children_list.update(store);
