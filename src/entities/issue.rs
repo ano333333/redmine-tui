@@ -5,6 +5,7 @@ use crate::vos::{
     TrackerId, UserId,
 };
 
+#[derive(Debug, Clone)]
 pub struct Issue {
     pub id: IssueId,
     pub subject: String,

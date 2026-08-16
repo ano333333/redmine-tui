@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::Frame;
 use ratatui::layout::{Offset, Position, Rect};
 use ratatui::widgets::Widget;
@@ -38,6 +38,7 @@ pub enum EventProcessResult {
     OpenDoneRatioPopup,
     OpenSpentTimeInputPopup,
     OpenCategoryPopup,
+    StartIssueUpload,
 }
 
 #[cfg(test)]
@@ -122,6 +123,9 @@ impl IssueDetailComponent {
             match key.code {
                 KeyCode::Char('y') => {
                     return Some(EventProcessResult::OpenIssueSelectPopup);
+                }
+                KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    return Some(EventProcessResult::StartIssueUpload);
                 }
                 _ => {}
             }

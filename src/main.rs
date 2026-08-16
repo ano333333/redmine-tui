@@ -20,18 +20,20 @@ use std::{
     io::Result,
     process::Command,
     rc::Rc,
-    sync::mpsc,
-    time::{SystemTime, UNIX_EPOCH},
+    sync::mpsc::{self, Sender},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime};
 
 use self::{
-    app::{Action, Dispatcher},
+    app::{Action, Dispatcher, IssueState},
     components::{
         AppComponent,
         app::{AppEffect, EditorRequest, EditorResponse},
     },
 };
+
+const TICK_RATE_MS: u64 = 250;
 
 fn main() -> Result<()> {
     logging::initialize_logging()?;
@@ -47,8 +49,9 @@ fn main() -> Result<()> {
         dispatcher.borrow().store(),
         terminal.get_frame().area(),
     );
+    let tick_rate = std::time::Duration::from_millis(TICK_RATE_MS);
     loop {
-        move_worker_action(&worker_action_tx, dispatcher.clone());
+        move_worker_action(&worker_action_rx, dispatcher.clone());
         update(
             dispatcher.clone(),
             &mut app_component,
@@ -61,15 +64,24 @@ fn main() -> Result<()> {
             trace_dbg!(level: tracing::Level::ERROR, "failed to draw frame");
             return Err(e);
         }
-        match event::read() {
-            Ok(event) => {
-                if !handle_key_event(event, &mut terminal, &mut app_component, dispatcher.clone()) {
-                    break;
+        if event::poll(tick_rate).unwrap() {
+            match event::read() {
+                Ok(event) => {
+                    if !handle_key_event(
+                        event,
+                        &mut terminal,
+                        &mut app_component,
+                        dispatcher.clone(),
+                        &runtime,
+                        worker_action_tx.clone(),
+                    ) {
+                        break;
+                    }
                 }
-            }
-            Err(e) => {
-                trace_dbg!(level: tracing::Level::ERROR, "failed to read event");
-                return Err(e);
+                Err(e) => {
+                    trace_dbg!(level: tracing::Level::ERROR, "failed to read event");
+                    return Err(e);
+                }
             }
         }
     }
@@ -100,6 +112,8 @@ fn handle_key_event(
     terminal: &mut DefaultTerminal,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
+    runtime: &Runtime,
+    sender: Sender<Action>,
 ) -> bool {
     if let Event::Key(key) = event {
         if key.code == KeyCode::Char('q') {
@@ -111,7 +125,14 @@ fn handle_key_event(
     let rect = Rect::new(0, 0, size.width, size.height);
     app_component.update(dispatcher.clone(), dispatcher.borrow().store(), rect);
     if let Some(effect) = app_component.take_effect()
-        && let Err(err) = handle_app_effect(effect, terminal, app_component, dispatcher.clone())
+        && let Err(err) = handle_app_effect(
+            effect,
+            terminal,
+            app_component,
+            dispatcher.clone(),
+            runtime,
+            sender,
+        )
     {
         tracing::event!(
             target: module_path!(),
@@ -128,6 +149,8 @@ fn handle_app_effect(
     terminal: &mut DefaultTerminal,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
+    runtime: &Runtime,
+    sender: mpsc::Sender<Action>,
 ) -> Result<()> {
     match effect {
         AppEffect::OpenEditor(request) => {
@@ -136,6 +159,26 @@ fn handle_app_effect(
             let size = terminal.size().expect("failed to get terminal size");
             let rect = Rect::new(0, 0, size.width, size.height);
             app_component.update(dispatcher.clone(), dispatcher.borrow().store(), rect);
+        }
+        AppEffect::StartIssueUpload(id) => {
+            let mut d = dispatcher.borrow_mut();
+            d.dispatch(Action::StartIssueUpload { id });
+            let (issue, state) = d
+                .store()
+                .get_issue(id)
+                .expect("tried to upload unknown issue");
+            if state != IssueState::Edited {
+                panic!("uploading issue is not edited");
+            }
+            let issue = issue.clone();
+            // TODO: issue_property_diffsの取得とマージ
+            runtime.spawn(async move {
+                // TODO: Redmineから指定issueの読み込み
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                sender
+                    .send(Action::SyncIssue { issue })
+                    .expect("Failed to send Action with mpsc::channel");
+            });
         }
     }
     Ok(())

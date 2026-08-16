@@ -37,6 +37,7 @@ pub struct EditorResponse {
 
 pub enum AppEffect {
     OpenEditor(EditorRequest),
+    StartIssueUpload(IssueId),
 }
 
 enum PendingEditorContext {
@@ -384,6 +385,10 @@ impl<'a> AppComponent<'a> {
                             dispatcher.borrow().store(),
                         )),
                     )));
+                }
+                Some(IssueEventProcessResult::StartIssueUpload) => {
+                    let id = self.issue_component.id;
+                    self.pending_effect = Some(AppEffect::StartIssueUpload(id));
                 }
                 None => {}
             }
