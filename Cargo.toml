@@ -15,6 +15,7 @@ lazy_static = "1.5.0"
 ratatui = { version = "0.30.0", features = ["unstable-rendered-line-info"] }
 ratatui-textarea = "0.9.2"
 time = "0.3.53"
+tokio = { version = "1.42", features = ["rt", "rt-multi-thread", "time", "sync", "process"] }
 tracing = "0.1.44"
 tracing-error = "0.2.1"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
