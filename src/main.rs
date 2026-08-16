@@ -20,8 +20,10 @@ use std::{
     io::Result,
     process::Command,
     rc::Rc,
+    sync::mpsc,
     time::{SystemTime, UNIX_EPOCH},
 };
+use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime};
 
 use self::{
     app::{Action, Dispatcher},
@@ -34,6 +36,8 @@ use self::{
 fn main() -> Result<()> {
     logging::initialize_logging()?;
     trace_dbg!("start");
+    let runtime = init_tokio_runtime()?;
+    let (worker_action_tx, worker_action_rx) = mpsc::channel::<Action>();
     let mut terminal = ratatui::init();
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
     init_store(dispatcher.clone());
@@ -44,6 +48,7 @@ fn main() -> Result<()> {
         terminal.get_frame().area(),
     );
     loop {
+        move_worker_action(&worker_action_tx, dispatcher.clone());
         update(
             dispatcher.clone(),
             &mut app_component,
@@ -71,6 +76,16 @@ fn main() -> Result<()> {
     ratatui::restore();
     trace_dbg!("done");
     Ok(())
+}
+
+fn init_tokio_runtime() -> Result<Runtime> {
+    TokioRuntimeBuilder::new_multi_thread().enable_all().build()
+}
+
+fn move_worker_action(tx: &mpsc::Receiver<Action>, dispatcher: Rc<RefCell<Dispatcher>>) {
+    while let Ok(action) = tx.try_recv() {
+        dispatcher.borrow_mut().dispatch(action);
+    }
 }
 
 fn update(dispatcher: Rc<RefCell<Dispatcher>>, app_component: &mut AppComponent, area: Rect) {
