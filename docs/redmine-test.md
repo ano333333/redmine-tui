@@ -44,23 +44,22 @@ Common variables:
 Start Redmine first, then run:
 
 ```sh
-scripts/seed-redmine-test-data.sh
+cargo xtask seed-redmine
 ```
 
-The seeder is idempotent. It creates or updates:
+This command reads `datas/`, generates SQL, applies `docker/redmine/fresh_test_data.sql`, and then inserts the fixture data into the MySQL service from `compose.redmine.yml`.
 
-- project: `Redmine TUI Sandbox` / `redmine-tui-sandbox`
-- users: `alice.tui`, `bob.tui`
-- version: `TUI Test v1.0`
-- category: `TUI`
-- three issues, including a parent issue and child issue
-- journal comments and time entries for TUI rendering checks
+Preview the SQL without changing the database:
 
-The seeded user password is:
-
-```text
-password123
+```sh
+cargo xtask seed-redmine --dry-run
 ```
+
+The seeder currently inserts the fixture data present under `datas/`:
+
+- projects, users, trackers, issue statuses, priorities, target versions, categories, and time entry activities
+- issues from `datas/issues/*.yml`, preserving issue IDs
+- journals and journal details from `datas/journals/*.yml`
 
 ## Seeder Checks
 

@@ -110,24 +110,29 @@ REDMINE_PORT=18080 docker compose -f compose.redmine.yml up -d
 先に Redmine を起動してから、次を実行します。
 
 ```sh
-scripts/seed-redmine-test-data.sh
+cargo xtask seed-redmine
 ```
 
-Seeder は Redmine コンテナ内で Rails runner として実行されます。冪等に作られており、再実行しても同じデータを作成または更新します。
+このコマンドは `datas/` から SQL を生成し、`compose.redmine.yml` の MySQL service に投入します。先に `docker/redmine/fresh_test_data.sql` を適用するため、ローカルテストデータはリセットされてから seed されます。
 
-作成、更新されるデータ:
+DB を変更せずに生成 SQL だけ確認する場合:
 
-- project: `Redmine TUI Sandbox` / `redmine-tui-sandbox`
-- users: `alice.tui`, `bob.tui`
-- version: `TUI Test v1.0`
-- category: `TUI`
-- 親子 Issue を含む 3 件の Issue
-- TUI の描画確認用の journal コメントと作業時間
+```sh
+cargo xtask seed-redmine --dry-run
+```
 
-投入されるユーザーのパスワード:
+現在 seed されるのは、`datas/` に用意されている次の fixture です。
 
-```text
-password123
+- `datas/projects.yml` の project
+- `datas/users.yml` の user
+- tracker、status、priority、version、category、time entry activity
+- `datas/issues/*.yml` の issue。issue ID は維持されます
+- `datas/journals/*.yml` の journal と journal detail
+
+互換用ラッパーも残しています。
+
+```sh
+scripts/seed-redmine-test-data.sh
 ```
 
 ## Redmine 参考リンク
@@ -138,8 +143,9 @@ password123
 ## リポジトリ構成
 
 - `src/`: Rust TUI のソースコード
+- `xtask/`: Redmine YAML seeding などの Cargo 開発タスク
 - `datas/`: ローカル YAML fixture データ
 - `compose.redmine.yml`: ローカル Redmine 用 Docker Compose 構成
-- `docker/redmine/seed_test_data.rb`: Redmine Rails runner seeder
+- `docker/redmine/fresh_test_data.sql`: YAML seed 前に使う Redmine テストデータリセット SQL
 - `scripts/seed-redmine-test-data.sh`: seeder 実行ラッパー
 - `docs/redmine-test.md`: ローカル Redmine の詳細メモ

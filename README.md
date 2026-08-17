@@ -110,22 +110,29 @@ REDMINE_PORT=18080 docker compose -f compose.redmine.yml up -d
 Start Redmine first, then run:
 
 ```sh
-scripts/seed-redmine-test-data.sh
+cargo xtask seed-redmine
 ```
 
-The seeder runs inside the Redmine container with Rails runner. It is idempotent and creates or updates:
+This command generates SQL from `datas/` and pipes it into the MySQL service in `compose.redmine.yml`. It first applies `docker/redmine/fresh_test_data.sql`, so the local test data is reset before seeding.
 
-- project: `Redmine TUI Sandbox` / `redmine-tui-sandbox`
-- users: `alice.tui`, `bob.tui`
-- version: `TUI Test v1.0`
-- category: `TUI`
-- three issues, including a parent issue and child issue
-- journal comments and time entries for TUI rendering checks
+To inspect the generated SQL without touching the database:
 
-Seeded user password:
+```sh
+cargo xtask seed-redmine --dry-run
+```
 
-```text
-password123
+The seeder currently inserts the fixture data present in `datas/`:
+
+- projects from `datas/projects.yml`
+- users from `datas/users.yml`
+- trackers, statuses, priorities, versions, categories, and time entry activities
+- issues from `datas/issues/*.yml`, preserving issue IDs
+- journals and journal details from `datas/journals/*.yml`
+
+The compatibility wrapper remains available:
+
+```sh
+scripts/seed-redmine-test-data.sh
 ```
 
 ## Redmine References
@@ -136,8 +143,9 @@ password123
 ## Repository Layout
 
 - `src/`: Rust TUI source
+- `xtask/`: Cargo development tasks, including Redmine YAML seeding
 - `datas/`: local YAML fixture data
 - `compose.redmine.yml`: local Redmine Docker Compose setup
-- `docker/redmine/seed_test_data.rb`: Redmine Rails runner seeder
+- `docker/redmine/fresh_test_data.sql`: Redmine test-data reset SQL used before YAML seeding
 - `scripts/seed-redmine-test-data.sh`: seeder execution wrapper
 - `docs/redmine-test.md`: detailed local Redmine notes
