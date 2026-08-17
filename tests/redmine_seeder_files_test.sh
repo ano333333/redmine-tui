@@ -21,18 +21,29 @@ assert_contains() {
   fi
 }
 
-assert_file scripts/seed-redmine-test-data.sh
-assert_file docker/redmine/seed_test_data.rb
+assert_file .cargo/config.toml
+assert_file xtask/Cargo.toml
+assert_file xtask/src/main.rs
+assert_file docker/redmine/fresh_test_data.sql
 
-bash -n scripts/seed-redmine-test-data.sh
+seed_sql="$(cargo xtask seed-redmine --dry-run)"
 
-assert_contains scripts/seed-redmine-test-data.sh "docker compose -f compose.redmine.yml exec -T redmine"
-assert_contains scripts/seed-redmine-test-data.sh "bundle exec rails runner -"
+assert_contains .cargo/config.toml 'xtask = "run --package xtask --"'
 
-assert_contains docker/redmine/seed_test_data.rb "redmine-tui-sandbox"
-assert_contains docker/redmine/seed_test_data.rb "find_or_initialize_by"
-assert_contains docker/redmine/seed_test_data.rb "Issue.find_or_initialize_by"
-assert_contains docker/redmine/seed_test_data.rb "TimeEntry.find_or_initialize_by"
-assert_contains docker/redmine/seed_test_data.rb "User.current"
-assert_contains docker/redmine/seed_test_data.rb "Setting.notified_events = []"
-assert_contains docker/redmine/seed_test_data.rb "issue.reload"
+assert_contains docker/redmine/fresh_test_data.sql "DELETE FROM issues;"
+assert_contains docker/redmine/fresh_test_data.sql "ALTER TABLE issues AUTO_INCREMENT = 1;"
+
+if [[ "$seed_sql" != *"INSERT INTO issues"* ]]; then
+  echo "expected seed SQL to insert issues" >&2
+  exit 1
+fi
+
+if [[ "$seed_sql" != *"INSERT INTO journals"* ]]; then
+  echo "expected seed SQL to insert journals" >&2
+  exit 1
+fi
+
+if [[ "$seed_sql" != *"UPDATE issues SET parent_id = 3"* ]]; then
+  echo "expected seed SQL to set parent-child issue relations" >&2
+  exit 1
+fi

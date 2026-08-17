@@ -6,6 +6,11 @@ authors = ["ano333333 <ano333333github@gmail.com>"]
 license = "MIT"
 edition = "2024"
 
+[workspace]
+members = [".", "xtask"]
+default-members = ["."]
+resolver = "3"
+
 [dependencies]
 chrono = "0.4.43"
 color-eyre = "0.6.3"
