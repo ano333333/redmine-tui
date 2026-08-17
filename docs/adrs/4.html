@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 4 — Redmine テストデータ初期化と YAML seed 方針</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #0f1117;
+        --surface: #1a1d27;
+        --surface-2: #22263a;
+        --border: #2e3350;
+        --accent: #6c8efb;
+        --accent-dim: #3d4f8a;
+        --text: #d0d4e8;
+        --text-muted: #7a80a0;
+        --text-heading: #e8eaf6;
+        --code-bg: #13151f;
+        --code-border: #2a2e45;
+        --tag-bg: #1e2540;
+        --tag-text: #8ba3f5;
+        --marker: #f0b429;
+        --green: #4caf8a;
+        --status-accepted-bg: #0e2a1e;
+        --status-accepted-border: #2a7a50;
+        --status-accepted-text: #4caf8a;
+      }
+
+      body {
+        font-family: "Inter", "Noto Sans JP", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.75;
+        font-size: 15px;
+      }
+
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+
+      nav {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        width: 240px;
+        flex-shrink: 0;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+        padding: 28px 0;
+      }
+
+      nav .nav-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 0 20px 12px;
+      }
+
+      nav a {
+        display: block;
+        padding: 6px 20px;
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: 13px;
+        border-left: 2px solid transparent;
+        transition:
+          color 0.15s,
+          border-color 0.15s;
+      }
+
+      nav a:hover {
+        color: var(--text);
+        border-left-color: var(--accent-dim);
+      }
+
+      nav a.active {
+        color: var(--accent);
+        border-left-color: var(--accent);
+      }
+
+      nav .nav-section {
+        margin-top: 16px;
+      }
+
+      main {
+        flex: 1;
+        min-width: 0;
+        padding: 56px 64px;
+        max-width: 980px;
+      }
+
+      .page-header {
+        margin-bottom: 48px;
+        padding-bottom: 32px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .breadcrumb {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .breadcrumb a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      .breadcrumb a:hover {
+        text-decoration: underline;
+      }
+
+      .breadcrumb span {
+        color: var(--text-muted);
+      }
+
+      .header-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .adr-number {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 8px;
+      }
+
+      h1 {
+        font-size: 26px;
+        font-weight: 700;
+        color: var(--text-heading);
+        letter-spacing: -0.02em;
+        line-height: 1.2;
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        flex-shrink: 0;
+        background: var(--status-accepted-bg);
+        border: 1px solid var(--status-accepted-border);
+        color: var(--status-accepted-text);
+      }
+
+      .status-badge::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        background: var(--status-accepted-text);
+        border-radius: 50%;
+      }
+
+      section {
+        margin-bottom: 52px;
+      }
+
+      h2 {
+        font-size: 17px;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin-bottom: 16px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+        letter-spacing: -0.01em;
+      }
+
+      h3 {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin: 24px 0 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      p {
+        margin-bottom: 14px;
+        color: var(--text);
+      }
+
+      code {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #b0bce8;
+      }
+
+      p code,
+      li code {
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-size: 12.5px;
+      }
+
+      .code-block {
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 8px;
+        padding: 16px 18px;
+        overflow-x: auto;
+        margin: 18px 0;
+      }
+
+      .code-block code {
+        display: block;
+        color: var(--text);
+        white-space: pre;
+        font-size: 12.5px;
+        line-height: 1.55;
+      }
+
+      .callout {
+        background: var(--surface);
+        border-left: 3px solid var(--marker);
+        border-radius: 0 6px 6px 0;
+        padding: 12px 16px;
+        margin: 16px 0;
+        font-size: 13.5px;
+        color: var(--text);
+      }
+
+      .callout strong {
+        color: var(--marker);
+      }
+
+      .tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 8px 0 18px;
+      }
+
+      .tag {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 12px;
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 3px 8px;
+        border-radius: 4px;
+        border: 1px solid var(--accent-dim);
+      }
+
+      .decision-list,
+      .consequence-list,
+      .seed-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .decision-item,
+      .consequence-item,
+      .seed-item {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        font-size: 13.5px;
+        padding: 10px 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+
+      .dot {
+        width: 6px;
+        height: 6px;
+        background: var(--accent-dim);
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-top: 8px;
+      }
+
+      .flow {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 14px;
+      }
+
+      .flow-step {
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        gap: 12px;
+        align-items: start;
+        padding: 10px 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+
+      .flow-num {
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: var(--accent-dim);
+        color: var(--accent);
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 11px;
+        font-weight: 700;
+        margin-top: 1px;
+      }
+
+      .flow-label {
+        font-size: 13.5px;
+        color: var(--text);
+      }
+
+      .flow-label strong {
+        color: var(--text-heading);
+        font-weight: 700;
+      }
+
+      .policy-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-top: 14px;
+      }
+
+      .policy-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px 18px;
+      }
+
+      .policy-card.primary {
+        border-top: 2px solid var(--accent);
+      }
+
+      .policy-card.secondary {
+        border-top: 2px solid var(--green);
+      }
+
+      .policy-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+        color: var(--text-heading);
+      }
+
+      .policy-card p {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+      }
+
+      .policy-card p:last-child {
+        margin-bottom: 0;
+      }
+
+      .rationale-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .rationale-item {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px 18px;
+      }
+
+      .rationale-item-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-heading);
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .rationale-item-title .badge {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 11px;
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 1px 6px;
+        border-radius: 3px;
+        border: 1px solid var(--accent-dim);
+      }
+
+      .rationale-item p {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin: 0;
+      }
+
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--accent);
+        text-decoration: none;
+        padding: 4px 10px;
+        border: 1px solid var(--accent-dim);
+        border-radius: 4px;
+        transition: background 0.15s;
+        margin-top: 8px;
+      }
+
+      .back-link:hover {
+        background: var(--tag-bg);
+      }
+
+      @media (max-width: 820px) {
+        .layout {
+          flex-direction: column;
+        }
+        nav {
+          position: static;
+          width: 100%;
+          height: auto;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+          padding: 18px 0;
+        }
+        main {
+          padding: 36px 24px;
+        }
+        .policy-grid {
+          grid-template-columns: 1fr;
+        }
+        .decision-item,
+        .consequence-item,
+        .seed-item {
+          flex-direction: column;
+          gap: 4px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <div class="nav-title">ADR 4</div>
+        <a href="#context">Context</a>
+        <a href="#decision">Decision</a>
+        <a href="#xtask">cargo xtask</a>
+        <a href="#seed-targets">Seed 対象</a>
+        <a href="#rationale">Rationale</a>
+        <a href="#consequences">Consequences</a>
+        <a href="#open-questions">Open Questions</a>
+        <div class="nav-section">
+          <div class="nav-title" style="margin-top: 0">ドキュメント</div>
+          <a href="../architecture.html">アーキテクチャガイド</a>
+          <a href="1.html">ADR 1 — String/str 方針</a>
+          <a href="2.html">ADR 2 — Issue 保存フロー</a>
+          <a href="3.html">ADR 3 — 非同期I/O worker</a>
+        </div>
+      </nav>
+
+      <main>
+        <div class="page-header">
+          <div class="breadcrumb">
+            <a href="../architecture.html">docs</a>
+            <span>/</span>
+            <span>adrs</span>
+            <span>/</span>
+            <span>4</span>
+          </div>
+          <div class="header-top">
+            <div>
+              <div class="adr-number">ADR 4</div>
+              <h1>Redmine テストデータ初期化と YAML seed 方針</h1>
+            </div>
+            <span class="status-badge">Accepted</span>
+          </div>
+        </div>
+
+        <section id="context">
+          <h2>Context</h2>
+          <p>
+            <code>redmine-tui</code> は現在、<code>datas/</code> の YAML fixture
+            を読み込むローカルプロトタイプとして実装されている。一方、コンテナ上の
+            Redmine に投入するテストデータは
+            <code>docker/redmine/seed_test_data.rb</code> に固定値として書かれており、
+            <code>datas/</code> の内容とは対応していない。
+          </p>
+          <p>
+            この状態では、TUI が表示・編集対象としている fixture と、ローカル Redmine
+            で確認できる issue、journal、project、user などがずれる。今後 Redmine
+            接続を進めるには、<code>datas/</code> を Redmine 側でも使えるようにし、
+            少なくとも現在 <code>datas/</code> に用意している範囲のデータを Redmine
+            DB へ投入できる必要がある。
+          </p>
+          <div class="callout">
+            <strong>前提:</strong> Redmine の schema は Redmine 本体の Rails migration
+            により作成される。このリポジトリでは schema 定義ではなく、テストデータ投入前の
+            初期化と seed を扱う。
+          </div>
+        </section>
+
+        <section id="decision">
+          <h2>Decision</h2>
+          <p>Redmine テストデータ投入は、初期化 SQL と Rust 製 seed コマンドに分ける。</p>
+          <div class="flow">
+            <div class="flow-step">
+              <div class="flow-num">1</div>
+              <div class="flow-label">
+                <strong>まっさらのテストデータ状態を用意する SQL</strong><br />
+                Redmine schema を作成せず、seed 対象テーブルのデータ削除と auto increment
+                のリセットに使う。
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">2</div>
+              <div class="flow-label">
+                <strong><code>datas/</code> の YAML から Redmine DB へ seed する Rust スクリプト</strong><br />
+                <code>xtask</code> crate の <code>seed-redmine</code> サブコマンドとして実装する。
+              </div>
+            </div>
+          </div>
+
+          <div class="code-block"><code>cargo xtask seed-redmine</code></div>
+
+          <div class="policy-grid">
+            <div class="policy-card primary">
+              <div class="policy-title">ID 方針</div>
+              <p>
+                Redmine DB 上の <code>issues.id</code> は
+                <code>datas/issues/*.yml</code> の <code>id</code> と一致させる。
+              </p>
+              <p>既存 DB に同じ ID の issue がある場合は、その issue を seed 対象として更新する。</p>
+              <p>
+                Redmine の既定 admin / anonymous user を壊さないため、<code>datas/users.yml</code>
+                の user ID は 1000 番台から始める。
+              </p>
+            </div>
+            <div class="policy-card secondary">
+              <div class="policy-title">境界方針</div>
+              <p>
+                <code>xtask</code> は TUI 本体 crate の <code>entities</code>、
+                <code>libs</code>、<code>vos</code> を公開させて再利用しない。
+              </p>
+              <p>YAML parsing helper と seed 用のデータ構造は <code>xtask</code> 内に閉じる。</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="xtask">
+          <h2>cargo xtask</h2>
+          <p>
+            <code>cargo xtask</code> は <code>.cargo/config.toml</code> の Cargo alias
+            で実現する。<code>xtask</code> は workspace member として追加し、
+            <code>seed-redmine</code> サブコマンドを持つ。
+          </p>
+          <div class="decision-list">
+            <div class="decision-item">
+              <div class="dot"></div>
+              <div>
+                <code>datas/</code> の YAML 読み込みは Redmine 接続までの暫定機能であり、
+                将来アプリ本体からは削除される見込みである。
+              </div>
+            </div>
+            <div class="decision-item">
+              <div class="dot"></div>
+              <div>
+                seed では SQL insert/update を構成できればよく、TUI の domain entity struct
+                を構成する必要はない。
+              </div>
+            </div>
+            <div class="decision-item">
+              <div class="dot"></div>
+              <div>
+                Redmine DB への投入都合と TUI 表示用 entity の境界を混ぜない方が、
+                将来の削除や置き換えが容易である。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="seed-targets">
+          <h2>Seed 対象</h2>
+          <p>現在 <code>datas/</code> にある以下の YAML を seed 対象とする。</p>
+          <div class="tag-list">
+            <span class="tag">projects.yml</span>
+            <span class="tag">users.yml</span>
+            <span class="tag">trackers.yml</span>
+            <span class="tag">issue_statuses.yml</span>
+            <span class="tag">priorities.yml</span>
+            <span class="tag">target_versions.yml</span>
+            <span class="tag">categories.yml</span>
+            <span class="tag">time_entity_activities.yml</span>
+            <span class="tag">issues/*.yml</span>
+            <span class="tag">journals/*.yml</span>
+          </div>
+          <div class="seed-list">
+            <div class="seed-item">
+              <div class="dot"></div>
+              <div>親子関係は <code>child_ids</code> から逆算し、子 issue 側の <code>parent_id</code> を設定する。</div>
+            </div>
+            <div class="seed-item">
+              <div class="dot"></div>
+              <div>Issue、journal からの user 参照は、この 1000 番台の user ID を使う。</div>
+            </div>
+            <div class="seed-item">
+              <div class="dot"></div>
+              <div>
+                Redmine 側で必須だが <code>datas/</code> に存在しない値は、seed 側で決定的に補完する。
+              </div>
+            </div>
+            <div class="seed-item">
+              <div class="dot"></div>
+              <div>
+                補完対象の例は user の login と mail、project identifier、version status、
+                journalized type などである。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="rationale">
+          <h2>Rationale</h2>
+          <div class="rationale-list">
+            <div class="rationale-item">
+              <div class="rationale-item-title"><span class="badge">source</span> datas/ を source of truth にする</div>
+              <p>
+                TUI の fixture と Redmine 上の確認データが一致し、Redmine 接続後の表示差分や
+                保存処理を検証しやすくなる。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title"><span class="badge">cargo</span> Rust の開発体験に合わせる</div>
+              <p>
+                Rails runner で seed し続ける案より、開発者が <code>cargo</code> で操作できる形の方が
+                既存のプロジェクト構成に合う。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title"><span class="badge">boundary</span> TUI 本体 crate を library 化しない</div>
+              <p>
+                seed の目的は Redmine DB に現在の YAML の値を入れることであり、
+                TUI 内部 entity を構成することではない。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title"><span class="badge">schema</span> Redmine schema は Redmine 自身が管理する</div>
+              <p>
+                Redmine 全 schema を SQL ファイルとして管理すると version 依存が強くなるため、
+                このリポジトリではテストデータの初期化と投入だけを扱う。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section id="consequences">
+          <h2>Consequences</h2>
+          <div class="consequence-list">
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                <code>xtask</code> crate には YAML parser crate が追加される。DB への投入は、
+                生成した SQL を Docker Compose の MySQL service 内の <code>mysql</code>
+                command に渡して実行する。TUI 本体の dependency には seed 専用 dependency
+                を追加しない。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                <code>docker/redmine/seed_test_data.rb</code> は今後の主経路ではなくなる。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                seed は Redmine DB schema の存在を前提にするため、Rails migration が完了していない状態では失敗する可能性がある。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                YAML から Redmine DB へ直接 insert/update するため、Redmine model validation や callback は通らない。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                custom field、attachment、workflow permission、watcher は初期実装の対象外とする。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="open-questions">
+          <h2>Open Questions</h2>
+          <p>なし。</p>
+        </section>
+
+        <a href="../architecture.html" class="back-link">← アーキテクチャガイドへ戻る</a>
+      </main>
+    </div>
+  </body>
+</html>
