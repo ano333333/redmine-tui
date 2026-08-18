@@ -5,7 +5,7 @@ use ratatui::layout::Position;
 
 use crate::app::Store;
 use crate::entities::{Issue, IssueStatus};
-use crate::vos::{EntityIdValue, IssueId};
+use crate::vos::IssueId;
 
 pub struct PropertyComponent {
     id: IssueId,
