@@ -1,4 +1,5 @@
 mod app;
+mod clients;
 mod components;
 mod entities;
 mod libs;

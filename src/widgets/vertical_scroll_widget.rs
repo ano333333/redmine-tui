@@ -165,7 +165,7 @@ impl<'a> Widget for VerticalScrollWidget<'a> {
     ///
     /// # example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// let widget1 = Widget1::new();
     /// let widget2 = Widget2::new();
     /// let widget3 = Widget3::new();

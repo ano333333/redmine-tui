@@ -1,0 +1,589 @@
+use chrono::{DateTime, Local, NaiveDate, TimeZone};
+use reqwest::StatusCode;
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
+
+use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
+use crate::entities::{
+    Category, Issue, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity, Tracker,
+    User,
+};
+use crate::vos::{
+    CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalId, PriorityId, ProjectId,
+    TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+};
+
+// FIXME: ユーザーを全列挙しないことを前提としたStore管理
+const PAGE_LIMIT: usize = 100;
+
+pub struct DefaultRedmineClient {
+    host_url: String,
+    access_token: String,
+    http_client: reqwest::Client,
+}
+
+impl DefaultRedmineClient {
+    pub fn new(host_url: impl Into<String>, access_token: impl Into<String>) -> Self {
+        Self {
+            host_url: host_url.into().trim_end_matches('/').to_string(),
+            access_token: access_token.into(),
+            http_client: reqwest::Client::new(),
+        }
+    }
+
+    async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, RedmineClientError> {
+        let method = "GET";
+        let url = format!("{}{}", self.host_url, path);
+        let response = self
+            .http_client
+            .get(&url)
+            .header("X-Redmine-API-Key", &self.access_token)
+            .send()
+            .await
+            .map_err(map_request_error)?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let response_body = response.text().await.unwrap_or_else(|error| {
+                format!("failed to read Redmine error response body: {error}")
+            });
+            return map_response_status(
+                status,
+                RedmineHttpError {
+                    method: method.to_string(),
+                    url,
+                    status_code: status.as_u16(),
+                    response_body,
+                },
+            );
+        }
+
+        response.json().await.map_err(map_response_body_error)
+    }
+
+    async fn get_paginated<R>(&self, path: &str) -> Result<Vec<R::Item>, RedmineClientError>
+    where
+        R: DeserializeOwned + PaginatedResponse,
+    {
+        let mut offset = 0;
+        let mut items = Vec::new();
+
+        loop {
+            let separator = if path.contains('?') { '&' } else { '?' };
+            let page_path = format!("{path}{separator}limit={PAGE_LIMIT}&offset={offset}");
+            let response: R = self.get_json(&page_path).await?;
+            let (mut page_items, page_info) = response.into_parts();
+            let page_item_count = page_items.len();
+
+            items.append(&mut page_items);
+
+            if page_info.is_last_page(offset, page_item_count) {
+                break;
+            }
+
+            offset += page_item_count;
+        }
+
+        Ok(items)
+    }
+}
+
+impl RedmineClient for DefaultRedmineClient {
+    async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError> {
+        let mut categories = Vec::new();
+
+        for project in self.get_projects().await? {
+            let path = format!("/projects/{}/issue_categories.json", project.id.get());
+            categories.extend(self.get_paginated::<IssueCategoriesResponse>(&path).await?);
+        }
+
+        Ok(categories)
+    }
+
+    async fn get_issue(&self, id: IssueId) -> Result<Issue, RedmineClientError> {
+        let response: IssueResponse = self
+            .get_json(&format!("/issues/{id}.json?include=children,journals"))
+            .await?;
+
+        response.issue.try_into()
+    }
+
+    async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
+        Ok(self
+            .get_json::<IssueStatusesResponse>("/issue_statuses.json")
+            .await?
+            .issue_statuses
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    async fn get_priorities(&self) -> Result<Vec<Priority>, RedmineClientError> {
+        Ok(self
+            .get_json::<PrioritiesResponse>("/enumerations/issue_priorities.json")
+            .await?
+            .issue_priorities
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    async fn get_projects(&self) -> Result<Vec<Project>, RedmineClientError> {
+        self.get_paginated::<ProjectsResponse>("/projects.json")
+            .await
+    }
+
+    async fn get_target_versions(&self) -> Result<Vec<TargetVersion>, RedmineClientError> {
+        let mut versions = Vec::new();
+
+        for project in self.get_projects().await? {
+            let path = format!("/projects/{}/versions.json", project.id.get());
+            versions.extend(self.get_paginated::<VersionsResponse>(&path).await?);
+        }
+
+        Ok(versions)
+    }
+
+    async fn get_time_entity_activities(
+        &self,
+    ) -> Result<Vec<TimeEntityActivity>, RedmineClientError> {
+        Ok(self
+            .get_json::<TimeEntryActivitiesResponse>("/enumerations/time_entry_activities.json")
+            .await?
+            .time_entry_activities
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    async fn get_trackers(&self) -> Result<Vec<Tracker>, RedmineClientError> {
+        Ok(self
+            .get_json::<TrackersResponse>("/trackers.json")
+            .await?
+            .trackers
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    async fn get_users(&self) -> Result<Vec<User>, RedmineClientError> {
+        self.get_paginated::<UsersResponse>("/users.json").await
+    }
+}
+
+fn map_response_status<T>(
+    status: StatusCode,
+    context: RedmineHttpError,
+) -> Result<T, RedmineClientError> {
+    match status.as_u16() {
+        400 => Err(RedmineClientError::BadRequest { context }),
+        401 => Err(RedmineClientError::Unauthorized { context }),
+        403 | 404 => Err(RedmineClientError::NotFound { context }),
+        422 => Err(RedmineClientError::UnprocessableEntity { context }),
+        500..=599 => Err(RedmineClientError::InternalServerError { context }),
+        _ => panic!(
+            "unexpected Redmine response status: {} for {} {} with body: {}",
+            status.as_u16(),
+            context.method,
+            context.url,
+            context.response_body
+        ),
+    }
+}
+
+fn map_request_error(error: reqwest::Error) -> RedmineClientError {
+    if error.is_builder() {
+        RedmineClientError::Client {
+            reason: error.to_string(),
+        }
+    } else {
+        RedmineClientError::Network {
+            reason: error.to_string(),
+        }
+    }
+}
+
+fn map_response_body_error(error: reqwest::Error) -> RedmineClientError {
+    if error.is_decode() {
+        RedmineClientError::Client {
+            reason: error.to_string(),
+        }
+    } else {
+        RedmineClientError::Network {
+            reason: error.to_string(),
+        }
+    }
+}
+
+fn parse_datetime(value: &str) -> Result<DateTime<Local>, RedmineClientError> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|dt| dt.with_timezone(&Local))
+        .map_err(|error| RedmineClientError::Client {
+            reason: format!("failed to parse Redmine datetime '{value}': {error}"),
+        })
+}
+
+fn parse_optional_date(
+    value: Option<String>,
+) -> Result<Option<DateTime<Local>>, RedmineClientError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+
+    if value.is_empty() {
+        return Ok(None);
+    }
+
+    let date = NaiveDate::parse_from_str(&value, "%Y-%m-%d").map_err(|error| {
+        RedmineClientError::Client {
+            reason: format!("failed to parse Redmine date '{value}': {error}"),
+        }
+    })?;
+    let datetime = date
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| RedmineClientError::Client {
+            reason: format!("failed to convert Redmine date '{value}' to datetime"),
+        })?;
+
+    Local
+        .from_local_datetime(&datetime)
+        .single()
+        .ok_or_else(|| RedmineClientError::Client {
+            reason: format!("failed to convert Redmine date '{value}' to local datetime"),
+        })
+        .map(Some)
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+struct PageInfo {
+    #[serde(default)]
+    total_count: Option<usize>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+impl PageInfo {
+    fn is_last_page(self, offset: usize, page_item_count: usize) -> bool {
+        if page_item_count == 0 {
+            return true;
+        }
+
+        let limit = self.limit.unwrap_or(PAGE_LIMIT);
+        if page_item_count < limit {
+            return true;
+        }
+
+        self.total_count
+            .map(|total_count| offset + page_item_count >= total_count)
+            .unwrap_or(true)
+    }
+}
+
+trait PaginatedResponse {
+    type Item;
+
+    fn into_parts(self) -> (Vec<Self::Item>, PageInfo);
+}
+
+#[derive(Deserialize)]
+struct NamedRedmineEntity {
+    id: u16,
+    name: String,
+}
+
+impl From<NamedRedmineEntity> for Category {
+    fn from(value: NamedRedmineEntity) -> Self {
+        Self {
+            id: CategoryId::new(value.id),
+            name: value.name,
+        }
+    }
+}
+
+impl From<NamedRedmineEntity> for Priority {
+    fn from(value: NamedRedmineEntity) -> Self {
+        Self {
+            id: PriorityId::new(value.id),
+            name: value.name,
+        }
+    }
+}
+
+impl From<NamedRedmineEntity> for Project {
+    fn from(value: NamedRedmineEntity) -> Self {
+        Self {
+            id: ProjectId::new(value.id),
+            name: value.name,
+        }
+    }
+}
+
+impl From<NamedRedmineEntity> for TargetVersion {
+    fn from(value: NamedRedmineEntity) -> Self {
+        Self {
+            id: TargetVersionId::new(value.id),
+            name: value.name,
+        }
+    }
+}
+
+impl From<NamedRedmineEntity> for Tracker {
+    fn from(value: NamedRedmineEntity) -> Self {
+        Self {
+            id: TrackerId::new(value.id),
+            name: value.name,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct RedmineIssueStatus {
+    id: u16,
+    name: String,
+    is_closed: bool,
+}
+
+impl From<RedmineIssueStatus> for IssueStatus {
+    fn from(value: RedmineIssueStatus) -> Self {
+        Self {
+            id: IssueStatusId::new(value.id),
+            name: value.name,
+            is_closed: value.is_closed,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct RedmineTimeEntryActivity {
+    id: u16,
+    name: String,
+    is_default: bool,
+}
+
+impl From<RedmineTimeEntryActivity> for TimeEntityActivity {
+    fn from(value: RedmineTimeEntryActivity) -> Self {
+        Self {
+            id: TimeEntityActivityId::new(value.id),
+            name: value.name,
+            is_default: value.is_default,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct RedmineUser {
+    id: u16,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    firstname: Option<String>,
+    #[serde(default)]
+    lastname: Option<String>,
+}
+
+impl RedmineUser {
+    fn display_name(self) -> String {
+        if let Some(name) = self.name {
+            return name;
+        }
+
+        match (self.firstname, self.lastname) {
+            (Some(firstname), Some(lastname)) if !lastname.is_empty() => {
+                format!("{firstname} {lastname}")
+            }
+            (Some(firstname), _) => firstname,
+            (_, Some(lastname)) => lastname,
+            _ => String::new(),
+        }
+    }
+}
+
+impl From<RedmineUser> for User {
+    fn from(value: RedmineUser) -> Self {
+        Self {
+            id: UserId::new(value.id),
+            name: value.display_name(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct UsersResponse {
+    users: Vec<RedmineUser>,
+    #[serde(flatten)]
+    page_info: PageInfo,
+}
+
+impl PaginatedResponse for UsersResponse {
+    type Item = User;
+
+    fn into_parts(self) -> (Vec<Self::Item>, PageInfo) {
+        (
+            self.users.into_iter().map(Into::into).collect(),
+            self.page_info,
+        )
+    }
+}
+
+#[derive(Deserialize)]
+struct ProjectsResponse {
+    projects: Vec<NamedRedmineEntity>,
+    #[serde(flatten)]
+    page_info: PageInfo,
+}
+
+impl PaginatedResponse for ProjectsResponse {
+    type Item = Project;
+
+    fn into_parts(self) -> (Vec<Self::Item>, PageInfo) {
+        (
+            self.projects.into_iter().map(Into::into).collect(),
+            self.page_info,
+        )
+    }
+}
+
+#[derive(Deserialize)]
+struct IssueCategoriesResponse {
+    issue_categories: Vec<NamedRedmineEntity>,
+    #[serde(flatten)]
+    page_info: PageInfo,
+}
+
+impl PaginatedResponse for IssueCategoriesResponse {
+    type Item = Category;
+
+    fn into_parts(self) -> (Vec<Self::Item>, PageInfo) {
+        (
+            self.issue_categories.into_iter().map(Into::into).collect(),
+            self.page_info,
+        )
+    }
+}
+
+#[derive(Deserialize)]
+struct VersionsResponse {
+    versions: Vec<NamedRedmineEntity>,
+    #[serde(flatten)]
+    page_info: PageInfo,
+}
+
+impl PaginatedResponse for VersionsResponse {
+    type Item = TargetVersion;
+
+    fn into_parts(self) -> (Vec<Self::Item>, PageInfo) {
+        (
+            self.versions.into_iter().map(Into::into).collect(),
+            self.page_info,
+        )
+    }
+}
+
+#[derive(Deserialize)]
+struct IssueStatusesResponse {
+    issue_statuses: Vec<RedmineIssueStatus>,
+}
+
+#[derive(Deserialize)]
+struct PrioritiesResponse {
+    issue_priorities: Vec<NamedRedmineEntity>,
+}
+
+#[derive(Deserialize)]
+struct TimeEntryActivitiesResponse {
+    time_entry_activities: Vec<RedmineTimeEntryActivity>,
+}
+
+#[derive(Deserialize)]
+struct TrackersResponse {
+    trackers: Vec<NamedRedmineEntity>,
+}
+
+#[derive(Deserialize)]
+struct IssueResponse {
+    issue: RedmineIssue,
+}
+
+#[derive(Deserialize)]
+struct RedmineIssue {
+    id: u16,
+    subject: String,
+    author: RedmineIdRef,
+    created_on: String,
+    updated_on: String,
+    project: RedmineIdRef,
+    tracker: RedmineIdRef,
+    status: RedmineIdRef,
+    priority: RedmineIdRef,
+    #[serde(default)]
+    assigned_to: Option<RedmineIdRef>,
+    #[serde(default)]
+    fixed_version: Option<RedmineIdRef>,
+    #[serde(default)]
+    start_date: Option<String>,
+    #[serde(default)]
+    due_date: Option<String>,
+    done_ratio: u16,
+    #[serde(default)]
+    estimated_hours: Option<f64>,
+    #[serde(default)]
+    total_spent_hours: Option<f64>,
+    #[serde(default)]
+    category: Option<RedmineIdRef>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    children: Vec<RedmineIdRef>,
+    #[serde(default)]
+    journals: Vec<RedmineIdRef>,
+}
+
+impl TryFrom<RedmineIssue> for Issue {
+    type Error = RedmineClientError;
+
+    fn try_from(value: RedmineIssue) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: IssueId::new(value.id),
+            subject: value.subject,
+            author_id: UserId::new(value.author.id),
+            created_on: parse_datetime(&value.created_on)?,
+            updated_on: parse_datetime(&value.updated_on)?,
+            project_id: ProjectId::new(value.project.id),
+            tracker_id: TrackerId::new(value.tracker.id),
+            status_id: IssueStatusId::new(value.status.id),
+            priority_id: PriorityId::new(value.priority.id),
+            assigned_to_id: value
+                .assigned_to
+                .map(|assigned_to| UserId::new(assigned_to.id)),
+            target_version_id: value
+                .fixed_version
+                .map(|fixed_version| TargetVersionId::new(fixed_version.id)),
+            start_date: parse_optional_date(value.start_date)?,
+            due_date: parse_optional_date(value.due_date)?,
+            done_ratio: value.done_ratio,
+            estimated_hours: value.estimated_hours.map(|hours| hours as u16),
+            total_spent_hours: value.total_spent_hours,
+            category_id: value.category.map(|category| CategoryId::new(category.id)),
+            description: value.description.unwrap_or_default(),
+            child_ids: value
+                .children
+                .into_iter()
+                .map(|child| IssueId::new(child.id))
+                .collect(),
+            journal_ids: value
+                .journals
+                .into_iter()
+                .map(|journal| JournalId::new(journal.id))
+                .collect(),
+        })
+    }
+}
+
+#[derive(Deserialize)]
+struct RedmineIdRef {
+    id: u16,
+}
+
+#[cfg(test)]
+#[path = "default_tests/mod.rs"]
+mod tests;

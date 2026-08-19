@@ -7,6 +7,20 @@ use std::process::{Command, Stdio};
 use yaml_rust::{Yaml, YamlLoader};
 
 const ACTIVITY_ID_OFFSET: u16 = 10_000;
+const REDMINE_TUI_TEST_API_USER_ID: u16 = 1;
+const REDMINE_TUI_TEST_API_KEY: &str = "0123456789abcdef0123456789abcdef01234567";
+const REDMINE_CLIENT_INTEGRATION_TESTS: &[&str] = &[
+    "clients::redmine::default::tests::get_categories::get_categories_contract_against_redmine_container",
+    "clients::redmine::default::tests::get_issue::get_issue_contract_against_redmine_container",
+    "clients::redmine::default::tests::get_projects::get_projects_contract_against_redmine_container",
+    "clients::redmine::default::tests::get_static_lists::get_issue_statuses_contract_against_redmine_container",
+    "clients::redmine::default::tests::get_static_lists::get_priorities_contract_against_redmine_container",
+    "clients::redmine::default::tests::get_static_lists::get_time_entity_activities_contract_against_redmine_container",
+    "clients::redmine::default::tests::get_static_lists::get_trackers_contract_against_redmine_container",
+    "clients::redmine::default::tests::get_target_versions::get_target_versions_contract_against_redmine_container",
+    "clients::redmine::default::tests::get_users::get_users_contract_against_redmine_container",
+];
+
 fn main() {
     if let Err(err) = run() {
         eprintln!("{err}");
@@ -20,14 +34,24 @@ fn run() -> Result<(), String> {
         return Err(usage());
     };
 
-    if command != "seed-redmine" {
-        return Err(usage());
+    match command.as_str() {
+        "seed-redmine" => seed_redmine(args.collect()),
+        "test-redmine-client" => test_redmine_client(args.collect()),
+        "--help" | "-h" => {
+            println!("{}", usage());
+            Ok(())
+        }
+        _ => Err(usage()),
     }
+}
 
+fn seed_redmine(args: Vec<String>) -> Result<(), String> {
     let mut dry_run = false;
     let mut datas_dir = PathBuf::from("datas");
     let mut reset_sql_path = PathBuf::from("docker/redmine/fresh_test_data.sql");
     let mut compose_file = PathBuf::from("compose.redmine.yml");
+    let mut project_name = None;
+    let mut args = args.into_iter();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -50,6 +74,11 @@ fn run() -> Result<(), String> {
                         .ok_or_else(|| "--compose-file requires a path".to_string())?,
                 );
             }
+            "--project-name" => {
+                project_name = Some(args.next().ok_or_else(|| {
+                    "--project-name requires a docker compose project name".to_string()
+                })?);
+            }
             "--help" | "-h" => {
                 println!("{}", usage());
                 return Ok(());
@@ -69,18 +98,60 @@ fn run() -> Result<(), String> {
         return Ok(());
     }
 
-    run_mysql(&compose_file, &sql)
+    run_mysql(&compose_file, project_name.as_deref(), &sql)
+}
+
+fn test_redmine_client(args: Vec<String>) -> Result<(), String> {
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        println!("{}", usage());
+        return Ok(());
+    }
+    if let Some(arg) = args.first() {
+        return Err(format!(
+            "unknown test-redmine-client option: {arg}\n\n{}",
+            usage()
+        ));
+    }
+
+    for test_filter in REDMINE_CLIENT_INTEGRATION_TESTS {
+        let status = Command::new("cargo")
+            .arg("test")
+            .arg(test_filter)
+            .arg("--")
+            .arg("--ignored")
+            .arg("--test-threads=1")
+            .status()
+            .map_err(|err| {
+                format!("failed to start redmine client integration test {test_filter}: {err}")
+            })?;
+
+        if !status.success() {
+            return Err(format!(
+                "redmine client integration test {test_filter} failed with status: {status}"
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn usage() -> String {
-    "usage: cargo xtask seed-redmine [--dry-run] [--datas-dir datas] [--reset-sql docker/redmine/fresh_test_data.sql] [--compose-file compose.redmine.yml]".to_string()
+    [
+        "usage:",
+        "  cargo xtask seed-redmine [--dry-run] [--datas-dir datas] [--reset-sql docker/redmine/fresh_test_data.sql] [--compose-file compose.redmine.yml] [--project-name NAME]",
+        "  cargo xtask test-redmine-client",
+    ]
+    .join("\n")
 }
 
-fn run_mysql(compose_file: &Path, sql: &str) -> Result<(), String> {
-    let mut child = Command::new("docker")
-        .arg("compose")
-        .arg("-f")
-        .arg(compose_file)
+fn run_mysql(compose_file: &Path, project_name: Option<&str>, sql: &str) -> Result<(), String> {
+    let mut command = Command::new("docker");
+    command.arg("compose").arg("-f").arg(compose_file);
+    if let Some(project_name) = project_name {
+        command.arg("-p").arg(project_name);
+    }
+
+    let mut child = command
         .arg("exec")
         .arg("-T")
         .arg("db")
@@ -218,6 +289,7 @@ impl SeedData {
         let mut sql = String::new();
         sql.push_str("START TRANSACTION;\n\n");
         self.push_users_sql(&mut sql);
+        self.push_api_access_sql(&mut sql);
         self.push_trackers_sql(&mut sql);
         self.push_issue_statuses_sql(&mut sql);
         self.push_enumerations_sql(&mut sql);
@@ -261,6 +333,39 @@ impl SeedData {
                     sql_datetime("2026/01/01")
                 )
             }),
+        );
+        sql.push_str(";\n\n");
+    }
+
+    fn push_api_access_sql(&self, sql: &mut String) {
+        sql.push_str("INSERT INTO settings (name, value, updated_on) VALUES\n");
+        push_values(
+            sql,
+            [
+                format!("('rest_api_enabled', '1', {})", sql_datetime("2026/01/01")),
+                format!("('login_required', '1', {})", sql_datetime("2026/01/01")),
+            ],
+        );
+        sql.push_str(
+            " ON DUPLICATE KEY UPDATE value = VALUES(value), updated_on = VALUES(updated_on);\n\n",
+        );
+
+        sql.push_str("DELETE FROM tokens WHERE action = 'api' AND value = ");
+        sql.push_str(&sql_string(REDMINE_TUI_TEST_API_KEY));
+        sql.push_str(";\n\n");
+
+        sql.push_str(
+            "INSERT INTO tokens (user_id, action, value, created_on, updated_on) VALUES\n",
+        );
+        push_values(
+            sql,
+            [format!(
+                "({}, 'api', {}, {}, {})",
+                REDMINE_TUI_TEST_API_USER_ID,
+                sql_string(REDMINE_TUI_TEST_API_KEY),
+                sql_datetime("2026/01/01"),
+                sql_datetime("2026/01/01")
+            )],
         );
         sql.push_str(";\n\n");
     }
@@ -967,6 +1072,23 @@ mod tests {
         assert!(sql.contains("(1002, 'redmine-tui-user2'"));
         assert!(sql.contains(", 1001, 0, '2026-01-01 00:00:00'"));
         assert!(!sql.contains("(2001, 'redmine-tui-user1'"));
+    }
+
+    #[test]
+    fn seed_sql_enables_rest_api_and_inserts_admin_api_token() {
+        let sql = load_seed_data_sql(
+            &repo_path("datas"),
+            &repo_path("docker/redmine/fresh_test_data.sql"),
+        )
+        .expect("seed SQL should be generated from repository fixtures");
+
+        assert!(sql.contains("('rest_api_enabled', '1'"));
+        assert!(sql.contains("('login_required', '1'"));
+        assert!(sql.contains(
+            "DELETE FROM tokens WHERE action = 'api' AND value = '0123456789abcdef0123456789abcdef01234567';"
+        ));
+        assert!(sql.contains("(1, 'api', '0123456789abcdef0123456789abcdef01234567'"));
+        assert!(sql.contains("'0123456789abcdef0123456789abcdef01234567'"));
     }
 
     #[test]

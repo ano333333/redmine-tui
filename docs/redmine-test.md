@@ -60,6 +60,23 @@ The seeder currently inserts the fixture data present under `datas/`:
 - projects, users, trackers, issue statuses, priorities, target versions, categories, and time entry activities
 - issues from `datas/issues/*.yml`, preserving issue IDs
 - journals and journal details from `datas/journals/*.yml`
+- REST API access for the Redmine admin user via API key `0123456789abcdef0123456789abcdef01234567`
+
+When seeding a Docker Compose project with a non-default project name, pass it through:
+
+```sh
+cargo xtask seed-redmine --project-name redmine-tui-client-test
+```
+
+## Redmine Client Integration Tests
+
+Unit tests use `wiremock` and run with normal `cargo test`. Docker-backed Redmine client tests are ignored by default and run through `xtask`:
+
+```sh
+cargo xtask test-redmine-client
+```
+
+The integration command starts Redmine with `testcontainers`, seeds fixture data, and runs small method-level contract tests for `DefaultRedmineClient`.
 
 ## Seeder Checks
 
