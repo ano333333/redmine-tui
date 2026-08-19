@@ -13,6 +13,7 @@ DELETE FROM projects;
 DELETE FROM trackers;
 DELETE FROM issue_statuses;
 DELETE FROM enumerations;
+DELETE FROM tokens WHERE action = 'api' AND (user_id >= 1000 OR value = '0123456789abcdef0123456789abcdef01234567');
 DELETE FROM email_addresses WHERE address LIKE 'redmine-tui-%@example.test';
 DELETE FROM user_preferences WHERE user_id >= 1000;
 DELETE FROM users WHERE id >= 1000 AND login LIKE 'redmine-tui-%';
