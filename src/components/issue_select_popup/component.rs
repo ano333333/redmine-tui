@@ -199,7 +199,7 @@ mod tests {
 
     use crate::app::Action;
     use crate::components::issue_select_popup::widget::IssueSelectPopupFocusColumn;
-    use crate::test_support::render_snapshot;
+    use crate::test_support::{render_snapshot, sync_fixture_entities};
 
     const AREA: Rect = Rect {
         x: 0,
@@ -214,7 +214,7 @@ mod tests {
 
     fn store() -> Store {
         let mut store = Store::new();
-        store.consume_action(Action::LoadProjects);
+        sync_fixture_entities(&mut store);
         store.consume_action(Action::LoadIssue { id: 1.into() });
         store.consume_action(Action::LoadIssue { id: 2.into() });
         store.consume_action(Action::LoadIssue { id: 3.into() });

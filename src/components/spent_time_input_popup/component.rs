@@ -261,7 +261,7 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::Action;
+    use crate::test_support::sync_fixture_entities;
     use crossterm::event::KeyEvent;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
@@ -269,7 +269,7 @@ mod tests {
 
     fn store_with_time_entity_activities() -> Store {
         let mut store = Store::new();
-        store.consume_action(Action::LoadTimeEntityActivities);
+        sync_fixture_entities(&mut store);
         store
     }
 

@@ -26,6 +26,23 @@ This shell provides Rust, Cargo, Clippy, `cargo-insta`, and LLVM coverage tools.
 cargo run
 ```
 
+The TUI requires `REDMINE_API_KEY` to load initial Redmine entities from a
+Redmine server at startup. If the required environment variable is missing, or
+if the initial load fails, the app prints the error reason and exits.
+
+```sh
+REDMINE_API_KEY=0123456789abcdef0123456789abcdef01234567 cargo run
+```
+
+TUI connection environment variables:
+
+- `REDMINE_API_KEY`: required Redmine REST API access key. The TUI loads users,
+  statuses, priorities, projects, trackers, versions, categories, and time entry
+  activities from Redmine at startup.
+- `REDMINE_URL`: Redmine base URL. If omitted, the TUI uses
+  `http://127.0.0.1:${REDMINE_PORT:-8080}`.
+- `REDMINE_PORT`: fallback port used only when `REDMINE_URL` is omitted.
+
 Key bindings shown in the application:
 
 - `Left` / `Right`: shrink or expand the rendered width

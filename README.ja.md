@@ -26,6 +26,23 @@ nix develop
 cargo run
 ```
 
+TUI は起動直後に Redmine から初期 Entity を読み込むため、
+`REDMINE_API_KEY` を必要とします。必須の環境変数がない場合、または初期
+読み込みに失敗した場合は、エラー理由を表示して終了します。
+
+```sh
+REDMINE_API_KEY=0123456789abcdef0123456789abcdef01234567 cargo run
+```
+
+TUI 接続用の環境変数:
+
+- `REDMINE_API_KEY`: 必須。Redmine REST API のアクセスキー。起動時に
+  user、status、priority、project、tracker、version、category、
+  time entry activity を Redmine から読み込みます。
+- `REDMINE_URL`: Redmine の base URL。未指定の場合、
+  `http://127.0.0.1:${REDMINE_PORT:-8080}` を使用します。
+- `REDMINE_PORT`: `REDMINE_URL` 未指定時だけ使われる fallback port。
+
 アプリ内に表示されるキー操作:
 
 - `Left` / `Right`: 描画幅を縮小、拡大

@@ -1,16 +1,21 @@
-use std::collections::HashMap;
 use std::fs;
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use yaml_rust::{Yaml, YamlLoader};
 
+#[cfg(test)]
+use std::collections::HashMap;
+
+#[cfg(test)]
 use crate::entities::{
-    Category, Issue, IssueStatus, Journal, Priority, Project, TargetVersion, TimeEntityActivity,
-    Tracker, User,
+    Category, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity, Tracker, User,
 };
+use crate::entities::{Issue, Journal};
+#[cfg(test)]
+use crate::vos::TimeEntityActivityId;
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId,
-    PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
 };
 
 fn read_yaml(path: &str) -> Yaml {
@@ -34,6 +39,7 @@ fn as_string(yaml: &Yaml, key: &str) -> String {
         .to_string()
 }
 
+#[cfg(test)]
 fn as_bool(yaml: &Yaml, key: &str) -> bool {
     yaml[key].as_bool().expect(format!("no {}", key).as_str())
 }
@@ -192,6 +198,7 @@ pub fn parse_issue_yaml(id: u16) -> Issue {
     }
 }
 
+#[cfg(test)]
 pub fn parse_users_yaml() -> HashMap<UserId, User> {
     let yaml = read_yaml("datas/users.yml");
     let entries = yaml["users"].as_vec().expect("no users");
@@ -208,6 +215,7 @@ pub fn parse_users_yaml() -> HashMap<UserId, User> {
         .collect()
 }
 
+#[cfg(test)]
 pub fn parse_issue_statuses_yaml() -> HashMap<IssueStatusId, IssueStatus> {
     let yaml = read_yaml("datas/issue_statuses.yml");
     let entries = yaml["issue_statuses"].as_vec().expect("no issue_statuses");
@@ -225,6 +233,7 @@ pub fn parse_issue_statuses_yaml() -> HashMap<IssueStatusId, IssueStatus> {
         .collect()
 }
 
+#[cfg(test)]
 pub fn parse_priorities_yaml() -> HashMap<PriorityId, Priority> {
     let yaml = read_yaml("datas/priorities.yml");
     let entries = yaml["priorities"].as_vec().expect("no priorities");
@@ -241,6 +250,7 @@ pub fn parse_priorities_yaml() -> HashMap<PriorityId, Priority> {
         .collect()
 }
 
+#[cfg(test)]
 pub fn parse_projects_yaml() -> HashMap<ProjectId, Project> {
     let yaml = read_yaml("datas/projects.yml");
     let entries = yaml["projects"].as_vec().expect("no projects");
@@ -257,6 +267,7 @@ pub fn parse_projects_yaml() -> HashMap<ProjectId, Project> {
         .collect()
 }
 
+#[cfg(test)]
 pub fn parse_trackers_yaml() -> HashMap<TrackerId, Tracker> {
     let yaml = read_yaml("datas/trackers.yml");
     let entries = yaml["trackers"].as_vec().expect("no trackers");
@@ -273,6 +284,7 @@ pub fn parse_trackers_yaml() -> HashMap<TrackerId, Tracker> {
         .collect()
 }
 
+#[cfg(test)]
 pub fn parse_target_versions_yaml() -> HashMap<TargetVersionId, TargetVersion> {
     let yaml = read_yaml("datas/target_versions.yml");
     let entries = yaml["target_versions"]
@@ -291,6 +303,7 @@ pub fn parse_target_versions_yaml() -> HashMap<TargetVersionId, TargetVersion> {
         .collect()
 }
 
+#[cfg(test)]
 pub fn parse_categories_yaml() -> HashMap<CategoryId, Category> {
     let yaml = read_yaml("datas/categories.yml");
     let entries = yaml["categories"].as_vec().expect("no categories");
@@ -307,6 +320,7 @@ pub fn parse_categories_yaml() -> HashMap<CategoryId, Category> {
         .collect()
 }
 
+#[cfg(test)]
 pub fn parse_time_entity_activities_yaml() -> HashMap<TimeEntityActivityId, TimeEntityActivity> {
     let yaml = read_yaml("datas/time_entity_activities.yml");
     let entries = yaml["time_entity_activities"]

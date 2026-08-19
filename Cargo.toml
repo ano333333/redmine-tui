@@ -25,7 +25,7 @@ reqwest = { version = "0.12.23", default-features = false, features = [
 ] }
 serde = { version = "1.0.219", features = ["derive"] }
 time = "0.3.53"
-tokio = { version = "1.42", features = ["rt", "rt-multi-thread", "time", "sync", "process"] }
+tokio = { version = "1.42", features = ["rt", "rt-multi-thread", "time", "sync", "process", "macros"] }
 tracing = "0.1.44"
 tracing-error = "0.2.1"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }

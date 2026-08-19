@@ -535,13 +535,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
-            dispatcher_ref.dispatch(Action::LoadUsers);
-            dispatcher_ref.dispatch(Action::LoadIssueStatuses);
-            dispatcher_ref.dispatch(Action::LoadPriorities);
-            dispatcher_ref.dispatch(Action::LoadProjects);
-            dispatcher_ref.dispatch(Action::LoadTrackers);
-            dispatcher_ref.dispatch(Action::LoadTargetVersions);
-            dispatcher_ref.dispatch(Action::LoadCategories);
+            crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher_ref);
             dispatcher_ref.dispatch(Action::LoadIssue { id: 3.into() });
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
@@ -563,13 +557,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
-            dispatcher_ref.dispatch(Action::LoadUsers);
-            dispatcher_ref.dispatch(Action::LoadIssueStatuses);
-            dispatcher_ref.dispatch(Action::LoadPriorities);
-            dispatcher_ref.dispatch(Action::LoadProjects);
-            dispatcher_ref.dispatch(Action::LoadTrackers);
-            dispatcher_ref.dispatch(Action::LoadTargetVersions);
-            dispatcher_ref.dispatch(Action::LoadCategories);
+            crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher_ref);
             dispatcher_ref.dispatch(Action::LoadIssue { id: 1.into() });
             dispatcher_ref.dispatch(Action::LoadIssue { id: 3.into() });
             while dispatcher_ref.consume_actinos_len() > 0 {

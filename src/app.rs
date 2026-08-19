@@ -4,11 +4,7 @@ use crate::entities::{
     Category, Issue, IssueStatus, Journal, Priority, Project, TargetVersion, TimeEntityActivity,
     Tracker, User,
 };
-use crate::libs::yaml::{
-    parse_categories_yaml, parse_issue_statuses_yaml, parse_issue_yaml, parse_journal_yaml,
-    parse_priorities_yaml, parse_projects_yaml, parse_target_versions_yaml,
-    parse_time_entity_activities_yaml, parse_trackers_yaml, parse_users_yaml,
-};
+use crate::libs::yaml::{parse_issue_yaml, parse_journal_yaml};
 use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
     IssueDueDateDiff, IssueStartDateDiff, IssueStatusIdDiff, IssueTargetVersionIdDiff,
@@ -93,45 +89,52 @@ impl Store {
 
     pub fn consume_action(&mut self, action: Action) {
         match action {
-            Action::LoadUsers => {
-                if self.users.is_empty() {
-                    self.users = parse_users_yaml();
-                }
+            Action::SyncUsers { users } => {
+                self.users = users.into_iter().map(|user| (user.id, user)).collect();
             }
-            Action::LoadIssueStatuses => {
-                if self.issue_statuses.is_empty() {
-                    self.issue_statuses = parse_issue_statuses_yaml();
-                }
+            Action::SyncIssueStatuses { issue_statuses } => {
+                self.issue_statuses = issue_statuses
+                    .into_iter()
+                    .map(|issue_status| (issue_status.id, issue_status))
+                    .collect();
             }
-            Action::LoadPriorities => {
-                if self.priorities.is_empty() {
-                    self.priorities = parse_priorities_yaml();
-                }
+            Action::SyncPriorities { priorities } => {
+                self.priorities = priorities
+                    .into_iter()
+                    .map(|priority| (priority.id, priority))
+                    .collect();
             }
-            Action::LoadProjects => {
-                if self.projects.is_empty() {
-                    self.projects = parse_projects_yaml();
-                }
+            Action::SyncProjects { projects } => {
+                self.projects = projects
+                    .into_iter()
+                    .map(|project| (project.id, project))
+                    .collect();
             }
-            Action::LoadTrackers => {
-                if self.trackers.is_empty() {
-                    self.trackers = parse_trackers_yaml();
-                }
+            Action::SyncTrackers { trackers } => {
+                self.trackers = trackers
+                    .into_iter()
+                    .map(|tracker| (tracker.id, tracker))
+                    .collect();
             }
-            Action::LoadTargetVersions => {
-                if self.target_versions.is_empty() {
-                    self.target_versions = parse_target_versions_yaml();
-                }
+            Action::SyncTargetVersions { target_versions } => {
+                self.target_versions = target_versions
+                    .into_iter()
+                    .map(|target_version| (target_version.id, target_version))
+                    .collect();
             }
-            Action::LoadCategories => {
-                if self.categories.is_empty() {
-                    self.categories = parse_categories_yaml();
-                }
+            Action::SyncCategories { categories } => {
+                self.categories = categories
+                    .into_iter()
+                    .map(|category| (category.id, category))
+                    .collect();
             }
-            Action::LoadTimeEntityActivities => {
-                if self.time_entity_activities.is_empty() {
-                    self.time_entity_activities = parse_time_entity_activities_yaml();
-                }
+            Action::SyncTimeEntityActivities {
+                time_entity_activities,
+            } => {
+                self.time_entity_activities = time_entity_activities
+                    .into_iter()
+                    .map(|activity| (activity.id, activity))
+                    .collect();
             }
             Action::LoadIssue { id } => {
                 self.issues.entry(id).or_insert(parse_issue_yaml(id.get()));
@@ -417,14 +420,30 @@ impl Store {
 }
 
 pub enum Action {
-    LoadUsers,
-    LoadIssueStatuses,
-    LoadPriorities,
-    LoadProjects,
-    LoadTrackers,
-    LoadTargetVersions,
-    LoadCategories,
-    LoadTimeEntityActivities,
+    SyncUsers {
+        users: Vec<User>,
+    },
+    SyncIssueStatuses {
+        issue_statuses: Vec<IssueStatus>,
+    },
+    SyncPriorities {
+        priorities: Vec<Priority>,
+    },
+    SyncProjects {
+        projects: Vec<Project>,
+    },
+    SyncTrackers {
+        trackers: Vec<Tracker>,
+    },
+    SyncTargetVersions {
+        target_versions: Vec<TargetVersion>,
+    },
+    SyncCategories {
+        categories: Vec<Category>,
+    },
+    SyncTimeEntityActivities {
+        time_entity_activities: Vec<TimeEntityActivity>,
+    },
     LoadIssue {
         id: IssueId,
     },
@@ -484,16 +503,19 @@ pub enum Action {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{local_datetime, sample_issue};
+    use crate::test_support::{local_datetime, sample_issue, sync_fixture_entities};
     use crate::vos::IssuePropertyDiff;
     use crate::vos::issue_property_diff::{IssueDueDateDiff, IssueStartDateDiff};
-    use crate::vos::{CategoryId, TargetVersionId};
+    use crate::vos::{
+        CategoryId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId,
+        TrackerId, UserId,
+    };
 
     #[test]
-    fn load_target_versions_populates_store() {
+    fn sync_fixture_entities_populates_target_versions() {
         let mut store = Store::new();
 
-        store.consume_action(Action::LoadTargetVersions);
+        sync_fixture_entities(&mut store);
 
         let target_version = store
             .get_target_version(TargetVersionId::new(1))
@@ -543,10 +565,10 @@ mod tests {
     }
 
     #[test]
-    fn load_categories_populates_store() {
+    fn sync_fixture_entities_populates_categories() {
         let mut store = Store::new();
 
-        store.consume_action(Action::LoadCategories);
+        sync_fixture_entities(&mut store);
 
         let category = store
             .get_category(CategoryId::new(1))
@@ -843,5 +865,173 @@ mod tests {
         assert_eq!(issue.description, "body");
         assert_eq!(state, IssueState::Synced);
         assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
+    }
+
+    #[test]
+    fn sync_users_replaces_users() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::SyncUsers {
+            users: vec![User {
+                id: UserId::new(1001),
+                name: "redmine user".to_string(),
+            }],
+        });
+
+        assert_eq!(store.get_users().len(), 1);
+        assert_eq!(
+            store
+                .get_user(UserId::new(1001))
+                .expect("user should be synced")
+                .name,
+            "redmine user"
+        );
+    }
+
+    #[test]
+    fn sync_issue_statuses_replaces_issue_statuses() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::SyncIssueStatuses {
+            issue_statuses: vec![IssueStatus {
+                id: IssueStatusId::new(10),
+                name: "redmine status".to_string(),
+                is_closed: false,
+            }],
+        });
+
+        assert_eq!(store.get_issue_statuses().len(), 1);
+        assert_eq!(
+            store.get_issue_status(IssueStatusId::new(10)).name,
+            "redmine status"
+        );
+    }
+
+    #[test]
+    fn sync_priorities_replaces_priorities() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::SyncPriorities {
+            priorities: vec![Priority {
+                id: PriorityId::new(20),
+                name: "redmine priority".to_string(),
+            }],
+        });
+
+        assert_eq!(store.get_priorities().len(), 1);
+        assert_eq!(
+            store
+                .get_priority(PriorityId::new(20))
+                .expect("priority should be synced")
+                .name,
+            "redmine priority"
+        );
+    }
+
+    #[test]
+    fn sync_projects_replaces_projects() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::SyncProjects {
+            projects: vec![Project {
+                id: ProjectId::new(30),
+                name: "redmine project".to_string(),
+            }],
+        });
+
+        assert_eq!(store.get_projects().len(), 1);
+        assert_eq!(
+            store
+                .get_project(ProjectId::new(30))
+                .expect("project should be synced")
+                .name,
+            "redmine project"
+        );
+    }
+
+    #[test]
+    fn sync_trackers_replaces_trackers() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::SyncTrackers {
+            trackers: vec![Tracker {
+                id: TrackerId::new(40),
+                name: "redmine tracker".to_string(),
+            }],
+        });
+
+        assert_eq!(store.get_trackers().len(), 1);
+        assert_eq!(
+            store
+                .get_tracker(TrackerId::new(40))
+                .expect("tracker should be synced")
+                .name,
+            "redmine tracker"
+        );
+    }
+
+    #[test]
+    fn sync_target_versions_replaces_target_versions() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::SyncTargetVersions {
+            target_versions: vec![TargetVersion {
+                id: TargetVersionId::new(50),
+                name: "redmine version".to_string(),
+            }],
+        });
+
+        assert_eq!(store.get_target_versions().len(), 1);
+        assert_eq!(
+            store
+                .get_target_version(TargetVersionId::new(50))
+                .expect("target version should be synced")
+                .name,
+            "redmine version"
+        );
+    }
+
+    #[test]
+    fn sync_categories_replaces_categories() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::SyncCategories {
+            categories: vec![Category {
+                id: CategoryId::new(60),
+                name: "redmine category".to_string(),
+            }],
+        });
+
+        assert_eq!(store.get_categories().len(), 1);
+        assert_eq!(
+            store
+                .get_category(CategoryId::new(60))
+                .expect("category should be synced")
+                .name,
+            "redmine category"
+        );
+    }
+
+    #[test]
+    fn sync_time_entity_activities_replaces_time_entity_activities() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::SyncTimeEntityActivities {
+            time_entity_activities: vec![TimeEntityActivity {
+                id: TimeEntityActivityId::new(70),
+                name: "redmine activity".to_string(),
+                is_default: true,
+            }],
+        });
+
+        assert_eq!(store.get_time_entity_activities().len(), 1);
+        assert_eq!(
+            store
+                .get_time_entity_activities()
+                .get(&TimeEntityActivityId::new(70))
+                .expect("time entity activity should be synced")
+                .name,
+            "redmine activity"
+        );
     }
 }

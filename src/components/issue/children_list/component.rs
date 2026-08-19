@@ -92,7 +92,7 @@ impl ChildrenListComponent {
 mod tests {
     use super::*;
     use crate::app::Action;
-    use crate::test_support::render_snapshot;
+    use crate::test_support::{render_snapshot, sync_fixture_entities};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Position;
 
@@ -102,8 +102,7 @@ mod tests {
 
     fn store_with_parent_and_children() -> Store {
         let mut store = Store::new();
-        store.consume_action(Action::LoadUsers);
-        store.consume_action(Action::LoadIssueStatuses);
+        sync_fixture_entities(&mut store);
         store.consume_action(Action::LoadIssue { id: 1.into() });
         store.consume_action(Action::LoadIssue { id: 2.into() });
         store.consume_action(Action::LoadIssue {
