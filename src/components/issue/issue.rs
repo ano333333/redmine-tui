@@ -6,7 +6,7 @@ use ratatui::Frame;
 use ratatui::layout::{Offset, Position, Rect};
 use ratatui::widgets::Widget;
 
-use crate::app::{Dispatcher, Store};
+use crate::app::{Dispatcher, IssueState, Store};
 use crate::entities::Journal;
 use crate::vos::IssueId;
 
@@ -45,6 +45,7 @@ pub enum EventProcessResult {
 mod tests {
     use super::*;
 
+    use crate::app::Action;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn key_event(code: KeyCode) -> Event {
@@ -55,9 +56,38 @@ mod tests {
         Rc::new(RefCell::new(Dispatcher::new()))
     }
 
-    #[test]
-    fn process_event_y_requests_issue_select_popup() {
+    fn dispatcher_with_issue() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = dispatcher();
+        dispatcher
+            .borrow_mut()
+            .dispatch(Action::LoadIssue { id: 3.into() });
+        dispatcher.borrow_mut().consume_action();
+        dispatcher
+    }
+
+    fn dispatcher_with_edited_issue() -> Rc<RefCell<Dispatcher>> {
+        let dispatcher = dispatcher_with_issue();
+        dispatcher.borrow_mut().dispatch(Action::UpdateIssue {
+            id: 3.into(),
+            body: "updated body".to_string(),
+        });
+        dispatcher.borrow_mut().consume_action();
+        dispatcher
+    }
+
+    #[test]
+    fn process_event_y_returns_none_when_issue_is_not_edited() {
+        let dispatcher = dispatcher_with_issue();
+        let mut component = IssueDetailComponent::new(dispatcher.clone(), 3);
+
+        let result = component.process_event(key_event(KeyCode::Char('y')), dispatcher);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn process_event_y_requests_issue_select_popup_when_issue_is_edited() {
+        let dispatcher = dispatcher_with_edited_issue();
         let mut component = IssueDetailComponent::new(dispatcher.clone(), 3);
 
         let result = component.process_event(key_event(KeyCode::Char('y')), dispatcher);
@@ -117,11 +147,21 @@ impl IssueDetailComponent {
     pub fn process_event(
         &mut self,
         event: crossterm::event::Event,
-        _: Rc<RefCell<Dispatcher>>,
+        dispatcher: Rc<RefCell<Dispatcher>>,
     ) -> Option<EventProcessResult> {
         if let Event::Key(key) = &event {
             match key.code {
                 KeyCode::Char('y') => {
+                    let is_edited = {
+                        let dispatcher_ref = dispatcher.borrow();
+                        matches!(
+                            dispatcher_ref.store().get_issue(self.id),
+                            Some((_, IssueState::Edited))
+                        )
+                    };
+                    if !is_edited {
+                        return None;
+                    }
                     return Some(EventProcessResult::OpenIssueSelectPopup);
                 }
                 KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {

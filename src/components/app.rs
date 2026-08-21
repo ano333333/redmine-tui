@@ -557,12 +557,32 @@ mod tests {
         dispatcher
     }
 
+    fn mark_issue_edited(dispatcher: Rc<RefCell<Dispatcher>>, id: IssueId) {
+        dispatcher.borrow_mut().dispatch(Action::UpdateIssue {
+            id,
+            body: "updated body".to_string(),
+        });
+        dispatcher.borrow_mut().consume_action();
+    }
+
+    fn loaded_dispatcher_with_edited_issue() -> Rc<RefCell<Dispatcher>> {
+        let dispatcher = loaded_dispatcher();
+        mark_issue_edited(dispatcher.clone(), IssueId::new(3));
+        dispatcher
+    }
+
     fn dispatcher_with_issue() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         dispatcher
             .borrow_mut()
             .dispatch(Action::LoadIssue { id: 3.into() });
         dispatcher.borrow_mut().consume_action();
+        dispatcher
+    }
+
+    fn dispatcher_with_edited_selectable_issues() -> Rc<RefCell<Dispatcher>> {
+        let dispatcher = dispatcher_with_selectable_issues();
+        mark_issue_edited(dispatcher.clone(), IssueId::new(3));
         dispatcher
     }
 
@@ -781,7 +801,7 @@ mod tests {
 
     #[test]
     fn y_key_opens_issue_select_popup_with_loaded_projects_and_issues() {
-        let dispatcher = loaded_dispatcher();
+        let dispatcher = loaded_dispatcher_with_edited_issue();
         let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
@@ -817,11 +837,12 @@ mod tests {
 
     #[test]
     fn q_key_closes_open_issue_select_popup() {
-        let dispatcher = loaded_dispatcher();
+        let dispatcher = loaded_dispatcher_with_edited_issue();
         let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
         app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
+        assert_eq!(app.popup_components.len(), 1);
         app.process_event(key_event(KeyCode::Char('q')), dispatcher.clone());
 
         assert!(app.popup_components.is_empty());
@@ -834,7 +855,14 @@ mod tests {
         let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
-        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
+        let popup_component = {
+            let dispatcher_ref = dispatcher.borrow();
+            IssueSelectPopupComponent::new(dispatcher_ref.store(), IssueId::new(3))
+        };
+        app.popup_components
+            .push_back(Rc::new(RefCell::new(PopupComponent::IssueSelect(
+                popup_component,
+            ))));
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
         crate::test_support::render_frame_snapshot(
@@ -847,7 +875,7 @@ mod tests {
 
     #[test]
     fn enter_on_different_issue_in_issue_select_popup_replaces_issue_detail_component() {
-        let dispatcher = dispatcher_with_selectable_issues();
+        let dispatcher = dispatcher_with_edited_selectable_issues();
         let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
