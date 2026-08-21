@@ -338,17 +338,19 @@ impl SeedData {
     }
 
     fn push_api_access_sql(&self, sql: &mut String) {
+        sql.push_str(
+            "DELETE FROM settings WHERE name IN ('rest_api_enabled', 'login_required');\n\n",
+        );
+
         sql.push_str("INSERT INTO settings (name, value, updated_on) VALUES\n");
         push_values(
             sql,
             [
-                format!("('rest_api_enabled', '1', {})", sql_datetime("2026/01/01")),
-                format!("('login_required', '1', {})", sql_datetime("2026/01/01")),
+                "('rest_api_enabled', '1', CURRENT_TIMESTAMP)".to_string(),
+                "('login_required', '1', CURRENT_TIMESTAMP)".to_string(),
             ],
         );
-        sql.push_str(
-            " ON DUPLICATE KEY UPDATE value = VALUES(value), updated_on = VALUES(updated_on);\n\n",
-        );
+        sql.push_str(";\n\n");
 
         sql.push_str("DELETE FROM tokens WHERE action = 'api' AND value = ");
         sql.push_str(&sql_string(REDMINE_TUI_TEST_API_KEY));
@@ -1084,6 +1086,12 @@ mod tests {
 
         assert!(sql.contains("('rest_api_enabled', '1'"));
         assert!(sql.contains("('login_required', '1'"));
+        assert!(sql.contains("('rest_api_enabled', '1', CURRENT_TIMESTAMP)"));
+        assert!(sql.contains("('login_required', '1', CURRENT_TIMESTAMP)"));
+        assert!(sql.contains(
+            "DELETE FROM settings WHERE name IN ('rest_api_enabled', 'login_required');"
+        ));
+        assert!(!sql.contains("ON DUPLICATE KEY UPDATE"));
         assert!(sql.contains(
             "DELETE FROM tokens WHERE action = 'api' AND value = '0123456789abcdef0123456789abcdef01234567';"
         ));
