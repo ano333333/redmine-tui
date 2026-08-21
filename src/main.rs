@@ -75,7 +75,7 @@ fn main() -> ExitCode {
     trace_dbg!("start");
     let (worker_action_tx, worker_action_rx) = mpsc::channel::<Action>();
     let mut terminal = ratatui::init();
-    let mut app_component = AppComponent::new(dispatcher.clone());
+    let mut app_component = AppComponent::new(dispatcher.clone(), None);
     app_component.update(
         dispatcher.clone(),
         dispatcher.borrow().store(),

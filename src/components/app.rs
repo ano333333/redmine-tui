@@ -52,7 +52,7 @@ enum PopupComponent<'a> {
 }
 
 pub struct AppComponent<'a> {
-    issue_component: IssueDetailComponent,
+    issue_component: Option<IssueDetailComponent>,
     // popup追加の際は末尾に追加する、先頭要素が最奥に表示される
     popup_components: VecDeque<Rc<RefCell<PopupComponent<'a>>>>,
     dispatcher: Rc<RefCell<Dispatcher>>,
@@ -61,9 +61,13 @@ pub struct AppComponent<'a> {
 }
 
 impl<'a> AppComponent<'a> {
-    pub fn new(dispatcher: Rc<RefCell<Dispatcher>>) -> Self {
+    pub fn new(dispatcher: Rc<RefCell<Dispatcher>>, issue_id: Option<IssueId>) -> Self {
+        let issue_component = match issue_id {
+            Some(issue_id) => Some(IssueDetailComponent::new(dispatcher.clone(), issue_id)),
+            None => None,
+        };
         AppComponent {
-            issue_component: IssueDetailComponent::new(dispatcher.clone(), 3),
+            issue_component,
             popup_components: VecDeque::new(),
             dispatcher,
             pending_effect: None,
@@ -123,9 +127,18 @@ impl<'a> AppComponent<'a> {
                     match result {
                         Some(IssueSelectPopupEventProcessResult::Selected { issue_id }) => {
                             self.popup_components.pop_back();
-                            if issue_id != self.issue_component.id {
-                                self.issue_component =
-                                    IssueDetailComponent::new(dispatcher.clone(), issue_id);
+                            match &mut self.issue_component {
+                                Some(issue_component) if issue_id != issue_component.id => {
+                                    *issue_component =
+                                        IssueDetailComponent::new(dispatcher.clone(), issue_id);
+                                }
+                                None => {
+                                    self.issue_component = Some(IssueDetailComponent::new(
+                                        dispatcher.clone(),
+                                        issue_id,
+                                    ));
+                                }
+                                _ => {}
                             }
                         }
                         Some(IssueSelectPopupEventProcessResult::Quited) => {
@@ -135,18 +148,13 @@ impl<'a> AppComponent<'a> {
                     }
                 }
             }
-        } else {
-            let result = self
-                .issue_component
-                .process_event(event, self.dispatcher.clone());
+        } else if let Some(issue_component) = &mut self.issue_component {
+            let result = issue_component.process_event(event, self.dispatcher.clone());
             match result {
                 Some(IssueEventProcessResult::OpenIssueSelectPopup) => {
                     let popup_component = {
                         let dispatcher_ref = dispatcher.borrow();
-                        IssueSelectPopupComponent::new(
-                            dispatcher_ref.store(),
-                            self.issue_component.id,
-                        )
+                        IssueSelectPopupComponent::new(dispatcher_ref.store(), issue_component.id)
                     };
 
                     self.popup_components.push_back(Rc::new(RefCell::new(
@@ -166,7 +174,7 @@ impl<'a> AppComponent<'a> {
                         .iter()
                         .map(|(id, status)| (id.get(), status.name.clone()))
                         .collect::<Vec<_>>();
-                    let issue_id = self.issue_component.id;
+                    let issue_id = issue_component.id;
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::SelectBox(SelectBoxPopupComponent::new(
                             &issue_statuses,
@@ -187,7 +195,7 @@ impl<'a> AppComponent<'a> {
                     let dispatcher_ref = dispatcher.borrow();
                     let store = dispatcher_ref.store();
                     let current_assigned_to_id = store
-                        .get_issue(self.issue_component.id)
+                        .get_issue(issue_component.id)
                         .and_then(|(issue, _)| issue.assigned_to_id);
                     let mut users = store
                         .get_users()
@@ -202,7 +210,7 @@ impl<'a> AppComponent<'a> {
                         .unwrap_or(0);
                     drop(dispatcher_ref);
 
-                    let issue_id = self.issue_component.id;
+                    let issue_id = issue_component.id;
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::SelectBox(SelectBoxPopupComponent::new(
                             &users,
@@ -223,7 +231,7 @@ impl<'a> AppComponent<'a> {
                     let dispatcher_ref = dispatcher.borrow();
                     let store = dispatcher_ref.store();
                     let current_target_version_id = store
-                        .get_issue(self.issue_component.id)
+                        .get_issue(issue_component.id)
                         .and_then(|(issue, _)| issue.target_version_id);
                     let mut target_versions = store
                         .get_target_versions()
@@ -240,7 +248,7 @@ impl<'a> AppComponent<'a> {
                         .unwrap_or(0);
                     drop(dispatcher_ref);
 
-                    let issue_id = self.issue_component.id;
+                    let issue_id = issue_component.id;
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::SelectBox(SelectBoxPopupComponent::new(
                             &target_versions,
@@ -262,10 +270,10 @@ impl<'a> AppComponent<'a> {
                     let selected_date = dispatcher
                         .borrow()
                         .store()
-                        .get_issue(self.issue_component.id)
+                        .get_issue(issue_component.id)
                         .and_then(|(issue, _)| issue.start_date);
 
-                    let issue_id = self.issue_component.id;
+                    let issue_id = issue_component.id;
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::DatePicker(DatePickerPopupComponent::new(
                             selected_date,
@@ -286,10 +294,10 @@ impl<'a> AppComponent<'a> {
                     let selected_date = dispatcher
                         .borrow()
                         .store()
-                        .get_issue(self.issue_component.id)
+                        .get_issue(issue_component.id)
                         .and_then(|(issue, _)| issue.due_date);
 
-                    let issue_id = self.issue_component.id;
+                    let issue_id = issue_component.id;
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::DatePicker(DatePickerPopupComponent::new(
                             selected_date,
@@ -310,7 +318,7 @@ impl<'a> AppComponent<'a> {
                     let current_done_ratio = dispatcher
                         .borrow()
                         .store()
-                        .get_issue(self.issue_component.id)
+                        .get_issue(issue_component.id)
                         .map(|(issue, _)| issue.done_ratio)
                         .unwrap_or(0);
                     let done_ratios = (0..=100)
@@ -322,7 +330,7 @@ impl<'a> AppComponent<'a> {
                         .position(|(ratio, _)| *ratio == current_done_ratio)
                         .unwrap_or(0);
 
-                    let issue_id = self.issue_component.id;
+                    let issue_id = issue_component.id;
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::SelectBox(SelectBoxPopupComponent::new(
                             &done_ratios,
@@ -345,7 +353,7 @@ impl<'a> AppComponent<'a> {
                     let dispatcher_ref = dispatcher.borrow();
                     let store = dispatcher_ref.store();
                     let current_category_id = store
-                        .get_issue(self.issue_component.id)
+                        .get_issue(issue_component.id)
                         .and_then(|(issue, _)| issue.category_id);
                     let mut categories = store
                         .get_categories()
@@ -362,7 +370,7 @@ impl<'a> AppComponent<'a> {
                         .unwrap_or(0);
                     drop(dispatcher_ref);
 
-                    let issue_id = self.issue_component.id;
+                    let issue_id = issue_component.id;
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::SelectBox(SelectBoxPopupComponent::new(
                             &categories,
@@ -387,7 +395,7 @@ impl<'a> AppComponent<'a> {
                     )));
                 }
                 Some(IssueEventProcessResult::StartIssueUpload) => {
-                    let id = self.issue_component.id;
+                    let id = issue_component.id;
                     self.pending_effect = Some(AppEffect::StartIssueUpload(id));
                 }
                 None => {}
@@ -397,8 +405,9 @@ impl<'a> AppComponent<'a> {
 
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store, area: Rect) {
-        self.issue_component
-            .update(dispatcher, store, (area.width, area.height));
+        if let Some(issue_component) = &mut self.issue_component {
+            issue_component.update(dispatcher, store, (area.width, area.height));
+        }
 
         for popup_component in &self.popup_components {
             if let PopupComponent::IssueSelect(popup_component) = &mut *popup_component.borrow_mut()
@@ -410,7 +419,9 @@ impl<'a> AppComponent<'a> {
 
     /// Componentをframeのarea範囲内に描画する。
     pub fn render(&self, store: &Store, frame: &mut Frame, area: Rect) {
-        self.issue_component.render(store, frame, area);
+        if let Some(issue_component) = &self.issue_component {
+            issue_component.render(store, frame, area);
+        }
         self.render_popup_component(frame, area, store);
         if let Some(cursor_position) = self.cursor_position(store, area) {
             frame.set_cursor_position(cursor_position);
@@ -470,8 +481,10 @@ impl<'a> AppComponent<'a> {
                 PopupComponent::DatePicker(_) => None,
                 PopupComponent::IssueSelect(_) => None,
             }
+        } else if let Some(issue_component) = &self.issue_component {
+            Some(issue_component.calc_cursor_position(store, area))
         } else {
-            Some(self.issue_component.calc_cursor_position(store, area))
+            None
         }
     }
 
@@ -590,9 +603,88 @@ mod tests {
     }
 
     #[test]
+    fn new_with_initial_issue_creates_issue_detail_component() {
+        let dispatcher = loaded_dispatcher();
+        let app = AppComponent::new(dispatcher, Some(3.into()));
+
+        assert_eq!(app.issue_component.unwrap().id, IssueId::new(3));
+    }
+
+    #[test]
+    fn new_without_initial_issue_updates_and_renders_without_panic() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), None);
+
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        assert!(app.issue_component.is_none());
+        assert_eq!(app.cursor_position(dispatcher.borrow().store(), AREA), None);
+        crate::test_support::render_frame_snapshot(
+            "app_without_initial_issue",
+            AREA.width,
+            AREA.height,
+            |frame| app.render(dispatcher.borrow().store(), frame, AREA),
+        );
+    }
+
+    #[test]
+    fn process_event_without_initial_issue_ignores_issue_detail_keys() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), None);
+
+        for code in [
+            KeyCode::Char('j'),
+            KeyCode::Char('k'),
+            KeyCode::Char('e'),
+            KeyCode::Char('u'),
+        ] {
+            app.process_event(key_event(code), dispatcher.clone());
+        }
+
+        assert!(app.issue_component.is_none());
+        assert!(app.popup_components.is_empty());
+        assert!(app.take_effect().is_none());
+    }
+
+    #[test]
+    #[ignore = "y key behavior for opening issue_select_popup without an issue will move to AppComponent later"]
+    fn y_key_without_initial_issue_opens_issue_select_popup() {
+        let dispatcher = dispatcher_with_selectable_issues();
+        let mut app = AppComponent::new(dispatcher.clone(), None);
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
+
+        assert_eq!(app.popup_components.len(), 1);
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::IssueSelect(_)
+        ));
+    }
+
+    #[test]
+    fn enter_on_issue_select_popup_creates_issue_detail_component_when_no_issue_is_displayed() {
+        let dispatcher = dispatcher_with_selectable_issues();
+        let mut app = AppComponent::new(dispatcher.clone(), None);
+        let popup_component = {
+            let dispatcher_ref = dispatcher.borrow();
+            IssueSelectPopupComponent::new(dispatcher_ref.store(), IssueId::new(1))
+        };
+        app.popup_components
+            .push_back(Rc::new(RefCell::new(PopupComponent::IssueSelect(
+                popup_component,
+            ))));
+
+        app.process_event(key_event(KeyCode::Enter), dispatcher);
+
+        assert!(app.popup_components.is_empty());
+        assert_eq!(app.issue_component.unwrap().id, IssueId::new(1));
+    }
+
+    #[test]
     fn category_popup_includes_none_and_can_clear_issue_category() {
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone());
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
         app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
@@ -628,7 +720,7 @@ mod tests {
     #[test]
     fn start_date_property_opens_date_picker_and_updates_store_through_dispatcher() {
         let dispatcher = dispatcher_with_issue();
-        let mut app = AppComponent::new(dispatcher.clone());
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
 
         focus_property_line(&mut app, dispatcher.clone(), 9);
         app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
@@ -662,7 +754,7 @@ mod tests {
     #[test]
     fn due_date_property_opens_date_picker_and_updates_store_through_dispatcher() {
         let dispatcher = dispatcher_with_issue();
-        let mut app = AppComponent::new(dispatcher.clone());
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
 
         focus_property_line(&mut app, dispatcher.clone(), 10);
         app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
@@ -690,7 +782,7 @@ mod tests {
     #[test]
     fn y_key_opens_issue_select_popup_with_loaded_projects_and_issues() {
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone());
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
         app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
@@ -726,7 +818,7 @@ mod tests {
     #[test]
     fn q_key_closes_open_issue_select_popup() {
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone());
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
         app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
@@ -739,7 +831,7 @@ mod tests {
     #[test]
     fn snapshot_issue_select_popup_preview_is_rendered_after_update() {
         let dispatcher = dispatcher_with_selectable_issues();
-        let mut app = AppComponent::new(dispatcher.clone());
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
         app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
@@ -756,7 +848,7 @@ mod tests {
     #[test]
     fn enter_on_different_issue_in_issue_select_popup_replaces_issue_detail_component() {
         let dispatcher = dispatcher_with_selectable_issues();
-        let mut app = AppComponent::new(dispatcher.clone());
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
         app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
@@ -765,6 +857,6 @@ mod tests {
         app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
 
         assert!(app.popup_components.is_empty());
-        assert_eq!(app.issue_component.id, 1);
+        assert_eq!(app.issue_component.unwrap().id, 1);
     }
 }
