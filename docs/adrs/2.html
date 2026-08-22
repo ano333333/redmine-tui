@@ -683,19 +683,28 @@
                 <strong>競合解決:</strong> 競合がある property は競合解決
                 component
                 に表示し、サーバー現在状態を優先するか、ローカル編集後状態を優先するかをユーザーに選択させる。中断時は
-                <code>Edited</code> に戻す。
+                <code>Edited</code> に戻す。選択は表示時点のサーバー状態に対する暫定的な解決結果として扱う。
               </div>
             </div>
             <div class="flow-step">
               <div class="flow-num">6</div>
               <div class="flow-label">
-                <strong>upload:</strong> 競合解決後の payload
-                をサーバーへ送信する。upload エラー時は保存を中断し、Store 上の
-                issue と diff は更新せず、<code>Edited</code> に戻す。
+                <strong>再取得・再比較:</strong>
+                続行時はサーバーから issue を再取得し、property 比較と
+                payload 構築をやり直す。表示時のサーバー値から変わった property
+                の選択は無効とし、未解決の競合があれば最新値で競合解決に戻る。
               </div>
             </div>
             <div class="flow-step">
               <div class="flow-num">7</div>
+              <div class="flow-label">
+                <strong>upload:</strong> 競合がない場合のみ、確定した payload
+                をサーバーへ送信する。再取得または upload のエラー時は保存を中断し、Store 上の
+                issue と diff は更新せず、<code>Edited</code> に戻す。
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">8</div>
               <div class="flow-label">
                 <strong>sync:</strong> upload 成功時は、Redmine
                 の更新レスポンスに含まれる issue を
@@ -789,6 +798,12 @@ stateDiagram-v2
             <code>(before, after)</code>、サーバーから取得した値を
             <code>server</code> としたとき、扱いは以下とする。
           </p>
+          <p>
+            競合解決 component で作業している間にサーバー側の issue
+            がさらに更新される可能性があるため、続行時は <code>server</code>
+            を再取得する。競合解決時に表示した値と再取得値が異なる property
+            については前回の選択を無効とし、以下の判定を再実行する。
+          </p>
           <table class="rules-table">
             <thead>
               <tr>
@@ -876,6 +891,8 @@ stateDiagram-v2
             保存成功後の <code>SyncIssue</code> には、Redmine
             の更新レスポンスに含まれる issue を使用する。更新後に再度 GET
             すると、保存プロセスの不安定性とターンアラウンドタイムが増えるため、初期実装では採用しない。
+            これは upload 成功後の追加 GET を指し、競合解決後、upload
+            前の再取得とは別である。
           </p>
           <p>
             保存中、保存失敗、競合ありなどのメッセージは component local state
@@ -954,6 +971,15 @@ stateDiagram-v2
                 だけにすると、サーバーがすでにローカル編集後と同じ値になっている場合まで競合として扱ってしまう。そのため、競合は
                 <code>server != before &amp;&amp; server != after</code>
                 の場合だけとする。
+              </p>
+            </div>
+            <div class="rationale-item">
+              <div class="rationale-item-title">
+                <span class="badge">retry</span>競合解決後に最新状態を再確認する
+              </div>
+              <p>
+                競合解決 component の表示中もサーバー状態は固定されない。続行後に issue
+                を再取得し、変更された property を再判定して必要なら競合解決へ戻ることで、古いサーバー状態に基づく上書きを防ぐ。
               </p>
             </div>
             <div class="rationale-item">
@@ -1050,6 +1076,13 @@ stateDiagram-v2
                 UI、upload、Store sync は render path に入れず、component から
                 action または effect を発行し、usecase / adapter
                 層で非同期処理として扱う。
+              </div>
+            </div>
+            <div class="consequence-item">
+              <div class="dot"></div>
+              <div>
+                競合解決 component の続行操作は直接 upload を開始せず、サーバー再取得と
+                property 比較を再実行する。実装は「取得・比較・必要なら競合解決」を繰り返せる制御フローを持つ。
               </div>
             </div>
             <div class="consequence-item">
