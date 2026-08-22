@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use reqwest::StatusCode;
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
@@ -61,6 +61,41 @@ impl DefaultRedmineClient {
         response.json().await.map_err(map_response_body_error)
     }
 
+    async fn put_empty<T: Serialize>(
+        &self,
+        path: &str,
+        body: &T,
+    ) -> Result<(), RedmineClientError> {
+        let method = "PUT";
+        let url = format!("{}{}", self.host_url, path);
+        let response = self
+            .http_client
+            .put(&url)
+            .header("X-Redmine-API-Key", &self.access_token)
+            .json(body)
+            .send()
+            .await
+            .map_err(map_request_error)?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let response_body = response.text().await.unwrap_or_else(|error| {
+                format!("failed to read Redmine error response body: {error}")
+            });
+            return map_response_status(
+                status,
+                RedmineHttpError {
+                    method: method.to_string(),
+                    url,
+                    status_code: status.as_u16(),
+                    response_body,
+                },
+            );
+        }
+
+        Ok(())
+    }
+
     async fn get_paginated<R>(&self, path: &str) -> Result<Vec<R::Item>, RedmineClientError>
     where
         R: DeserializeOwned + PaginatedResponse,
@@ -106,6 +141,14 @@ impl RedmineClient for DefaultRedmineClient {
             .await?;
 
         response.issue.try_into()
+    }
+
+    async fn update_issue(&self, issue: &Issue) -> Result<(), RedmineClientError> {
+        self.put_empty(
+            &format!("/issues/{}.json", issue.id.get()),
+            &UpdateIssueRequest::from(issue),
+        )
+        .await
     }
 
     async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
@@ -502,6 +545,56 @@ struct TrackersResponse {
 #[derive(Deserialize)]
 struct IssueResponse {
     issue: RedmineIssue,
+}
+
+#[derive(Serialize)]
+struct UpdateIssueRequest {
+    issue: UpdateIssue,
+}
+
+impl From<&Issue> for UpdateIssueRequest {
+    fn from(issue: &Issue) -> Self {
+        Self {
+            issue: UpdateIssue::from(issue),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct UpdateIssue {
+    subject: String,
+    description: String,
+    status_id: u16,
+    priority_id: u16,
+    assigned_to_id: Option<u16>,
+    fixed_version_id: Option<u16>,
+    start_date: Option<String>,
+    due_date: Option<String>,
+    done_ratio: u16,
+    estimated_hours: Option<u16>,
+    category_id: Option<u16>,
+}
+
+impl From<&Issue> for UpdateIssue {
+    fn from(issue: &Issue) -> Self {
+        Self {
+            subject: issue.subject.clone(),
+            description: issue.description.clone(),
+            status_id: issue.status_id.get(),
+            priority_id: issue.priority_id.get(),
+            assigned_to_id: issue.assigned_to_id.map(|id| id.get()),
+            fixed_version_id: issue.target_version_id.map(|id| id.get()),
+            start_date: issue
+                .start_date
+                .map(|date| date.format("%Y-%m-%d").to_string()),
+            due_date: issue
+                .due_date
+                .map(|date| date.format("%Y-%m-%d").to_string()),
+            done_ratio: issue.done_ratio,
+            estimated_hours: issue.estimated_hours,
+            category_id: issue.category_id.map(|id| id.get()),
+        }
+    }
 }
 
 #[derive(Deserialize)]

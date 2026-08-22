@@ -428,6 +428,10 @@ mod tests {
             Err(self.unauthorized())
         }
 
+        async fn update_issue(&self, _: &Issue) -> std::result::Result<(), RedmineClientError> {
+            Err(self.unauthorized())
+        }
+
         async fn get_issue_statuses(
             &self,
         ) -> std::result::Result<Vec<IssueStatus>, RedmineClientError> {

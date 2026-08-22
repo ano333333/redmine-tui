@@ -270,6 +270,10 @@ mod tests {
             panic!("initial entity load should not load issue {}", id.get());
         }
 
+        async fn update_issue(&self, _: &Issue) -> Result<(), RedmineClientError> {
+            panic!("initial entity load should not update issue");
+        }
+
         async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
             self.record("issue_statuses").await;
             Ok(vec![IssueStatus {
