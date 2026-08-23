@@ -58,6 +58,7 @@ pub struct Store {
     issues: HashMap<IssueId, Issue>,
     issue_states: HashMap<IssueId, IssueState>,
     issue_property_diffs: HashMap<IssueId, Vec<IssuePropertyDiff>>,
+    issue_upload_conflicts: HashMap<IssueId, (Issue, Vec<IssuePropertyDiff>)>,
     journals: HashMap<JournalId, (Journal, JournalState)>,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
@@ -75,6 +76,7 @@ impl Store {
             issues: HashMap::new(),
             issue_states: HashMap::new(),
             issue_property_diffs: HashMap::new(),
+            issue_upload_conflicts: HashMap::new(),
             journals: HashMap::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
@@ -151,6 +153,7 @@ impl Store {
                 }
                 self.issues.insert(id, issue);
                 self.issue_property_diffs.remove(&id);
+                self.issue_upload_conflicts.remove(&id);
                 self.issue_states.insert(id, IssueState::Synced);
             }
             Action::StartIssueUpload { id } => {
@@ -158,6 +161,7 @@ impl Store {
                 if state != IssueState::Edited {
                     panic!("cannot start issue upload while issue {id} is {state:?}");
                 }
+                self.issue_upload_conflicts.remove(&id);
                 self.issue_states.insert(id, IssueState::Uploading);
             }
             Action::CancelIssueUpload { id } => {
@@ -165,6 +169,7 @@ impl Store {
                 if state != IssueState::Uploading {
                     panic!("cannot cancel issue upload while issue {id} is {state:?}");
                 }
+                self.issue_upload_conflicts.remove(&id);
                 self.issue_states.insert(id, IssueState::Edited);
             }
             Action::FailIssueUpload { id } => {
@@ -172,7 +177,20 @@ impl Store {
                 if state != IssueState::Uploading {
                     panic!("cannot fail issue upload while issue {id} is {state:?}");
                 }
+                self.issue_upload_conflicts.remove(&id);
                 self.issue_states.insert(id, IssueState::Edited);
+            }
+            Action::IssueUploadConflictsDetected {
+                server_issue,
+                conflicts,
+            } => {
+                let id = server_issue.id;
+                let state = self.get_issue_state(id);
+                if state != IssueState::Uploading {
+                    panic!("cannot retain issue upload conflicts while issue {id} is {state:?}");
+                }
+                self.issue_upload_conflicts
+                    .insert(id, (server_issue, conflicts));
             }
             Action::UpdateIssue { id, body } => {
                 if self.can_update_issue(id)
@@ -409,6 +427,13 @@ impl Store {
         &self.projects
     }
 
+    /// 保存処理で検出した競合について、比較時点のサーバー Issue と差分を返す。
+    pub fn get_issue_upload_conflict(&self, id: IssueId) -> Option<(&Issue, &[IssuePropertyDiff])> {
+        self.issue_upload_conflicts
+            .get(&id)
+            .map(|(issue, conflicts)| (issue, conflicts.as_slice()))
+    }
+
     fn can_update_issue(&self, id: impl Into<IssueId>) -> bool {
         let id = id.into();
         let state = self.get_issue_state(id);
@@ -458,6 +483,10 @@ pub enum Action {
     },
     FailIssueUpload {
         id: IssueId,
+    },
+    IssueUploadConflictsDetected {
+        server_issue: Issue,
+        conflicts: Vec<IssuePropertyDiff>,
     },
     UpdateIssue {
         id: IssueId,
@@ -675,6 +704,31 @@ mod tests {
         let (_, state) = store.get_issue(1).expect("issue should be loaded");
         assert_eq!(state, IssueState::Uploading);
         assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
+    }
+
+    #[test]
+    fn issue_upload_conflicts_are_retained_while_uploading() {
+        let mut store = Store::new();
+        store.consume_action(Action::LoadIssue { id: 1.into() });
+        store.consume_action(Action::UpdateIssue {
+            id: 1.into(),
+            body: "local body".to_string(),
+        });
+        store.consume_action(Action::StartIssueUpload { id: 1.into() });
+        let server_issue = sample_issue(1, "server issue", 1.into(), None, None, None, 0);
+        let conflicts = store.get_issue_property_diffs(IssueId::new(1)).to_vec();
+
+        store.consume_action(Action::IssueUploadConflictsDetected {
+            server_issue: server_issue.clone(),
+            conflicts: conflicts.clone(),
+        });
+
+        let (actual_issue, actual_conflicts) = store
+            .get_issue_upload_conflict(1.into())
+            .expect("issue upload conflict should be retained");
+        assert_eq!(actual_issue.subject, server_issue.subject);
+        assert_eq!(actual_conflicts, conflicts);
+        assert_eq!(store.get_issue(1).unwrap().1, IssueState::Uploading);
     }
 
     #[test]

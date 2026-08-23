@@ -10,6 +10,7 @@ use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
 };
+use crate::components::issue_property_conflict_popup::IssuePropertyConflictComponent;
 use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
 use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
 use crate::vos::{
@@ -49,6 +50,10 @@ enum PopupComponent<'a> {
     SpentTimeInput(SpentTimeInputPopupComponent<'a>),
     DatePicker(DatePickerPopupComponent<'a>),
     IssueSelect(IssueSelectPopupComponent),
+    IssuePropertyConflict {
+        issue_id: IssueId,
+        component: IssuePropertyConflictComponent,
+    },
 }
 
 pub struct AppComponent<'a> {
@@ -147,6 +152,7 @@ impl<'a> AppComponent<'a> {
                         None => {}
                     }
                 }
+                PopupComponent::IssuePropertyConflict { .. } => {}
             }
         } else if let Some(issue_component) = &mut self.issue_component {
             let result = issue_component.process_event(event, self.dispatcher.clone());
@@ -405,6 +411,24 @@ impl<'a> AppComponent<'a> {
 
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store, area: Rect) {
+        if let Some(issue_component) = &self.issue_component
+            && let Some((_, conflicts)) = store.get_issue_upload_conflict(issue_component.id)
+            && !self.popup_components.iter().any(|popup| {
+                matches!(
+                    &*popup.borrow(),
+                    PopupComponent::IssuePropertyConflict { issue_id, .. }
+                        if *issue_id == issue_component.id
+                )
+            })
+        {
+            self.popup_components.push_back(Rc::new(RefCell::new(
+                PopupComponent::IssuePropertyConflict {
+                    issue_id: issue_component.id,
+                    component: IssuePropertyConflictComponent::new(conflicts.to_vec()),
+                },
+            )));
+        }
+
         if let Some(issue_component) = &mut self.issue_component {
             issue_component.update(dispatcher, store, (area.width, area.height));
         }
@@ -413,6 +437,11 @@ impl<'a> AppComponent<'a> {
             if let PopupComponent::IssueSelect(popup_component) = &mut *popup_component.borrow_mut()
             {
                 popup_component.update(store, area);
+            }
+            if let PopupComponent::IssuePropertyConflict { component, .. } =
+                &mut *popup_component.borrow_mut()
+            {
+                component.update(area);
             }
         }
     }
@@ -466,6 +495,10 @@ impl<'a> AppComponent<'a> {
                     let widget = popup_component.create_widget(store);
                     frame.render_widget(widget, area);
                 }
+                PopupComponent::IssuePropertyConflict { component, .. } => {
+                    let widget = component.create_widget(area);
+                    frame.render_widget(widget, area);
+                }
             }
         }
     }
@@ -480,6 +513,9 @@ impl<'a> AppComponent<'a> {
                 }
                 PopupComponent::DatePicker(_) => None,
                 PopupComponent::IssueSelect(_) => None,
+                PopupComponent::IssuePropertyConflict { component, .. } => {
+                    component.cursor_position(area)
+                }
             }
         } else if let Some(issue_component) = &self.issue_component {
             Some(issue_component.calc_cursor_position(store, area))
@@ -664,6 +700,38 @@ mod tests {
         assert!(app.issue_component.is_none());
         assert!(app.popup_components.is_empty());
         assert!(app.take_effect().is_none());
+    }
+
+    #[test]
+    fn update_opens_issue_property_conflict_popup_only_once() {
+        let dispatcher = loaded_dispatcher_with_edited_issue();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        let conflicts = dispatcher
+            .borrow()
+            .store()
+            .get_issue_property_diffs(IssueId::new(3))
+            .to_vec();
+        let server_issue = dispatcher.borrow().store().get_issue(3).unwrap().0.clone();
+        {
+            let mut dispatcher = dispatcher.borrow_mut();
+            dispatcher.dispatch(Action::StartIssueUpload { id: 3.into() });
+            dispatcher.dispatch(Action::IssueUploadConflictsDetected {
+                server_issue,
+                conflicts,
+            });
+            dispatcher.consume_action();
+            dispatcher.consume_action();
+        }
+
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        assert_eq!(app.popup_components.len(), 1);
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::IssuePropertyConflict { issue_id, .. }
+                if *issue_id == IssueId::new(3)
+        ));
     }
 
     #[test]

@@ -239,7 +239,10 @@ async fn issue_upload_action(
         Err(_) => return Action::FailIssueUpload { id },
     };
     if !conflicts.is_empty() {
-        panic!("Issue property conflict resolution is not implemented");
+        return Action::IssueUploadConflictsDetected {
+            server_issue,
+            conflicts,
+        };
     }
 
     apply_issue_property_diffs(&mut server_issue, diffs);
@@ -490,8 +493,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[should_panic(expected = "Issue property conflict resolution is not implemented")]
-    async fn issue_upload_panics_when_property_conflicts() {
+    async fn issue_upload_returns_conflict_action_when_property_conflicts() {
         let mut server_issue =
             sample_issue(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         server_issue.description = "server description".to_string();
@@ -501,7 +503,18 @@ mod tests {
             after: "local description".to_string(),
         })];
 
-        issue_upload_action(&client, 1.into(), &diffs).await;
+        let action = issue_upload_action(&client, 1.into(), &diffs).await;
+
+        let Action::IssueUploadConflictsDetected {
+            server_issue,
+            conflicts,
+        } = action
+        else {
+            panic!("expected IssueUploadConflictsDetected");
+        };
+        assert_eq!(server_issue.description, "server description");
+        assert_eq!(conflicts, diffs);
+        assert!(client.uploaded.lock().unwrap().is_empty());
     }
 
     struct IssueUploadClient {
