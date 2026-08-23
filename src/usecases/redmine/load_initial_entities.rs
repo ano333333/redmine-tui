@@ -1,5 +1,5 @@
-use crate::app::Action;
 use crate::clients::redmine::{RedmineClient, RedmineClientError};
+use crate::stores::Action;
 
 pub async fn load_initial_entities<C: RedmineClient>(
     client: &C,
@@ -100,12 +100,12 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::load_initial_entities;
-    use crate::app::Action;
     use crate::clients::redmine::{DefaultRedmineClient, RedmineClient, RedmineClientError};
     use crate::entities::{
         Category, Issue, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity,
         Tracker, User,
     };
+    use crate::stores::Action;
     use crate::vos::{
         CategoryId, EntityIdValue, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
         TimeEntityActivityId, TrackerId, UserId,

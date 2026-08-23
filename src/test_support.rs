@@ -2,13 +2,13 @@ use chrono::{DateTime, Local};
 use insta::assert_snapshot;
 use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
-use crate::app::{Action, Dispatcher, Store};
 use crate::entities::Issue;
 use crate::libs::yaml::{
     parse_categories_yaml, parse_issue_statuses_yaml, parse_priorities_yaml, parse_projects_yaml,
     parse_target_versions_yaml, parse_time_entity_activities_yaml, parse_trackers_yaml,
     parse_users_yaml,
 };
+use crate::stores::{Action, Dispatcher, Store};
 use crate::vos::{
     CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, UserId,
 };

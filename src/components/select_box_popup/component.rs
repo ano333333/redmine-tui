@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crossterm::event::{Event, KeyCode};
 
-use crate::app::Dispatcher;
+use crate::stores::Dispatcher;
 
 use super::SelectBoxPopupWidget;
 

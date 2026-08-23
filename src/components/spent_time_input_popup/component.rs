@@ -3,7 +3,7 @@ use ratatui::layout::Position;
 use ratatui::style::{Modifier, Style};
 use ratatui_textarea::TextArea;
 
-use crate::app::Store;
+use crate::stores::Store;
 use crate::vos::TimeEntityActivityId;
 
 use super::widget::SpentTimeInputPopupWidget;

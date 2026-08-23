@@ -1,7 +1,7 @@
 use crossterm::event::Event;
 use ratatui::layout::Rect;
 
-use crate::app::Store;
+use crate::stores::Store;
 use crate::vos::{EntityIdValue, IssueId};
 
 use super::focus_state::{self, FocusState};
@@ -200,8 +200,8 @@ mod tests {
 
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
-    use crate::app::Action;
     use crate::components::issue_select_popup::widget::IssueSelectPopupFocusColumn;
+    use crate::stores::Action;
     use crate::test_support::{render_snapshot, sync_fixture_entities};
 
     const AREA: Rect = Rect {

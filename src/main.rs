@@ -1,9 +1,9 @@
-mod app;
 mod clients;
 mod components;
 mod entities;
 mod libs;
 mod logging;
+mod stores;
 #[cfg(test)]
 mod test_support;
 mod usecases;
@@ -31,12 +31,12 @@ use std::{
 use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime};
 
 use self::{
-    app::{Action, Dispatcher, IssueState},
     clients::redmine::{DefaultRedmineClient, RedmineClient},
     components::{
         AppComponent,
         app::{AppEffect, EditorRequest, EditorResponse},
     },
+    stores::{Action, Dispatcher, IssueState},
     usecases::redmine::{
         apply_issue_property_diffs, fetch_issue_with_conflicts, load_initial_entities, upload_issue,
     },

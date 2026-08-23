@@ -1,4 +1,4 @@
-use crate::app::{Action, Dispatcher};
+use crate::stores::{Action, Dispatcher};
 use crate::vos::IssueId;
 
 /// Issueの競合情報を破棄し、アップロードをキャンセルするActionを順番にdispatchする。
@@ -9,7 +9,7 @@ pub fn cancel_issue_upload(dispatcher: &mut Dispatcher, id: IssueId) {
 
 #[cfg(test)]
 mod tests {
-    use crate::app::{Action, Dispatcher, IssueState};
+    use crate::stores::{Action, Dispatcher, IssueState};
     use crate::test_support::sample_issue;
     use crate::vos::IssueId;
 

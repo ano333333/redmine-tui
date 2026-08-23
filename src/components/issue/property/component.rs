@@ -3,8 +3,8 @@ use super::widget::PropertyWidget;
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::app::Store;
 use crate::entities::{Issue, IssueStatus};
+use crate::stores::Store;
 use crate::vos::IssueId;
 
 pub struct PropertyComponent {
@@ -116,7 +116,7 @@ fn create_property_widget<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::Action;
+    use crate::stores::Action;
     use crate::test_support::{render_snapshot, sync_fixture_entities};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Position;

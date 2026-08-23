@@ -3,7 +3,7 @@ use super::widget::{HeaderWidget, TitleDecorater};
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::app::{IssueState, Store};
+use crate::stores::{IssueState, Store};
 use crate::vos::IssueId;
 
 pub struct HeaderComponent {
@@ -69,7 +69,7 @@ impl HeaderComponent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{Action, Store};
+    use crate::stores::{Action, Store};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::widgets::Widget;

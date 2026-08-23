@@ -6,7 +6,6 @@ use crossterm::event::Event;
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 
-use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
 };
@@ -15,6 +14,7 @@ use crate::components::issue_property_conflict_popup::{
 };
 use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
 use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
+use crate::stores::{Action, Dispatcher, Store};
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, TargetVersionId,
@@ -508,7 +508,7 @@ impl<'a> AppComponent<'a> {
             Some(PendingEditorContext::IssueBody { id }) => {
                 self.dispatcher
                     .borrow_mut()
-                    .dispatch(crate::app::Action::UpdateIssue {
+                    .dispatch(crate::stores::Action::UpdateIssue {
                         id,
                         body: response.edited_text,
                     });

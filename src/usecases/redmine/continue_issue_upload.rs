@@ -1,4 +1,4 @@
-use crate::app::{Action, Dispatcher};
+use crate::stores::{Action, Dispatcher};
 use crate::vos::{IssueId, IssuePropertyDiff};
 
 use super::fetch_issue_with_conflicts::{
@@ -46,8 +46,8 @@ pub fn continue_issue_upload(
 
 #[cfg(test)]
 mod tests {
-    use crate::app::{Action, Dispatcher};
     use crate::entities::Issue;
+    use crate::stores::{Action, Dispatcher};
     use crate::test_support::sample_issue;
     use crate::vos::issue_property_diff::{IssueDescriptionDiff, IssueDueDateDiff};
     use crate::vos::{IssueId, IssuePropertyDiff};
