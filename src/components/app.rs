@@ -412,7 +412,8 @@ impl<'a> AppComponent<'a> {
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store, area: Rect) {
         if let Some(issue_component) = &self.issue_component
-            && let Some((_, conflicts)) = store.get_issue_upload_conflict(issue_component.id)
+            && let Some((server_issue, conflicts)) =
+                store.get_issue_upload_conflict(issue_component.id)
             && !self.popup_components.iter().any(|popup| {
                 matches!(
                     &*popup.borrow(),
@@ -424,7 +425,10 @@ impl<'a> AppComponent<'a> {
             self.popup_components.push_back(Rc::new(RefCell::new(
                 PopupComponent::IssuePropertyConflict {
                     issue_id: issue_component.id,
-                    component: IssuePropertyConflictComponent::new(conflicts.to_vec()),
+                    component: IssuePropertyConflictComponent::new(
+                        server_issue.clone(),
+                        conflicts.to_vec(),
+                    ),
                 },
             )));
         }

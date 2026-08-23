@@ -1,6 +1,7 @@
 use crossterm::event::Event;
 use ratatui::layout::{Position, Rect, Size};
 
+use crate::entities::Issue;
 use crate::vos::{EntityIdValue, IssuePropertyDiff};
 use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
 
@@ -15,6 +16,7 @@ pub enum EventProcessResult {
 }
 
 pub struct IssuePropertyConflictComponent {
+    server_issue: Issue,
     diffs: Vec<IssuePropertyDiff>,
     selected_choices: Vec<IssuePropertyConflictFocus>,
     focus_state: FocusState,
@@ -22,12 +24,13 @@ pub struct IssuePropertyConflictComponent {
 }
 
 impl IssuePropertyConflictComponent {
-    /// 競合解決対象の差分からComponentを作成する。
+    /// サーバーの現在値と競合解決対象の差分からComponentを作成する。
     ///
     /// 渡された差分は、サーバー現在値からローカル編集後値へ変更する候補として扱う。
-    pub fn new(diffs: Vec<IssuePropertyDiff>) -> Self {
+    pub fn new(server_issue: Issue, diffs: Vec<IssuePropertyDiff>) -> Self {
         let selected_choices = vec![IssuePropertyConflictFocus::After; diffs.len()];
         Self {
+            server_issue,
             focus_state: FocusState::new(diffs.len()),
             vertical_scroll_state: VerticalScrollWidgetState::new(),
             diffs,
@@ -90,7 +93,7 @@ impl IssuePropertyConflictComponent {
         self.diffs
             .iter()
             .zip(self.selected_choices.iter().copied())
-            .map(|(diff, choice)| row_from_diff(diff, choice))
+            .map(|(diff, choice)| row_from_diff(&self.server_issue, diff, choice))
             .collect()
     }
 
@@ -120,10 +123,11 @@ impl IssuePropertyConflictComponent {
 }
 
 fn row_from_diff(
+    server_issue: &Issue,
     diff: &IssuePropertyDiff,
     focused_choice: IssuePropertyConflictFocus,
 ) -> IssuePropertyConflictRow {
-    let value = diff_value_text(diff);
+    let value = diff_value_text(server_issue, diff);
     if matches!(diff, IssuePropertyDiff::Description(_)) {
         IssuePropertyConflictRow::new_markdown(
             property_name(diff),
@@ -149,27 +153,65 @@ struct DiffValueText {
     server: String,
 }
 
-fn diff_value_text(diff: &IssuePropertyDiff) -> DiffValueText {
+fn diff_value_text(server_issue: &Issue, diff: &IssuePropertyDiff) -> DiffValueText {
     match diff {
-        IssuePropertyDiff::Subject(diff) => diff_text(&diff.before, &diff.after),
-        IssuePropertyDiff::AuthorId(diff) => id_diff_text(diff.before, diff.after),
-        IssuePropertyDiff::CreatedOn(diff) => diff_text(&diff.before, &diff.after),
-        IssuePropertyDiff::UpdatedOn(diff) => diff_text(&diff.before, &diff.after),
-        IssuePropertyDiff::ProjectId(diff) => id_diff_text(diff.before, diff.after),
-        IssuePropertyDiff::TrackerId(diff) => id_diff_text(diff.before, diff.after),
-        IssuePropertyDiff::StatusId(diff) => id_diff_text(diff.before, diff.after),
-        IssuePropertyDiff::PriorityId(diff) => id_diff_text(diff.before, diff.after),
-        IssuePropertyDiff::AssignedToId(diff) => option_id_diff_text(diff.before, diff.after),
-        IssuePropertyDiff::TargetVersionId(diff) => option_id_diff_text(diff.before, diff.after),
-        IssuePropertyDiff::FixedVersion(diff) => option_diff_text(&diff.before, &diff.after),
-        IssuePropertyDiff::StartDate(diff) => option_diff_text(&diff.before, &diff.after),
-        IssuePropertyDiff::DueDate(diff) => option_diff_text(&diff.before, &diff.after),
-        IssuePropertyDiff::DoneRatio(diff) => diff_text(&diff.before, &diff.after),
-        IssuePropertyDiff::EstimatedHours(diff) => option_diff_text(&diff.before, &diff.after),
-        IssuePropertyDiff::TotalSpentHours(diff) => option_diff_text(&diff.before, &diff.after),
-        IssuePropertyDiff::ResolveWay(diff) => option_diff_text(&diff.before, &diff.after),
-        IssuePropertyDiff::CategoryId(diff) => option_id_diff_text(diff.before, diff.after),
-        IssuePropertyDiff::Description(diff) => diff_text(&diff.before, &diff.after),
+        IssuePropertyDiff::Subject(diff) => {
+            diff_text(&diff.before, &diff.after, &server_issue.subject)
+        }
+        IssuePropertyDiff::AuthorId(diff) => {
+            id_diff_text(diff.before, diff.after, server_issue.author_id)
+        }
+        IssuePropertyDiff::CreatedOn(diff) => {
+            diff_text(&diff.before, &diff.after, &server_issue.created_on)
+        }
+        IssuePropertyDiff::UpdatedOn(diff) => {
+            diff_text(&diff.before, &diff.after, &server_issue.updated_on)
+        }
+        IssuePropertyDiff::ProjectId(diff) => {
+            id_diff_text(diff.before, diff.after, server_issue.project_id)
+        }
+        IssuePropertyDiff::TrackerId(diff) => {
+            id_diff_text(diff.before, diff.after, server_issue.tracker_id)
+        }
+        IssuePropertyDiff::StatusId(diff) => {
+            id_diff_text(diff.before, diff.after, server_issue.status_id)
+        }
+        IssuePropertyDiff::PriorityId(diff) => {
+            id_diff_text(diff.before, diff.after, server_issue.priority_id)
+        }
+        IssuePropertyDiff::AssignedToId(diff) => {
+            option_id_diff_text(diff.before, diff.after, server_issue.assigned_to_id)
+        }
+        IssuePropertyDiff::TargetVersionId(diff) => {
+            option_id_diff_text(diff.before, diff.after, server_issue.target_version_id)
+        }
+        IssuePropertyDiff::FixedVersion(_) => {
+            panic!("サーバーIssueにfixed_version propertyがないため表示できません")
+        }
+        IssuePropertyDiff::StartDate(diff) => {
+            option_diff_text(&diff.before, &diff.after, &server_issue.start_date)
+        }
+        IssuePropertyDiff::DueDate(diff) => {
+            option_diff_text(&diff.before, &diff.after, &server_issue.due_date)
+        }
+        IssuePropertyDiff::DoneRatio(diff) => {
+            diff_text(&diff.before, &diff.after, &server_issue.done_ratio)
+        }
+        IssuePropertyDiff::EstimatedHours(diff) => {
+            option_diff_text(&diff.before, &diff.after, &server_issue.estimated_hours)
+        }
+        IssuePropertyDiff::TotalSpentHours(diff) => {
+            option_diff_text(&diff.before, &diff.after, &server_issue.total_spent_hours)
+        }
+        IssuePropertyDiff::ResolveWay(_) => {
+            panic!("サーバーIssueにresolve_way propertyがないため表示できません")
+        }
+        IssuePropertyDiff::CategoryId(diff) => {
+            option_id_diff_text(diff.before, diff.after, server_issue.category_id)
+        }
+        IssuePropertyDiff::Description(diff) => {
+            diff_text(&diff.before, &diff.after, &server_issue.description)
+        }
         IssuePropertyDiff::ChildIds(diff) => diff_text(
             &diff
                 .before
@@ -179,6 +221,12 @@ fn diff_value_text(diff: &IssuePropertyDiff) -> DiffValueText {
                 .join(", "),
             &diff
                 .after
+                .iter()
+                .map(|id| id.get().to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+            &server_issue
+                .child_ids
                 .iter()
                 .map(|id| id.get().to_string())
                 .collect::<Vec<_>>()
@@ -197,29 +245,48 @@ fn diff_value_text(diff: &IssuePropertyDiff) -> DiffValueText {
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(", "),
+            &server_issue
+                .journal_ids
+                .iter()
+                .map(|id| id.get().to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
         ),
     }
 }
 
-fn diff_text(before: &impl ToString, after: &impl ToString) -> DiffValueText {
+fn diff_text(
+    before: &impl ToString,
+    after: &impl ToString,
+    server: &impl ToString,
+) -> DiffValueText {
     let before = before.to_string();
     let after = after.to_string();
     DiffValueText {
-        server: before.clone(),
+        server: server.to_string(),
         before,
         after,
     }
 }
 
-fn id_diff_text(before: impl EntityIdValue, after: impl EntityIdValue) -> DiffValueText {
-    diff_text(&before.get(), &after.get())
+fn id_diff_text(
+    before: impl EntityIdValue,
+    after: impl EntityIdValue,
+    server: impl EntityIdValue,
+) -> DiffValueText {
+    diff_text(&before.get(), &after.get(), &server.get())
 }
 
 fn option_id_diff_text(
     before: Option<impl EntityIdValue>,
     after: Option<impl EntityIdValue>,
+    server: Option<impl EntityIdValue>,
 ) -> DiffValueText {
-    diff_text(&option_id_text(before), &option_id_text(after))
+    diff_text(
+        &option_id_text(before),
+        &option_id_text(after),
+        &option_id_text(server),
+    )
 }
 
 fn option_id_text(id: Option<impl EntityIdValue>) -> String {
@@ -227,8 +294,16 @@ fn option_id_text(id: Option<impl EntityIdValue>) -> String {
         .unwrap_or_else(|| "(なし)".to_string())
 }
 
-fn option_diff_text<T: ToString>(before: &Option<T>, after: &Option<T>) -> DiffValueText {
-    diff_text(&option_text(before), &option_text(after))
+fn option_diff_text<T: ToString>(
+    before: &Option<T>,
+    after: &Option<T>,
+    server: &Option<T>,
+) -> DiffValueText {
+    diff_text(
+        &option_text(before),
+        &option_text(after),
+        &option_text(server),
+    )
 }
 
 fn option_text<T: ToString>(value: &Option<T>) -> String {
@@ -272,6 +347,7 @@ mod tests {
     use ratatui::layout::{Position, Rect};
 
     use crate::test_support::render_snapshot;
+    use crate::test_support::sample_issue;
 
     use crate::vos::IssuePropertyDiff;
     use crate::vos::issue_property_diff::{IssueDescriptionDiff, IssueStatusIdDiff};
@@ -300,9 +376,39 @@ mod tests {
         ]
     }
 
+    fn component(diffs: Vec<IssuePropertyDiff>) -> IssuePropertyConflictComponent {
+        let mut server_issue = sample_issue(1, "server subject", 1.into(), None, None, None, 0);
+        server_issue.description = "server body".to_string();
+        IssuePropertyConflictComponent::new(server_issue, diffs)
+    }
+
+    #[test]
+    fn diff_value_text_uses_the_server_issue_value() {
+        let mut server_issue = sample_issue(1, "server subject", 9.into(), None, None, None, 0);
+        server_issue.description = "# server body".to_string();
+
+        let status = diff_value_text(
+            &server_issue,
+            &IssuePropertyDiff::StatusId(IssueStatusIdDiff {
+                before: 1.into(),
+                after: 2.into(),
+            }),
+        );
+        let description = diff_value_text(
+            &server_issue,
+            &IssuePropertyDiff::Description(IssueDescriptionDiff {
+                before: "original body".to_string(),
+                after: "# local body".to_string(),
+            }),
+        );
+
+        assert_eq!(status.server, "9");
+        assert_eq!(description.server, "# server body");
+    }
+
     #[test]
     fn new_focuses_first_after_cell() {
-        let mut component = IssuePropertyConflictComponent::new(diffs());
+        let mut component = component(diffs());
 
         component.update(AREA);
 
@@ -314,7 +420,7 @@ mod tests {
 
     #[test]
     fn j_and_k_move_cursor_between_rows() {
-        let mut component = IssuePropertyConflictComponent::new(diffs());
+        let mut component = component(diffs());
         component.update(AREA);
 
         assert!(
@@ -342,7 +448,7 @@ mod tests {
 
     #[test]
     fn l_and_h_move_cursor_between_after_and_server_columns() {
-        let mut component = IssuePropertyConflictComponent::new(diffs());
+        let mut component = component(diffs());
         component.update(AREA);
 
         assert!(
@@ -370,7 +476,7 @@ mod tests {
 
     #[test]
     fn enter_on_cell_changes_resolved_diffs_returned_by_continue() {
-        let mut component = IssuePropertyConflictComponent::new(diffs());
+        let mut component = component(diffs());
 
         component.process_event(key_event(KeyCode::Char('l')));
         let result = component.process_event(key_event(KeyCode::Enter));
@@ -395,7 +501,7 @@ mod tests {
 
     #[test]
     fn j_from_last_row_focuses_continue_button_and_h_moves_to_cancel() {
-        let mut component = IssuePropertyConflictComponent::new(diffs());
+        let mut component = component(diffs());
         component.update(AREA);
 
         component.process_event(key_event(KeyCode::Char('j')));
@@ -416,7 +522,7 @@ mod tests {
 
     #[test]
     fn q_and_enter_on_cancel_request_popup_close() {
-        let mut component = IssuePropertyConflictComponent::new(diffs());
+        let mut component = component(diffs());
 
         assert!(matches!(
             component.process_event(key_event(KeyCode::Char('q'))),
@@ -434,7 +540,7 @@ mod tests {
 
     #[test]
     fn enter_on_continue_returns_selected_after_diffs_and_omits_server_choices() {
-        let mut component = IssuePropertyConflictComponent::new(diffs());
+        let mut component = component(diffs());
 
         component.process_event(key_event(KeyCode::Char('l')));
         component.process_event(key_event(KeyCode::Enter));
@@ -464,7 +570,7 @@ mod tests {
                 })
             })
             .collect();
-        let mut component = IssuePropertyConflictComponent::new(many_rows);
+        let mut component = component(many_rows);
 
         component.update(AREA);
         for _ in 0..8 {
@@ -481,7 +587,7 @@ mod tests {
 
     #[test]
     fn snapshot_create_widget_renders_vertical_scroll_widget_with_button_focus() {
-        let mut component = IssuePropertyConflictComponent::new(diffs());
+        let mut component = component(diffs());
         component.process_event(key_event(KeyCode::Char('j')));
         component.process_event(key_event(KeyCode::Char('j')));
         component.update(AREA);
