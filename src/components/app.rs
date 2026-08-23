@@ -15,10 +15,10 @@ use crate::components::issue_property_conflict_popup::{
 };
 use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
 use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
-use crate::usecases::redmine::cancel_issue_upload;
+use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssueStatusId, TargetVersionId, TimeEntityActivityId,
-    UserId,
+    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, TargetVersionId,
+    TimeEntityActivityId, UserId,
 };
 
 use super::date_picker_popup::component::{
@@ -42,6 +42,10 @@ pub struct EditorResponse {
 pub enum AppEffect {
     OpenEditor(EditorRequest),
     StartIssueUpload(IssueId),
+    ContinueIssueUpload {
+        id: IssueId,
+        diffs: Vec<IssuePropertyDiff>,
+    },
 }
 
 enum PendingEditorContext {
@@ -163,7 +167,16 @@ impl<'a> AppComponent<'a> {
                         cancel_issue_upload(&mut dispatcher.borrow_mut(), *issue_id);
                         self.popup_components.pop_back();
                     }
-                    Some(IssuePropertyConflictEventProcessResult::Continued { .. }) | None => {}
+                    Some(IssuePropertyConflictEventProcessResult::Continued { diffs }) => {
+                        let retry_diffs =
+                            continue_issue_upload(&mut dispatcher.borrow_mut(), *issue_id, diffs);
+                        self.pending_effect = Some(AppEffect::ContinueIssueUpload {
+                            id: *issue_id,
+                            diffs: retry_diffs,
+                        });
+                        self.popup_components.pop_back();
+                    }
+                    None => {}
                 },
             }
         } else if let Some(issue_component) = &mut self.issue_component {
@@ -583,6 +596,8 @@ impl<'a> AppComponent<'a> {
 mod tests {
     use super::*;
 
+    use crate::vos::IssuePropertyDiff;
+    use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
     const AREA: Rect = Rect {
@@ -631,7 +646,8 @@ mod tests {
             .store()
             .get_issue_property_diffs(IssueId::new(3))
             .to_vec();
-        let server_issue = dispatcher.borrow().store().get_issue(3).unwrap().0.clone();
+        let mut server_issue = dispatcher.borrow().store().get_issue(3).unwrap().0.clone();
+        server_issue.description = "server body".to_string();
         {
             let mut dispatcher = dispatcher.borrow_mut();
             dispatcher.dispatch(Action::StartIssueUpload { id: 3.into() });
@@ -794,6 +810,39 @@ mod tests {
 
         assert!(app.popup_components.is_empty());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 2);
+    }
+
+    #[test]
+    fn continue_button_on_issue_property_conflict_popup_requests_upload_retry() {
+        let (dispatcher, mut app) = app_with_issue_property_conflict_popup();
+
+        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+
+        assert!(app.popup_components.is_empty());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        let Some(AppEffect::ContinueIssueUpload { id, diffs }) = app.take_effect() else {
+            panic!("続行時はIssueアップロード再試行effectが必要です");
+        };
+        assert_eq!(id, IssueId::new(3));
+        assert_eq!(
+            diffs,
+            vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
+                before: "server body".to_string(),
+                after: "updated body".to_string(),
+            })]
+        );
+
+        dispatcher.borrow_mut().consume_action();
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        assert!(app.popup_components.is_empty());
+        assert!(
+            dispatcher
+                .borrow()
+                .store()
+                .get_issue_upload_conflict(IssueId::new(3))
+                .is_none()
+        );
     }
 
     #[test]

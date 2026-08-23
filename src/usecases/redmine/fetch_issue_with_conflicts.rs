@@ -126,6 +126,87 @@ fn property_of(diff: &IssuePropertyDiff) -> IssueProperty {
     }
 }
 
+/// 2つのdiffが同じIssue propertyを対象にしているかを返す。
+pub(crate) fn same_issue_property(left: &IssuePropertyDiff, right: &IssuePropertyDiff) -> bool {
+    property_of(left) == property_of(right)
+}
+
+/// diffの`before`を、指定したサーバーIssueの現在値に置き換える。
+pub(crate) fn with_server_value_as_before(
+    issue: &Issue,
+    diff: &IssuePropertyDiff,
+) -> IssuePropertyDiff {
+    let mut resolved = diff.clone();
+    match &mut resolved {
+        IssuePropertyDiff::Subject(diff) => diff.before = issue.subject.clone(),
+        IssuePropertyDiff::AuthorId(diff) => diff.before = issue.author_id,
+        IssuePropertyDiff::CreatedOn(diff) => diff.before = issue.created_on,
+        IssuePropertyDiff::UpdatedOn(diff) => diff.before = issue.updated_on,
+        IssuePropertyDiff::ProjectId(diff) => diff.before = issue.project_id,
+        IssuePropertyDiff::TrackerId(diff) => diff.before = issue.tracker_id,
+        IssuePropertyDiff::StatusId(diff) => diff.before = issue.status_id,
+        IssuePropertyDiff::PriorityId(diff) => diff.before = issue.priority_id,
+        IssuePropertyDiff::AssignedToId(diff) => diff.before = issue.assigned_to_id,
+        IssuePropertyDiff::TargetVersionId(diff) => diff.before = issue.target_version_id,
+        IssuePropertyDiff::StartDate(diff) => diff.before = issue.start_date,
+        IssuePropertyDiff::DueDate(diff) => diff.before = issue.due_date,
+        IssuePropertyDiff::DoneRatio(diff) => diff.before = issue.done_ratio,
+        IssuePropertyDiff::EstimatedHours(diff) => diff.before = issue.estimated_hours,
+        IssuePropertyDiff::TotalSpentHours(diff) => diff.before = issue.total_spent_hours,
+        IssuePropertyDiff::CategoryId(diff) => diff.before = issue.category_id,
+        IssuePropertyDiff::Description(diff) => diff.before = issue.description.clone(),
+        IssuePropertyDiff::ChildIds(diff) => diff.before = issue.child_ids.clone(),
+        IssuePropertyDiff::JournalIds(diff) => {
+            diff.before = issue.journal_ids.iter().map(|id| id.get()).collect()
+        }
+        IssuePropertyDiff::FixedVersion(_) => {
+            panic!("サーバーIssueにfixed_version propertyがないため解決できません")
+        }
+        IssuePropertyDiff::ResolveWay(_) => {
+            panic!("サーバーIssueにresolve_way propertyがないため解決できません")
+        }
+    }
+    resolved
+}
+
+/// diffの`after`を、指定したサーバーIssueの現在値に置き換える。
+pub(crate) fn with_server_value_as_after(
+    issue: &Issue,
+    diff: &IssuePropertyDiff,
+) -> IssuePropertyDiff {
+    let mut resolved = diff.clone();
+    match &mut resolved {
+        IssuePropertyDiff::Subject(diff) => diff.after = issue.subject.clone(),
+        IssuePropertyDiff::AuthorId(diff) => diff.after = issue.author_id,
+        IssuePropertyDiff::CreatedOn(diff) => diff.after = issue.created_on,
+        IssuePropertyDiff::UpdatedOn(diff) => diff.after = issue.updated_on,
+        IssuePropertyDiff::ProjectId(diff) => diff.after = issue.project_id,
+        IssuePropertyDiff::TrackerId(diff) => diff.after = issue.tracker_id,
+        IssuePropertyDiff::StatusId(diff) => diff.after = issue.status_id,
+        IssuePropertyDiff::PriorityId(diff) => diff.after = issue.priority_id,
+        IssuePropertyDiff::AssignedToId(diff) => diff.after = issue.assigned_to_id,
+        IssuePropertyDiff::TargetVersionId(diff) => diff.after = issue.target_version_id,
+        IssuePropertyDiff::StartDate(diff) => diff.after = issue.start_date,
+        IssuePropertyDiff::DueDate(diff) => diff.after = issue.due_date,
+        IssuePropertyDiff::DoneRatio(diff) => diff.after = issue.done_ratio,
+        IssuePropertyDiff::EstimatedHours(diff) => diff.after = issue.estimated_hours,
+        IssuePropertyDiff::TotalSpentHours(diff) => diff.after = issue.total_spent_hours,
+        IssuePropertyDiff::CategoryId(diff) => diff.after = issue.category_id,
+        IssuePropertyDiff::Description(diff) => diff.after = issue.description.clone(),
+        IssuePropertyDiff::ChildIds(diff) => diff.after = issue.child_ids.clone(),
+        IssuePropertyDiff::JournalIds(diff) => {
+            diff.after = issue.journal_ids.iter().map(|id| id.get()).collect()
+        }
+        IssuePropertyDiff::FixedVersion(_) => {
+            panic!("サーバーIssueにfixed_version propertyがないため解決できません")
+        }
+        IssuePropertyDiff::ResolveWay(_) => {
+            panic!("サーバーIssueにresolve_way propertyがないため解決できません")
+        }
+    }
+    resolved
+}
+
 macro_rules! match_same_diff {
     ($left:expr, $right:expr, |$a:ident, $b:ident| $body:expr) => {
         match ($left, $right) {

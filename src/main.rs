@@ -168,7 +168,7 @@ fn handle_key_event(
     }
     let size = terminal.size().expect("failed to get terminal size");
     let rect = Rect::new(0, 0, size.width, size.height);
-    app_component.update(dispatcher.clone(), dispatcher.borrow().store(), rect);
+    update(dispatcher.clone(), app_component, rect);
     if let Some(effect) = app_component.take_effect()
         && let Err(err) = handle_app_effect(
             effect,
@@ -218,6 +218,14 @@ fn handle_app_effect(
                 panic!("uploading issue is not edited");
             }
             let diffs = d.store().get_issue_property_diffs(id).to_vec();
+            runtime.spawn(async move {
+                let action = issue_upload_action(client.as_ref(), id, &diffs).await;
+                sender
+                    .send(action)
+                    .expect("Failed to send Action with mpsc::channel");
+            });
+        }
+        AppEffect::ContinueIssueUpload { id, diffs } => {
             runtime.spawn(async move {
                 let action = issue_upload_action(client.as_ref(), id, &diffs).await;
                 sender
