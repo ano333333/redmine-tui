@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 5 — Issue 子 Store と IssueAction の分離方針</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      :root {
+        --bg: #0f1117; --surface: #1a1d27; --surface-2: #22263a;
+        --border: #2e3350; --accent: #6c8efb; --accent-dim: #3d4f8a;
+        --text: #d0d4e8; --text-muted: #7a80a0; --text-heading: #e8eaf6;
+        --code-bg: #13151f; --code-border: #2a2e45; --tag-bg: #1e2540;
+        --tag-text: #8ba3f5; --marker: #f0b429; --green: #4caf8a;
+        --status-accepted-bg: #0e2a1e; --status-accepted-border: #2a7a50;
+        --status-accepted-text: #4caf8a;
+      }
+      body { font-family: "Inter", "Noto Sans JP", system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.75; font-size: 15px; }
+      .layout { display: flex; min-height: 100vh; }
+      nav { position: sticky; top: 0; height: 100vh; width: 240px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; padding: 28px 0; }
+      nav .nav-title { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); padding: 0 20px 12px; }
+      nav a { display: block; padding: 6px 20px; color: var(--text-muted); text-decoration: none; font-size: 13px; border-left: 2px solid transparent; transition: color .15s, border-color .15s; }
+      nav a:hover { color: var(--text); border-left-color: var(--accent-dim); }
+      nav a.active { color: var(--accent); border-left-color: var(--accent); }
+      nav .nav-section { margin-top: 16px; }
+      main { flex: 1; min-width: 0; padding: 56px 64px; max-width: 980px; }
+      .page-header { margin-bottom: 48px; padding-bottom: 32px; border-bottom: 1px solid var(--border); }
+      .breadcrumb { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+      .breadcrumb a { color: var(--accent); text-decoration: none; }
+      .breadcrumb span { color: var(--text-muted); }
+      .header-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+      .adr-number { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+      h1 { font-size: 26px; font-weight: 700; color: var(--text-heading); letter-spacing: -.02em; line-height: 1.2; }
+      .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; background: var(--status-accepted-bg); border: 1px solid var(--status-accepted-border); color: var(--status-accepted-text); }
+      .status-badge::before { content: ""; width: 6px; height: 6px; background: var(--status-accepted-text); border-radius: 50%; }
+      section { margin-bottom: 52px; }
+      h2 { font-size: 17px; font-weight: 700; color: var(--text-heading); margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+      p { margin-bottom: 14px; }
+      code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 13px; color: #b0bce8; }
+      p code, li code { background: var(--tag-bg); color: var(--tag-text); padding: 1px 6px; border-radius: 3px; font-size: 12.5px; }
+      .callout { background: var(--surface); border-left: 3px solid var(--marker); border-radius: 0 6px 6px 0; padding: 12px 16px; margin: 16px 0; font-size: 13.5px; }
+      .callout strong { color: var(--marker); }
+      .code-block { background: var(--code-bg); border: 1px solid var(--code-border); border-radius: 8px; padding: 16px 18px; overflow-x: auto; margin: 18px 0; }
+      .code-block code { display: block; color: var(--text); white-space: pre; font-size: 12.5px; line-height: 1.55; }
+      .decision-list, .consequence-list, .rationale-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+      .decision-item, .consequence-item { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+      .dot { width: 6px; height: 6px; background: var(--accent-dim); border-radius: 50%; flex-shrink: 0; margin-top: 8px; }
+      .policy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px; }
+      .policy-card, .rationale-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; }
+      .policy-card.primary { border-top: 2px solid var(--accent); }
+      .policy-card.secondary { border-top: 2px solid var(--green); }
+      .policy-title { font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; margin-bottom: 10px; color: var(--text-heading); }
+      .policy-card p, .rationale-item p { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+      .policy-card p:last-child, .rationale-item p:last-child { margin-bottom: 0; }
+      .rationale-list { gap: 12px; }
+      .rationale-item-title { font-size: 13px; font-weight: 600; color: var(--text-heading); margin-bottom: 6px; }
+      .badge { font-family: "JetBrains Mono", monospace; font-size: 11px; background: var(--tag-bg); color: var(--tag-text); padding: 1px 6px; border-radius: 3px; border: 1px solid var(--accent-dim); margin-right: 8px; }
+      .back-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--accent); text-decoration: none; padding: 4px 10px; border: 1px solid var(--accent-dim); border-radius: 4px; margin-top: 8px; }
+      @media (max-width: 820px) { .layout { flex-direction: column; } nav { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border); padding: 18px 0; } main { padding: 36px 24px; } .policy-grid { grid-template-columns: 1fr; } .decision-item, .consequence-item { flex-direction: column; gap: 4px; } }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <div class="nav-title">ADR 5</div>
+        <a href="#context">Context</a>
+        <a href="#decision">Decision</a>
+        <a href="#rationale">Rationale</a>
+        <a href="#consequences">Consequences</a>
+        <a href="#open-questions">Open Questions</a>
+        <div class="nav-section">
+          <div class="nav-title" style="margin-top: 0">ドキュメント</div>
+          <a href="../architecture.html">アーキテクチャガイド</a>
+          <a href="1.html">ADR 1 — String/str 方針</a>
+          <a href="2.html">ADR 2 — Issue 保存フロー</a>
+          <a href="3.html">ADR 3 — 非同期I/O worker</a>
+          <a href="4.html">ADR 4 — YAML seed 方針</a>
+        </div>
+      </nav>
+      <main>
+        <div class="page-header">
+          <div class="breadcrumb"><a href="../architecture.html">docs</a><span>/</span><span>adrs</span><span>/</span><span>5</span></div>
+          <div class="header-top"><div><div class="adr-number">ADR 5</div><h1>Issue 子 Store と IssueAction の分離方針</h1></div><span class="status-badge">Accepted</span></div>
+        </div>
+
+        <section id="context">
+          <h2>Context</h2>
+          <p><code>src/app.rs</code> は <code>Action</code>、<code>Dispatcher</code>、<code>Store</code> を定義し、Issue、Journal、Redmine のマスターデータに関する状態と更新処理を一つのファイルで管理している。</p>
+          <p>Issue 保存フローの追加により、Issue 本体だけでなく、Issue ごとの同期状態、未保存差分、upload 競合情報を Store が保持するようになった。Issue の読み込み、同期、編集、upload、競合管理に関する action も増え、<code>src/app.rs</code> の責務とテストが重厚になっている。</p>
+          <p>ADR 2 では Issue 関連 action が増えた場合に Issue 専用の子 Store へ切り出す余地を残していた。現在は、Issue に関する状態と action 処理が独立したまとまりを形成しており、子 Store へ分離する時点に達している。</p>
+          <p>一方、Component と usecase は親 <code>Store</code> の getter を通して Issue を参照している。この参照方法や Component lifecycle を変更せず、Store 内部の責務だけを分離する必要がある。</p>
+        </section>
+
+        <section id="decision">
+          <h2>Decision</h2>
+          <p>Store 関連コードを <code>src/stores/</code> へ移し、以下の構成にする。</p>
+          <pre class="code-block"><code>src/stores/
+├── mod.rs
+├── store.rs
+├── issue_store.rs
+└── issue_store_tests.rs</code></pre>
+          <div class="policy-grid">
+            <div class="policy-card primary"><div class="policy-title">ファイル責務</div><p><code>store.rs</code> は親 <code>Action</code>、<code>Dispatcher</code>、<code>Store</code>、Journal とマスターデータの状態を定義する。</p><p><code>issue_store.rs</code> は <code>IssueStore</code>、<code>IssueState</code>、<code>IssueAction</code> と Issue Action の処理を定義する。</p><p><code>issue_store_tests.rs</code> は親 Store の公開インターフェースを通して Issue Action を検証し、<code>mod.rs</code> は必要な型を再エクスポートする。</p></div>
+            <div class="policy-card secondary"><div class="policy-title">所有と境界</div><p><code>src/main.rs</code> の <code>mod app;</code> は <code>mod stores;</code> に変更し、既存の <code>crate::app</code> import は <code>crate::stores</code> へ移行する。</p><p>親 Store は <code>IssueStore</code> を一つのフィールドとして所有する。Issue 本体、Issue ごとの <code>IssueState</code>、未保存の <code>IssuePropertyDiff</code>、upload 競合時のサーバー Issue と競合 diff を移す。</p></div>
+          </div>
+          <h3>Action の構造</h3>
+          <pre class="code-block"><code>pub enum Action {
+    Issue(IssueAction),
+    // Journal、マスターデータ関連 Action
+}</code></pre>
+          <p><code>IssueAction</code> は Issue という文脈が型名で明らかなため、variant 名から重複する <code>Issue</code> を除き、次を定義する。</p>
+          <p><code>Load</code>、<code>Sync</code>、<code>StartUpload</code>、<code>CancelUpload</code>、<code>ClearUploadConflicts</code>、<code>FailUpload</code>、<code>UploadConflictsDetected</code>、<code>UpdateDescription</code>、<code>UpdateStatus</code>、<code>UpdateAssignedTo</code>、<code>UpdateTargetVersion</code>、<code>UpdateCategory</code>、<code>UpdateDoneRatio</code>、<code>UpdateStartDate</code>、<code>UpdateDueDate</code></p>
+          <div class="decision-list">
+            <div class="decision-item"><div class="dot"></div><div>親 <code>Store::consume_action</code> は <code>Action::Issue(action)</code> を <code>IssueStore::consume_action(action)</code> へ委譲する。Journal とマスターデータの Action は従来どおり親 Store が処理する。</div></div>
+            <div class="decision-item"><div class="dot"></div><div><code>From&lt;IssueAction&gt; for Action</code> を実装し、<code>Dispatcher::dispatch</code> は <code>impl Into&lt;Action&gt;</code> を受け取る。Component や usecase は通常 <code>IssueAction</code> を直接 dispatch し、親 Action が必要な非同期処理では <code>.into()</code> で変換する。</div></div>
+            <div class="decision-item"><div class="dot"></div><div>既存の <code>get_issue</code>、<code>get_issues</code>、<code>get_issue_property_diffs</code>、<code>get_issue_upload_conflict</code> getter は親 Store に残し、内部で IssueStore へ委譲する。</div></div>
+            <div class="decision-item"><div class="dot"></div><div>既存の <code>IssueState::Synced / Edited / Uploading</code>、状態遷移、panic 条件とメッセージは変更しない。<code>Load</code> は YAML fixture を読む暫定 Action、<code>Sync</code> は Issue の置換と diff・競合情報の破棄、<code>Synced</code> への遷移を行う。</div></div>
+          </div>
+          <h3>テストの配置</h3>
+          <p>Issue Store のテストは <code>src/stores/issue_store_tests.rs</code> へ分離する。ただし <code>IssueStore</code> を直接テストせず、現在と同様に親 Store の公開 getter と <code>Store::consume_action</code> を通して振る舞いを検証する。</p>
+          <div class="callout"><strong>維持する検証:</strong> 読み込みと参照 ID、property 更新と diff、upload の開始・中断・失敗・成功、競合情報、不正な状態遷移、Issue 同期時の置換と状態初期化。<code>SyncIssueStatuses</code>、<code>SyncUsers</code> などは親 Store のテストに残す。</div>
+        </section>
+
+        <section id="rationale">
+          <h2>Rationale</h2>
+          <div class="rationale-list">
+            <div class="rationale-item"><div class="rationale-item-title"><span class="badge">state</span>Issue の状態と規則をまとめる</div><p>Issue 本体、同期状態、差分、競合情報は同じ Issue ID をキーとして連動し、Issue Action によって一貫して更新される。IssueStore にまとめることで、状態遷移を親 Store の他の責務から独立して読める。</p></div>
+            <div class="rationale-item"><div class="rationale-item-title"><span class="badge">action</span>型で処理範囲を表現する</div><p><code>Action::Issue(IssueAction)</code> により、親 Store がアプリケーション全体の入口であることを維持しながら、子 Store が処理できる Action の範囲を型で表現できる。親 Store に15個の Issue Action variant を残す案は採用しない。</p></div>
+            <div class="rationale-item"><div class="rationale-item-title"><span class="badge">api</span>呼び出し側の冗長さを抑える</div><p><code>IssueAction</code> の variant から接頭辞を除き、<code>From&lt;IssueAction&gt;</code> と <code>impl Into&lt;Action&gt;</code> の dispatch を組み合わせることで、構造化に伴う呼び出し側の冗長さを抑える。</p></div>
+            <div class="rationale-item"><div class="rationale-item-title"><span class="badge">boundary</span>Component lifecycle を守る</div><p>親 Store の getter を維持することで Component は Store 内部の分割を意識しない。子 Store を直接公開せず、状態配置の変更を表示層へ漏らさない。</p></div>
+            <div class="rationale-item"><div class="rationale-item-title"><span class="badge">test</span>公開インターフェースを検証する</div><p>親 Store 経由のテストで、実装詳細ではなくアプリケーションが利用する公開インターフェースと Action dispatch の結合を検証する。実装とテストを分離し、双方の可読性も改善する。</p></div>
+          </div>
+        </section>
+
+        <section id="consequences">
+          <h2>Consequences</h2>
+          <div class="consequence-list">
+            <div class="consequence-item"><div class="dot"></div><div><code>src/app.rs</code> は廃止され、Store 関連の利用箇所は <code>crate::stores</code> から型を import する。再エクスポートにより内部モジュール名への依存は隠蔽される。</div></div>
+            <div class="consequence-item"><div class="dot"></div><div>Issue Action の呼び出し元は新しい <code>IssueAction</code> variant 名へ更新する必要がある。worker や usecase が親 Action を返す箇所では変換が必要になる。</div></div>
+            <div class="consequence-item"><div class="dot"></div><div>親 Store は Issue 固有状態を直接保持しなくなるが、既存 getter を維持するため Component の Store 参照と描画結果は変化しない。意図的な UI 表示変更はなく、snapshot 更新は想定しない。</div></div>
+            <div class="consequence-item"><div class="dot"></div><div>Journal とマスターデータは引き続き親 Store が保持する。これらの子 Store 分離は本 ADR の対象外とする。</div></div>
+            <div class="consequence-item"><div class="dot"></div><div>既存 ADR は変更しない。ADR 2 に記載された Issue 子 Store 分離の余地を、本 ADR によって具体化する。</div></div>
+          </div>
+        </section>
+
+        <section id="open-questions"><h2>Open Questions</h2><p>なし。</p></section>
+        <a href="../architecture.html" class="back-link">← アーキテクチャガイドへ戻る</a>
+      </main>
+    </div>
+  </body>
+</html>
