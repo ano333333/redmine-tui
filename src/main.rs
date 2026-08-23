@@ -22,19 +22,25 @@ use std::{
     io::Result,
     process::{Command, ExitCode},
     rc::Rc,
-    sync::mpsc::{self, Sender},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::{
+        Arc,
+        mpsc::{self, Sender},
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime};
 
 use self::{
     app::{Action, Dispatcher, IssueState},
-    clients::redmine::DefaultRedmineClient,
+    clients::redmine::{DefaultRedmineClient, RedmineClient},
     components::{
         AppComponent,
         app::{AppEffect, EditorRequest, EditorResponse},
     },
-    usecases::redmine::load_initial_entities,
+    usecases::redmine::{
+        apply_issue_property_diffs, fetch_issue_with_conflicts, load_initial_entities, upload_issue,
+    },
+    vos::{IssueId, IssuePropertyDiff},
 };
 
 const TICK_RATE_MS: u64 = 250;
@@ -58,8 +64,11 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let client = DefaultRedmineClient::new(config.host_url, config.access_token);
-    let actions = match runtime.block_on(load_initial_entities(&client)) {
+    let client = Arc::new(DefaultRedmineClient::new(
+        config.host_url,
+        config.access_token,
+    ));
+    let actions = match runtime.block_on(load_initial_entities(client.as_ref())) {
         Ok(actions) => actions,
         Err(error) => {
             eprintln!("failed to load initial entities from Redmine: {error}");
@@ -107,6 +116,7 @@ fn main() -> ExitCode {
                         dispatcher.clone(),
                         &runtime,
                         worker_action_tx.clone(),
+                        client.clone(),
                     ) {
                         break;
                     }
@@ -148,6 +158,7 @@ fn handle_key_event(
     dispatcher: Rc<RefCell<Dispatcher>>,
     runtime: &Runtime,
     sender: Sender<Action>,
+    client: Arc<DefaultRedmineClient>,
 ) -> bool {
     if let Event::Key(key) = event {
         if key.code == KeyCode::Char('q') {
@@ -166,6 +177,7 @@ fn handle_key_event(
             dispatcher.clone(),
             runtime,
             sender,
+            client,
         )
     {
         tracing::event!(
@@ -185,6 +197,7 @@ fn handle_app_effect(
     dispatcher: Rc<RefCell<Dispatcher>>,
     runtime: &Runtime,
     sender: mpsc::Sender<Action>,
+    client: Arc<DefaultRedmineClient>,
 ) -> Result<()> {
     match effect {
         AppEffect::OpenEditor(request) => {
@@ -197,25 +210,46 @@ fn handle_app_effect(
         AppEffect::StartIssueUpload(id) => {
             let mut d = dispatcher.borrow_mut();
             d.dispatch(Action::StartIssueUpload { id });
-            let (issue, state) = d
+            let (_, state) = d
                 .store()
                 .get_issue(id)
                 .expect("tried to upload unknown issue");
             if state != IssueState::Edited {
                 panic!("uploading issue is not edited");
             }
-            let issue = issue.clone();
-            // TODO: issue_property_diffsの取得とマージ
+            let diffs = d.store().get_issue_property_diffs(id).to_vec();
             runtime.spawn(async move {
-                // TODO: Redmineから指定issueの読み込み
-                tokio::time::sleep(Duration::from_secs(3)).await;
+                let action = issue_upload_action(client.as_ref(), id, &diffs).await;
                 sender
-                    .send(Action::SyncIssue { issue })
+                    .send(action)
                     .expect("Failed to send Action with mpsc::channel");
             });
         }
     }
     Ok(())
+}
+
+async fn issue_upload_action(
+    client: &impl RedmineClient,
+    id: IssueId,
+    diffs: &[IssuePropertyDiff],
+) -> Action {
+    let (mut server_issue, conflicts) = match fetch_issue_with_conflicts(client, id, diffs).await {
+        Ok(result) => result,
+        Err(_) => return Action::FailIssueUpload { id },
+    };
+    if !conflicts.is_empty() {
+        panic!("Issue property conflict resolution is not implemented");
+    }
+
+    apply_issue_property_diffs(&mut server_issue, diffs);
+    if upload_issue(client, &server_issue).await.is_err() {
+        return Action::FailIssueUpload { id };
+    }
+
+    Action::SyncIssue {
+        issue: server_issue,
+    }
 }
 
 fn run_editor(terminal: &mut DefaultTerminal, request: EditorRequest) -> Result<EditorResponse> {
@@ -341,12 +375,16 @@ fn dispatch_fixture_issues_and_journals(d: &mut Dispatcher) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
     use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
     use crate::entities::{
         Category, Issue, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity,
         Tracker, User,
     };
-    use crate::vos::IssueId;
+    use crate::test_support::sample_issue;
+    use crate::vos::issue_property_diff::IssueDescriptionDiff;
+    use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId};
 
     #[test]
     fn redmine_connection_config_requires_api_key() {
@@ -395,6 +433,172 @@ mod tests {
             error.to_string(),
             "unauthorized: GET http://redmine.invalid/users.json returned 401 with body: {\"error\":\"failed\"}"
         );
+    }
+
+    #[tokio::test]
+    async fn issue_upload_uses_server_issue_as_merge_base() {
+        let mut server_issue = sample_issue(
+            1,
+            "server subject",
+            IssueStatusId::new(1),
+            None,
+            None,
+            None,
+            0,
+        );
+        server_issue.updated_on = crate::test_support::local_datetime("2026-08-23T12:00:00+09:00");
+        server_issue.description = "original description".to_string();
+        let client = IssueUploadClient::new(server_issue.clone());
+        let diffs = vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
+            before: "original description".to_string(),
+            after: "local description".to_string(),
+        })];
+
+        let action = issue_upload_action(&client, 1.into(), &diffs).await;
+
+        let Action::SyncIssue { issue } = action else {
+            panic!("expected SyncIssue");
+        };
+        assert_eq!(issue.subject, "server subject");
+        assert_eq!(issue.updated_on, server_issue.updated_on);
+        assert_eq!(issue.description, "local description");
+        let uploaded = client.uploaded.lock().unwrap();
+        assert_eq!(uploaded.len(), 1);
+        assert_eq!(uploaded[0].subject, issue.subject);
+        assert_eq!(uploaded[0].description, issue.description);
+        assert_eq!(uploaded[0].updated_on, issue.updated_on);
+    }
+
+    #[tokio::test]
+    async fn issue_upload_returns_fail_action_when_fetch_fails() {
+        let client = IssueUploadClient::failing_get();
+
+        let action = issue_upload_action(&client, 1.into(), &[]).await;
+
+        assert!(matches!(action, Action::FailIssueUpload { id } if id == IssueId::new(1)));
+        assert!(client.uploaded.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn issue_upload_returns_fail_action_when_update_fails() {
+        let server_issue = sample_issue(1, "subject", IssueStatusId::new(1), None, None, None, 0);
+        let client = IssueUploadClient::failing_update(server_issue);
+
+        let action = issue_upload_action(&client, 1.into(), &[]).await;
+
+        assert!(matches!(action, Action::FailIssueUpload { id } if id == IssueId::new(1)));
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "Issue property conflict resolution is not implemented")]
+    async fn issue_upload_panics_when_property_conflicts() {
+        let mut server_issue =
+            sample_issue(1, "subject", IssueStatusId::new(1), None, None, None, 0);
+        server_issue.description = "server description".to_string();
+        let client = IssueUploadClient::new(server_issue);
+        let diffs = vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
+            before: "original description".to_string(),
+            after: "local description".to_string(),
+        })];
+
+        issue_upload_action(&client, 1.into(), &diffs).await;
+    }
+
+    struct IssueUploadClient {
+        issue: Option<Issue>,
+        get_error: bool,
+        update_error: bool,
+        uploaded: Mutex<Vec<Issue>>,
+    }
+
+    impl IssueUploadClient {
+        fn new(issue: Issue) -> Self {
+            Self {
+                issue: Some(issue),
+                get_error: false,
+                update_error: false,
+                uploaded: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn failing_get() -> Self {
+            Self {
+                issue: None,
+                get_error: true,
+                update_error: false,
+                uploaded: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn failing_update(issue: Issue) -> Self {
+            Self {
+                issue: Some(issue),
+                get_error: false,
+                update_error: true,
+                uploaded: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn network_error() -> RedmineClientError {
+            RedmineClientError::Network {
+                reason: "offline".to_string(),
+            }
+        }
+    }
+
+    impl RedmineClient for IssueUploadClient {
+        async fn get_issue(&self, _: IssueId) -> std::result::Result<Issue, RedmineClientError> {
+            if self.get_error {
+                return Err(Self::network_error());
+            }
+            Ok(self.issue.clone().expect("test issue must exist"))
+        }
+
+        async fn update_issue(&self, issue: &Issue) -> std::result::Result<(), RedmineClientError> {
+            if self.update_error {
+                return Err(Self::network_error());
+            }
+            self.uploaded.lock().unwrap().push(issue.clone());
+            Ok(())
+        }
+
+        async fn get_categories(&self) -> std::result::Result<Vec<Category>, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn get_issue_statuses(
+            &self,
+        ) -> std::result::Result<Vec<IssueStatus>, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn get_priorities(&self) -> std::result::Result<Vec<Priority>, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn get_projects(&self) -> std::result::Result<Vec<Project>, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn get_target_versions(
+            &self,
+        ) -> std::result::Result<Vec<TargetVersion>, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn get_time_entity_activities(
+            &self,
+        ) -> std::result::Result<Vec<TimeEntityActivity>, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn get_trackers(&self) -> std::result::Result<Vec<Tracker>, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn get_users(&self) -> std::result::Result<Vec<User>, RedmineClientError> {
+            unreachable!()
+        }
     }
 
     fn expect_string_error<T>(result: std::result::Result<T, String>) -> String {
