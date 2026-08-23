@@ -74,13 +74,23 @@ pub struct AppComponent<'a> {
 
 impl<'a> AppComponent<'a> {
     pub fn new(dispatcher: Rc<RefCell<Dispatcher>>, issue_id: Option<IssueId>) -> Self {
-        let issue_component = match issue_id {
-            Some(issue_id) => Some(IssueDetailComponent::new(dispatcher.clone(), issue_id)),
-            None => None,
+        let issue_component =
+            issue_id.map(|issue_id| IssueDetailComponent::new(dispatcher.clone(), issue_id));
+        let popup_components = if issue_id.is_none() {
+            let popup_component = {
+                let dispatcher = dispatcher.borrow();
+                let focused_issue_id = dispatcher.store().get_issues().keys().min().copied();
+                IssueSelectPopupComponent::new(dispatcher.store(), focused_issue_id)
+            };
+            VecDeque::from([Rc::new(RefCell::new(PopupComponent::IssueSelect(
+                popup_component,
+            )))])
+        } else {
+            VecDeque::new()
         };
         AppComponent {
             issue_component,
-            popup_components: VecDeque::new(),
+            popup_components,
             dispatcher,
             pending_effect: None,
             pending_editor_context: None,
@@ -185,7 +195,10 @@ impl<'a> AppComponent<'a> {
                 Some(IssueEventProcessResult::OpenIssueSelectPopup) => {
                     let popup_component = {
                         let dispatcher_ref = dispatcher.borrow();
-                        IssueSelectPopupComponent::new(dispatcher_ref.store(), issue_component.id)
+                        IssueSelectPopupComponent::new(
+                            dispatcher_ref.store(),
+                            Some(issue_component.id),
+                        )
                     };
 
                     self.popup_components.push_back(Rc::new(RefCell::new(
@@ -723,16 +736,21 @@ mod tests {
     }
 
     #[test]
-    fn new_without_initial_issue_updates_and_renders_without_panic() {
+    fn new_without_initial_issue_opens_issue_select_popup() {
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(dispatcher.clone(), None);
 
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
         assert!(app.issue_component.is_none());
+        assert_eq!(app.popup_components.len(), 1);
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::IssueSelect(_)
+        ));
         assert_eq!(app.cursor_position(dispatcher.borrow().store(), AREA), None);
         crate::test_support::render_frame_snapshot(
-            "app_without_initial_issue",
+            "app_with_initial_issue_select_popup",
             AREA.width,
             AREA.height,
             |frame| app.render(dispatcher.borrow().store(), frame, AREA),
@@ -740,9 +758,21 @@ mod tests {
     }
 
     #[test]
+    fn q_key_on_initial_issue_select_popup_returns_to_empty_main_screen() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), None);
+
+        app.process_event(key_event(KeyCode::Char('q')), dispatcher);
+
+        assert!(app.issue_component.is_none());
+        assert!(app.popup_components.is_empty());
+    }
+
+    #[test]
     fn process_event_without_initial_issue_ignores_issue_detail_keys() {
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(dispatcher.clone(), None);
+        app.process_event(key_event(KeyCode::Char('q')), dispatcher.clone());
 
         for code in [
             KeyCode::Char('j'),
@@ -865,14 +895,6 @@ mod tests {
     fn enter_on_issue_select_popup_creates_issue_detail_component_when_no_issue_is_displayed() {
         let dispatcher = dispatcher_with_selectable_issues();
         let mut app = AppComponent::new(dispatcher.clone(), None);
-        let popup_component = {
-            let dispatcher_ref = dispatcher.borrow();
-            IssueSelectPopupComponent::new(dispatcher_ref.store(), IssueId::new(1))
-        };
-        app.popup_components
-            .push_back(Rc::new(RefCell::new(PopupComponent::IssueSelect(
-                popup_component,
-            ))));
 
         app.process_event(key_event(KeyCode::Enter), dispatcher);
 
@@ -1036,7 +1058,7 @@ mod tests {
 
         let popup_component = {
             let dispatcher_ref = dispatcher.borrow();
-            IssueSelectPopupComponent::new(dispatcher_ref.store(), IssueId::new(3))
+            IssueSelectPopupComponent::new(dispatcher_ref.store(), Some(IssueId::new(3)))
         };
         app.popup_components
             .push_back(Rc::new(RefCell::new(PopupComponent::IssueSelect(

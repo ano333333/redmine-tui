@@ -23,9 +23,10 @@ pub struct IssueSelectPopupComponent {
 }
 
 impl IssueSelectPopupComponent {
-    /// ポップアップを開いた時点で表示していたissueにフォーカスを合わせて初期化する。
+    /// focused_issue_idがある場合は、ポップアップを開いた時点で表示していたissueに
+    /// フォーカスを合わせて初期化する。
     /// projects/issuesの一覧はupdateでStoreから取得する。
-    pub fn new(store: &Store, focused_issue_id: impl Into<IssueId>) -> Self {
+    pub fn new(store: &Store, focused_issue_id: Option<IssueId>) -> Self {
         let mut component = Self {
             projects: Vec::new(),
             issues: Vec::new(),
@@ -33,7 +34,9 @@ impl IssueSelectPopupComponent {
             widget_state: IssueSelectPopupWidgetState::new(),
         };
         component.load_from_store(store);
-        component.focus_issue(focused_issue_id);
+        if let Some(focused_issue_id) = focused_issue_id {
+            component.focus_issue(focused_issue_id);
+        }
         component
     }
 
@@ -222,9 +225,21 @@ mod tests {
     }
 
     #[test]
+    fn new_without_focused_issue_handles_empty_store() {
+        let store = Store::new();
+        let mut component = IssueSelectPopupComponent::new(&store, None);
+
+        component.update(&store, AREA);
+        let widget = component.create_widget(&store);
+
+        assert!(widget.projects.is_empty());
+        assert!(widget.issues.is_empty());
+    }
+
+    #[test]
     fn snapshot_update_renders_initial_focus_and_preview() {
         let store = store();
-        let mut component = IssueSelectPopupComponent::new(&store, 2);
+        let mut component = IssueSelectPopupComponent::new(&store, Some(2.into()));
 
         component.update(&store, AREA);
 
@@ -239,7 +254,7 @@ mod tests {
     #[test]
     fn snapshot_process_event_updates_focus_state_visible_in_widget() {
         let store = store();
-        let mut component = IssueSelectPopupComponent::new(&store, 1);
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
 
         component.process_event(key_event(KeyCode::Char('l')));
         component.process_event(key_event(KeyCode::Char('j')));
@@ -256,7 +271,7 @@ mod tests {
     #[test]
     fn snapshot_update_reflects_issue_body_from_store() {
         let mut store = store();
-        let mut component = IssueSelectPopupComponent::new(&store, 1);
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
 
         store.consume_action(Action::UpdateIssue {
             id: 1.into(),
@@ -275,7 +290,7 @@ mod tests {
     #[test]
     fn create_widget_includes_projects_with_no_issues() {
         let store = store();
-        let component = IssueSelectPopupComponent::new(&store, 1);
+        let component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let widget = component.create_widget(&store);
 
         assert_eq!(widget.projects.len(), 2);
@@ -286,7 +301,7 @@ mod tests {
     #[test]
     fn process_event_l_ignores_empty_project_focus() {
         let store = store();
-        let mut component = IssueSelectPopupComponent::new(&store, 1);
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
 
         component.process_event(key_event(KeyCode::Char('j')));
         component.process_event(key_event(KeyCode::Char('l')));
@@ -298,7 +313,7 @@ mod tests {
 
     #[test]
     fn process_event_q_returns_quited() {
-        let mut component = IssueSelectPopupComponent::new(&store(), 1);
+        let mut component = IssueSelectPopupComponent::new(&store(), Some(1.into()));
 
         let result = component.process_event(key_event(KeyCode::Char('q')));
 
@@ -307,7 +322,7 @@ mod tests {
 
     #[test]
     fn process_event_enter_returns_selected_issue_id() {
-        let mut component = IssueSelectPopupComponent::new(&store(), 1);
+        let mut component = IssueSelectPopupComponent::new(&store(), Some(1.into()));
 
         component.process_event(key_event(KeyCode::Char('l')));
         component.process_event(key_event(KeyCode::Char('j')));
@@ -323,7 +338,7 @@ mod tests {
 
     #[test]
     fn process_event_returns_none_for_non_key_event() {
-        let mut component = IssueSelectPopupComponent::new(&store(), 1);
+        let mut component = IssueSelectPopupComponent::new(&store(), Some(1.into()));
 
         let result = component.process_event(Event::Resize(80, 24));
 
@@ -332,7 +347,7 @@ mod tests {
 
     #[test]
     fn process_event_ignores_unhandled_key() {
-        let mut component = IssueSelectPopupComponent::new(&store(), 2);
+        let mut component = IssueSelectPopupComponent::new(&store(), Some(2.into()));
 
         let result = component.process_event(key_event(KeyCode::Char('x')));
 
