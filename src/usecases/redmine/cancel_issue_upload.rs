@@ -1,0 +1,54 @@
+use crate::app::{Action, Dispatcher};
+use crate::vos::IssueId;
+
+/// Issueの競合情報を破棄し、アップロードをキャンセルするActionを順番にdispatchする。
+pub fn cancel_issue_upload(dispatcher: &mut Dispatcher, id: IssueId) {
+    dispatcher.dispatch(Action::ClearIssueUploadConflicts { id });
+    dispatcher.dispatch(Action::CancelIssueUpload { id });
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::app::{Action, Dispatcher, IssueState};
+    use crate::test_support::sample_issue;
+    use crate::vos::IssueId;
+
+    use super::cancel_issue_upload;
+
+    #[test]
+    fn conflictを削除してからissue_uploadをキャンセルする() {
+        let id = IssueId::new(1);
+        let mut dispatcher = Dispatcher::new();
+        dispatcher.dispatch(Action::LoadIssue { id });
+        dispatcher.consume_action();
+        dispatcher.dispatch(Action::UpdateIssue {
+            id,
+            body: "local body".to_string(),
+        });
+        dispatcher.consume_action();
+        dispatcher.dispatch(Action::StartIssueUpload { id });
+        dispatcher.consume_action();
+        dispatcher.dispatch(Action::IssueUploadConflictsDetected {
+            server_issue: sample_issue(1, "server issue", 1.into(), None, None, None, 0),
+            conflicts: dispatcher.store().get_issue_property_diffs(id).to_vec(),
+        });
+        dispatcher.consume_action();
+
+        cancel_issue_upload(&mut dispatcher, id);
+
+        assert_eq!(dispatcher.consume_actinos_len(), 2);
+        dispatcher.consume_action();
+        assert!(dispatcher.store().get_issue_upload_conflict(id).is_none());
+        assert_eq!(
+            dispatcher.store().get_issue(id).unwrap().1,
+            IssueState::Uploading
+        );
+
+        dispatcher.consume_action();
+        assert_eq!(
+            dispatcher.store().get_issue(id).unwrap().1,
+            IssueState::Edited
+        );
+        assert_eq!(dispatcher.store().get_issue_property_diffs(id).len(), 1);
+    }
+}

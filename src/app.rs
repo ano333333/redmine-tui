@@ -172,6 +172,13 @@ impl Store {
                 self.issue_upload_conflicts.remove(&id);
                 self.issue_states.insert(id, IssueState::Edited);
             }
+            Action::ClearIssueUploadConflicts { id } => {
+                let state = self.get_issue_state(id);
+                if state != IssueState::Uploading {
+                    panic!("cannot clear issue upload conflicts while issue {id} is {state:?}");
+                }
+                self.issue_upload_conflicts.remove(&id);
+            }
             Action::FailIssueUpload { id } => {
                 let state = self.get_issue_state(id);
                 if state != IssueState::Uploading {
@@ -479,6 +486,9 @@ pub enum Action {
         id: IssueId,
     },
     CancelIssueUpload {
+        id: IssueId,
+    },
+    ClearIssueUploadConflicts {
         id: IssueId,
     },
     FailIssueUpload {

@@ -10,9 +10,12 @@ use crate::app::{Action, Dispatcher, Store};
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueDetailComponent,
 };
-use crate::components::issue_property_conflict_popup::IssuePropertyConflictComponent;
+use crate::components::issue_property_conflict_popup::{
+    EventProcessResult as IssuePropertyConflictEventProcessResult, IssuePropertyConflictComponent,
+};
 use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
 use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
+use crate::usecases::redmine::cancel_issue_upload;
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssueStatusId, TargetVersionId, TimeEntityActivityId,
     UserId,
@@ -152,7 +155,16 @@ impl<'a> AppComponent<'a> {
                         None => {}
                     }
                 }
-                PopupComponent::IssuePropertyConflict { .. } => {}
+                PopupComponent::IssuePropertyConflict {
+                    issue_id,
+                    component,
+                } => match component.process_event(event) {
+                    Some(IssuePropertyConflictEventProcessResult::Canceled) => {
+                        cancel_issue_upload(&mut dispatcher.borrow_mut(), *issue_id);
+                        self.popup_components.pop_back();
+                    }
+                    Some(IssuePropertyConflictEventProcessResult::Continued { .. }) | None => {}
+                },
             }
         } else if let Some(issue_component) = &mut self.issue_component {
             let result = issue_component.process_event(event, self.dispatcher.clone());
@@ -611,6 +623,30 @@ mod tests {
         dispatcher
     }
 
+    fn app_with_issue_property_conflict_popup() -> (Rc<RefCell<Dispatcher>>, AppComponent<'static>)
+    {
+        let dispatcher = loaded_dispatcher_with_edited_issue();
+        let conflicts = dispatcher
+            .borrow()
+            .store()
+            .get_issue_property_diffs(IssueId::new(3))
+            .to_vec();
+        let server_issue = dispatcher.borrow().store().get_issue(3).unwrap().0.clone();
+        {
+            let mut dispatcher = dispatcher.borrow_mut();
+            dispatcher.dispatch(Action::StartIssueUpload { id: 3.into() });
+            dispatcher.dispatch(Action::IssueUploadConflictsDetected {
+                server_issue,
+                conflicts,
+            });
+            dispatcher.consume_action();
+            dispatcher.consume_action();
+        }
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        (dispatcher, app)
+    }
+
     fn dispatcher_with_issue() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         dispatcher
@@ -736,6 +772,28 @@ mod tests {
             PopupComponent::IssuePropertyConflict { issue_id, .. }
                 if *issue_id == IssueId::new(3)
         ));
+    }
+
+    #[test]
+    fn q_key_on_issue_property_conflict_popup_requests_upload_cancellation() {
+        let (dispatcher, mut app) = app_with_issue_property_conflict_popup();
+
+        app.process_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+
+        assert!(app.popup_components.is_empty());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 2);
+    }
+
+    #[test]
+    fn cancel_button_on_issue_property_conflict_popup_requests_upload_cancellation() {
+        let (dispatcher, mut app) = app_with_issue_property_conflict_popup();
+
+        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('h')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+
+        assert!(app.popup_components.is_empty());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 2);
     }
 
     #[test]
