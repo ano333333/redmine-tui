@@ -45,7 +45,7 @@ pub enum EventProcessResult {
 mod tests {
     use super::*;
 
-    use crate::stores::Action;
+    use crate::stores::IssueAction;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn key_event(code: KeyCode) -> Event {
@@ -60,17 +60,19 @@ mod tests {
         let dispatcher = dispatcher();
         dispatcher
             .borrow_mut()
-            .dispatch(Action::LoadIssue { id: 3.into() });
+            .dispatch(IssueAction::Load { id: 3.into() });
         dispatcher.borrow_mut().consume_action();
         dispatcher
     }
 
     fn dispatcher_with_edited_issue() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = dispatcher_with_issue();
-        dispatcher.borrow_mut().dispatch(Action::UpdateIssue {
-            id: 3.into(),
-            body: "updated body".to_string(),
-        });
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateDescription {
+                id: 3.into(),
+                body: "updated body".to_string(),
+            });
         dispatcher.borrow_mut().consume_action();
         dispatcher
     }

@@ -513,10 +513,16 @@
               >
             </div>
             <div class="dir-item">
-              <span class="dir-path">src/app.rs</span>
+              <span class="dir-path">src/stores/</span>
               <span class="dir-desc"
-                >Action、Dispatcher、Store を定義する。Store は entity
-                と差分状態を保持する。</span
+                ><code>mod.rs</code> は Store subsystem
+                の公開型を再エクスポートし、内部のファイル配置を隠蔽する。<br />
+                <code>store.rs</code> は親 Action、Dispatcher、Store、Journal
+                とマスターデータの状態を定義する。<br />
+                <code>issue_store.rs</code> は IssueStore、IssueState、IssueAction
+                と Issue Action の処理を定義する。<br />
+                <code>issue_store_tests.rs</code> は親 Store
+                の公開インターフェースを通して Issue Action を検証する。</span
               >
             </div>
             <div class="dir-item">
@@ -606,6 +612,21 @@
               <div>
                 <code>Dispatcher</code> は action queue と
                 <code>Store</code> を内部に持つ。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                親 <code>Store</code> は Issue の状態と更新処理を非公開の
+                <code>IssueStore</code> に委譲する。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                Component と usecase は <code>IssueStore</code>
+                を直接参照せず、親 <code>Store</code> の Issue getter を通して
+                entity、同期状態、diff、競合情報を取得する。
               </div>
             </div>
             <div class="diff-item">

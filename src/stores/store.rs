@@ -1,17 +1,14 @@
 use std::collections::{HashMap, VecDeque};
 
+use super::issue_store::{IssueAction, IssueState, IssueStore};
 use crate::entities::{
     Category, Issue, IssueStatus, Journal, Priority, Project, TargetVersion, TimeEntityActivity,
     Tracker, User,
 };
-use crate::libs::yaml::{parse_issue_yaml, parse_journal_yaml};
-use crate::vos::issue_property_diff::{
-    IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
-    IssueDueDateDiff, IssueStartDateDiff, IssueStatusIdDiff, IssueTargetVersionIdDiff,
-};
+use crate::libs::yaml::parse_journal_yaml;
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, PriorityId,
-    ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, PriorityId, ProjectId,
+    TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
 pub struct Dispatcher {
@@ -29,8 +26,8 @@ impl Dispatcher {
     pub fn store(&self) -> &Store {
         &self.store
     }
-    pub fn dispatch(&mut self, action: Action) {
-        self.actions.push_back(action);
+    pub fn dispatch(&mut self, action: impl Into<Action>) {
+        self.actions.push_back(action.into());
     }
     pub fn consume_actinos_len(&self) -> usize {
         self.actions.len()
@@ -42,23 +39,13 @@ impl Dispatcher {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum IssueState {
-    Synced,
-    Edited,
-    Uploading,
-}
-
 pub enum JournalState {
     Synced,
     Updated,
 }
 
 pub struct Store {
-    issues: HashMap<IssueId, Issue>,
-    issue_states: HashMap<IssueId, IssueState>,
-    issue_property_diffs: HashMap<IssueId, Vec<IssuePropertyDiff>>,
-    issue_upload_conflicts: HashMap<IssueId, (Issue, Vec<IssuePropertyDiff>)>,
+    issue_store: IssueStore,
     journals: HashMap<JournalId, (Journal, JournalState)>,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
@@ -73,10 +60,7 @@ pub struct Store {
 impl Store {
     pub fn new() -> Self {
         Self {
-            issues: HashMap::new(),
-            issue_states: HashMap::new(),
-            issue_property_diffs: HashMap::new(),
-            issue_upload_conflicts: HashMap::new(),
+            issue_store: IssueStore::new(),
             journals: HashMap::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
@@ -91,6 +75,7 @@ impl Store {
 
     pub fn consume_action(&mut self, action: Action) {
         match action {
+            Action::Issue(action) => self.issue_store.consume_action(action),
             Action::SyncUsers { users } => {
                 self.users = users.into_iter().map(|user| (user.id, user)).collect();
             }
@@ -138,190 +123,6 @@ impl Store {
                     .map(|activity| (activity.id, activity))
                     .collect();
             }
-            Action::LoadIssue { id } => {
-                self.issues.entry(id).or_insert(parse_issue_yaml(id.get()));
-                self.issue_states.entry(id).or_insert(IssueState::Synced);
-                self.issue_property_diffs.entry(id).or_default();
-            }
-            Action::SyncIssue { issue } => {
-                let id = issue.id;
-                if self.issues.contains_key(&id) {
-                    let state = self.get_issue_state(id);
-                    if state == IssueState::Synced {
-                        panic!("cannot sync issue {id} while it is {state:?}");
-                    }
-                }
-                self.issues.insert(id, issue);
-                self.issue_property_diffs.remove(&id);
-                self.issue_upload_conflicts.remove(&id);
-                self.issue_states.insert(id, IssueState::Synced);
-            }
-            Action::StartIssueUpload { id } => {
-                let state = self.get_issue_state(id);
-                if state != IssueState::Edited {
-                    panic!("cannot start issue upload while issue {id} is {state:?}");
-                }
-                self.issue_upload_conflicts.remove(&id);
-                self.issue_states.insert(id, IssueState::Uploading);
-            }
-            Action::CancelIssueUpload { id } => {
-                let state = self.get_issue_state(id);
-                if state != IssueState::Uploading {
-                    panic!("cannot cancel issue upload while issue {id} is {state:?}");
-                }
-                self.issue_upload_conflicts.remove(&id);
-                self.issue_states.insert(id, IssueState::Edited);
-            }
-            Action::ClearIssueUploadConflicts { id } => {
-                let state = self.get_issue_state(id);
-                if state != IssueState::Uploading {
-                    panic!("cannot clear issue upload conflicts while issue {id} is {state:?}");
-                }
-                self.issue_upload_conflicts.remove(&id);
-            }
-            Action::FailIssueUpload { id } => {
-                let state = self.get_issue_state(id);
-                if state != IssueState::Uploading {
-                    panic!("cannot fail issue upload while issue {id} is {state:?}");
-                }
-                self.issue_upload_conflicts.remove(&id);
-                self.issue_states.insert(id, IssueState::Edited);
-            }
-            Action::IssueUploadConflictsDetected {
-                server_issue,
-                conflicts,
-            } => {
-                let id = server_issue.id;
-                let state = self.get_issue_state(id);
-                if state != IssueState::Uploading {
-                    panic!("cannot retain issue upload conflicts while issue {id} is {state:?}");
-                }
-                self.issue_upload_conflicts
-                    .insert(id, (server_issue, conflicts));
-            }
-            Action::UpdateIssue { id, body } => {
-                if self.can_update_issue(id)
-                    && let Some(issue) = self.issues.get_mut(&id)
-                {
-                    let before = issue.description.clone();
-                    issue.description = body.clone();
-                    self.issue_property_diffs.entry(id).or_default().push(
-                        IssuePropertyDiff::Description(IssueDescriptionDiff {
-                            before,
-                            after: body,
-                        }),
-                    );
-                    self.issue_states.insert(id, IssueState::Edited);
-                }
-            }
-            Action::UpdateIssueStatus { id, status_id } => {
-                if self.can_update_issue(id)
-                    && let Some(issue) = self.issues.get_mut(&id)
-                {
-                    let before = issue.status_id;
-                    issue.status_id = status_id;
-                    self.issue_property_diffs.entry(id).or_default().push(
-                        IssuePropertyDiff::StatusId(IssueStatusIdDiff {
-                            before,
-                            after: status_id,
-                        }),
-                    );
-                    self.issue_states.insert(id, IssueState::Edited);
-                }
-            }
-            Action::UpdateIssueAssignedTo { id, assigned_to_id } => {
-                if self.can_update_issue(id)
-                    && let Some(issue) = self.issues.get_mut(&id)
-                {
-                    let before = issue.assigned_to_id;
-                    issue.assigned_to_id = assigned_to_id;
-                    self.issue_property_diffs.entry(id).or_default().push(
-                        IssuePropertyDiff::AssignedToId(IssueAssignedToIdDiff {
-                            before,
-                            after: assigned_to_id,
-                        }),
-                    );
-                    self.issue_states.insert(id, IssueState::Edited);
-                }
-            }
-            Action::UpdateIssueTargetVersion {
-                id,
-                target_version_id,
-            } => {
-                if self.can_update_issue(id)
-                    && let Some(issue) = self.issues.get_mut(&id)
-                {
-                    let before = issue.target_version_id;
-                    issue.target_version_id = target_version_id;
-                    self.issue_property_diffs.entry(id).or_default().push(
-                        IssuePropertyDiff::TargetVersionId(IssueTargetVersionIdDiff {
-                            before,
-                            after: target_version_id,
-                        }),
-                    );
-                    self.issue_states.insert(id, IssueState::Edited);
-                }
-            }
-            Action::UpdateIssueCategory { id, category_id } => {
-                if self.can_update_issue(id)
-                    && let Some(issue) = self.issues.get_mut(&id)
-                {
-                    let before = issue.category_id;
-                    issue.category_id = category_id;
-                    self.issue_property_diffs.entry(id).or_default().push(
-                        IssuePropertyDiff::CategoryId(IssueCategoryIdDiff {
-                            before,
-                            after: category_id,
-                        }),
-                    );
-                    self.issue_states.insert(id, IssueState::Edited);
-                }
-            }
-            Action::UpdateIssueDoneRatio { id, done_ratio } => {
-                if self.can_update_issue(id)
-                    && let Some(issue) = self.issues.get_mut(&id)
-                {
-                    let before = issue.done_ratio;
-                    issue.done_ratio = done_ratio;
-                    self.issue_property_diffs.entry(id).or_default().push(
-                        IssuePropertyDiff::DoneRatio(IssueDoneRatioDiff {
-                            before,
-                            after: done_ratio,
-                        }),
-                    );
-                    self.issue_states.insert(id, IssueState::Edited);
-                }
-            }
-            Action::UpdateIssueStartDate { id, start_date } => {
-                if self.can_update_issue(id)
-                    && let Some(issue) = self.issues.get_mut(&id)
-                {
-                    let before = issue.start_date;
-                    issue.start_date = start_date;
-                    self.issue_property_diffs.entry(id).or_default().push(
-                        IssuePropertyDiff::StartDate(IssueStartDateDiff {
-                            before,
-                            after: start_date,
-                        }),
-                    );
-                    self.issue_states.insert(id, IssueState::Edited);
-                }
-            }
-            Action::UpdateIssueDueDate { id, due_date } => {
-                if self.can_update_issue(id)
-                    && let Some(issue) = self.issues.get_mut(&id)
-                {
-                    let before = issue.due_date;
-                    issue.due_date = due_date;
-                    self.issue_property_diffs.entry(id).or_default().push(
-                        IssuePropertyDiff::DueDate(IssueDueDateDiff {
-                            before,
-                            after: due_date,
-                        }),
-                    );
-                    self.issue_states.insert(id, IssueState::Edited);
-                }
-            }
             Action::LoadJournal { id } => {
                 self.journals
                     .entry(id)
@@ -337,28 +138,15 @@ impl Store {
     }
 
     pub fn get_issue(&self, issue_id: impl Into<IssueId>) -> Option<(&Issue, IssueState)> {
-        let issue_id = issue_id.into();
-        self.issues
-            .get(&issue_id)
-            .map(|issue| (issue, self.get_issue_state(issue_id)))
+        self.issue_store.get_issue(issue_id)
     }
 
     pub fn get_issues(&self) -> &HashMap<IssueId, Issue> {
-        &self.issues
+        self.issue_store.get_issues()
     }
 
     pub fn get_issue_property_diffs(&self, issue_id: impl Into<IssueId>) -> &[IssuePropertyDiff] {
-        self.issue_property_diffs
-            .get(&issue_id.into())
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
-    }
-
-    fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> IssueState {
-        self.issue_states
-            .get(&issue_id.into())
-            .copied()
-            .unwrap_or(IssueState::Synced)
+        self.issue_store.get_issue_property_diffs(issue_id)
     }
 
     pub fn get_journal(
@@ -436,22 +224,12 @@ impl Store {
 
     /// 保存処理で検出した競合について、比較時点のサーバー Issue と差分を返す。
     pub fn get_issue_upload_conflict(&self, id: IssueId) -> Option<(&Issue, &[IssuePropertyDiff])> {
-        self.issue_upload_conflicts
-            .get(&id)
-            .map(|(issue, conflicts)| (issue, conflicts.as_slice()))
-    }
-
-    fn can_update_issue(&self, id: impl Into<IssueId>) -> bool {
-        let id = id.into();
-        let state = self.get_issue_state(id);
-        if state == IssueState::Uploading {
-            panic!("cannot update issue while issue {id} is {state:?}");
-        }
-        true
+        self.issue_store.get_issue_upload_conflict(id)
     }
 }
 
 pub enum Action {
+    Issue(IssueAction),
     SyncUsers {
         users: Vec<User>,
     },
@@ -476,60 +254,6 @@ pub enum Action {
     SyncTimeEntityActivities {
         time_entity_activities: Vec<TimeEntityActivity>,
     },
-    LoadIssue {
-        id: IssueId,
-    },
-    SyncIssue {
-        issue: Issue,
-    },
-    StartIssueUpload {
-        id: IssueId,
-    },
-    CancelIssueUpload {
-        id: IssueId,
-    },
-    ClearIssueUploadConflicts {
-        id: IssueId,
-    },
-    FailIssueUpload {
-        id: IssueId,
-    },
-    IssueUploadConflictsDetected {
-        server_issue: Issue,
-        conflicts: Vec<IssuePropertyDiff>,
-    },
-    UpdateIssue {
-        id: IssueId,
-        body: String,
-    },
-    UpdateIssueStatus {
-        id: IssueId,
-        status_id: IssueStatusId,
-    },
-    UpdateIssueAssignedTo {
-        id: IssueId,
-        assigned_to_id: Option<UserId>,
-    },
-    UpdateIssueTargetVersion {
-        id: IssueId,
-        target_version_id: Option<TargetVersionId>,
-    },
-    UpdateIssueCategory {
-        id: IssueId,
-        category_id: Option<CategoryId>,
-    },
-    UpdateIssueDoneRatio {
-        id: IssueId,
-        done_ratio: u16,
-    },
-    UpdateIssueStartDate {
-        id: IssueId,
-        start_date: Option<chrono::DateTime<chrono::Local>>,
-    },
-    UpdateIssueDueDate {
-        id: IssueId,
-        due_date: Option<chrono::DateTime<chrono::Local>>,
-    },
     LoadJournal {
         id: JournalId,
     },
@@ -539,16 +263,31 @@ pub enum Action {
     },
 }
 
+impl From<IssueAction> for Action {
+    fn from(action: IssueAction) -> Self {
+        Self::Issue(action)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{local_datetime, sample_issue, sync_fixture_entities};
-    use crate::vos::IssuePropertyDiff;
-    use crate::vos::issue_property_diff::{IssueDueDateDiff, IssueStartDateDiff};
+    use crate::test_support::sync_fixture_entities;
     use crate::vos::{
         CategoryId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId,
         TrackerId, UserId,
     };
+
+    #[test]
+    fn dispatcher_accepts_issue_action_directly() {
+        let id = IssueId::new(1);
+        let mut dispatcher = Dispatcher::new();
+
+        dispatcher.dispatch(IssueAction::Load { id });
+        dispatcher.consume_action();
+
+        assert!(dispatcher.store().get_issue(id).is_some());
+    }
 
     #[test]
     fn sync_fixture_entities_populates_target_versions() {
@@ -564,46 +303,6 @@ mod tests {
     }
 
     #[test]
-    fn load_issue_reads_target_version_id_reference() {
-        let mut store = Store::new();
-
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-
-        let (issue, _) = store.get_issue(1).expect("issue should be loaded");
-        assert_eq!(issue.target_version_id, Some(TargetVersionId::new(1)));
-    }
-
-    #[test]
-    fn update_issue_target_version_sets_selected_version() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 2.into() });
-
-        store.consume_action(Action::UpdateIssueTargetVersion {
-            id: 2.into(),
-            target_version_id: Some(TargetVersionId::new(1)),
-        });
-
-        let (issue, state) = store.get_issue(2).expect("issue should be loaded");
-        assert_eq!(issue.target_version_id, Some(TargetVersionId::new(1)));
-        assert_eq!(state, IssueState::Edited);
-    }
-
-    #[test]
-    fn update_issue_target_version_can_clear_version() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-
-        store.consume_action(Action::UpdateIssueTargetVersion {
-            id: 1.into(),
-            target_version_id: None,
-        });
-
-        let (issue, state) = store.get_issue(1).expect("issue should be loaded");
-        assert_eq!(issue.target_version_id, None);
-        assert_eq!(state, IssueState::Edited);
-    }
-
-    #[test]
     fn sync_fixture_entities_populates_categories() {
         let mut store = Store::new();
 
@@ -614,321 +313,6 @@ mod tests {
             .expect("category should be loaded");
         assert_eq!(category.name, "category1");
         assert_eq!(store.get_categories().len(), 1);
-    }
-
-    #[test]
-    fn load_issue_reads_category_id_reference() {
-        let mut store = Store::new();
-
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-
-        let (issue, _) = store.get_issue(1).expect("issue should be loaded");
-        assert_eq!(issue.category_id, Some(CategoryId::new(1)));
-    }
-
-    #[test]
-    fn update_issue_category_sets_selected_category() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-
-        store.consume_action(Action::UpdateIssueCategory {
-            id: 1.into(),
-            category_id: Some(CategoryId::new(2)),
-        });
-
-        let (issue, state) = store.get_issue(1).expect("issue should be loaded");
-        assert_eq!(issue.category_id, Some(CategoryId::new(2)));
-        assert_eq!(state, IssueState::Edited);
-    }
-
-    #[test]
-    fn update_issue_category_can_clear_category() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-
-        store.consume_action(Action::UpdateIssueCategory {
-            id: 1.into(),
-            category_id: None,
-        });
-
-        let (issue, state) = store.get_issue(1).expect("issue should be loaded");
-        assert_eq!(issue.category_id, None);
-        assert_eq!(state, IssueState::Edited);
-    }
-
-    #[test]
-    fn update_issue_start_date_updates_issue_and_records_diff() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-        let before = store.get_issue(1).unwrap().0.start_date;
-        let after = Some(local_datetime("2026-04-30T00:00:00+09:00"));
-
-        store.consume_action(Action::UpdateIssueStartDate {
-            id: 1.into(),
-            start_date: after,
-        });
-
-        assert_eq!(store.get_issue(1).unwrap().0.start_date, after);
-        assert_eq!(
-            store.get_issue_property_diffs(IssueId::new(1)).last(),
-            Some(&IssuePropertyDiff::StartDate(IssueStartDateDiff {
-                before,
-                after
-            }))
-        );
-    }
-
-    #[test]
-    fn update_issue_due_date_updates_issue_and_records_diff() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-        let before = store.get_issue(1).unwrap().0.due_date;
-        let after = Some(local_datetime("2026-05-01T00:00:00+09:00"));
-
-        store.consume_action(Action::UpdateIssueDueDate {
-            id: 1.into(),
-            due_date: after,
-        });
-
-        assert_eq!(store.get_issue(1).unwrap().0.due_date, after);
-        assert_eq!(
-            store.get_issue_property_diffs(IssueId::new(1)).last(),
-            Some(&IssuePropertyDiff::DueDate(IssueDueDateDiff {
-                before,
-                after
-            }))
-        );
-    }
-
-    #[test]
-    fn start_issue_upload_marks_issue_uploading_and_retains_diffs() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-        store.consume_action(Action::UpdateIssue {
-            id: 1.into(),
-            body: "edited body".to_string(),
-        });
-
-        store.consume_action(Action::StartIssueUpload { id: 1.into() });
-
-        let (_, state) = store.get_issue(1).expect("issue should be loaded");
-        assert_eq!(state, IssueState::Uploading);
-        assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
-    }
-
-    #[test]
-    fn issue_upload_conflicts_are_retained_while_uploading() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-        store.consume_action(Action::UpdateIssue {
-            id: 1.into(),
-            body: "local body".to_string(),
-        });
-        store.consume_action(Action::StartIssueUpload { id: 1.into() });
-        let server_issue = sample_issue(1, "server issue", 1.into(), None, None, None, 0);
-        let conflicts = store.get_issue_property_diffs(IssueId::new(1)).to_vec();
-
-        store.consume_action(Action::IssueUploadConflictsDetected {
-            server_issue: server_issue.clone(),
-            conflicts: conflicts.clone(),
-        });
-
-        let (actual_issue, actual_conflicts) = store
-            .get_issue_upload_conflict(1.into())
-            .expect("issue upload conflict should be retained");
-        assert_eq!(actual_issue.subject, server_issue.subject);
-        assert_eq!(actual_conflicts, conflicts);
-        assert_eq!(store.get_issue(1).unwrap().1, IssueState::Uploading);
-    }
-
-    #[test]
-    #[should_panic(expected = "cannot update issue while issue 1 is Uploading")]
-    fn uploading_issue_update_panics() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-        store.consume_action(Action::UpdateIssue {
-            id: 1.into(),
-            body: "edited body".to_string(),
-        });
-        store.consume_action(Action::StartIssueUpload { id: 1.into() });
-
-        store.consume_action(Action::UpdateIssue {
-            id: 1.into(),
-            body: "late edit".to_string(),
-        });
-    }
-
-    #[test]
-    #[should_panic(expected = "cannot start issue upload while issue 1 is Uploading")]
-    fn uploading_issue_start_upload_panics() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-        store.consume_action(Action::UpdateIssue {
-            id: 1.into(),
-            body: "edited body".to_string(),
-        });
-        store.consume_action(Action::StartIssueUpload { id: 1.into() });
-
-        store.consume_action(Action::StartIssueUpload { id: 1.into() });
-    }
-
-    #[test]
-    #[should_panic(expected = "cannot start issue upload while issue 1 is Synced")]
-    fn synced_issue_start_upload_panics() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-
-        store.consume_action(Action::StartIssueUpload { id: 1.into() });
-    }
-
-    #[test]
-    #[should_panic(expected = "cannot cancel issue upload while issue 1 is Synced")]
-    fn synced_issue_cancel_upload_panics() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-
-        store.consume_action(Action::CancelIssueUpload { id: 1.into() });
-    }
-
-    #[test]
-    #[should_panic(expected = "cannot cancel issue upload while issue 1 is Edited")]
-    fn edited_issue_cancel_upload_panics() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-        store.consume_action(Action::UpdateIssue {
-            id: 1.into(),
-            body: "edited body".to_string(),
-        });
-
-        store.consume_action(Action::CancelIssueUpload { id: 1.into() });
-    }
-
-    #[test]
-    #[should_panic(expected = "cannot fail issue upload while issue 1 is Synced")]
-    fn synced_issue_fail_upload_panics() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-
-        store.consume_action(Action::FailIssueUpload { id: 1.into() });
-    }
-
-    #[test]
-    #[should_panic(expected = "cannot fail issue upload while issue 1 is Edited")]
-    fn edited_issue_fail_upload_panics() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-        store.consume_action(Action::UpdateIssue {
-            id: 1.into(),
-            body: "edited body".to_string(),
-        });
-
-        store.consume_action(Action::FailIssueUpload { id: 1.into() });
-    }
-
-    #[test]
-    #[should_panic(expected = "cannot sync issue 1 while it is Synced")]
-    fn synced_issue_sync_issue_panics() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-
-        store.consume_action(Action::SyncIssue {
-            issue: sample_issue(1, "server issue", 1.into(), None, None, None, 0),
-        });
-    }
-
-    #[test]
-    fn cancel_issue_upload_returns_issue_to_edited_and_retains_diffs() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-        store.consume_action(Action::UpdateIssue {
-            id: 1.into(),
-            body: "edited body".to_string(),
-        });
-        store.consume_action(Action::StartIssueUpload { id: 1.into() });
-
-        store.consume_action(Action::CancelIssueUpload { id: 1.into() });
-
-        let (_, state) = store.get_issue(1).expect("issue should be loaded");
-        assert_eq!(state, IssueState::Edited);
-        assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
-    }
-
-    #[test]
-    fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs() {
-        let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-        store.consume_action(Action::UpdateIssue {
-            id: 1.into(),
-            body: "edited body".to_string(),
-        });
-        store.consume_action(Action::StartIssueUpload { id: 1.into() });
-
-        store.consume_action(Action::FailIssueUpload { id: 1.into() });
-
-        let (_, state) = store.get_issue(1).expect("issue should be loaded");
-        assert_eq!(state, IssueState::Edited);
-        assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
-    }
-
-    #[test]
-    fn sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
-        let mut store = Store::new();
-        store.consume_action(Action::SyncIssue {
-            issue: sample_issue(9, "server issue before edit", 1.into(), None, None, None, 0),
-        });
-        store.consume_action(Action::UpdateIssue {
-            id: 9.into(),
-            body: "local edit".to_string(),
-        });
-
-        store.consume_action(Action::SyncIssue {
-            issue: sample_issue(
-                9,
-                "server issue after upload",
-                1.into(),
-                None,
-                None,
-                None,
-                0,
-            ),
-        });
-
-        let (issue, state) = store.get_issue(9).expect("issue should be synced");
-        assert_eq!(issue.subject, "server issue after upload");
-        assert_eq!(issue.description, "body");
-        assert_eq!(state, IssueState::Synced);
-        assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
-    }
-
-    #[test]
-    fn upload_success_sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
-        let mut store = Store::new();
-        store.consume_action(Action::SyncIssue {
-            issue: sample_issue(9, "server issue before edit", 1.into(), None, None, None, 0),
-        });
-        store.consume_action(Action::UpdateIssue {
-            id: 9.into(),
-            body: "local edit".to_string(),
-        });
-        store.consume_action(Action::StartIssueUpload { id: 9.into() });
-
-        store.consume_action(Action::SyncIssue {
-            issue: sample_issue(
-                9,
-                "server issue after upload",
-                1.into(),
-                None,
-                None,
-                None,
-                0,
-            ),
-        });
-
-        let (issue, state) = store.get_issue(9).expect("issue should be synced");
-        assert_eq!(issue.subject, "server issue after upload");
-        assert_eq!(issue.description, "body");
-        assert_eq!(state, IssueState::Synced);
-        assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
     }
 
     #[test]

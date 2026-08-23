@@ -1,15 +1,15 @@
-use crate::stores::{Action, Dispatcher};
+use crate::stores::{Dispatcher, IssueAction};
 use crate::vos::IssueId;
 
 /// Issueの競合情報を破棄し、アップロードをキャンセルするActionを順番にdispatchする。
 pub fn cancel_issue_upload(dispatcher: &mut Dispatcher, id: IssueId) {
-    dispatcher.dispatch(Action::ClearIssueUploadConflicts { id });
-    dispatcher.dispatch(Action::CancelIssueUpload { id });
+    dispatcher.dispatch(IssueAction::ClearUploadConflicts { id });
+    dispatcher.dispatch(IssueAction::CancelUpload { id });
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::stores::{Action, Dispatcher, IssueState};
+    use crate::stores::{Dispatcher, IssueAction, IssueState};
     use crate::test_support::sample_issue;
     use crate::vos::IssueId;
 
@@ -19,16 +19,16 @@ mod tests {
     fn conflictを削除してからissue_uploadをキャンセルする() {
         let id = IssueId::new(1);
         let mut dispatcher = Dispatcher::new();
-        dispatcher.dispatch(Action::LoadIssue { id });
+        dispatcher.dispatch(IssueAction::Load { id });
         dispatcher.consume_action();
-        dispatcher.dispatch(Action::UpdateIssue {
+        dispatcher.dispatch(IssueAction::UpdateDescription {
             id,
             body: "local body".to_string(),
         });
         dispatcher.consume_action();
-        dispatcher.dispatch(Action::StartIssueUpload { id });
+        dispatcher.dispatch(IssueAction::StartUpload { id });
         dispatcher.consume_action();
-        dispatcher.dispatch(Action::IssueUploadConflictsDetected {
+        dispatcher.dispatch(IssueAction::UploadConflictsDetected {
             server_issue: sample_issue(1, "server issue", 1.into(), None, None, None, 0),
             conflicts: dispatcher.store().get_issue_property_diffs(id).to_vec(),
         });

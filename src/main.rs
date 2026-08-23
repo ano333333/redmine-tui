@@ -36,7 +36,7 @@ use self::{
         AppComponent,
         app::{AppEffect, EditorRequest, EditorResponse},
     },
-    stores::{Action, Dispatcher, IssueState},
+    stores::{Action, Dispatcher, IssueAction, IssueState},
     usecases::redmine::{
         apply_issue_property_diffs, fetch_issue_with_conflicts, load_initial_entities, upload_issue,
     },
@@ -209,7 +209,7 @@ fn handle_app_effect(
         }
         AppEffect::StartIssueUpload(id) => {
             let mut d = dispatcher.borrow_mut();
-            d.dispatch(Action::StartIssueUpload { id });
+            d.dispatch(IssueAction::StartUpload { id });
             let (_, state) = d
                 .store()
                 .get_issue(id)
@@ -244,23 +244,25 @@ async fn issue_upload_action(
 ) -> Action {
     let (mut server_issue, conflicts) = match fetch_issue_with_conflicts(client, id, diffs).await {
         Ok(result) => result,
-        Err(_) => return Action::FailIssueUpload { id },
+        Err(_) => return IssueAction::FailUpload { id }.into(),
     };
     if !conflicts.is_empty() {
-        return Action::IssueUploadConflictsDetected {
+        return IssueAction::UploadConflictsDetected {
             server_issue,
             conflicts,
-        };
+        }
+        .into();
     }
 
     apply_issue_property_diffs(&mut server_issue, diffs);
     if upload_issue(client, &server_issue).await.is_err() {
-        return Action::FailIssueUpload { id };
+        return IssueAction::FailUpload { id }.into();
     }
 
-    Action::SyncIssue {
+    IssueAction::Sync {
         issue: server_issue,
     }
+    .into()
 }
 
 fn run_editor(terminal: &mut DefaultTerminal, request: EditorRequest) -> Result<EditorResponse> {
@@ -375,9 +377,9 @@ fn init_fixture_issues_and_journals(dispatcher: Rc<RefCell<Dispatcher>>) {
 }
 
 fn dispatch_fixture_issues_and_journals(d: &mut Dispatcher) {
-    d.dispatch(Action::LoadIssue { id: 1.into() });
-    d.dispatch(Action::LoadIssue { id: 2.into() });
-    d.dispatch(Action::LoadIssue { id: 3.into() });
+    d.dispatch(IssueAction::Load { id: 1.into() });
+    d.dispatch(IssueAction::Load { id: 2.into() });
+    d.dispatch(IssueAction::Load { id: 3.into() });
     d.dispatch(Action::LoadJournal { id: 1.into() });
     d.dispatch(Action::LoadJournal { id: 2.into() });
     d.dispatch(Action::LoadJournal { id: 3.into() });
@@ -467,8 +469,8 @@ mod tests {
 
         let action = issue_upload_action(&client, 1.into(), &diffs).await;
 
-        let Action::SyncIssue { issue } = action else {
-            panic!("expected SyncIssue");
+        let Action::Issue(IssueAction::Sync { issue }) = action else {
+            panic!("expected Sync");
         };
         assert_eq!(issue.subject, "server subject");
         assert_eq!(issue.updated_on, server_issue.updated_on);
@@ -486,7 +488,10 @@ mod tests {
 
         let action = issue_upload_action(&client, 1.into(), &[]).await;
 
-        assert!(matches!(action, Action::FailIssueUpload { id } if id == IssueId::new(1)));
+        assert!(matches!(
+            action,
+            Action::Issue(IssueAction::FailUpload { id }) if id == IssueId::new(1)
+        ));
         assert!(client.uploaded.lock().unwrap().is_empty());
     }
 
@@ -497,7 +502,10 @@ mod tests {
 
         let action = issue_upload_action(&client, 1.into(), &[]).await;
 
-        assert!(matches!(action, Action::FailIssueUpload { id } if id == IssueId::new(1)));
+        assert!(matches!(
+            action,
+            Action::Issue(IssueAction::FailUpload { id }) if id == IssueId::new(1)
+        ));
     }
 
     #[tokio::test]
@@ -513,12 +521,12 @@ mod tests {
 
         let action = issue_upload_action(&client, 1.into(), &diffs).await;
 
-        let Action::IssueUploadConflictsDetected {
+        let Action::Issue(IssueAction::UploadConflictsDetected {
             server_issue,
             conflicts,
-        } = action
+        }) = action
         else {
-            panic!("expected IssueUploadConflictsDetected");
+            panic!("expected UploadConflictsDetected");
         };
         assert_eq!(server_issue.description, "server description");
         assert_eq!(conflicts, diffs);

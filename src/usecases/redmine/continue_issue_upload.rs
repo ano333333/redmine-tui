@@ -1,4 +1,4 @@
-use crate::stores::{Action, Dispatcher};
+use crate::stores::{Dispatcher, IssueAction};
 use crate::vos::{IssueId, IssuePropertyDiff};
 
 use super::fetch_issue_with_conflicts::{
@@ -40,14 +40,14 @@ pub fn continue_issue_upload(
             .unwrap_or_else(|| with_server_value_as_after(&server_issue, conflict))
     }));
 
-    dispatcher.dispatch(Action::ClearIssueUploadConflicts { id });
+    dispatcher.dispatch(IssueAction::ClearUploadConflicts { id });
     retry_diffs
 }
 
 #[cfg(test)]
 mod tests {
     use crate::entities::Issue;
-    use crate::stores::{Action, Dispatcher};
+    use crate::stores::{Dispatcher, IssueAction};
     use crate::test_support::sample_issue;
     use crate::vos::issue_property_diff::{IssueDescriptionDiff, IssueDueDateDiff};
     use crate::vos::{IssueId, IssuePropertyDiff};
@@ -64,7 +64,7 @@ mod tests {
         let mut server_issue = dispatcher.store().get_issue(id).unwrap().0.clone();
         server_issue.description = "server body".to_string();
         server_issue.status_id = 9.into();
-        dispatcher.dispatch(Action::IssueUploadConflictsDetected {
+        dispatcher.dispatch(IssueAction::UploadConflictsDetected {
             server_issue,
             conflicts,
         });
@@ -101,19 +101,19 @@ mod tests {
         let mut dispatcher = Dispatcher::new();
         let mut issue: Issue = sample_issue(1, "subject", 1.into(), None, None, None, 0);
         issue.description = "original body".to_string();
-        dispatcher.dispatch(Action::SyncIssue { issue });
+        dispatcher.dispatch(IssueAction::Sync { issue });
         dispatcher.consume_action();
-        dispatcher.dispatch(Action::UpdateIssue {
+        dispatcher.dispatch(IssueAction::UpdateDescription {
             id,
             body: "local body".to_string(),
         });
         dispatcher.consume_action();
-        dispatcher.dispatch(Action::UpdateIssueStatus {
+        dispatcher.dispatch(IssueAction::UpdateStatus {
             id,
             status_id: 2.into(),
         });
         dispatcher.consume_action();
-        dispatcher.dispatch(Action::UpdateIssueDueDate {
+        dispatcher.dispatch(IssueAction::UpdateDueDate {
             id,
             due_date: Some(crate::test_support::local_datetime(
                 "2026-08-30T00:00:00+09:00",
@@ -124,7 +124,7 @@ mod tests {
             dispatcher.store().get_issue_property_diffs(id)[2],
             IssuePropertyDiff::DueDate(IssueDueDateDiff { .. })
         ));
-        dispatcher.dispatch(Action::StartIssueUpload { id });
+        dispatcher.dispatch(IssueAction::StartUpload { id });
         dispatcher.consume_action();
         dispatcher
     }

@@ -14,7 +14,7 @@ use crate::components::issue_property_conflict_popup::{
 };
 use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
 use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
-use crate::stores::{Action, Dispatcher, Store};
+use crate::stores::{Dispatcher, IssueAction, Store};
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, TargetVersionId,
@@ -226,7 +226,7 @@ impl<'a> AppComponent<'a> {
                             false,
                             Box::new(move |status_id| {
                                 if let Some(status_id) = status_id {
-                                    dispatcher.borrow_mut().dispatch(Action::UpdateIssueStatus {
+                                    dispatcher.borrow_mut().dispatch(IssueAction::UpdateStatus {
                                         id: issue_id,
                                         status_id: IssueStatusId::new(status_id),
                                     });
@@ -263,7 +263,7 @@ impl<'a> AppComponent<'a> {
                             Box::new(move |assigned_to_id| {
                                 dispatcher
                                     .borrow_mut()
-                                    .dispatch(Action::UpdateIssueAssignedTo {
+                                    .dispatch(IssueAction::UpdateAssignedTo {
                                         id: issue_id.into(),
                                         assigned_to_id: assigned_to_id.map(UserId::new),
                                     });
@@ -300,7 +300,7 @@ impl<'a> AppComponent<'a> {
                             true,
                             Box::new(move |target_version_id| {
                                 dispatcher.borrow_mut().dispatch(
-                                    Action::UpdateIssueTargetVersion {
+                                    IssueAction::UpdateTargetVersion {
                                         id: issue_id.into(),
                                         target_version_id: target_version_id
                                             .map(TargetVersionId::new),
@@ -324,7 +324,7 @@ impl<'a> AppComponent<'a> {
                             Box::new(move |date| {
                                 if let Some(date) = date {
                                     dispatcher.borrow_mut().dispatch(
-                                        Action::UpdateIssueStartDate {
+                                        IssueAction::UpdateStartDate {
                                             id: issue_id.into(),
                                             start_date: Some(date),
                                         },
@@ -349,7 +349,7 @@ impl<'a> AppComponent<'a> {
                                 if let Some(date) = date {
                                     dispatcher
                                         .borrow_mut()
-                                        .dispatch(Action::UpdateIssueDueDate {
+                                        .dispatch(IssueAction::UpdateDueDate {
                                             id: issue_id.into(),
                                             due_date: Some(date),
                                         });
@@ -383,7 +383,7 @@ impl<'a> AppComponent<'a> {
                             Box::new(move |done_ratio| {
                                 if let Some(done_ratio) = done_ratio {
                                     dispatcher.borrow_mut().dispatch(
-                                        Action::UpdateIssueDoneRatio {
+                                        IssueAction::UpdateDoneRatio {
                                             id: issue_id.into(),
                                             done_ratio,
                                         },
@@ -423,7 +423,7 @@ impl<'a> AppComponent<'a> {
                             Box::new(move |category_id| {
                                 dispatcher
                                     .borrow_mut()
-                                    .dispatch(Action::UpdateIssueCategory {
+                                    .dispatch(IssueAction::UpdateCategory {
                                         id: issue_id.into(),
                                         category_id: category_id.map(CategoryId::new),
                                     });
@@ -508,7 +508,7 @@ impl<'a> AppComponent<'a> {
             Some(PendingEditorContext::IssueBody { id }) => {
                 self.dispatcher
                     .borrow_mut()
-                    .dispatch(crate::stores::Action::UpdateIssue {
+                    .dispatch(IssueAction::UpdateDescription {
                         id,
                         body: response.edited_text,
                     });
@@ -629,7 +629,7 @@ mod tests {
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
             crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher_ref);
-            dispatcher_ref.dispatch(Action::LoadIssue { id: 3.into() });
+            dispatcher_ref.dispatch(IssueAction::Load { id: 3.into() });
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }
@@ -638,10 +638,12 @@ mod tests {
     }
 
     fn mark_issue_edited(dispatcher: Rc<RefCell<Dispatcher>>, id: IssueId) {
-        dispatcher.borrow_mut().dispatch(Action::UpdateIssue {
-            id,
-            body: "updated body".to_string(),
-        });
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateDescription {
+                id,
+                body: "updated body".to_string(),
+            });
         dispatcher.borrow_mut().consume_action();
     }
 
@@ -663,8 +665,8 @@ mod tests {
         server_issue.description = "server body".to_string();
         {
             let mut dispatcher = dispatcher.borrow_mut();
-            dispatcher.dispatch(Action::StartIssueUpload { id: 3.into() });
-            dispatcher.dispatch(Action::IssueUploadConflictsDetected {
+            dispatcher.dispatch(IssueAction::StartUpload { id: 3.into() });
+            dispatcher.dispatch(IssueAction::UploadConflictsDetected {
                 server_issue,
                 conflicts,
             });
@@ -680,7 +682,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         dispatcher
             .borrow_mut()
-            .dispatch(Action::LoadIssue { id: 3.into() });
+            .dispatch(IssueAction::Load { id: 3.into() });
         dispatcher.borrow_mut().consume_action();
         dispatcher
     }
@@ -696,8 +698,8 @@ mod tests {
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
             crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher_ref);
-            dispatcher_ref.dispatch(Action::LoadIssue { id: 1.into() });
-            dispatcher_ref.dispatch(Action::LoadIssue { id: 3.into() });
+            dispatcher_ref.dispatch(IssueAction::Load { id: 1.into() });
+            dispatcher_ref.dispatch(IssueAction::Load { id: 3.into() });
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }
@@ -800,8 +802,8 @@ mod tests {
         let server_issue = dispatcher.borrow().store().get_issue(3).unwrap().0.clone();
         {
             let mut dispatcher = dispatcher.borrow_mut();
-            dispatcher.dispatch(Action::StartIssueUpload { id: 3.into() });
-            dispatcher.dispatch(Action::IssueUploadConflictsDetected {
+            dispatcher.dispatch(IssueAction::StartUpload { id: 3.into() });
+            dispatcher.dispatch(IssueAction::UploadConflictsDetected {
                 server_issue,
                 conflicts,
             });

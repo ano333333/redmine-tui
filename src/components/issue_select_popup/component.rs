@@ -201,7 +201,7 @@ mod tests {
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
     use crate::components::issue_select_popup::widget::IssueSelectPopupFocusColumn;
-    use crate::stores::Action;
+    use crate::stores::IssueAction;
     use crate::test_support::{render_snapshot, sync_fixture_entities};
 
     const AREA: Rect = Rect {
@@ -218,9 +218,9 @@ mod tests {
     fn store() -> Store {
         let mut store = Store::new();
         sync_fixture_entities(&mut store);
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-        store.consume_action(Action::LoadIssue { id: 2.into() });
-        store.consume_action(Action::LoadIssue { id: 3.into() });
+        store.consume_action(IssueAction::Load { id: 1.into() }.into());
+        store.consume_action(IssueAction::Load { id: 2.into() }.into());
+        store.consume_action(IssueAction::Load { id: 3.into() }.into());
         store
     }
 
@@ -273,10 +273,13 @@ mod tests {
         let mut store = store();
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
 
-        store.consume_action(Action::UpdateIssue {
-            id: 1.into(),
-            body: "updated description".to_string(),
-        });
+        store.consume_action(
+            IssueAction::UpdateDescription {
+                id: 1.into(),
+                body: "updated description".to_string(),
+            }
+            .into(),
+        );
         component.update(&store, AREA);
 
         render_snapshot(

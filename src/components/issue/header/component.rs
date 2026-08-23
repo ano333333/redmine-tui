@@ -69,7 +69,7 @@ impl HeaderComponent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stores::{Action, Store};
+    use crate::stores::{IssueAction, Store};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::widgets::Widget;
@@ -77,12 +77,15 @@ mod tests {
     #[test]
     fn uploading_issue_renders_uploading_decorator() {
         let mut store = Store::new();
-        store.consume_action(Action::LoadIssue { id: 1.into() });
-        store.consume_action(Action::UpdateIssue {
-            id: 1.into(),
-            body: "edited body".to_string(),
-        });
-        store.consume_action(Action::StartIssueUpload { id: 1.into() });
+        store.consume_action(IssueAction::Load { id: 1.into() }.into());
+        store.consume_action(
+            IssueAction::UpdateDescription {
+                id: 1.into(),
+                body: "edited body".to_string(),
+            }
+            .into(),
+        );
+        store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
 
         let component = HeaderComponent::new(1);
         let widget = component.create_widget(&store);

@@ -12,9 +12,11 @@
   - terminal と application component の接続点。
   - `Dispatcher` と `AppComponent` を保持する。
   - editor 起動など terminal 外部副作用を扱う。
-- `src/app.rs`
-  - `Action`、`Dispatcher`、`Store` を定義する。
-  - Store は entity と差分状態を保持する。
+- `src/stores/`
+  - `mod.rs` は Store subsystem の公開型を再エクスポートし、内部のファイル配置を隠蔽する。
+  - `store.rs` は親 `Action`、`Dispatcher`、`Store`、Journal とマスターデータの状態を定義する。
+  - `issue_store.rs` は `IssueStore`、`IssueState`、`IssueAction` と Issue Action の処理を定義する。
+  - `issue_store_tests.rs` は親 `Store` の公開インターフェースを通して Issue Action を検証する。
 - `src/components/`
   - TUI の画面部品を置く。
   - `app.rs` は全体 component と popup stack を統括する。
@@ -48,6 +50,8 @@ Store の更新は原則として Dispatcher を介して行う。
 
 - Store 更新通知は pub/sub ではなく、上位層が `consume_action -> update` を明示的に呼ぶ。
 - `Dispatcher` は action queue と `Store` を内部に持つ。
+- 親 `Store` は Issue の状態と更新処理を非公開の `IssueStore` に委譲する。
+- Component と usecase は `IssueStore` を直接参照せず、親 `Store` の Issue getter を通して entity、同期状態、diff、競合情報を取得する。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。
 - editor 起動などの外部副作用は `AppEffect` として Component から取り出し、`AppContainer` 側で実行する。
