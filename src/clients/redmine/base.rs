@@ -61,7 +61,10 @@ impl std::fmt::Display for RedmineHttpError {
 #[allow(async_fn_in_trait)]
 pub trait RedmineClient {
     async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError>;
-    async fn get_issue(&self, id: IssueId) -> Result<Issue, RedmineClientError>;
+    fn get_issue(
+        &self,
+        id: IssueId,
+    ) -> impl std::future::Future<Output = Result<Issue, RedmineClientError>> + Send;
     async fn update_issue(&self, issue: &Issue) -> Result<(), RedmineClientError>;
     async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError>;
     async fn get_priorities(&self) -> Result<Vec<Priority>, RedmineClientError>;
