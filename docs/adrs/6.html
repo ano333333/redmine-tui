@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 6 — Issue詳細の非同期取得状態と表示Component</title>
+    <style>
+      *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+      :root { --bg:#0f1117; --surface:#1a1d27; --surface-2:#22263a; --border:#2e3350; --accent:#6c8efb; --accent-dim:#3d4f8a; --text:#d0d4e8; --text-muted:#7a80a0; --text-heading:#e8eaf6; --code-bg:#13151f; --code-border:#2a2e45; --tag-bg:#1e2540; --tag-text:#8ba3f5; --marker:#f0b429; --status-accepted-bg:#0e2a1e; --status-accepted-border:#2a7a50; --status-accepted-text:#4caf8a; }
+      body { font-family:"Inter","Noto Sans JP",system-ui,sans-serif; background:var(--bg); color:var(--text); line-height:1.75; font-size:15px; }
+      .layout { display:flex; min-height:100vh; }
+      nav { position:sticky; top:0; height:100vh; width:240px; flex-shrink:0; background:var(--surface); border-right:1px solid var(--border); overflow-y:auto; padding:28px 0; }
+      nav .nav-title { font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); padding:0 20px 12px; }
+      nav a { display:block; padding:6px 20px; color:var(--text-muted); text-decoration:none; font-size:13px; border-left:2px solid transparent; transition:color .15s,border-color .15s; }
+      nav a:hover { color:var(--text); border-left-color:var(--accent-dim); }
+      nav a.active { color:var(--accent); border-left-color:var(--accent); }
+      nav .nav-section { margin-top:16px; }
+      main { flex:1; min-width:0; padding:56px 64px; max-width:980px; }
+      .page-header { margin-bottom:48px; padding-bottom:32px; border-bottom:1px solid var(--border); }
+      .breadcrumb { font-size:12px; color:var(--text-muted); margin-bottom:12px; display:flex; align-items:center; gap:6px; }
+      .breadcrumb a,.back-link { color:var(--accent); text-decoration:none; }
+      .header-top { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+      .adr-number { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin-bottom:8px; }
+      h1 { font-size:26px; font-weight:700; color:var(--text-heading); letter-spacing:-.02em; line-height:1.2; }
+      .status-badge { display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; background:var(--status-accepted-bg); border:1px solid var(--status-accepted-border); color:var(--status-accepted-text); }
+      .status-badge::before { content:""; width:6px; height:6px; background:var(--status-accepted-text); border-radius:50%; }
+      section { margin-bottom:52px; }
+      h2 { font-size:17px; font-weight:700; color:var(--text-heading); margin-bottom:16px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+      h3 { font-size:15px; color:var(--text-heading); margin:26px 0 10px; }
+      p { margin-bottom:14px; }
+      code { font-family:"JetBrains Mono","Fira Code",monospace; font-size:13px; color:#b0bce8; }
+      p code,li code { background:var(--tag-bg); color:var(--tag-text); padding:1px 6px; border-radius:3px; font-size:12.5px; }
+      .code-block { background:var(--code-bg); border:1px solid var(--code-border); border-radius:8px; padding:16px 18px; overflow-x:auto; margin:18px 0; }
+      .code-block code { display:block; color:var(--text); white-space:pre; font-size:12.5px; line-height:1.55; }
+      .item-list,.rationale-list { display:flex; flex-direction:column; gap:8px; margin:14px 0; }
+      .item,.rationale-item { font-size:13.5px; padding:10px 14px; background:var(--surface); border:1px solid var(--border); border-radius:6px; }
+      .item { display:flex; gap:10px; align-items:flex-start; }
+      .dot { width:6px; height:6px; background:var(--accent-dim); border-radius:50%; flex-shrink:0; margin-top:8px; }
+      .rationale-list { gap:12px; }
+      .rationale-item { padding:16px 18px; border-radius:8px; }
+      .rationale-item-title { font-size:13px; font-weight:600; color:var(--text-heading); margin-bottom:6px; }
+      .rationale-item p { color:var(--text-muted); margin:0; }
+      .badge { font-family:"JetBrains Mono",monospace; font-size:11px; background:var(--tag-bg); color:var(--tag-text); padding:1px 6px; border-radius:3px; border:1px solid var(--accent-dim); margin-right:8px; }
+      .callout { background:var(--surface); border-left:3px solid var(--marker); border-radius:0 6px 6px 0; padding:12px 16px; margin:16px 0; font-size:13.5px; }
+      .callout strong { color:var(--marker); }
+      .state-diagram { margin:20px 0; overflow-x:auto; background:var(--code-bg); border:1px solid var(--code-border); border-radius:10px; }
+      .state-diagram svg { display:block; min-width:760px; width:100%; height:auto; }
+      .state-diagram .edge { fill:none; stroke:var(--text-muted); stroke-width:1.5; marker-end:url(#state-arrow); }
+      .state-diagram .entry-edge { stroke:var(--accent); }
+      .state-diagram .state { fill:var(--surface-2); stroke:var(--border); stroke-width:1.5; }
+      .state-diagram .fetch-state { stroke:var(--accent); }
+      .state-diagram .failed-state { stroke:var(--marker); }
+      .state-diagram .state-name { fill:var(--text-heading); font:600 14px "JetBrains Mono","Fira Code",monospace; text-anchor:middle; }
+      .state-diagram .state-note { fill:var(--text-muted); font:11px "JetBrains Mono","Fira Code",monospace; text-anchor:middle; }
+      .state-diagram .edge-label { fill:var(--tag-text); font:11px "JetBrains Mono","Fira Code",monospace; text-anchor:middle; paint-order:stroke; stroke:var(--code-bg); stroke-width:5px; stroke-linejoin:round; }
+      .state-diagram .start { fill:var(--accent); }
+      .state-legend { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:12px 0 18px; }
+      .state-legend div { padding:9px 12px; border:1px solid var(--border); border-radius:6px; color:var(--text-muted); font-size:12.5px; }
+      .back-link { display:inline-flex; align-items:center; gap:6px; font-size:13px; padding:4px 10px; border:1px solid var(--accent-dim); border-radius:4px; margin-top:8px; }
+      @media (max-width:820px) { .layout{flex-direction:column} nav{position:static;width:100%;height:auto;border-right:none;border-bottom:1px solid var(--border);padding:18px 0} main{padding:36px 24px} .state-legend{grid-template-columns:1fr} }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <div class="nav-title">ADR 6</div>
+        <a href="#context">Context</a><a href="#decision">Decision</a><a href="#error-handling">Error Handling</a><a href="#rationale">Rationale</a><a href="#consequences">Consequences</a><a href="#alternatives">Alternatives</a><a href="#future-work">Future Work</a>
+        <div class="nav-section"><div class="nav-title" style="margin-top:0">ドキュメント</div><a href="../architecture.html">アーキテクチャガイド</a><a href="5.html">ADR 5 — Issue 子 Store</a><a class="active" href="6.html">ADR 6 — Issue詳細取得</a><a href="7.html">ADR 7 — Issue選択ページ管理</a></div>
+      </nav>
+      <main>
+        <div class="page-header"><div class="breadcrumb"><a href="../architecture.html">docs</a><span>/</span><span>adrs</span><span>/</span><span>6</span></div><div class="header-top"><div><div class="adr-number">ADR 6</div><h1>Issue詳細の非同期取得状態と表示Component</h1></div><span class="status-badge">Accepted</span></div></div>
+
+        <section id="context"><h2>Context</h2>
+          <p>Issue選択ポップアップは、Issue詳細をまだ取得していないIssueも一覧候補として表示する。一覧用の <code>ProjectsIssue</code> はID、Project ID、subject、description、statusだけを持ち、詳細画面が必要とする完全な <code>Issue</code> ではない。そのため選択直後に <code>IssueDetailComponent</code> を生成すると、<code>IssueStore</code> に対象Issueが存在せず、描画時の不変条件に違反する。</p>
+          <p>既存の <code>AppComponent</code> は <code>IssueDetailComponent</code> を直接所有する。詳細ComponentはIssueがStoreに読み込み済みであることを前提とし、未取得、取得中、取得失敗の表示を担当しない。一方、詳細のHTTP取得は非同期であり、その間も安全に描画とキー入力を継続する必要がある。</p>
+          <p>現在の <code>IssueState</code> は <code>Synced</code>、<code>Edited</code>、<code>Uploading</code> で構成され、いずれもIssue本体の存在を前提とする。今回は完全な状態モデル再設計を行わず、未取得Issueの初回fetchを表す暫定状態を追加する。</p>
+          <p>Issue選択、<code>y</code> によるポップアップ再表示、同じIssueの再選択が短時間に行われても、重複した完了結果がローカル編集を上書きしないよう、fetch中の再取得抑止と完了Actionの状態検証を行う。プロジェクト別Issue一覧の取得、ページ状態、一覧用entityはADR 7で扱う。</p>
+        </section>
+
+        <section id="decision"><h2>Decision</h2>
+          <h3>IssueStateの暫定拡張</h3>
+          <p><code>IssueState</code> に <code>Fetching</code> と <code>FetchFailed</code> を追加する。</p>
+          <pre class="code-block"><code>pub enum IssueState {
+    Fetching,
+    FetchFailed { message: String },
+    Synced,
+    Edited,
+    Uploading,
+}</code></pre>
+          <div class="item-list"><div class="item"><div class="dot"></div><div><code>Fetching</code> と <code>FetchFailed</code> ではIssue本体を持たない。</div></div><div class="item"><div class="dot"></div><div><code>Synced</code>、<code>Edited</code>、<code>Uploading</code> ではIssue本体を必ず持つ。</div></div><div class="item"><div class="dot"></div><div><code>IssuePropertyDiff</code> とupload競合情報は、Issue本体を持つ状態だけで利用する。</div></div></div>
+          <p>親StoreはIssue本体の有無とは独立して <code>Option&lt;&amp;IssueState&gt;</code> を返すgetterを公開する。未登録Issueは <code>None</code>、登録済みの各stateは <code>Some(&amp;IssueState)</code> とする。既存の <code>get_issue</code> は本体を持つ場合だけ値を返し、<code>Fetching</code> と <code>FetchFailed</code> では <code>None</code> を返す。</p>
+
+          <h3>fetch用IssueAction</h3>
+          <pre class="code-block"><code>StartFetching { id }
+FetchSucceeded { id, issue }
+FetchFailed { id, message }</code></pre>
+          <div class="item-list"><div class="item"><div class="dot"></div><div>未登録または <code>FetchFailed</code> のときだけ <code>StartFetching</code> を受理して <code>Fetching</code> へ遷移する。</div></div><div class="item"><div class="dot"></div><div><code>StartFetching</code> は同じIDの古いIssue本体、diff、upload競合情報を保持しない。</div></div><div class="item"><div class="dot"></div><div>現在が <code>Fetching</code> で、Actionの要求IDと <code>issue.id</code> が一致するときだけ <code>FetchSucceeded</code> を受理し、Issueを登録して <code>Synced</code> へ遷移する。</div></div><div class="item"><div class="dot"></div><div>現在が <code>Fetching</code> のときだけ <code>FetchFailed</code> を受理し、messageを持つ失敗状態へ遷移する。</div></div><div class="item"><div class="dot"></div><div><code>Fetching</code> 中の再開始と、その他の状態または未登録へ遅れて届いた成功・失敗Actionは無視する。</div></div></div>
+          <p>ADR 2で定めた編集・保存の遷移を含め、今回のfetch状態を追加した <code>IssueState</code> 全体の状態遷移は以下とする。遷移ラベルはStoreにdispatchされるActionを表す。</p>
+          <div class="state-diagram" role="img" aria-label="IssueStateの状態遷移図。未登録からFetchingまたはSyncedへ遷移し、Fetchingは成功時にSynced、失敗時にFetchFailedへ遷移する。FetchFailedは再試行でFetchingへ戻る。Synced、Edited、Uploadingの間には既存の編集・保存遷移がある。">
+            <svg viewBox="0 0 820 500" xmlns="http://www.w3.org/2000/svg">
+              <title>IssueStateの状態遷移</title>
+              <desc>ADR 2の編集・保存状態にFetchingとFetchFailedを追加した状態遷移図</desc>
+              <defs><marker id="state-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7a80a0" /></marker></defs>
+
+              <circle class="start" cx="50" cy="126" r="7" />
+              <path class="edge entry-edge" d="M57 126 H112" />
+              <text class="edge-label" x="84" y="116">StartFetching</text>
+              <path class="edge entry-edge" d="M50 133 V352 H258" />
+              <text class="edge-label" x="134" y="342">Load / Sync</text>
+
+              <rect class="state fetch-state" x="120" y="88" width="180" height="76" rx="10" />
+              <text class="state-name" x="210" y="119">Fetching</text>
+              <text class="state-note" x="210" y="141">fetch running · no body</text>
+              <rect class="state failed-state" x="382" y="88" width="180" height="76" rx="10" />
+              <text class="state-name" x="472" y="119">FetchFailed</text>
+              <text class="state-note" x="472" y="141">message retained · no body</text>
+
+              <path class="edge" d="M300 108 H374" />
+              <text class="edge-label" x="337" y="98">FetchFailed</text>
+              <path class="edge" d="M382 148 C350 180 326 180 292 154" />
+              <text class="edge-label" x="337" y="187">StartFetching</text>
+              <path class="edge" d="M210 164 V344 H258" />
+              <text class="edge-label" x="232" y="253">FetchSucceeded</text>
+
+              <rect class="state" x="266" y="316" width="160" height="72" rx="10" />
+              <text class="state-name" x="346" y="347">Synced</text>
+              <text class="state-note" x="346" y="369">diffs empty</text>
+              <rect class="state" x="500" y="316" width="160" height="72" rx="10" />
+              <text class="state-name" x="580" y="347">Edited</text>
+              <text class="state-note" x="580" y="369">diffs non-empty</text>
+              <rect class="state" x="500" y="416" width="160" height="58" rx="10" />
+              <text class="state-name" x="580" y="450">Uploading</text>
+
+              <path class="edge" d="M426 338 H492" />
+              <text class="edge-label" x="459" y="328">Update*</text>
+              <path class="edge" d="M500 374 H434" />
+              <text class="edge-label" x="467" y="401">Sync</text>
+              <path class="edge" d="M560 388 V408" />
+              <text class="edge-label" x="505" y="404">StartUpload</text>
+              <path class="edge" d="M600 416 V396" />
+              <text class="edge-label" x="653" y="406">Cancel / Fail</text>
+              <path class="edge" d="M500 445 H346 V396" />
+              <text class="edge-label" x="419" y="435">Sync</text>
+            </svg>
+          </div>
+          <div class="state-legend"><div><code>Fetching</code> と <code>FetchFailed</code> はIssue本体を持たない。</div><div><code>Synced</code>、<code>Edited</code>、<code>Uploading</code> はIssue本体を持つ。</div></div>
+          <p><code>Fetching</code> への重複した <code>StartFetching</code> と、<code>Fetching</code> 以外へ届いたfetch完了Actionは状態を変えないため、図には遷移として記載しない。後述する受理条件に反する <code>Sync</code> も、内部ライフサイクル違反としてpanicするため記載しない。</p>
+          <p>完了にはGenerationを付与せず、同じIssueに同時に複数fetchを開始しないことと完了時の状態検証を暫定的な競合防止規則とする。明示的な再読み込みやcancelで複数世代を許可する場合はGenerationを導入する。</p>
+          <p>既存fixture用 <code>Load</code> は、Issue本体とstateの両方が未登録の場合だけfixtureを登録して <code>Synced</code> にし、いずれかが既に存在すれば何も変更しない。これにより、<code>Fetching</code> または <code>FetchFailed</code> のIDへ <code>Load</code> が届いても、Issue本体だけを追加して不変条件を壊さない。</p>
+          <p>upload成功等の <code>Sync</code> は、Issue IDが完全に未登録の場合と、<code>Edited</code>、<code>Uploading</code> から受理する。<code>Synced</code>、<code>Fetching</code>、<code>FetchFailed</code> への <code>Sync</code> は内部ライフサイクル違反としてpanicする。編集とuploadの既存遷移は維持し、<code>FetchSucceeded</code> は初回登録専用として <code>Sync</code> と混同しない。</p>
+
+          <h3>Issue詳細取得usecase</h3>
+          <p>Issue IDを受けて <code>RedmineClient::get_issue</code> を呼び、fetch完了Actionを返すusecaseを追加する。worker action senderはusecaseへ渡さない。</p>
+          <div class="item-list"><div class="item"><div class="dot"></div><div>未登録または <code>FetchFailed</code> なら <code>StartFetching</code> を同期dispatchし、HTTP取得のFutureを返す。</div></div><div class="item"><div class="dot"></div><div><code>Fetching</code>、<code>Synced</code>、<code>Edited</code>、<code>Uploading</code> なら新しいHTTP取得を開始しない。</div></div></div>
+          <p><code>StartFetching</code> はその場でconsumeせず、main loopの通常updateでconsumeする。Futureは <code>Future&lt;Output = IssueAction&gt; + Send + 'static</code> とし、成功は要求IDとIssue本体を含む <code>FetchSucceeded</code>、失敗は表示用messageを含む <code>FetchFailed</code> を返す。usecaseはClient結果の <code>issue.id</code> が要求IDと一致することも検証し、不一致を <code>FetchFailed</code> に変換する。spawnとworker action channelへの送信はmainが担当し、Clientは <code>Arc&lt;C&gt;</code>、<code>C: Send + Sync</code> とする。</p>
+          <div class="callout"><strong>重複抑止の範囲:</strong> 通常のユーザー入力イベント間について保証する。1回の入力イベントまたは初期化処理が生成できるIssue詳細fetch effectは最大1個で、AppComponentの単一 <code>pending_effect</code> が検査する。入力イベント後のupdateが <code>StartFetching</code> をconsumeしてから次の入力を受けるため、その次は <code>Fetching</code> を観測する。同じupdateを挟まずusecaseを直接2回呼ぶことは上位層の内部ライフサイクル違反とする。</div>
+
+          <h3>IssueComponent</h3>
+          <p><code>AppComponent</code> と <code>IssueDetailComponent</code> の間に <code>IssueComponent</code> を追加する。少なくとも対象 <code>IssueId</code> と <code>Option&lt;IssueDetailComponent&gt;</code> を保持し、Storeの状態に応じて表示を切り替える。</p>
+          <div class="item-list"><div class="item"><div class="dot"></div><div><code>Fetching</code>: 詳細を生成せず、「表示中です」とだけ表示するWidgetを使う。</div></div><div class="item"><div class="dot"></div><div><code>FetchFailed</code>: 詳細を生成せず、エラーと「<code>r</code> で再試行」を表示する。</div></div><div class="item"><div class="dot"></div><div><code>Synced</code>、<code>Edited</code>、<code>Uploading</code>: <code>IssueDetailComponent</code> を使う。</div></div><div class="item"><div class="dot"></div><div>未登録: 詳細を生成せず、初回fetch effectを要求する。</div></div></div>
+          <p>詳細ComponentはIssueが読み込み済みで、かつ未保持の場合だけ生成する。<code>IssueComponent</code> は生成時に受け取った1つの対象Issueだけを破棄されるまで表示し、対象IDを変更するメソッドは設けない。別Issueの遅延fetchはStoreへ登録するだけで現在の表示対象を変えない。</p>
+          <p>Component lifecycleとeffect生成点を次のように固定する。</p>
+          <div class="item-list"><div class="item"><div class="dot"></div><div><code>IssueComponent::new</code> は対象IDとStoreを受け取り、未登録または <code>FetchFailed</code> なら <code>FetchRequested { id }</code> を戻り値として一度だけ返す。</div></div><div class="item"><div class="dot"></div><div>Issue選択が確定するたび、AppComponentは同じIssue IDでも新しい <code>IssueComponent</code> を生成して置換する。</div></div><div class="item"><div class="dot"></div><div>ポップアップ表示中と、選択せずに閉じた場合は、背後の <code>IssueComponent</code> を保持する。</div></div><div class="item"><div class="dot"></div><div><code>update</code> は読み込み済みになったときの詳細Component生成と表示切替だけを行い、effectを生成しない。<code>Fetching</code> と <code>FetchFailed</code> では詳細Componentを保持しない。</div></div><div class="item"><div class="dot"></div><div><code>render</code> はI/Oやeffect生成を行わない。</div></div></div>
+          <p>これにより、worker Actionをconsumeしたupdateでは詳細Componentの生成だけが行われ、キー入力後または初期化時にしか取り出されないAppEffectを取り逃がさない。</p>
+          <p><code>process_event</code> は、<code>IssueDetailComponent</code> が存在する場合、同じeventを最初に <code>IssueDetailComponent::process_event</code> へ渡す。Detailが結果を返した場合はその結果をそのまま上位へ委譲し、<code>IssueComponent</code> 自身は同じeventを解釈しない。Detailがeventを未処理（<code>None</code>）とした場合、またはDetailが存在しない場合だけ、外側Componentが自身のキー入力として <code>y</code> と <code>r</code> を判定する。将来キーが競合した場合もDetailを優先する。</p>
+          <p><code>y</code> はstateにかかわらずIssue選択ポップアップを開く要求を返す。<code>r</code> は <code>FetchFailed</code> の場合だけ <code>FetchRequested { id }</code> のようなComponent結果をAppComponentへ返す。現時点のDetailは <code>y</code> と <code>r</code> を処理しないため、これらは未処理eventとして外側の <code>IssueComponent</code> が担当する。WidgetはStoreを直接参照せず、Componentから表示状態とmessageを受け取る。</p>
+          <p>AppComponentは <code>FetchRequested</code> をIssue詳細取得 <code>AppEffect</code> へ変換し、単一 <code>pending_effect</code> へ登録する。mainがeffectを処理するとusecaseが <code>StartFetching</code> をdispatchし、次の通常updateからmessageを消して「表示中です」へ切り替える。</p>
+
+          <h3>Issue選択後の遷移</h3>
+          <p>Issue選択後、AppComponentはポップアップを閉じる前にADR 7の <code>InvalidateGeneration</code> をdispatchする。その後、ポップアップを除去し、選択されたIssue IDを対象とする新しい <code>IssueComponent</code> を生成して設置する。</p>
+          <div class="item-list"><div class="item"><div class="dot"></div><div>読み込み済みならfetchせず詳細表示へ切り替える。</div></div><div class="item"><div class="dot"></div><div>未登録または <code>FetchFailed</code> なら詳細取得effectを上位層へ渡す。</div></div><div class="item"><div class="dot"></div><div><code>Fetching</code> なら追加fetchを開始せず、「表示中です」を継続する。</div></div></div>
+          <p>Issue選択確定を返す1回のキーイベントは、プロジェクト移動、ページ移動、再試行を同時には返さない。したがって選択確定時にポップアップが保持するページ取得effectは必ず空であることを内部不変条件として検査する。</p>
+          <p>AppComponentは <code>InvalidateGeneration</code> のdispatch、popupの除去、<code>IssueComponent::new(store, id)</code>、AppComponentへの設置の順に処理し、<code>new</code> が返した <code>FetchRequested</code> を詳細fetch effectへ変換して <code>pending_effect</code> へ登録する。前の入力イベントで作られたeffectはmainが取り出し済みであり、選択確定時に既存 <code>pending_effect</code> があれば内部ライフサイクル違反として検出する。</p>
+          <div class="callout"><strong>重複抑止:</strong> 新しいComponentを生成してもStoreのstateは共有される。「Issueを選択する → yを押す → 同じIssueを選択する」操作では2回目に <code>Fetching</code> が観測され、HTTP取得を追加しない。<code>FetchFailed</code> なら <code>new</code> が再試行effectを返す。</div>
+        </section>
+
+        <section id="error-handling"><h2>Error Handling</h2>
+          <p>Clientエラーはusecaseが <code>FetchFailed { id, message }</code> へ変換し、Storeは対象Issueが現在 <code>Fetching</code> の場合だけ失敗を反映する。<code>IssueComponent</code> はmessageと再試行案内を表示し、<code>r</code> で同じIssueの取得を再開する。</p>
+          <p>再試行開始時は <code>FetchFailed</code> から <code>Fetching</code> へ遷移し、以前のmessageを表示しない。失敗は他のIssue本体、編集diff、upload状態、プロジェクト別Issue一覧へ影響させない。</p>
+        </section>
+
+        <section id="rationale"><h2>Rationale</h2><div class="rationale-list">
+          <div class="rationale-item"><div class="rationale-item-title"><span class="badge">component</span>詳細の不変条件を維持する</div><p>外側に状態解決Componentを置き、IssueDetailComponentの「Issueは必ずStoreに存在する」という前提を保つ。</p></div>
+          <div class="rationale-item"><div class="rationale-item-title"><span class="badge">store</span>一方向データフローで非同期状態を扱う</div><p>FetchingとFetchFailedをStoreに置き、Componentの生存期間を越えるworker Actionと失敗通知を既存フローで処理する。</p></div>
+          <div class="rationale-item"><div class="rationale-item-title"><span class="badge">safety</span>初回fetchをSyncから分離する</div><p>Fetchingからだけ成功を受理し、遅延fetchが既存Issueや編集内容を上書きすることを防ぐ。</p></div>
+          <div class="rationale-item"><div class="rationale-item-title"><span class="badge">scope</span>完全な2軸化は先送りする</div><p>upload、diff、競合解決を同時に変更せず、今回必要な暫定variantに範囲を限定する。</p></div>
+        </div></section>
+
+        <section id="consequences"><h2>Consequences</h2>
+          <p><code>IssueState</code> が <code>String</code> を含むvariantを持つため、既存の <code>Copy</code> 前提を見直し、必要箇所では参照またはcloneを使う。getterと不変条件testはstateだけ存在してIssue本体がない状態も扱う。</p>
+          <div class="item-list"><div class="item"><div class="dot"></div><div>Store test: 開始可能状態、重複抑止、要求IDとIssue IDが一致する成功だけの登録、不一致成功Actionの無視、失敗message、遅延完了の無視、編集・upload済みIssueの保護、不変条件、<code>Fetching</code> と <code>FetchFailed</code> へのfixture <code>Load</code> がIssue本体を追加しないこと、<code>Synced</code>、<code>Fetching</code>、<code>FetchFailed</code> への <code>Sync</code> がpanicすること。</div></div><div class="item"><div class="dot"></div><div>Usecase test: 同期的な <code>StartFetching</code> dispatch、重複抑止、ID一致検証、成功・失敗Action変換、sender非依存。</div></div><div class="item"><div class="dot"></div><div>Component test: 状態ごとの表示、詳細Component生成、effect生成点、Detailが処理したeventを外側で再解釈しないこと、Detailが未処理または不在の場合の <code>y</code>、失敗時の <code>r</code>、別Issue完了時の表示対象維持。</div></div><div class="item"><div class="dot"></div><div>AppComponent test: popup表示中とcancel時のComponent保持、同一Issue IDを含む選択確定時の再生成、<code>InvalidateGeneration</code> から <code>pending_effect</code> 登録までの順序と不変条件。</div></div><div class="item"><div class="dot"></div><div>Widget snapshot: 「表示中です」とfetch失敗・再試行案内。</div></div></div>
+        </section>
+
+        <section id="alternatives"><h2>Alternatives Considered</h2>
+          <h3>fetch状態をIssueComponentだけで保持する</h3><p>表示との対応は直接的だが、worker ActionはComponentの生存期間を越えて到着し、StoreにIssueがないまま失敗だけを通知する別経路も必要になるため採用しない。</p>
+          <h3>既存のSync Actionをfetch成功にも使う</h3><p>Action数は増えないが、<code>Sync</code> は既存Issueの置換やupload完了にも使われ、重複fetchの遅延結果が編集済みIssueを置換し得るため採用しない。</p>
+          <h3>IssueStateを直ちに完全な2軸へ分離する</h3><p>同期・編集状態とfetch/upload進行状態を独立させればGenerationを含む厳密な管理が可能だが、既存diff、upload、競合解決の遷移全体へ影響するため、今回は暫定variant追加に留める。</p>
+        </section>
+
+        <section id="future-work"><h2>Future Work</h2><div class="item-list">
+          <div class="item"><div class="dot"></div><div><code>Synced / Edited</code> をIssue本体とdiffから導出し、fetch/upload進行状態とGenerationを別軸で管理する。</div></div><div class="item"><div class="dot"></div><div>明示的な再取得、cancel、複数世代fetchを導入する場合のstale completion排除。</div></div><div class="item"><div class="dot"></div><div>fetchとuploadが同時に要求された場合の状態遷移整理。</div></div><div class="item"><div class="dot"></div><div>fetch失敗messageの構造化と、ログ向け情報・UI向け文言の分離。</div></div><div class="item"><div class="dot"></div><div>同一Issue再選択時のcursor、scroll、focusの復元をAppComponent以上のlayerで扱う。</div></div>
+        </div><p>現時点では通常のApp lifecycleで同じIssueに複数のfetchを同時に開始せず、<code>Fetching</code> からの完了だけを受理することで競合を防止する。</p></section>
+        <a href="../architecture.html" class="back-link">← アーキテクチャガイドへ戻る</a>
+      </main>
+    </div>
+  </body>
+</html>
