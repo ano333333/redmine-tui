@@ -20,7 +20,7 @@
 - `src/components/`
   - TUI の画面部品を置く。
   - `app.rs` は全体 component と popup stack を統括する。
-  - `issue/` は issue detail 画面とその子 component を置く。
+  - `issue/` はIssue取得状態を解決する外側componentを置き、`issue/detail/` は読み込み済みIssueの詳細画面とその子componentを置く。
   - `*_popup/` は popup component を置く。
 - `src/entities/`
   - Redmine 由来の永続的な domain entity を置く。
@@ -87,7 +87,8 @@ Component は以下の lifecycle を前提に実装する。
 主な用途は Store から描画に必要な entity を取得することである。
 幅依存の buffer、markdown render cache、scroll/focus 補正などの重い派生状態は `update` 側で扱う。
 
-`src/components/issue/` 配下の component では、`create_widget` 時点で対象 issue が Store に存在することを設計上の不変条件とする。
+`src/components/issue/detail/` 配下の component では、`create_widget` 時点で対象 issue が Store に存在することを設計上の不変条件とする。
+外側の `src/components/issue/IssueComponent` は未取得、取得中、取得失敗も扱い、この不変条件を満たす状態でだけ detail component を生成する。
 この不変条件に依存する箇所では、無言の `unwrap()` ではなく、不変条件を説明する `expect(...)` を使う。
 
 ```rust

@@ -1,0 +1,8 @@
+---
+source: src/test_support.rs
+expression: describe_buffer(terminal.backend().buffer())
+---
+area=Rect { x: 0, y: 0, width: 32, height: 3 }
+00: "表 示 中 で す                       " | 0:"表" fg=Reset bg=Reset mod=NONE, 2:"示" fg=Reset bg=Reset mod=NONE, 4:"中" fg=Reset bg=Reset mod=NONE, 6:"で" fg=Reset bg=Reset mod=NONE, 8:"す" fg=Reset bg=Reset mod=NONE
+01: "                                "
+02: "                                "
