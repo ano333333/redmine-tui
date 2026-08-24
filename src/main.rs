@@ -22,10 +22,7 @@ use std::{
     io::Result,
     process::{Command, ExitCode},
     rc::Rc,
-    sync::{
-        Arc,
-        mpsc::{self, Sender},
-    },
+    sync::{Arc, mpsc},
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime};
@@ -93,11 +90,31 @@ fn main() -> ExitCode {
     let tick_rate = std::time::Duration::from_millis(TICK_RATE_MS);
     loop {
         move_worker_action(&worker_action_rx, dispatcher.clone());
+        let size = terminal.size().expect("failed to get terminal size");
         update(
             dispatcher.clone(),
             &mut app_component,
-            terminal.get_frame().area(),
+            area_from_terminal_size(size.width, size.height),
         );
+        let effect = app_component.take_effect();
+        if let Some(effect) = effect
+            && let Err(err) = handle_app_effect(
+                effect,
+                &mut terminal,
+                &mut app_component,
+                dispatcher.clone(),
+                &runtime,
+                worker_action_tx.clone(),
+                client.clone(),
+            )
+        {
+            tracing::event!(
+                target: module_path!(),
+                tracing::Level::ERROR,
+                error = %err,
+                "failed to handle app effect"
+            );
+        }
         if let Some(e) = terminal
             .draw(|f| draw(f, &app_component, dispatcher.clone()))
             .err()
@@ -114,9 +131,6 @@ fn main() -> ExitCode {
                         &mut terminal,
                         &mut app_component,
                         dispatcher.clone(),
-                        &runtime,
-                        worker_action_tx.clone(),
-                        client.clone(),
                     ) {
                         break;
                     }
@@ -151,14 +165,15 @@ fn update(dispatcher: Rc<RefCell<Dispatcher>>, app_component: &mut AppComponent,
     }
 }
 
+fn area_from_terminal_size(width: u16, height: u16) -> Rect {
+    Rect::new(0, 0, width, height)
+}
+
 fn handle_key_event(
     event: Event,
     terminal: &mut DefaultTerminal,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
-    runtime: &Runtime,
-    sender: Sender<Action>,
-    client: Arc<DefaultRedmineClient>,
 ) -> bool {
     if let Event::Key(key) = event {
         if key.code == KeyCode::Char('q') {
@@ -167,26 +182,8 @@ fn handle_key_event(
         app_component.process_event(event, dispatcher.clone());
     }
     let size = terminal.size().expect("failed to get terminal size");
-    let rect = Rect::new(0, 0, size.width, size.height);
-    update(dispatcher.clone(), app_component, rect);
-    if let Some(effect) = app_component.take_effect()
-        && let Err(err) = handle_app_effect(
-            effect,
-            terminal,
-            app_component,
-            dispatcher.clone(),
-            runtime,
-            sender,
-            client,
-        )
-    {
-        tracing::event!(
-            target: module_path!(),
-            tracing::Level::ERROR,
-            error = %err,
-            "failed to handle app effect"
-        );
-    }
+    let area = area_from_terminal_size(size.width, size.height);
+    update(dispatcher.clone(), app_component, area);
     true
 }
 
@@ -388,7 +385,7 @@ fn dispatch_fixture_issues_and_journals(d: &mut Dispatcher) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
+    use std::{sync::Mutex, time::Duration};
 
     use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
     use crate::entities::{
@@ -398,6 +395,55 @@ mod tests {
     use crate::test_support::sample_issue;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId};
+
+    #[test]
+    fn area_from_terminal_size_uses_the_latest_dimensions() {
+        assert_eq!(area_from_terminal_size(120, 40), Rect::new(0, 0, 120, 40));
+    }
+
+    #[test]
+    fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion_to_worker_channel()
+     {
+        let runtime = init_tokio_runtime().unwrap();
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        let mut app = AppComponent::new(dispatcher.clone(), Some(42.into()));
+        let client = Arc::new(IssueUploadClient::new(sample_issue(
+            42,
+            "fetched issue",
+            IssueStatusId::new(1),
+            None,
+            None,
+            None,
+            0,
+        )));
+        let (sender, receiver) = mpsc::channel::<Action>();
+
+        update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+        let effect = app
+            .take_effect()
+            .expect("initial fetch effect should be taken before draw");
+        let AppEffect::FetchIssue(id) = effect else {
+            panic!("test app only has a fetch effect")
+        };
+        start_issue_fetch(dispatcher.clone(), &runtime, sender, client, id);
+
+        assert!(app.take_effect().is_none());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        assert_eq!(dispatcher.borrow().store().get_issue_state(42), None);
+        let completion = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("fetch completion should be sent by the runtime task");
+        assert!(matches!(
+            completion,
+            Action::Issue(IssueAction::FetchSucceeded { id, issue })
+                if id == IssueId::new(42) && issue.id == IssueId::new(42)
+        ));
+        assert_eq!(
+            dispatcher.borrow().consume_actinos_len(),
+            1,
+            "the spawned future must not dispatch or consume actions itself"
+        );
+    }
 
     #[test]
     fn redmine_connection_config_requires_api_key() {
