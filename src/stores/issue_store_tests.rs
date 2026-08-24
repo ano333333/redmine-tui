@@ -13,7 +13,7 @@ fn load_action_is_consumed_through_parent_store() {
 
     let (issue, state) = store.get_issue(id).expect("issue should be loaded");
     assert_eq!(issue.id, id);
-    assert_eq!(state, IssueState::Synced);
+    assert_eq!(state, &IssueState::Synced);
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn update_issue_target_version_sets_selected_version() {
 
     let (issue, state) = store.get_issue(2).expect("issue should be loaded");
     assert_eq!(issue.target_version_id, Some(TargetVersionId::new(1)));
-    assert_eq!(state, IssueState::Edited);
+    assert_eq!(state, &IssueState::Edited);
 }
 
 #[test]
@@ -59,7 +59,7 @@ fn update_issue_target_version_can_clear_version() {
 
     let (issue, state) = store.get_issue(1).expect("issue should be loaded");
     assert_eq!(issue.target_version_id, None);
-    assert_eq!(state, IssueState::Edited);
+    assert_eq!(state, &IssueState::Edited);
 }
 
 #[test]
@@ -87,7 +87,7 @@ fn update_issue_category_sets_selected_category() {
 
     let (issue, state) = store.get_issue(1).expect("issue should be loaded");
     assert_eq!(issue.category_id, Some(CategoryId::new(2)));
-    assert_eq!(state, IssueState::Edited);
+    assert_eq!(state, &IssueState::Edited);
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn update_issue_category_can_clear_category() {
 
     let (issue, state) = store.get_issue(1).expect("issue should be loaded");
     assert_eq!(issue.category_id, None);
-    assert_eq!(state, IssueState::Edited);
+    assert_eq!(state, &IssueState::Edited);
 }
 
 #[test]
@@ -173,7 +173,7 @@ fn start_issue_upload_marks_issue_uploading_and_retains_diffs() {
     store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
 
     let (_, state) = store.get_issue(1).expect("issue should be loaded");
-    assert_eq!(state, IssueState::Uploading);
+    assert_eq!(state, &IssueState::Uploading);
     assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
 }
 
@@ -205,7 +205,7 @@ fn issue_upload_conflicts_are_retained_while_uploading() {
         .expect("issue upload conflict should be retained");
     assert_eq!(actual_issue.subject, server_issue.subject);
     assert_eq!(actual_conflicts, conflicts);
-    assert_eq!(store.get_issue(1).unwrap().1, IssueState::Uploading);
+    assert_eq!(store.get_issue(1).unwrap().1, &IssueState::Uploading);
 }
 
 #[test]
@@ -337,7 +337,7 @@ fn cancel_issue_upload_returns_issue_to_edited_and_retains_diffs() {
     store.consume_action(IssueAction::CancelUpload { id: 1.into() }.into());
 
     let (_, state) = store.get_issue(1).expect("issue should be loaded");
-    assert_eq!(state, IssueState::Edited);
+    assert_eq!(state, &IssueState::Edited);
     assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
 }
 
@@ -357,7 +357,7 @@ fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs() {
     store.consume_action(IssueAction::FailUpload { id: 1.into() }.into());
 
     let (_, state) = store.get_issue(1).expect("issue should be loaded");
-    assert_eq!(state, IssueState::Edited);
+    assert_eq!(state, &IssueState::Edited);
     assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
 }
 
@@ -396,7 +396,7 @@ fn sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
     let (issue, state) = store.get_issue(9).expect("issue should be synced");
     assert_eq!(issue.subject, "server issue after upload");
     assert_eq!(issue.description, "body");
-    assert_eq!(state, IssueState::Synced);
+    assert_eq!(state, &IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
 }
 
@@ -436,6 +436,348 @@ fn upload_success_sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
     let (issue, state) = store.get_issue(9).expect("issue should be synced");
     assert_eq!(issue.subject, "server issue after upload");
     assert_eq!(issue.description, "body");
-    assert_eq!(state, IssueState::Synced);
+    assert_eq!(state, &IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
+}
+
+#[test]
+fn unregistered_issue_can_start_fetching_without_an_issue_body() {
+    let id = IssueId::new(99);
+    let mut store = Store::new();
+
+    store.consume_action(IssueAction::StartFetching { id }.into());
+
+    assert_eq!(store.get_issue_state(id), Some(&IssueState::Fetching));
+    assert!(store.get_issue(id).is_none());
+}
+
+#[test]
+fn failed_issue_can_restart_fetching_and_clears_the_error() {
+    let id = IssueId::new(99);
+    let mut store = Store::new();
+    store.consume_action(IssueAction::StartFetching { id }.into());
+    store.consume_action(
+        IssueAction::FetchFailed {
+            id,
+            message: "network error".to_string(),
+        }
+        .into(),
+    );
+
+    store.consume_action(IssueAction::StartFetching { id }.into());
+
+    assert_eq!(store.get_issue_state(id), Some(&IssueState::Fetching));
+    assert!(store.get_issue(id).is_none());
+}
+
+#[test]
+fn duplicate_start_fetching_is_ignored() {
+    let id = IssueId::new(99);
+    let mut store = Store::new();
+    store.consume_action(IssueAction::StartFetching { id }.into());
+
+    store.consume_action(IssueAction::StartFetching { id }.into());
+
+    assert_eq!(store.get_issue_state(id), Some(&IssueState::Fetching));
+    assert!(store.get_issue(id).is_none());
+}
+
+#[test]
+fn loaded_issue_states_ignore_start_fetching_and_retain_local_data() {
+    for start_upload in [false, true] {
+        let id = IssueId::new(1);
+        let mut store = Store::new();
+        store.consume_action(IssueAction::Load { id }.into());
+        store.consume_action(IssueAction::StartFetching { id }.into());
+        assert_eq!(store.get_issue(id).unwrap().1, &IssueState::Synced);
+        store.consume_action(
+            IssueAction::UpdateDescription {
+                id,
+                body: "local edit".to_string(),
+            }
+            .into(),
+        );
+        if start_upload {
+            store.consume_action(IssueAction::StartUpload { id }.into());
+        }
+
+        store.consume_action(IssueAction::StartFetching { id }.into());
+
+        let (issue, state) = store.get_issue(id).expect("loaded issue must remain");
+        assert_eq!(issue.description, "local edit");
+        assert_eq!(
+            state,
+            if start_upload {
+                &IssueState::Uploading
+            } else {
+                &IssueState::Edited
+            }
+        );
+        assert_eq!(store.get_issue_property_diffs(id).len(), 1);
+    }
+}
+
+#[test]
+fn matching_fetch_success_registers_the_issue_as_synced() {
+    let id = IssueId::new(99);
+    let issue = sample_issue(99, "fetched", 1.into(), None, None, None, 0);
+    let mut store = Store::new();
+    store.consume_action(IssueAction::StartFetching { id }.into());
+
+    store.consume_action(IssueAction::FetchSucceeded { id, issue }.into());
+
+    let (issue, state) = store.get_issue(id).expect("issue should be fetched");
+    assert_eq!(issue.subject, "fetched");
+    assert_eq!(state, &IssueState::Synced);
+    assert!(store.get_issue_property_diffs(id).is_empty());
+    assert!(store.get_issue_upload_conflict(id).is_none());
+}
+
+#[test]
+fn mismatched_fetch_success_is_ignored() {
+    let requested_id = IssueId::new(99);
+    let response_issue = sample_issue(100, "wrong", 1.into(), None, None, None, 0);
+    let mut store = Store::new();
+    store.consume_action(IssueAction::StartFetching { id: requested_id }.into());
+
+    store.consume_action(
+        IssueAction::FetchSucceeded {
+            id: requested_id,
+            issue: response_issue,
+        }
+        .into(),
+    );
+
+    assert_eq!(
+        store.get_issue_state(requested_id),
+        Some(&IssueState::Fetching)
+    );
+    assert!(store.get_issue(requested_id).is_none());
+    assert!(store.get_issue(100).is_none());
+}
+
+#[test]
+fn fetch_failure_retains_message_without_an_issue_body() {
+    let id = IssueId::new(99);
+    let mut store = Store::new();
+    store.consume_action(IssueAction::StartFetching { id }.into());
+
+    store.consume_action(
+        IssueAction::FetchFailed {
+            id,
+            message: "network error".to_string(),
+        }
+        .into(),
+    );
+
+    assert_eq!(
+        store.get_issue_state(id),
+        Some(&IssueState::FetchFailed {
+            message: "network error".to_string()
+        })
+    );
+    assert!(store.get_issue(id).is_none());
+}
+
+#[test]
+fn late_fetch_completions_outside_fetching_are_ignored() {
+    let id = IssueId::new(99);
+    let mut store = Store::new();
+
+    store.consume_action(
+        IssueAction::FetchSucceeded {
+            id,
+            issue: sample_issue(99, "late", 1.into(), None, None, None, 0),
+        }
+        .into(),
+    );
+    store.consume_action(
+        IssueAction::FetchFailed {
+            id,
+            message: "late error".to_string(),
+        }
+        .into(),
+    );
+
+    assert!(store.get_issue_state(id).is_none());
+    assert!(store.get_issue(id).is_none());
+}
+
+#[test]
+fn late_fetch_success_and_failure_do_not_change_a_synced_issue() {
+    let id = IssueId::new(1);
+    let mut store = Store::new();
+    store.consume_action(IssueAction::Load { id }.into());
+    let original_subject = store.get_issue(id).unwrap().0.subject.clone();
+
+    store.consume_action(
+        IssueAction::FetchSucceeded {
+            id,
+            issue: sample_issue(1, "late", 1.into(), None, None, None, 0),
+        }
+        .into(),
+    );
+    store.consume_action(
+        IssueAction::FetchFailed {
+            id,
+            message: "late error".to_string(),
+        }
+        .into(),
+    );
+
+    let (issue, state) = store.get_issue(id).expect("synced issue must remain");
+    assert_eq!(issue.subject, original_subject);
+    assert_eq!(state, &IssueState::Synced);
+}
+
+#[test]
+fn late_fetch_success_and_failure_do_not_change_a_fetch_failure() {
+    let id = IssueId::new(99);
+    let mut store = Store::new();
+    store.consume_action(IssueAction::StartFetching { id }.into());
+    store.consume_action(
+        IssueAction::FetchFailed {
+            id,
+            message: "original error".to_string(),
+        }
+        .into(),
+    );
+
+    store.consume_action(
+        IssueAction::FetchSucceeded {
+            id,
+            issue: sample_issue(99, "late", 1.into(), None, None, None, 0),
+        }
+        .into(),
+    );
+    store.consume_action(
+        IssueAction::FetchFailed {
+            id,
+            message: "late error".to_string(),
+        }
+        .into(),
+    );
+
+    assert!(store.get_issue(id).is_none());
+    assert_eq!(
+        store.get_issue_state(id),
+        Some(&IssueState::FetchFailed {
+            message: "original error".to_string(),
+        })
+    );
+}
+
+#[test]
+fn late_fetch_completions_do_not_overwrite_edited_or_uploading_issues() {
+    for start_upload in [false, true] {
+        let id = IssueId::new(1);
+        let mut store = Store::new();
+        store.consume_action(IssueAction::Load { id }.into());
+        store.consume_action(
+            IssueAction::UpdateDescription {
+                id,
+                body: "local edit".to_string(),
+            }
+            .into(),
+        );
+        if start_upload {
+            store.consume_action(IssueAction::StartUpload { id }.into());
+        }
+
+        store.consume_action(
+            IssueAction::FetchSucceeded {
+                id,
+                issue: sample_issue(1, "late", 1.into(), None, None, None, 0),
+            }
+            .into(),
+        );
+        store.consume_action(
+            IssueAction::FetchFailed {
+                id,
+                message: "late error".to_string(),
+            }
+            .into(),
+        );
+
+        let (issue, state) = store.get_issue(id).expect("loaded issue must remain");
+        assert_eq!(issue.description, "local edit");
+        assert_eq!(
+            state,
+            if start_upload {
+                &IssueState::Uploading
+            } else {
+                &IssueState::Edited
+            }
+        );
+        assert_eq!(store.get_issue_property_diffs(id).len(), 1);
+    }
+}
+
+#[test]
+fn fixture_load_does_not_add_a_body_to_fetching_or_failed_issues() {
+    for fail_fetch in [false, true] {
+        let id = IssueId::new(1);
+        let mut store = Store::new();
+        store.consume_action(IssueAction::StartFetching { id }.into());
+        if fail_fetch {
+            store.consume_action(
+                IssueAction::FetchFailed {
+                    id,
+                    message: "failed".to_string(),
+                }
+                .into(),
+            );
+        }
+
+        store.consume_action(IssueAction::Load { id }.into());
+
+        assert!(store.get_issue(id).is_none());
+        if fail_fetch {
+            assert_eq!(
+                store.get_issue_state(id),
+                Some(&IssueState::FetchFailed {
+                    message: "failed".to_string(),
+                })
+            );
+        } else {
+            assert_eq!(store.get_issue_state(id), Some(&IssueState::Fetching));
+        }
+    }
+}
+
+#[test]
+#[should_panic(expected = "cannot sync issue 99 while it is Fetching")]
+fn fetching_issue_sync_panics() {
+    let id = IssueId::new(99);
+    let mut store = Store::new();
+    store.consume_action(IssueAction::StartFetching { id }.into());
+
+    store.consume_action(
+        IssueAction::Sync {
+            issue: sample_issue(99, "sync", 1.into(), None, None, None, 0),
+        }
+        .into(),
+    );
+}
+
+#[test]
+#[should_panic(expected = "cannot sync issue 99 while it is FetchFailed")]
+fn fetch_failed_issue_sync_panics() {
+    let id = IssueId::new(99);
+    let mut store = Store::new();
+    store.consume_action(IssueAction::StartFetching { id }.into());
+    store.consume_action(
+        IssueAction::FetchFailed {
+            id,
+            message: "failed".to_string(),
+        }
+        .into(),
+    );
+
+    store.consume_action(
+        IssueAction::Sync {
+            issue: sample_issue(99, "sync", 1.into(), None, None, None, 0),
+        }
+        .into(),
+    );
 }

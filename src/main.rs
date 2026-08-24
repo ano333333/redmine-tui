@@ -214,7 +214,7 @@ fn handle_app_effect(
                 .store()
                 .get_issue(id)
                 .expect("tried to upload unknown issue");
-            if state != IssueState::Edited {
+            if state != &IssueState::Edited {
                 panic!("uploading issue is not edited");
             }
             let diffs = d.store().get_issue_property_diffs(id).to_vec();

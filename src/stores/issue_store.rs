@@ -10,8 +10,10 @@ use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, TargetVersionId, UserId,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IssueState {
+    Fetching,
+    FetchFailed { message: String },
     Synced,
     Edited,
     Uploading,
@@ -23,6 +25,17 @@ pub enum IssueAction {
     },
     Sync {
         issue: Issue,
+    },
+    StartFetching {
+        id: IssueId,
+    },
+    FetchSucceeded {
+        id: IssueId,
+        issue: Issue,
+    },
+    FetchFailed {
+        id: IssueId,
+        message: String,
     },
     StartUpload {
         id: IssueId,
@@ -94,49 +107,84 @@ impl IssueStore {
     pub(super) fn consume_action(&mut self, action: IssueAction) {
         match action {
             IssueAction::Load { id } => {
-                self.issues.entry(id).or_insert(parse_issue_yaml(id.get()));
-                self.issue_states.entry(id).or_insert(IssueState::Synced);
-                self.issue_property_diffs.entry(id).or_default();
+                if !self.issues.contains_key(&id) && !self.issue_states.contains_key(&id) {
+                    self.issues.insert(id, parse_issue_yaml(id.get()));
+                    self.issue_states.insert(id, IssueState::Synced);
+                    self.issue_property_diffs.entry(id).or_default();
+                }
             }
             IssueAction::Sync { issue } => {
                 let id = issue.id;
-                if self.issues.contains_key(&id) {
-                    let state = self.get_issue_state(id);
-                    if state == IssueState::Synced {
-                        panic!("cannot sync issue {id} while it is {state:?}");
-                    }
+                if let Some(state) = self.get_issue_state(id)
+                    && !matches!(state, IssueState::Edited | IssueState::Uploading)
+                {
+                    panic!("cannot sync issue {id} while it is {state:?}");
+                }
+                if self.issues.contains_key(&id) && !self.issue_states.contains_key(&id) {
+                    panic!("cannot sync issue {id} without an issue state");
                 }
                 self.issues.insert(id, issue);
                 self.issue_property_diffs.remove(&id);
                 self.issue_upload_conflicts.remove(&id);
                 self.issue_states.insert(id, IssueState::Synced);
             }
+            IssueAction::StartFetching { id } => {
+                let can_start = match self.get_issue_state(id) {
+                    None => !self.issues.contains_key(&id),
+                    Some(IssueState::FetchFailed { .. }) => true,
+                    Some(_) => false,
+                };
+                if can_start {
+                    self.issues.remove(&id);
+                    self.issue_property_diffs.remove(&id);
+                    self.issue_upload_conflicts.remove(&id);
+                    self.issue_states.insert(id, IssueState::Fetching);
+                }
+            }
+            IssueAction::FetchSucceeded { id, issue } => {
+                if matches!(self.get_issue_state(id), Some(IssueState::Fetching)) && issue.id == id
+                {
+                    self.issues.insert(id, issue);
+                    self.issue_property_diffs.remove(&id);
+                    self.issue_upload_conflicts.remove(&id);
+                    self.issue_states.insert(id, IssueState::Synced);
+                }
+            }
+            IssueAction::FetchFailed { id, message } => {
+                if matches!(self.get_issue_state(id), Some(IssueState::Fetching)) {
+                    self.issues.remove(&id);
+                    self.issue_property_diffs.remove(&id);
+                    self.issue_upload_conflicts.remove(&id);
+                    self.issue_states
+                        .insert(id, IssueState::FetchFailed { message });
+                }
+            }
             IssueAction::StartUpload { id } => {
-                let state = self.get_issue_state(id);
-                if state != IssueState::Edited {
+                let state = self.state_or_synced(id);
+                if state != &IssueState::Edited {
                     panic!("cannot start issue upload while issue {id} is {state:?}");
                 }
                 self.issue_upload_conflicts.remove(&id);
                 self.issue_states.insert(id, IssueState::Uploading);
             }
             IssueAction::CancelUpload { id } => {
-                let state = self.get_issue_state(id);
-                if state != IssueState::Uploading {
+                let state = self.state_or_synced(id);
+                if state != &IssueState::Uploading {
                     panic!("cannot cancel issue upload while issue {id} is {state:?}");
                 }
                 self.issue_upload_conflicts.remove(&id);
                 self.issue_states.insert(id, IssueState::Edited);
             }
             IssueAction::ClearUploadConflicts { id } => {
-                let state = self.get_issue_state(id);
-                if state != IssueState::Uploading {
+                let state = self.state_or_synced(id);
+                if state != &IssueState::Uploading {
                     panic!("cannot clear issue upload conflicts while issue {id} is {state:?}");
                 }
                 self.issue_upload_conflicts.remove(&id);
             }
             IssueAction::FailUpload { id } => {
-                let state = self.get_issue_state(id);
-                if state != IssueState::Uploading {
+                let state = self.state_or_synced(id);
+                if state != &IssueState::Uploading {
                     panic!("cannot fail issue upload while issue {id} is {state:?}");
                 }
                 self.issue_upload_conflicts.remove(&id);
@@ -147,8 +195,8 @@ impl IssueStore {
                 conflicts,
             } => {
                 let id = server_issue.id;
-                let state = self.get_issue_state(id);
-                if state != IssueState::Uploading {
+                let state = self.state_or_synced(id);
+                if state != &IssueState::Uploading {
                     panic!("cannot retain issue upload conflicts while issue {id} is {state:?}");
                 }
                 self.issue_upload_conflicts
@@ -280,11 +328,11 @@ impl IssueStore {
         }
     }
 
-    pub(super) fn get_issue(&self, issue_id: impl Into<IssueId>) -> Option<(&Issue, IssueState)> {
+    pub(super) fn get_issue(&self, issue_id: impl Into<IssueId>) -> Option<(&Issue, &IssueState)> {
         let issue_id = issue_id.into();
         self.issues
             .get(&issue_id)
-            .map(|issue| (issue, self.get_issue_state(issue_id)))
+            .zip(self.get_issue_state(issue_id))
     }
 
     pub(super) fn get_issues(&self) -> &HashMap<IssueId, Issue> {
@@ -310,17 +358,19 @@ impl IssueStore {
             .map(|(issue, conflicts)| (issue, conflicts.as_slice()))
     }
 
-    fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> IssueState {
-        self.issue_states
-            .get(&issue_id.into())
-            .copied()
-            .unwrap_or(IssueState::Synced)
+    pub(super) fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<&IssueState> {
+        self.issue_states.get(&issue_id.into())
+    }
+
+    fn state_or_synced(&self, issue_id: impl Into<IssueId>) -> &IssueState {
+        self.get_issue_state(issue_id)
+            .unwrap_or(&IssueState::Synced)
     }
 
     fn can_update_issue(&self, id: impl Into<IssueId>) -> bool {
         let id = id.into();
-        let state = self.get_issue_state(id);
-        if state == IssueState::Uploading {
+        let state = self.state_or_synced(id);
+        if state == &IssueState::Uploading {
             panic!("cannot update issue while issue {id} is {state:?}");
         }
         true
