@@ -46,7 +46,7 @@ mod tests {
     use chrono::{DateTime, Local};
 
     use super::*;
-    use crate::components::issue::journals_list::journals_list_item::JournalItemWidgetState;
+    use crate::components::issue::detail::journals_list::journals_list_item::JournalItemWidgetState;
     use crate::{
         entities::Journal,
         test_support::{local_datetime, render_snapshot},

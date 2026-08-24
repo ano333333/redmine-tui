@@ -7,7 +7,7 @@ use ratatui::layout::{Offset, Position, Rect};
 use ratatui::widgets::Widget;
 
 use crate::entities::Journal;
-use crate::stores::{Dispatcher, IssueState, Store};
+use crate::stores::{Dispatcher, Store};
 use crate::vos::IssueId;
 
 use super::body::BodyComponent;
@@ -27,9 +27,9 @@ use super::property::FocusEvent as PropertyFocusTransitionEvent;
 use super::property::PropertyComponent;
 use super::{IssueDetailWidget, IssueDetailWidgetState};
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum EventProcessResult {
     EditIssueBodyRequested { id: IssueId, body: String },
-    OpenIssueSelectPopup,
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
@@ -65,39 +65,16 @@ mod tests {
         dispatcher
     }
 
-    fn dispatcher_with_edited_issue() -> Rc<RefCell<Dispatcher>> {
-        let dispatcher = dispatcher_with_issue();
-        dispatcher
-            .borrow_mut()
-            .dispatch(IssueAction::UpdateDescription {
-                id: 3.into(),
-                body: "updated body".to_string(),
-            });
-        dispatcher.borrow_mut().consume_action();
-        dispatcher
-    }
-
     #[test]
-    fn process_event_y_returns_none_when_issue_is_not_edited() {
+    fn process_event_y_is_not_owned_by_issue_detail() {
         let dispatcher = dispatcher_with_issue();
-        let mut component = IssueDetailComponent::new(dispatcher.clone(), 3);
+        let mut component = IssueDetailComponent::new(3);
 
-        let result = component.process_event(key_event(KeyCode::Char('y')), dispatcher);
-
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn process_event_y_requests_issue_select_popup_when_issue_is_edited() {
-        let dispatcher = dispatcher_with_edited_issue();
-        let mut component = IssueDetailComponent::new(dispatcher.clone(), 3);
-
-        let result = component.process_event(key_event(KeyCode::Char('y')), dispatcher);
-
-        assert!(matches!(
-            result,
-            Some(EventProcessResult::OpenIssueSelectPopup)
-        ));
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('y')), dispatcher)
+                .is_none()
+        );
     }
 }
 
@@ -111,7 +88,7 @@ enum FocusedComponent {
 }
 
 pub struct IssueDetailComponent {
-    pub id: IssueId,
+    id: IssueId,
     header: HeaderComponent,
     property: PropertyComponent,
     body: BodyComponent,
@@ -126,7 +103,7 @@ pub struct IssueDetailComponent {
 }
 
 impl IssueDetailComponent {
-    pub fn new(_: Rc<RefCell<Dispatcher>>, issue_id: impl Into<IssueId>) -> Self {
+    pub fn new(issue_id: impl Into<IssueId>) -> Self {
         let issue_id = issue_id.into();
         let mut i = IssueDetailComponent {
             id: issue_id,
@@ -149,23 +126,10 @@ impl IssueDetailComponent {
     pub fn process_event(
         &mut self,
         event: crossterm::event::Event,
-        dispatcher: Rc<RefCell<Dispatcher>>,
+        _dispatcher: Rc<RefCell<Dispatcher>>,
     ) -> Option<EventProcessResult> {
         if let Event::Key(key) = &event {
             match key.code {
-                KeyCode::Char('y') => {
-                    let is_edited = {
-                        let dispatcher_ref = dispatcher.borrow();
-                        matches!(
-                            dispatcher_ref.store().get_issue(self.id),
-                            Some((_, IssueState::Edited))
-                        )
-                    };
-                    if !is_edited {
-                        return None;
-                    }
-                    return Some(EventProcessResult::OpenIssueSelectPopup);
-                }
                 KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Some(EventProcessResult::StartIssueUpload);
                 }
@@ -319,15 +283,19 @@ impl IssueDetailComponent {
 
     /// Componentをframeのarea範囲内に描画する。
     pub fn render(&self, store: &Store, frame: &mut Frame, frame_area: Rect) {
-        let widget = IssueDetailWidget::new(
+        self.create_widget(store)
+            .render(frame_area, frame.buffer_mut());
+    }
+
+    pub fn create_widget<'a>(&'a self, store: &'a Store) -> IssueDetailWidget<'a> {
+        IssueDetailWidget::new(
             self.header.create_widget(store),
             self.property.create_widget(store),
             self.body.create_widget(),
             self.children_list.create_widget(store),
             self.journals_list.create_widget(),
             &self.widget_state,
-        );
-        widget.render(frame_area, frame.buffer_mut());
+        )
     }
 
     pub fn calc_cursor_position(&self, store: &Store, frame_area: Rect) -> Position {
@@ -337,6 +305,10 @@ impl IssueDetailComponent {
             frame_area,
             header_height,
         )
+    }
+
+    pub fn issue_id(&self) -> IssueId {
+        self.id
     }
 
     /// IssueDetailComponentの全体を含む仮想バッファから見たカーソル位置を計算する(HeaderWidget含)

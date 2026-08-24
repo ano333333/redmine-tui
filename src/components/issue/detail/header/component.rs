@@ -57,11 +57,12 @@ impl HeaderComponent {
         self.focus_state.get_cursor_position()
     }
 
-    fn title_decorator(issue_state: IssueState) -> Option<TitleDecorater> {
+    fn title_decorator(issue_state: &IssueState) -> Option<TitleDecorater> {
         match issue_state {
             IssueState::Synced => None,
             IssueState::Edited => Some(TitleDecorater::Edited),
             IssueState::Uploading => Some(TitleDecorater::Uploading),
+            IssueState::Fetching | IssueState::FetchFailed { .. } => None,
         }
     }
 }
