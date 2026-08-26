@@ -8,7 +8,7 @@ use ratatui::widgets::Widget;
 
 use crate::entities::Journal;
 use crate::stores::{Dispatcher, Store};
-use crate::vos::IssueId;
+use crate::vos::{IssueId, JournalId};
 
 use super::body::BodyComponent;
 use super::body::EventProcessResult as BodyEventProcessResult;
@@ -30,6 +30,7 @@ use super::{IssueDetailWidget, IssueDetailWidgetState};
 #[derive(Debug, PartialEq, Eq)]
 pub enum EventProcessResult {
     EditIssueBodyRequested { id: IssueId, body: String },
+    EditJournalRequested { id: JournalId, notes: String },
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
@@ -75,6 +76,48 @@ mod tests {
                 .process_event(key_event(KeyCode::Char('y')), dispatcher)
                 .is_none()
         );
+    }
+
+    /// Property(15行) -> Body -> ChildrenList -> JournalsList(先頭Journalのdetail)
+    /// の順にフォーカスを送り、JournalsList内の1件目JournalのNotes位置に到達させる
+    const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 54;
+
+    fn dispatcher_with_issue_and_journals() -> Rc<RefCell<Dispatcher>> {
+        let dispatcher = dispatcher();
+        {
+            let mut d = dispatcher.borrow_mut();
+            crate::test_support::dispatch_fixture_entity_actions(&mut d);
+            d.dispatch(IssueAction::Load { id: 3.into() });
+            d.dispatch(crate::stores::Action::LoadJournal { id: 1.into() });
+            d.dispatch(crate::stores::Action::LoadJournal { id: 2.into() });
+            d.dispatch(crate::stores::Action::LoadJournal { id: 3.into() });
+            while d.consume_actinos_len() > 0 {
+                d.consume_action();
+            }
+        }
+        dispatcher
+    }
+
+    #[test]
+    fn process_event_e_on_journals_list_notes_returns_edit_journal_requested() {
+        let dispatcher = dispatcher_with_issue_and_journals();
+        let mut component = IssueDetailComponent::new(3);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+
+        for _ in 0..J_PRESSES_TO_FIRST_JOURNAL_NOTES {
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+            component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        }
+
+        let result = component.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
+
+        match result {
+            Some(EventProcessResult::EditJournalRequested { id, notes }) => {
+                assert_eq!(id, JournalId::new(1));
+                assert_eq!(notes, "");
+            }
+            _ => panic!("expected edit journal request"),
+        }
     }
 }
 
@@ -248,8 +291,9 @@ impl IssueDetailComponent {
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::CursorEnteredFromBelow);
                     }
-                    // TODO: 次のコミットでEditJournalRequestedとしてEventProcessResultに伝播する
-                    Some(JournalsListEventProcessResult::EditRequested { .. }) => {}
+                    Some(JournalsListEventProcessResult::EditRequested { id, notes }) => {
+                        return Some(EventProcessResult::EditJournalRequested { id, notes });
+                    }
                     None => {}
                 }
             }

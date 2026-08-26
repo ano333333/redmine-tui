@@ -459,6 +459,10 @@ impl<'a> AppComponent<'a> {
                 )) => {
                     self.pending_effect = Some(AppEffect::StartIssueUpload(issue_id));
                 }
+                // TODO: 次のコミットでエディタ起動effectを発行する
+                Some(IssueEventProcessResult::Detail(
+                    IssueDetailEventProcessResult::EditJournalRequested { .. },
+                )) => {}
                 None => {}
             }
         }
