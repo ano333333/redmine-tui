@@ -2,11 +2,18 @@ use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::entities::Journal;
-use crate::vos::EntityIdValue;
+use crate::vos::{EntityIdValue, JournalId};
 
+use super::focus_state;
 use super::focus_state::FocusState;
-pub use super::focus_state::{EventProcessResult, FocusEvent};
+pub use super::focus_state::FocusEvent;
 use super::{JournalItemWidget, JournalItemWidgetState};
+
+pub enum EventProcessResult {
+    CursorLeavedFromBelow { x: u16 },
+    CursorLeavedFromAbove { x: u16 },
+    EditRequested { id: JournalId, notes: String },
+}
 
 pub struct JournalsListItemComponent {
     pub id: u16,
@@ -28,7 +35,20 @@ impl JournalsListItemComponent {
     }
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        self.focus_state.process_event(event)
+        self.focus_state
+            .process_event(event)
+            .map(|result| match result {
+                focus_state::EventProcessResult::CursorLeavedFromBelow { x } => {
+                    EventProcessResult::CursorLeavedFromBelow { x }
+                }
+                focus_state::EventProcessResult::CursorLeavedFromAbove { x } => {
+                    EventProcessResult::CursorLeavedFromAbove { x }
+                }
+                focus_state::EventProcessResult::Edit => EventProcessResult::EditRequested {
+                    id: self.journal.id,
+                    notes: self.journal.notes.clone(),
+                },
+            })
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
@@ -214,6 +234,23 @@ mod tests {
 
         assert!(result.is_none());
         assert_layout_contract(&component, WIDE_WIDTH, 9, Position::new(0, 3));
+    }
+
+    #[test]
+    fn process_event_e_on_notes_position_returns_edit_requested_with_current_notes() {
+        let journal = create_journal(1, one_detail(), notes());
+        let mut component = component_with_update(&journal, WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
+
+        let result = component.process_event(key_event(KeyCode::Char('e')));
+
+        match result {
+            Some(EventProcessResult::EditRequested { id, notes: edit_notes }) => {
+                assert_eq!(id, JournalId::new(1));
+                assert_eq!(edit_notes, notes());
+            }
+            _ => panic!("expected edit request"),
+        }
     }
 
     #[test]

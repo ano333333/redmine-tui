@@ -79,7 +79,7 @@ impl JournalsListComponent {
                 }
             }
             // TODO: 次のコミットでEditRequestedとしてEventProcessResultに伝播する
-            ChildEventProcessResult::Edit => None,
+            ChildEventProcessResult::EditRequested { .. } => None,
         }
     }
 
