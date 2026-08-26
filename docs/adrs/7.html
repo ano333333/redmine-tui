@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ADR 7 — Issue選択ポップアップのプロジェクト別Issue取得とページ管理</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box}body{margin:0;background:#0f1117;color:#d0d4e8;font:15px/1.75 system-ui,"Noto Sans JP",sans-serif}.layout{display:flex;min-height:100vh}nav{position:sticky;top:0;width:240px;height:100vh;padding:28px 20px;background:#1a1d27;border-right:1px solid #2e3350}nav a{display:block;padding:5px 0;color:#8ba3f5;text-decoration:none;font-size:13px}main{max-width:980px;padding:52px 64px}h1,h2,h3{color:#e8eaf6}h1{font-size:27px;line-height:1.25}h2{margin-top:44px;padding-bottom:8px;border-bottom:1px solid #2e3350;font-size:19px}h3{margin-top:28px;font-size:16px}code,pre{font-family:"JetBrains Mono",monospace}code{color:#8ba3f5}pre{overflow:auto;padding:16px 18px;background:#13151f;border:1px solid #2a2e45;border-radius:8px;color:#d0d4e8}.status{display:inline-block;padding:3px 10px;border:1px solid #2a7a50;border-radius:20px;color:#4caf8a}.note{padding:12px 16px;border-left:3px solid #f0b429;background:#1a1d27}li{margin:5px 0}@media(max-width:820px){.layout{display:block}nav{position:static;width:auto;height:auto}main{padding:32px 22px}}
+  </style>
+</head>
+<body><div class="layout">
+<nav><strong>ADR 7</strong><a href="#context">Context</a><a href="#decision">Decision</a><a href="#errors">Error Handling</a><a href="#rationale">Rationale</a><a href="#consequences">Consequences</a><a href="#alternatives">Alternatives</a><a href="#future">Future Work</a><hr /><a href="6.html">ADR 6</a><a href="../architecture.html">Architecture</a></nav>
+<main>
+<h1>7. Issue選択ポップアップのプロジェクト別Issue取得とページ管理</h1><span class="status">Accepted</span>
+
+<section id="context"><h2>Context</h2>
+<p>Issue選択ポップアップでは、詳細未取得のIssueもプロジェクトごとに一覧取得して表示する。一覧用の<code>ProjectsIssue</code>はIssue ID、Project ID、subject、description、statusだけを持ち、既存の<code>IssueStore</code>とは別に保存する。</p>
+<p>Issue列は一度に1ページだけを表示する。連続スクロールと先読みは、表示中にサーバー側でIssueが追加された場合にoffsetの重複・欠落を起こしやすいため採用しない。選択中プロジェクトのpage 1から開始し、境界入力で前後ページを明示的に取得する。</p>
+<p>同じexact keyを再取得する通信は重なり得る。例えばA→B→Aと素早くプロジェクトを切り替えると、最初のAと2回目のAの完了順は保証されない。一方、AとBは独立して完了・キャッシュできる必要がある。popup全体のgenerationでは粒度が粗く、Actionのconsume前に新世代を共有するライフサイクルも複雑になる。</p></section>
+
+<section id="decision"><h2>Decision</h2>
+<h3>一覧用entityとClient</h3>
+<p><code>ProjectsIssue</code>を<code>src/entities/</code>に置き、同じIssueが<code>IssueStore</code>に存在しても別に保存する。</p>
+<pre>ProjectsIssue {
+    issue_id: IssueId,
+    project_id: ProjectId,
+    subject: String,
+    description: String,
+    status_id: IssueStatusId,
+}</pre>
+<p><code>RedmineClient</code>へ指定プロジェクト・ページのIssue一覧取得を追加する。<code>GET /issues.json</code>へ<code>project_id</code>、<code>status_id=*</code>、<code>sort=id:desc</code>、<code>limit=50</code>、1始まりの<code>page</code>を渡す。戻り値はIssue一覧、<code>total_count</code>、<code>offset</code>、<code>limit</code>を含む。</p>
+<p>Clientはstatus objectを<code>IssueStatusId</code>へ変換し、API response DTOをdomain entityへ漏らさない。</p>
+<p class="note">limitが50、offsetが<code>(page - 1) * 50</code>、各IssueのProject IDが要求値と一致することを検証し、不一致は<code>RedmineClientError::Client</code>とする。期待offsetはchecked arithmeticで計算し、overflowするpageも同じClient errorとする。空の範囲外ページを許容するため<code>offset &lt;= total_count</code>は検証しない。並び順、Issue IDの一意性、<code>issues.len() &lt;= limit</code>もRedmineを信頼して検証しない。</p>
+
+<h3>exact keyとページ状態</h3>
+<p>StoreはProject IDとpageの組をexact keyとして扱う。generationはkeyに含めない。</p>
+<pre>HashMap&lt;(ProjectId, NonZeroUsize), ProjectIssuesPageState&gt;
+
+enum ProjectIssuesPageState {
+    Loading { request_id: ProjectIssuesRequestId },
+    Loaded {
+        issues: Vec&lt;ProjectsIssue&gt;,
+        total_count: usize,
+        offset: usize,
+        limit: usize,
+    },
+    Failed { message: String },
+}</pre>
+<p><code>ProjectIssuesRequestId</code>は一般的なdomain Value Objectではなく、<code>ProjectIssuesStore</code>のAction protocolで開始Actionと完了Actionを対応付ける相関IDである。そのため<code>src/vos/</code>には置かず、<code>stores/project_issues_store</code> moduleでAction・page stateとともに定義し、<code>stores</code> module経由でページfetch Usecaseへcrate内公開する。アプリ外へ公開するAPIにはしない。</p>
+<p>値はUUID v4で、等値比較だけに使う。大小や発行順に意味はなく、UUID v4の衝突確率は実用上無視できる。中央採番器は設けず、ページfetch Usecaseは呼び出しごとに新しいIDを同期的に生成する。</p>
+<pre>StartLoading { request_id, project_id, page }
+LoadSucceeded { request_id, project_id, page, result }
+LoadFailed { request_id, project_id, page, message }</pre>
+<p><code>StartLoading</code>はexact keyが未登録、<code>Loading</code>、<code>Loaded</code>、<code>Failed</code>のいずれでも、<code>Loading { request_id }</code>へ置き換える。これが明示的なrefetchであり、<code>ClearPage</code>は設けない。完了Actionは同じexact keyが<code>Loading</code>で、その<code>request_id</code>が一致する場合だけ受理する。他のexact keyには影響しない。</p>
+<pre>[unloaded|Loading|Loaded|Failed]
+  -- StartLoading(new request) --> Loading(new request)
+Loading(request) -- matching success --> Loaded
+Loading(request) -- matching failure --> Failed</pre>
+<p>A/page1 request X、B/page1 request Y、A/page1 request Zの順に開始した場合、A/page1はZだけを受理し、B/page1はYを独立して受理できる。XのHTTP自体はcancelしない。</p>
+<p>Storeはexact-key getterとLoaded metadataを公開する。表示page、前後ページ、navigation可否、現在focusは保持・計算しない。取得開始可否をentryの有無で判定するqueryも設けない。</p>
+
+<h3>Usecaseと非同期処理</h3>
+<ol><li>UUID v4の<code>ProjectIssuesRequestId</code>を生成する。</li><li><code>StartLoading { request_id, project_id, page }</code>を同期dispatchする。</li><li>同じIDを捕捉し、成功または失敗Actionを返すFutureを構成する。</li></ol>
+<p>Usecaseは<code>Future&lt;Output = ProjectIssuesAction&gt; + Send + 'static</code>を返す。worker sender、Tokio runtime、spawnはmainが管理する。Clientは<code>Arc&lt;C&gt;</code>で渡し、<code>C: Send + Sync</code>を要求する。開始Actionはその場でconsumeしない。</p>
+<p>Componentと<code>AppEffect</code>は<code>project_id</code>と<code>page</code>だけを持つ。Appがeffectを処理してUsecaseを呼ぶ時点でIDを発行する。AppComponentはrequest ID、generation、Clear/Invalidateの順序を管理しない。</p>
+
+<h3>Componentの表示pageと取得要求</h3>
+<p>Componentはpopup生成時のProject一覧snapshotと、<code>HashMap&lt;ProjectId, NonZeroUsize&gt;</code>によるプロジェクトごとの表示pageだけを保持する。全ProjectのStore状態を複製せず、表示対象のexact keyをStoreから読み、その都度viewを構成する。初期Projectは、フォーカス中Issueが<code>IssueStore</code>にあり、そのProjectがsnapshotにもあればそのProject、それ以外はProject ID昇順の先頭とする。<code>ProjectsIssue</code> cacheは探索しない。Projectが0件なら初期effectを持たない。</p>
+<p>初期page 1、Project切替、前後page移動、失敗時の<code>r</code>は、すべて対象Project ID/pageの新しいeffectを要求する。A→B→AではAを再取得し、各Usecase呼び出しが異なるrequest IDを発行する。Store cacheの存在を理由にProject切替時のfetchを省略しない。既にLoadingでも明示要求は新しいIDで置き換えられる。1入力イベントからeffectは最大1個とする。</p>
+<p>popupを閉じて開き直すと新しいComponentと表示page Mapを作り、すべてpage 1から始める。<code>IssueSelectPopupComponent::take_effect</code>は保持したeffectを一度だけ返す。</p>
+<p>popup終了時はstackから除去するだけで、generation更新、全page破棄、exact-key clearは行わない。他Project・他pageのcacheは保持する。</p>
+
+<h3>ページ移動と表示</h3>
+<ul><li>先頭Issueでさらに<code>k</code>: page &gt; 1ならchecked subtractionで前pageを取得する。</li><li>最終Issueでさらに<code>j</code>: 一覧が空でなく、<code>offset.saturating_add(issues.len()) &lt; total_count</code>ならchecked additionで次pageを取得する。</li><li>前または次のpageがなければキーを消費するだけでeffectを生成しない。</li><li>移動先pageを保存しIssue cursorを0へ戻す。Project切替時も0へ戻す。</li><li>page 2以降が空でも<code>k</code>で戻れる。空pageで<code>j</code>は開始しない。</li></ul>
+<p><code>FocusState</code>はStore metadataやnavigation policyを持たず、通常移動、境界<code>k</code>/<code>j</code>、Project切替、<code>r</code>を通知する。</p>
+<p><code>Loading</code>は「読込中です」だけを表示し、以前の内容とpreviewを隠す。<code>Failed</code>はmessageと<code>r</code>案内、Loaded 0件は「Issueはありません」を表示する。Issue列から始めた取得中・失敗中もIssue focusを維持し、<code>h</code>でProject列へ戻れる。</p>
+<p>Project列にfocusがあるとき、現在pageがLoading、Failed、未取得、またはpage 1のLoaded 0件なら、<code>l</code>でIssue列へ移動しない。<code>r</code>は現在pageがFailedならProject列・Issue列のどちらからでも受け付ける。Project列は<code>VerticalScrollWidget</code>を使い、Issue列は現在pageの最大50件だけを表示する。WidgetはStoreを参照しない。</p>
+
+<h3>既存Issueの表示値</h3><p>同じIssue IDが<code>IssueStore</code>にあれば、一覧とpreviewのsubject/descriptionはその値を優先する。なければ<code>ProjectsIssue</code>を使う。statusは上書きしない。</p>
+
+<h3>main loop</h3>
+<ol><li>worker channelからActionをDispatcherへ移す。</li><li>queued Actionを1件ずつconsumeし、直後にupdateする。</li><li><code>take_effect</code>し、あればUsecaseを開始する。</li><li>draw、event poll/read、key処理を行う。</li><li>key処理後もActionをdrain/updateし、ActionがなくてもComponent updateを1回行う。</li></ol>
+<p>Usecaseがdispatchした<code>StartLoading</code>は次の通常drainでconsumeされる。request IDは開始ActionとFutureに閉じ込められるため、dispatchとconsumeの間にStoreから読み直さない。</p>
+<p><code>AppComponent::new</code>直後にはComponent初期化用の<code>AppComponent::update</code>を一度呼ぶが、queued Actionはconsumeしない。popupの初期effectは生成時に<code>pending_effect</code>へ移し、初期effect専用handlerを設けず、最初のmain loopの共通effect処理点で開始する。この処理点はdrawと最初のevent poll/readより前にあるため、初回入力より先に初期fetchを開始できる。</p></section>
+
+<section id="errors"><h2>Error Handling</h2><p>Clientエラーは同じrequest IDを持つ<code>LoadFailed</code>へ変換する。Storeは現在のexact keyが同じrequest IDのLoadingである場合だけFailedへ遷移する。古い完了と他exact keyには影響させない。再試行は新しいIDのLoadingへ直接置き換え、不完全な結果は公開しない。</p></section>
+
+<section id="rationale"><h2>Rationale</h2><p>fetch単位のrequest IDにより競合範囲をexact keyへ限定できる。popup全体を無効化せず、Aの先行要求だけを拒否しながらBを独立して完了できる。Usecase内で開始ActionとFutureを同時に構成し、Appは相関IDを管理しない。UUID v4は中央採番状態やoverflowを持たず、等値比較だけで利用する。Componentの表示意図とStoreのcacheも分離される。</p></section>
+
+<section id="consequences"><h2>Consequences</h2>
+<ul><li>Store test: 全状態からの置換、同一exact keyのlatest-started-wins、異なるexact keyの独立完了、metadataと空page、generation/Invalidate/Clear/can-fetch queryの不在。</li><li>Usecase/Client test: 呼び出しごとに異なるID、開始・完了Actionの同一ID、成功・失敗変換、sender非依存、DTO変換と検証・非検証境界。乱数値や大小には依存しない。</li><li>Component test: 初期Project規則、初期page 1、popup再生成reset、表示page、A→B→Aの各effect、take_effect one-shot、pageなし境界のキー消費、focus抑止、両column retry、Loading/Failed/空page、既存Issue優先、scroll。</li><li>App/main test: effectはProject ID/pageだけを持ち、Clear/Invalidateをdispatchせず、初期updateがActionをconsumeせず、初期effectが共通処理点で初回入力前に開始され、開始Actionを通常drainでconsumeする。</li></ul></section>
+
+<section id="alternatives"><h2>Alternatives Considered</h2><h3>popup全体のGeneration</h3><p>異なるexact keyの独立通信まで破棄し、dispatch/consume間の世代共有管理も必要になるため採用しない。</p><h3>ClearPageして未登録キーだけ取得</h3><p>Loading置換の競合識別には結局IDが必要であり、request ID付きStartLoadingで直接置換する方が単純である。</p><h3>ComponentがIDを発行</h3><p>非同期相関の詳細をUIへ漏らすため採用しない。</p><h3>連番ID</h3><p>中央状態、overflow、順序の誤用を避けるためUUID v4を採用する。</p></section>
+
+<section id="future"><h2>Future Work</h2><ul><li>filter条件とcache key・取得状態</li><li>空の取得結果と未実行のUI上の区別</li><li>popup表示中のProject再同期</li><li>server側更新によるoffset変化の案内</li><li>cache保持上限とeviction</li><li>進行中HTTP requestのcancel</li></ul></section>
+</main></div></body></html>
