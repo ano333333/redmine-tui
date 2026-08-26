@@ -679,6 +679,19 @@ mod tests {
             unreachable!()
         }
 
+        async fn get_project_issues(
+            &self,
+            _: crate::vos::ProjectId,
+            _: std::num::NonZeroUsize,
+        ) -> std::result::Result<crate::entities::ProjectIssuesPage, RedmineClientError> {
+            Ok(crate::entities::ProjectIssuesPage {
+                issues: Vec::new(),
+                total_count: 0,
+                offset: 0,
+                limit: 50,
+            })
+        }
+
         async fn get_target_versions(
             &self,
         ) -> std::result::Result<Vec<TargetVersion>, RedmineClientError> {
@@ -746,6 +759,14 @@ mod tests {
         }
 
         async fn get_projects(&self) -> std::result::Result<Vec<Project>, RedmineClientError> {
+            Err(self.unauthorized())
+        }
+
+        async fn get_project_issues(
+            &self,
+            _: crate::vos::ProjectId,
+            _: std::num::NonZeroUsize,
+        ) -> std::result::Result<crate::entities::ProjectIssuesPage, RedmineClientError> {
             Err(self.unauthorized())
         }
 

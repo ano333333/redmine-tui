@@ -299,6 +299,14 @@ mod tests {
             }])
         }
 
+        async fn get_project_issues(
+            &self,
+            _: crate::vos::ProjectId,
+            _: std::num::NonZeroUsize,
+        ) -> Result<crate::entities::ProjectIssuesPage, RedmineClientError> {
+            panic!("initial entity load should not load project issues");
+        }
+
         async fn get_target_versions(&self) -> Result<Vec<TargetVersion>, RedmineClientError> {
             self.record("target_versions").await;
             Ok(vec![TargetVersion {

@@ -7,6 +7,7 @@ use crate::clients::redmine::{RedmineClientError, RedmineHttpError};
 mod error_mapping;
 mod get_categories;
 mod get_issue;
+mod get_project_issues;
 mod get_projects;
 mod get_static_lists;
 mod get_target_versions;

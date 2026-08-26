@@ -1,10 +1,12 @@
 use serde::Serialize;
 
+use std::num::NonZeroUsize;
+
 use crate::entities::{
-    Category, Issue, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity, Tracker,
-    User,
+    Category, Issue, IssueStatus, Priority, Project, ProjectIssuesPage, TargetVersion,
+    TimeEntityActivity, Tracker, User,
 };
-use crate::vos::IssueId;
+use crate::vos::{IssueId, ProjectId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RedmineHttpError {
@@ -69,10 +71,34 @@ pub trait RedmineClient {
     async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError>;
     async fn get_priorities(&self) -> Result<Vec<Priority>, RedmineClientError>;
     async fn get_projects(&self) -> Result<Vec<Project>, RedmineClientError>;
+    fn get_project_issues(
+        &self,
+        project_id: ProjectId,
+        page: NonZeroUsize,
+    ) -> impl std::future::Future<Output = Result<ProjectIssuesPage, RedmineClientError>> + Send;
     async fn get_target_versions(&self) -> Result<Vec<TargetVersion>, RedmineClientError>;
     async fn get_time_entity_activities(
         &self,
     ) -> Result<Vec<TimeEntityActivity>, RedmineClientError>;
     async fn get_trackers(&self) -> Result<Vec<Tracker>, RedmineClientError>;
     async fn get_users(&self) -> Result<Vec<User>, RedmineClientError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_send<T: Send>(_: T) {}
+
+    fn assert_project_issues_future_is_send<C: RedmineClient>(client: &C) {
+        assert_send(client.get_project_issues(ProjectId::new(1), NonZeroUsize::new(1).unwrap()));
+    }
+
+    #[test]
+    fn project_issues_future_is_send() {
+        let client =
+            crate::clients::redmine::DefaultRedmineClient::new("http://example.test", "token");
+
+        assert_project_issues_future_is_send(&client);
+    }
 }

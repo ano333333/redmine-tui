@@ -107,6 +107,14 @@ mod tests {
             unreachable!()
         }
 
+        async fn get_project_issues(
+            &self,
+            _: crate::vos::ProjectId,
+            _: std::num::NonZeroUsize,
+        ) -> Result<crate::entities::ProjectIssuesPage, RedmineClientError> {
+            unreachable!()
+        }
+
         async fn get_target_versions(&self) -> Result<Vec<TargetVersion>, RedmineClientError> {
             unreachable!()
         }

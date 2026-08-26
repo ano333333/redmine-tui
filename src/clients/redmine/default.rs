@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
@@ -5,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
-    Category, Issue, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity, Tracker,
-    User,
+    Category, Issue, IssueStatus, Priority, Project, ProjectIssuesPage, ProjectsIssue,
+    TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalId, PriorityId, ProjectId,
@@ -15,6 +17,7 @@ use crate::vos::{
 
 // FIXME: ユーザーを全列挙しないことを前提としたStore管理
 const PAGE_LIMIT: usize = 100;
+const PROJECT_ISSUES_PAGE_LIMIT: usize = 50;
 
 pub struct DefaultRedmineClient {
     host_url: String,
@@ -174,6 +177,61 @@ impl RedmineClient for DefaultRedmineClient {
     async fn get_projects(&self) -> Result<Vec<Project>, RedmineClientError> {
         self.get_paginated::<ProjectsResponse>("/projects.json")
             .await
+    }
+
+    async fn get_project_issues(
+        &self,
+        project_id: ProjectId,
+        page: NonZeroUsize,
+    ) -> Result<ProjectIssuesPage, RedmineClientError> {
+        let expected_offset = page
+            .get()
+            .checked_sub(1)
+            .and_then(|value| value.checked_mul(PROJECT_ISSUES_PAGE_LIMIT))
+            .ok_or_else(|| RedmineClientError::Client {
+                reason: format!("project issue page {} has an invalid offset", page.get()),
+            })?;
+        let response: ProjectIssuesResponse = self
+            .get_json(&format!(
+                "/issues.json?project_id={}&status_id=*&sort=id:desc&limit={PROJECT_ISSUES_PAGE_LIMIT}&page={}",
+                project_id.get(),
+                page.get(),
+            ))
+            .await?;
+
+        if response.limit != PROJECT_ISSUES_PAGE_LIMIT {
+            return Err(RedmineClientError::Client {
+                reason: format!(
+                    "project issues response limit {} does not match requested limit {PROJECT_ISSUES_PAGE_LIMIT}",
+                    response.limit
+                ),
+            });
+        }
+        if response.offset != expected_offset {
+            return Err(RedmineClientError::Client {
+                reason: format!(
+                    "project issues response offset {} does not match requested offset {expected_offset}",
+                    response.offset
+                ),
+            });
+        }
+
+        let issues: Vec<ProjectsIssue> = response.issues.into_iter().map(Into::into).collect();
+        if issues.iter().any(|issue| issue.project_id != project_id) {
+            return Err(RedmineClientError::Client {
+                reason: format!(
+                    "project issues response contains an issue outside requested project {}",
+                    project_id.get()
+                ),
+            });
+        }
+
+        Ok(ProjectIssuesPage {
+            issues,
+            total_count: response.total_count,
+            offset: response.offset,
+            limit: response.limit,
+        })
     }
 
     async fn get_target_versions(&self) -> Result<Vec<TargetVersion>, RedmineClientError> {
@@ -545,6 +603,36 @@ struct TrackersResponse {
 #[derive(Deserialize)]
 struct IssueResponse {
     issue: RedmineIssue,
+}
+
+#[derive(Deserialize)]
+struct ProjectIssuesResponse {
+    issues: Vec<RedmineProjectIssue>,
+    total_count: usize,
+    offset: usize,
+    limit: usize,
+}
+
+#[derive(Deserialize)]
+struct RedmineProjectIssue {
+    id: u16,
+    project: RedmineIdRef,
+    subject: String,
+    #[serde(default)]
+    description: Option<String>,
+    status: RedmineIdRef,
+}
+
+impl From<RedmineProjectIssue> for ProjectsIssue {
+    fn from(value: RedmineProjectIssue) -> Self {
+        Self {
+            issue_id: IssueId::new(value.id),
+            project_id: ProjectId::new(value.project.id),
+            subject: value.subject,
+            description: value.description.unwrap_or_default(),
+            status_id: IssueStatusId::new(value.status.id),
+        }
+    }
 }
 
 #[derive(Serialize)]
