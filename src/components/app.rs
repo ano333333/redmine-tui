@@ -17,10 +17,10 @@ use crate::components::issue_select_popup::component::EventProcessResult as Issu
 use crate::components::issue_select_popup::component::{
     Effect as IssueSelectPopupEffect, IssueSelectPopupComponent,
 };
-use crate::stores::{Dispatcher, IssueAction, Store};
+use crate::stores::{Action, Dispatcher, IssueAction, Store};
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, ProjectId,
+    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, ProjectId,
     TargetVersionId, TimeEntityActivityId, UserId,
 };
 
@@ -58,6 +58,7 @@ pub enum AppEffect {
 
 enum PendingEditorContext {
     IssueBody { id: IssueId },
+    Journal { id: JournalId },
 }
 
 enum PopupComponent<'a> {
@@ -459,10 +460,13 @@ impl<'a> AppComponent<'a> {
                 )) => {
                     self.pending_effect = Some(AppEffect::StartIssueUpload(issue_id));
                 }
-                // TODO: 次のコミットでエディタ起動effectを発行する
                 Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::EditJournalRequested { .. },
-                )) => {}
+                    IssueDetailEventProcessResult::EditJournalRequested { id, notes },
+                )) => {
+                    self.pending_editor_context = Some(PendingEditorContext::Journal { id });
+                    self.pending_effect =
+                        Some(AppEffect::OpenEditor(EditorRequest { initial_text: notes }));
+                }
                 None => {}
             }
         }
@@ -611,6 +615,14 @@ impl<'a> AppComponent<'a> {
                     .dispatch(IssueAction::UpdateDescription {
                         id,
                         body: response.edited_text,
+                    });
+            }
+            Some(PendingEditorContext::Journal { id }) => {
+                self.dispatcher
+                    .borrow_mut()
+                    .dispatch(Action::UpdateJournal {
+                        id,
+                        notes: response.edited_text,
                     });
             }
             None => {}
@@ -891,6 +903,29 @@ mod tests {
         }
         app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
         app.process_event(key_event(KeyCode::Enter), dispatcher);
+    }
+
+    fn loaded_dispatcher_with_journals() -> Rc<RefCell<Dispatcher>> {
+        let dispatcher = loaded_dispatcher();
+        {
+            let mut dispatcher_ref = dispatcher.borrow_mut();
+            dispatcher_ref.dispatch(Action::LoadJournal { id: 1.into() });
+            dispatcher_ref.dispatch(Action::LoadJournal { id: 2.into() });
+            dispatcher_ref.dispatch(Action::LoadJournal { id: 3.into() });
+            while dispatcher_ref.consume_actinos_len() > 0 {
+                dispatcher_ref.consume_action();
+            }
+        }
+        dispatcher
+    }
+
+    /// Property(15行) -> Body -> ChildrenList -> JournalsList(先頭Journalのdetail)
+    /// の順にフォーカスを送り、JournalsList内の1件目JournalのNotes位置に到達させる
+    fn focus_first_journal_notes(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) {
+        for _ in 0..54 {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+            app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        }
     }
 
     #[test]
@@ -1228,6 +1263,33 @@ mod tests {
                 "2026-02-18T00:00:00+09:00"
             ))
         );
+    }
+
+    #[test]
+    fn e_key_on_journal_notes_opens_editor_and_updates_store_through_dispatcher() {
+        let dispatcher = loaded_dispatcher_with_journals();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        focus_first_journal_notes(&mut app, dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
+
+        let Some(AppEffect::OpenEditor(request)) = app.take_effect() else {
+            panic!("Journal本文編集時はエディタ起動effectが必要です");
+        };
+        assert_eq!(request.initial_text, "");
+
+        app.handle_editor_response(EditorResponse {
+            edited_text: "updated notes".to_string(),
+        });
+        dispatcher.borrow_mut().consume_action();
+
+        let notes = dispatcher
+            .borrow()
+            .store()
+            .get_journal(1)
+            .map(|(journal, _)| journal.notes.clone());
+        assert_eq!(notes, Some("updated notes".to_string()));
     }
 
     #[test]
