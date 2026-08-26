@@ -78,6 +78,8 @@ impl JournalsListComponent {
                     Some(EventProcessResult::CursorLeavedFromAbove)
                 }
             }
+            // TODO: 次のコミットでEditRequestedとしてEventProcessResultに伝播する
+            ChildEventProcessResult::Edit => None,
         }
     }
 

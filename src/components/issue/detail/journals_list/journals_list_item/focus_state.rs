@@ -13,6 +13,7 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromBelow { x: u16 },
     CursorLeavedFromAbove { x: u16 },
+    Edit,
 }
 
 enum FocusedPosition {
@@ -25,6 +26,7 @@ enum Action {
     MoveUp,
     MoveLeft,
     MoveRight,
+    Edit,
 }
 
 pub struct FocusState {
@@ -70,11 +72,11 @@ impl FocusState {
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
         self.focused_position.as_ref()?;
-        let action = Self::action_from_event(event)?;
+        let action = self.action_from_event(event)?;
         self.apply_action(action)
     }
 
-    fn action_from_event(event: Event) -> Option<Action> {
+    fn action_from_event(&self, event: Event) -> Option<Action> {
         let Event::Key(key) = event else {
             return None;
         };
@@ -84,6 +86,10 @@ impl FocusState {
             KeyCode::Char('k') => Some(Action::MoveUp),
             KeyCode::Char('h') => Some(Action::MoveLeft),
             KeyCode::Char('l') => Some(Action::MoveRight),
+            // 本文編集はNotes位置にフォーカスがある場合のみ許可する(Detail位置では無視)
+            KeyCode::Char('e') if matches!(self.focused_position, Some(FocusedPosition::Notes(_))) => {
+                Some(Action::Edit)
+            }
             _ => None,
         }
     }
@@ -135,6 +141,12 @@ impl FocusState {
                     && position.x + 1 < self.width
                 {
                     position.x += 1;
+                }
+            }
+            // Notes位置の場合のみaction_from_eventで発生するが、防御的にDetail位置ではNoneを返す
+            Action::Edit => {
+                if matches!(focused_position, FocusedPosition::Notes(_)) {
+                    return Some(EventProcessResult::Edit);
                 }
             }
         }
@@ -529,6 +541,30 @@ mod tests {
         state.focus_event(FocusEvent::CursorEnteredFromAbove { x: 6 });
 
         let result = state.process_event(key_event(KeyCode::Char('x')));
+
+        assert!(result.is_none());
+        assert_eq!(state.get_cursor_position(), Position::new(0, 2));
+    }
+
+    #[test]
+    fn process_event_e_on_notes_position_returns_edit() {
+        let mut state = state(WIDE_WIDTH, 1, NOTE_LINE_COUNT);
+        state.focus_event(FocusEvent::Focused {
+            position: Position::new(6, 4),
+        });
+
+        let result = state.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(result, Some(EventProcessResult::Edit)));
+        assert_eq!(state.get_cursor_position(), Position::new(6, 4));
+    }
+
+    #[test]
+    fn process_event_e_on_detail_position_does_nothing() {
+        let mut state = state(WIDE_WIDTH, 2, NOTE_LINE_COUNT);
+        state.focus_event(FocusEvent::CursorEnteredFromAbove { x: 6 });
+
+        let result = state.process_event(key_event(KeyCode::Char('e')));
 
         assert!(result.is_none());
         assert_eq!(state.get_cursor_position(), Position::new(0, 2));
