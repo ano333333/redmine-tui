@@ -248,6 +248,8 @@ impl IssueDetailComponent {
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::CursorEnteredFromBelow);
                     }
+                    // TODO: 次のコミットでEditJournalRequestedとしてEventProcessResultに伝播する
+                    Some(JournalsListEventProcessResult::EditRequested { .. }) => {}
                     None => {}
                 }
             }

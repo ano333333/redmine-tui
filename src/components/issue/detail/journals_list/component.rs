@@ -2,6 +2,7 @@ use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::entities::Journal;
+use crate::vos::JournalId;
 
 use super::journals_list_item::EventProcessResult as ChildEventProcessResult;
 use super::journals_list_item::FocusEvent as ChildFocusEvent;
@@ -18,6 +19,7 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromBelow,
     CursorLeavedFromAbove,
+    EditRequested { id: JournalId, notes: String },
 }
 
 pub struct JournalsListComponent {
@@ -78,8 +80,9 @@ impl JournalsListComponent {
                     Some(EventProcessResult::CursorLeavedFromAbove)
                 }
             }
-            // TODO: 次のコミットでEditRequestedとしてEventProcessResultに伝播する
-            ChildEventProcessResult::EditRequested { .. } => None,
+            ChildEventProcessResult::EditRequested { id, notes } => {
+                Some(EventProcessResult::EditRequested { id, notes })
+            }
         }
     }
 
@@ -228,5 +231,48 @@ impl JournalsListComponent {
             line_count += widget.line_count(width);
         }
         Position::new(0, 0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    use super::*;
+    use crate::test_support::local_datetime;
+    use crate::vos::JournalId;
+
+    const WIDE_WIDTH: u16 = 32;
+
+    fn key_event(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn create_journal(id: u16, notes: impl Into<String>) -> Journal {
+        Journal {
+            id: JournalId::new(id),
+            user: "alice".to_string(),
+            updated_on: local_datetime("2026-01-15T00:00:00+09:00"),
+            details: vec![],
+            notes: notes.into(),
+        }
+    }
+
+    #[test]
+    fn process_event_e_on_focused_item_returns_edit_requested() {
+        let journal = create_journal(1, "first paragraph");
+        let mut component = JournalsListComponent::new();
+        component.update(vec![&journal], WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+
+        let result = component.process_event(key_event(KeyCode::Char('e')));
+
+        match result {
+            Some(EventProcessResult::EditRequested { id, notes }) => {
+                assert_eq!(id, JournalId::new(1));
+                assert_eq!(notes, "first paragraph");
+            }
+            _ => panic!("expected edit request"),
+        }
     }
 }
