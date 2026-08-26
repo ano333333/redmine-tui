@@ -35,7 +35,8 @@ use self::{
     },
     stores::{Action, Dispatcher, IssueAction, IssueState},
     usecases::redmine::{
-        apply_issue_property_diffs, fetch_issue_with_conflicts, load_initial_entities, upload_issue,
+        apply_issue_property_diffs, fetch_issue, fetch_issue_with_conflicts, load_initial_entities,
+        upload_issue,
     },
     vos::{IssueId, IssuePropertyDiff},
 };
@@ -197,6 +198,9 @@ fn handle_app_effect(
     client: Arc<DefaultRedmineClient>,
 ) -> Result<()> {
     match effect {
+        AppEffect::FetchIssue(id) => {
+            start_issue_fetch(dispatcher, runtime, sender, client, id);
+        }
         AppEffect::OpenEditor(request) => {
             let response = run_editor(terminal, request)?;
             app_component.handle_editor_response(response);
@@ -232,6 +236,26 @@ fn handle_app_effect(
         }
     }
     Ok(())
+}
+
+fn start_issue_fetch<C>(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    runtime: &Runtime,
+    sender: mpsc::Sender<Action>,
+    client: Arc<C>,
+    id: IssueId,
+) where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    let Some(future) = fetch_issue(dispatcher, client, id) else {
+        return;
+    };
+
+    runtime.spawn(async move {
+        sender
+            .send(future.await.into())
+            .expect("Failed to send Action with mpsc::channel");
+    });
 }
 
 async fn issue_upload_action(
