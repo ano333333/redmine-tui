@@ -2,12 +2,13 @@ use std::cmp::min;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Constraint, Direction, Layout, Position, Rect, Size};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
 use crate::vos::{IssueId, ProjectId};
+use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
 
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 const SELECTED_BG: Color = Color::Rgb(0x22, 0x22, 0x22);
@@ -38,6 +39,7 @@ pub struct IssueSelectPopupIssue {
     pub project_id: ProjectId,
     pub issue_id: IssueId,
     pub subject: String,
+    pub description: String,
 }
 
 impl IssueSelectPopupIssue {
@@ -45,21 +47,33 @@ impl IssueSelectPopupIssue {
         project_id: impl Into<ProjectId>,
         issue_id: impl Into<IssueId>,
         subject: impl Into<String>,
+        description: impl Into<String>,
     ) -> Self {
         Self {
             project_id: project_id.into(),
             issue_id: issue_id.into(),
             subject: subject.into(),
+            description: description.into(),
         }
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum IssueSelectPopupIssueColumnState<'a> {
+    Unloaded,
+    Loading,
+    Loaded,
+    LoadedEmpty,
+    Failed { message: &'a str },
+}
+
 pub struct IssueSelectPopupWidget<'a> {
     pub projects: Vec<&'a IssueSelectPopupProject>,
-    pub issues: Vec<&'a IssueSelectPopupIssue>,
+    pub issues: Vec<IssueSelectPopupIssue>,
     pub focused_project_index: usize,
     pub focused_issue_index: usize,
     pub focused_column: IssueSelectPopupFocusColumn,
+    pub issue_column_state: IssueSelectPopupIssueColumnState<'a>,
     state: &'a IssueSelectPopupWidgetState,
 }
 
@@ -68,6 +82,8 @@ pub struct IssueSelectPopupWidgetState {
     description_buffer: Buffer,
     preview_hash: Option<u64>,
     preview_generation: u64,
+    project_scroll_state: VerticalScrollWidgetState,
+    issue_scroll_state: VerticalScrollWidgetState,
 }
 
 impl IssueSelectPopupWidgetState {
@@ -77,7 +93,26 @@ impl IssueSelectPopupWidgetState {
             description_buffer: Buffer::empty(Rect::new(0, 0, 0, 0)),
             preview_hash: None,
             preview_generation: 0,
+            project_scroll_state: VerticalScrollWidgetState::new(),
+            issue_scroll_state: VerticalScrollWidgetState::new(),
         }
+    }
+
+    pub fn update_scroll(
+        &mut self,
+        area: Rect,
+        focused_project_index: usize,
+        focused_issue_index: usize,
+    ) {
+        let height = IssueSelectPopupWidget::body_height(area);
+        self.project_scroll_state.update(
+            Position::new(0, focused_project_index.min(u16::MAX as usize) as u16),
+            height,
+        );
+        self.issue_scroll_state.update(
+            Position::new(0, focused_issue_index.min(u16::MAX as usize) as u16),
+            height,
+        );
     }
 
     pub fn update(&mut self, width: u16, issue: &IssueSelectPopupIssue, description: &str) {
@@ -123,21 +158,22 @@ impl IssueSelectPopupWidgetState {
 }
 
 impl<'a> IssueSelectPopupWidget<'a> {
-    pub fn new(
+    pub fn new<'b>(
         projects: impl IntoIterator<Item = &'a IssueSelectPopupProject>,
-        issues: impl IntoIterator<Item = &'a IssueSelectPopupIssue>,
+        issues: impl IntoIterator<Item = &'b IssueSelectPopupIssue>,
         focused_project_index: usize,
         focused_issue_index: usize,
         focused_column: IssueSelectPopupFocusColumn,
         state: &'a IssueSelectPopupWidgetState,
-        _description: &str,
+        issue_column_state: IssueSelectPopupIssueColumnState<'a>,
     ) -> Self {
         Self {
             projects: projects.into_iter().collect(),
-            issues: issues.into_iter().collect(),
+            issues: issues.into_iter().cloned().collect(),
             focused_project_index,
             focused_issue_index,
             focused_column,
+            issue_column_state,
             state,
         }
     }
@@ -164,6 +200,15 @@ impl<'a> IssueSelectPopupWidget<'a> {
         }
 
         split_columns(inner)[2].width
+    }
+
+    pub fn body_height(area: Rect) -> u16 {
+        let area = Self::popup_area(area);
+        Block::default()
+            .borders(Borders::ALL)
+            .inner(area)
+            .height
+            .saturating_sub(1)
     }
 
     pub fn line_count(&self, _: u16) -> usize {
@@ -228,40 +273,82 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
     );
 
     let body_height = inner.height.saturating_sub(1) as usize;
-    let focused_issue = widget.issues.get(widget.focused_issue_index).copied();
+    let focused_issue = widget.issues.get(widget.focused_issue_index);
 
-    for (row, project) in widget.projects.iter().take(body_height).enumerate() {
+    let mut project_scroll = VerticalScrollWidget::new(
+        &widget.state.project_scroll_state,
+        Size::new(columns[0].width, body_height as u16),
+    );
+    for (row, project) in widget.projects.iter().enumerate() {
         let active_project = widget.focused_column == IssueSelectPopupFocusColumn::Project
             || (widget.focused_column == IssueSelectPopupFocusColumn::Issue
                 && focused_issue.is_some_and(|issue| issue.project_id == project.id));
         let style = selected_row_style(row == widget.focused_project_index, active_project);
-        render_single_line(
-            buf,
+        project_scroll.render_widget(SingleLineWidget::new(&project.name, style), 1);
+    }
+    project_scroll.render(
+        Rect::new(
             columns[0].x,
-            inner.y + 1 + row as u16,
+            inner.y + 1,
             columns[0].width,
-            &project.name,
-            style,
-        );
-    }
+            body_height as u16,
+        ),
+        buf,
+    );
 
-    for (row, issue) in widget.issues.iter().take(body_height).enumerate() {
-        let style = selected_row_style(
-            row == widget.focused_issue_index,
-            widget.focused_column == IssueSelectPopupFocusColumn::Issue,
+    if matches!(
+        widget.issue_column_state,
+        IssueSelectPopupIssueColumnState::Loaded
+    ) {
+        let mut issue_scroll = VerticalScrollWidget::new(
+            &widget.state.issue_scroll_state,
+            Size::new(columns[1].width, body_height as u16),
         );
-
-        render_single_line(
+        for (row, issue) in widget.issues.iter().enumerate() {
+            let style = selected_row_style(
+                row == widget.focused_issue_index,
+                widget.focused_column == IssueSelectPopupFocusColumn::Issue,
+            );
+            issue_scroll.render_widget(SingleLineWidget::new(issue.issue_id.to_string(), style), 1);
+        }
+        issue_scroll.render(
+            Rect::new(
+                columns[1].x,
+                inner.y + 1,
+                columns[1].width,
+                body_height as u16,
+            ),
             buf,
-            columns[1].x,
-            inner.y + 1 + row as u16,
-            columns[1].width,
-            &issue.issue_id.to_string(),
-            style,
         );
+    } else {
+        let message = match widget.issue_column_state {
+            IssueSelectPopupIssueColumnState::Unloaded => None,
+            IssueSelectPopupIssueColumnState::Loading => Some("読込中です".to_string()),
+            IssueSelectPopupIssueColumnState::Failed { message, .. } => {
+                Some(format!("{message}\nr で再試行"))
+            }
+            IssueSelectPopupIssueColumnState::LoadedEmpty => Some("Issueはありません".to_string()),
+            IssueSelectPopupIssueColumnState::Loaded => None,
+        };
+        if let Some(message) = message {
+            Paragraph::new(message).render(
+                Rect::new(
+                    columns[1].x,
+                    inner.y + 1,
+                    columns[1].width + columns[2].width,
+                    body_height as u16,
+                ),
+                buf,
+            );
+        }
     }
 
-    if focused_issue.is_some() {
+    if focused_issue.is_some()
+        && matches!(
+            widget.issue_column_state,
+            IssueSelectPopupIssueColumnState::Loaded
+        )
+    {
         let issue_area = Rect {
             x: columns[2].x,
             y: inner.y + 1,
@@ -270,6 +357,28 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
         };
         if issue_area.height > 0 {
             widget.state.render_preview(issue_area, buf);
+        }
+    }
+}
+
+struct SingleLineWidget<'a> {
+    text: std::borrow::Cow<'a, str>,
+    style: Style,
+}
+
+impl<'a> SingleLineWidget<'a> {
+    fn new(text: impl Into<std::borrow::Cow<'a, str>>, style: Style) -> Self {
+        Self {
+            text: text.into(),
+            style,
+        }
+    }
+}
+
+impl Widget for SingleLineWidget<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        if area.height > 0 {
+            render_single_line(buf, area.x, area.y, area.width, &self.text, self.style);
         }
     }
 }
@@ -370,14 +479,15 @@ mod tests {
 
     fn issues() -> Vec<IssueSelectPopupIssue> {
         vec![
-            IssueSelectPopupIssue::new(1, 101, "Issue selector popup"),
+            IssueSelectPopupIssue::new(1, 101, "Issue selector popup", ""),
             IssueSelectPopupIssue::new(
                 2,
                 204,
                 "Long subject that should be clipped by the issue column",
+                "",
             ),
-            IssueSelectPopupIssue::new(2, 205, "API shape"),
-            IssueSelectPopupIssue::new(3, 305, "README更新"),
+            IssueSelectPopupIssue::new(2, 205, "API shape", ""),
+            IssueSelectPopupIssue::new(3, 305, "README更新", ""),
         ]
     }
 
@@ -407,7 +517,7 @@ mod tests {
                 0,
                 IssueSelectPopupFocusColumn::Issue,
                 &state,
-                &description,
+                IssueSelectPopupIssueColumnState::Loaded,
             ),
         );
     }
@@ -427,7 +537,120 @@ mod tests {
                 0,
                 IssueSelectPopupFocusColumn::Issue,
                 &state,
-                "",
+                IssueSelectPopupIssueColumnState::LoadedEmpty,
+            ),
+        );
+    }
+
+    #[test]
+    fn snapshot_issue_select_popup_renders_loading_only_in_issue_columns() {
+        let projects = projects();
+        let issues = vec![IssueSelectPopupIssue::new(
+            2,
+            999,
+            "stale subject",
+            "stale description",
+        )];
+        let mut state = IssueSelectPopupWidgetState::new();
+        state.update(
+            IssueSelectPopupWidget::preview_width(Rect::new(0, 0, 80, 24)),
+            &issues[0],
+            &issues[0].description,
+        );
+        render_snapshot(
+            "issue_select_popup_loading",
+            80,
+            24,
+            IssueSelectPopupWidget::new(
+                &projects,
+                &issues,
+                0,
+                0,
+                IssueSelectPopupFocusColumn::Project,
+                &state,
+                IssueSelectPopupIssueColumnState::Loading,
+            ),
+        );
+    }
+
+    #[test]
+    fn snapshot_issue_select_popup_renders_failure_and_retry_guide() {
+        let projects = projects();
+        let issues = vec![IssueSelectPopupIssue::new(
+            2,
+            999,
+            "stale subject",
+            "stale description",
+        )];
+        let mut state = IssueSelectPopupWidgetState::new();
+        state.update(
+            IssueSelectPopupWidget::preview_width(Rect::new(0, 0, 80, 24)),
+            &issues[0],
+            &issues[0].description,
+        );
+        render_snapshot(
+            "issue_select_popup_failed",
+            80,
+            24,
+            IssueSelectPopupWidget::new(
+                &projects,
+                &issues,
+                0,
+                0,
+                IssueSelectPopupFocusColumn::Issue,
+                &state,
+                IssueSelectPopupIssueColumnState::Failed { message: "offline" },
+            ),
+        );
+    }
+
+    #[test]
+    fn snapshot_issue_select_popup_scrolls_fifty_issue_page_to_focused_last_issue() {
+        let projects = vec![IssueSelectPopupProject::new(1, "redmine-tui")];
+        let issues = (1..=50)
+            .map(|id| IssueSelectPopupIssue::new(1, id, format!("Issue {id}"), ""))
+            .collect::<Vec<_>>();
+        let area = Rect::new(0, 0, 80, 12);
+        let mut state = IssueSelectPopupWidgetState::new();
+        state.update_scroll(area, 0, 49);
+
+        render_snapshot(
+            "issue_select_popup_fifty_issue_page_scrolled",
+            area.width,
+            area.height,
+            IssueSelectPopupWidget::new(
+                &projects,
+                &issues,
+                0,
+                49,
+                IssueSelectPopupFocusColumn::Issue,
+                &state,
+                IssueSelectPopupIssueColumnState::Loaded,
+            ),
+        );
+    }
+
+    #[test]
+    fn snapshot_issue_select_popup_scrolls_projects_to_focused_last_project() {
+        let projects = (1..=20)
+            .map(|id| IssueSelectPopupProject::new(id, format!("Project {id}")))
+            .collect::<Vec<_>>();
+        let area = Rect::new(0, 0, 80, 12);
+        let mut state = IssueSelectPopupWidgetState::new();
+        state.update_scroll(area, 19, 0);
+
+        render_snapshot(
+            "issue_select_popup_project_column_scrolled",
+            area.width,
+            area.height,
+            IssueSelectPopupWidget::new(
+                &projects,
+                &Vec::new(),
+                19,
+                0,
+                IssueSelectPopupFocusColumn::Project,
+                &state,
+                IssueSelectPopupIssueColumnState::Unloaded,
             ),
         );
     }
@@ -436,12 +659,11 @@ mod tests {
     fn line_count_includes_header_item_rows_and_borders() {
         let projects = vec![IssueSelectPopupProject::new(1, "redmine-tui")];
         let issues = vec![
-            IssueSelectPopupIssue::new(2, 201, "Displayed issue 1"),
-            IssueSelectPopupIssue::new(2, 202, "Displayed issue 2"),
-            IssueSelectPopupIssue::new(2, 203, "Displayed issue 3"),
+            IssueSelectPopupIssue::new(2, 201, "Displayed issue 1", ""),
+            IssueSelectPopupIssue::new(2, 202, "Displayed issue 2", ""),
+            IssueSelectPopupIssue::new(2, 203, "Displayed issue 3", ""),
         ];
         let state = IssueSelectPopupWidgetState::new();
-        let description = String::new();
         let widget = IssueSelectPopupWidget::new(
             &projects,
             &issues,
@@ -449,7 +671,7 @@ mod tests {
             0,
             IssueSelectPopupFocusColumn::Project,
             &state,
-            &description,
+            IssueSelectPopupIssueColumnState::Loaded,
         );
 
         assert_eq!(widget.line_count(80), 6);
@@ -479,7 +701,7 @@ mod tests {
             0,
             IssueSelectPopupFocusColumn::Issue,
             &state,
-            &description,
+            IssueSelectPopupIssueColumnState::Loaded,
         );
         let mut buffer = Buffer::empty(area);
 
@@ -494,7 +716,7 @@ mod tests {
     #[test]
     fn render_formats_issue_preview_body_as_markdown() {
         let projects = vec![IssueSelectPopupProject::new(1, "redmine-tui")];
-        let issues = vec![IssueSelectPopupIssue::new(1, 101, "Markdown preview")];
+        let issues = vec![IssueSelectPopupIssue::new(1, 101, "Markdown preview", "")];
         let description = "Preview has **bold** text".to_string();
         let area = Rect::new(0, 0, 80, 20);
         let mut state = IssueSelectPopupWidgetState::new();
@@ -510,7 +732,7 @@ mod tests {
             0,
             IssueSelectPopupFocusColumn::Issue,
             &state,
-            &description,
+            IssueSelectPopupIssueColumnState::Loaded,
         );
         let mut buffer = Buffer::empty(area);
 
@@ -540,6 +762,7 @@ mod tests {
             1,
             101,
             "Subject words that must wrap onto another preview line",
+            "",
         )];
         let description = "Description starts after blank line".to_string();
         let area = Rect::new(0, 0, 80, 20);
@@ -557,7 +780,7 @@ mod tests {
             0,
             IssueSelectPopupFocusColumn::Issue,
             &state,
-            &description,
+            IssueSelectPopupIssueColumnState::Loaded,
         );
         let mut buffer = Buffer::empty(area);
 

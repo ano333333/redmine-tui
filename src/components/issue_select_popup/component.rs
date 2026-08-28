@@ -2,7 +2,7 @@ use crossterm::event::Event;
 use ratatui::layout::Rect;
 
 use crate::stores::Store;
-use crate::vos::{EntityIdValue, IssueId};
+use crate::vos::IssueId;
 
 use super::focus_state::{self, FocusState};
 use super::widget::{
@@ -63,6 +63,11 @@ impl IssueSelectPopupComponent {
                 description,
             );
         }
+        self.widget_state.update_scroll(
+            area,
+            self.focus_state.focused_project_index(),
+            self.focus_state.focused_issue_index(),
+        );
     }
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
@@ -80,19 +85,13 @@ impl IssueSelectPopupComponent {
             })
     }
 
-    pub fn create_widget<'a>(&'a self, store: &'a Store) -> IssueSelectPopupWidget<'a> {
+    pub fn create_widget<'a>(&'a self, _store: &'a Store) -> IssueSelectPopupWidget<'a> {
         let visible_issues = self.visible_issues();
-        let empty_description = String::new();
-        let description = self
-            .focused_issue_id()
-            .map(|issue_id| {
-                &store
-                    .get_issues()
-                    .get(&issue_id)
-                    .expect("IssueSelectPopupComponent requires its issue to exist in Store")
-                    .description
-            })
-            .unwrap_or(&empty_description);
+        let issue_column_state = if visible_issues.is_empty() {
+            super::widget::IssueSelectPopupIssueColumnState::LoadedEmpty
+        } else {
+            super::widget::IssueSelectPopupIssueColumnState::Loaded
+        };
         IssueSelectPopupWidget::new(
             &self.projects,
             visible_issues,
@@ -100,7 +99,7 @@ impl IssueSelectPopupComponent {
             self.focus_state.focused_issue_index(),
             self.focus_state.focused_column(),
             &self.widget_state,
-            description,
+            issue_column_state,
         )
     }
 
@@ -112,7 +111,12 @@ impl IssueSelectPopupComponent {
                 .get_issues()
                 .iter()
                 .map(|(id, issue)| {
-                    IssueSelectPopupIssue::new(issue.project_id.get(), *id, issue.subject.clone())
+                    IssueSelectPopupIssue::new(
+                        issue.project_id,
+                        *id,
+                        issue.subject.clone(),
+                        issue.description.clone(),
+                    )
                 })
                 .collect::<Vec<_>>();
             issues.sort_by_key(|issue| issue.issue_id);
