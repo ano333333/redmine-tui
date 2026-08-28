@@ -1,9 +1,14 @@
 use std::collections::{HashMap, VecDeque};
 
+use std::num::NonZeroUsize;
+
 use super::issue_store::{IssueAction, IssueState, IssueStore};
+use super::project_issues_store::{
+    ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
+};
 use crate::entities::{
-    Category, Issue, IssueStatus, Journal, Priority, Project, TargetVersion, TimeEntityActivity,
-    Tracker, User,
+    Category, Issue, IssueStatus, Journal, Priority, Project, ProjectsIssue, TargetVersion,
+    TimeEntityActivity, Tracker, User,
 };
 use crate::libs::yaml::parse_journal_yaml;
 use crate::vos::{
@@ -46,6 +51,7 @@ pub enum JournalState {
 
 pub struct Store {
     issue_store: IssueStore,
+    project_issues_store: ProjectIssuesStore,
     journals: HashMap<JournalId, (Journal, JournalState)>,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
@@ -61,6 +67,7 @@ impl Store {
     pub fn new() -> Self {
         Self {
             issue_store: IssueStore::new(),
+            project_issues_store: ProjectIssuesStore::new(),
             journals: HashMap::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
@@ -76,6 +83,7 @@ impl Store {
     pub fn consume_action(&mut self, action: Action) {
         match action {
             Action::Issue(action) => self.issue_store.consume_action(action),
+            Action::ProjectIssues(action) => self.project_issues_store.consume_action(action),
             Action::SyncUsers { users } => {
                 self.users = users.into_iter().map(|user| (user.id, user)).collect();
             }
@@ -147,6 +155,23 @@ impl Store {
 
     pub fn get_issues(&self) -> &HashMap<IssueId, Issue> {
         self.issue_store.get_issues()
+    }
+
+    pub fn get_project_issues_page_state(
+        &self,
+        project_id: impl Into<ProjectId>,
+        page: NonZeroUsize,
+    ) -> Option<&ProjectIssuesPageState> {
+        self.project_issues_store
+            .page_state(project_id.into(), page)
+    }
+
+    pub fn get_project_issues(
+        &self,
+        project_id: impl Into<ProjectId>,
+        page: NonZeroUsize,
+    ) -> Option<&[ProjectsIssue]> {
+        self.project_issues_store.issues(project_id.into(), page)
     }
 
     pub fn get_issue_property_diffs(&self, issue_id: impl Into<IssueId>) -> &[IssuePropertyDiff] {
@@ -234,6 +259,7 @@ impl Store {
 
 pub enum Action {
     Issue(IssueAction),
+    ProjectIssues(ProjectIssuesAction),
     SyncUsers {
         users: Vec<User>,
     },
@@ -270,6 +296,12 @@ pub enum Action {
 impl From<IssueAction> for Action {
     fn from(action: IssueAction) -> Self {
         Self::Issue(action)
+    }
+}
+
+impl From<ProjectIssuesAction> for Action {
+    fn from(action: ProjectIssuesAction) -> Self {
+        Self::ProjectIssues(action)
     }
 }
 
