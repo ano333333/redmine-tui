@@ -5,6 +5,10 @@ use super::widget::IssueSelectPopupFocusColumn;
 pub enum EventProcessResult {
     Selected,
     Quited,
+    ProjectChanged,
+    PreviousPageRequested,
+    NextPageRequested,
+    RetryRequested,
 }
 
 enum Action {
@@ -14,6 +18,7 @@ enum Action {
     MoveRight,
     Enter,
     Quit,
+    Retry,
 }
 
 pub struct FocusState {
@@ -61,6 +66,14 @@ impl FocusState {
         self.focused_column
     }
 
+    pub fn reset_issue_focus(&mut self) {
+        self.focused_issue_index = 0;
+    }
+
+    pub fn focus_project_column(&mut self) {
+        self.focused_column = IssueSelectPopupFocusColumn::Project;
+    }
+
     fn action_from_event(&self, event: Event) -> Option<Action> {
         let Event::Key(key) = event else {
             return None;
@@ -72,6 +85,7 @@ impl FocusState {
             KeyCode::Char('h') => Some(Action::MoveLeft),
             KeyCode::Char('l') => Some(Action::MoveRight),
             KeyCode::Char('q') => Some(Action::Quit),
+            KeyCode::Char('r') => Some(Action::Retry),
             KeyCode::Enter => Some(Action::Enter),
             _ => None,
         }
@@ -80,12 +94,28 @@ impl FocusState {
     fn apply_action(&mut self, action: Action) -> Option<EventProcessResult> {
         match action {
             Action::MoveDown => match self.focused_column {
-                IssueSelectPopupFocusColumn::Project => self.focus_next_project(),
-                IssueSelectPopupFocusColumn::Issue => self.focus_next_issue(),
+                IssueSelectPopupFocusColumn::Project => {
+                    if self.focus_next_project() {
+                        return Some(EventProcessResult::ProjectChanged);
+                    }
+                }
+                IssueSelectPopupFocusColumn::Issue => {
+                    if !self.focus_next_issue() {
+                        return Some(EventProcessResult::NextPageRequested);
+                    }
+                }
             },
             Action::MoveUp => match self.focused_column {
-                IssueSelectPopupFocusColumn::Project => self.focus_previous_project(),
-                IssueSelectPopupFocusColumn::Issue => self.focus_previous_issue(),
+                IssueSelectPopupFocusColumn::Project => {
+                    if self.focus_previous_project() {
+                        return Some(EventProcessResult::ProjectChanged);
+                    }
+                }
+                IssueSelectPopupFocusColumn::Issue => {
+                    if !self.focus_previous_issue() {
+                        return Some(EventProcessResult::PreviousPageRequested);
+                    }
+                }
             },
             Action::MoveLeft => {
                 self.focused_column = IssueSelectPopupFocusColumn::Project;
@@ -103,6 +133,7 @@ impl FocusState {
                     return Some(EventProcessResult::Selected);
                 }
             }
+            Action::Retry => return Some(EventProcessResult::RetryRequested),
         }
 
         None
@@ -117,29 +148,41 @@ impl FocusState {
             .min(self.focused_project_issue_count().saturating_sub(1));
     }
 
-    fn focus_next_project(&mut self) {
+    fn focus_next_project(&mut self) -> bool {
         if self.focused_project_index + 1 < self.project_issue_counts.len() {
             self.focused_project_index += 1;
             self.focused_issue_index = 0;
+            true
+        } else {
+            false
         }
     }
 
-    fn focus_previous_project(&mut self) {
+    fn focus_previous_project(&mut self) -> bool {
         if self.focused_project_index > 0 {
             self.focused_project_index -= 1;
             self.focused_issue_index = 0;
+            true
+        } else {
+            false
         }
     }
 
-    fn focus_next_issue(&mut self) {
+    fn focus_next_issue(&mut self) -> bool {
         if self.focused_issue_index + 1 < self.focused_project_issue_count() {
             self.focused_issue_index += 1;
+            true
+        } else {
+            false
         }
     }
 
-    fn focus_previous_issue(&mut self) {
+    fn focus_previous_issue(&mut self) -> bool {
         if self.focused_issue_index > 0 {
             self.focused_issue_index -= 1;
+            true
+        } else {
+            false
         }
     }
 
@@ -206,6 +249,18 @@ mod tests {
     }
 
     #[test]
+    fn focus_project_column_keeps_indices_and_moves_only_the_column_focus() {
+        let mut state = state_focused_on(1, 1);
+        state.process_event(key_event(KeyCode::Char('l')));
+
+        state.focus_project_column();
+
+        assert_eq!(state.focused_project_index(), 1);
+        assert_eq!(state.focused_issue_index(), 1);
+        assert_eq!(state.focused_column(), IssueSelectPopupFocusColumn::Project);
+    }
+
+    #[test]
     fn process_event_l_keeps_project_column_focused_when_project_has_no_issues() {
         let mut state = FocusState::new();
         state.replace_project_issue_counts(vec![0]);
@@ -219,11 +274,17 @@ mod tests {
     fn process_event_j_and_k_move_project_focus_and_reset_issue_focus() {
         let mut state = state_focused_on(0, 0);
 
-        assert!(state.process_event(key_event(KeyCode::Char('j'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::ProjectChanged)
+        ));
         assert_eq!(state.focused_project_index(), 1);
         assert_eq!(state.focused_issue_index(), 0);
 
-        assert!(state.process_event(key_event(KeyCode::Char('k'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('k'))),
+            Some(EventProcessResult::ProjectChanged)
+        ));
         assert_eq!(state.focused_project_index(), 0);
         assert_eq!(state.focused_issue_index(), 0);
     }
@@ -245,9 +306,64 @@ mod tests {
         let mut state = state_focused_on(1, 1);
         state.process_event(key_event(KeyCode::Char('l')));
 
-        assert!(state.process_event(key_event(KeyCode::Char('j'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::NextPageRequested)
+        ));
 
         assert_eq!(state.focused_issue_index(), 1);
+    }
+
+    #[test]
+    fn process_event_k_at_first_issue_requests_previous_page() {
+        let mut state = state_focused_on(1, 0);
+        state.process_event(key_event(KeyCode::Char('l')));
+
+        let result = state.process_event(key_event(KeyCode::Char('k')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::PreviousPageRequested)
+        ));
+    }
+
+    #[test]
+    fn empty_page_keeps_issue_column_and_reports_both_boundaries() {
+        let mut state = state_focused_on(0, 0);
+        state.process_event(key_event(KeyCode::Char('l')));
+        state.replace_project_issue_counts(vec![0]);
+
+        assert_eq!(state.focused_column(), IssueSelectPopupFocusColumn::Issue);
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('k'))),
+            Some(EventProcessResult::PreviousPageRequested)
+        ));
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::NextPageRequested)
+        ));
+    }
+
+    #[test]
+    fn process_event_r_requests_retry_without_changing_focus() {
+        let mut state = state_focused_on(1, 1);
+
+        let result = state.process_event(key_event(KeyCode::Char('r')));
+
+        assert!(matches!(result, Some(EventProcessResult::RetryRequested)));
+        assert_eq!(state.focused_project_index(), 1);
+        assert_eq!(state.focused_issue_index(), 1);
+    }
+
+    #[test]
+    fn moving_project_reports_project_change() {
+        let mut state = state_focused_on(0, 0);
+
+        let result = state.process_event(key_event(KeyCode::Char('j')));
+
+        assert!(matches!(result, Some(EventProcessResult::ProjectChanged)));
+        assert_eq!(state.focused_project_index(), 1);
+        assert_eq!(state.focused_issue_index(), 0);
     }
 
     #[test]

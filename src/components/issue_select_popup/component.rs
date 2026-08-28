@@ -73,6 +73,10 @@ impl IssueSelectPopupComponent {
                     .focused_issue_id()
                     .map(|issue_id| EventProcessResult::Selected { issue_id }),
                 focus_state::EventProcessResult::Quited => Some(EventProcessResult::Quited),
+                focus_state::EventProcessResult::ProjectChanged
+                | focus_state::EventProcessResult::PreviousPageRequested
+                | focus_state::EventProcessResult::NextPageRequested
+                | focus_state::EventProcessResult::RetryRequested => None,
             })
     }
 
