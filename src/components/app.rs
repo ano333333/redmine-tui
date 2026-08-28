@@ -156,7 +156,10 @@ impl<'a> AppComponent<'a> {
                     }
                 }
                 PopupComponent::IssueSelect(popup_component) => {
-                    let result = popup_component.process_event(event);
+                    let result = {
+                        let dispatcher = dispatcher.borrow();
+                        popup_component.process_event(event, dispatcher.store())
+                    };
                     match result {
                         Some(IssueSelectPopupEventProcessResult::Selected { issue_id }) => {
                             self.select_issue(issue_id);
@@ -660,6 +663,10 @@ impl<'a> AppComponent<'a> {
 mod tests {
     use super::*;
 
+    use std::num::NonZeroUsize;
+
+    use crate::entities::{ProjectIssuesPage, ProjectsIssue};
+    use crate::stores::ProjectIssuesAction;
     use crate::vos::IssuePropertyDiff;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -686,6 +693,24 @@ mod tests {
             }
         }
         dispatcher
+    }
+
+    fn selectable_project_issues_page() -> ProjectIssuesPage {
+        ProjectIssuesPage {
+            issues: [1_u16, 3_u16, 42_u16]
+                .into_iter()
+                .map(|id| ProjectsIssue {
+                    issue_id: id.into(),
+                    project_id: 1.into(),
+                    subject: format!("issue{id}"),
+                    description: "body".to_string(),
+                    status_id: 1.into(),
+                })
+                .collect(),
+            total_count: 3,
+            offset: 0,
+            limit: 50,
+        }
     }
 
     fn mark_issue_edited(dispatcher: Rc<RefCell<Dispatcher>>, id: IssueId) {
@@ -754,6 +779,20 @@ mod tests {
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }
+            let request_id = crate::stores::ProjectIssuesRequestId::new();
+            dispatcher_ref.dispatch(ProjectIssuesAction::StartLoading {
+                request_id,
+                project_id: 1.into(),
+                page: NonZeroUsize::MIN,
+            });
+            dispatcher_ref.dispatch(ProjectIssuesAction::LoadSucceeded {
+                request_id,
+                project_id: 1.into(),
+                page: NonZeroUsize::MIN,
+                result: selectable_project_issues_page(),
+            });
+            dispatcher_ref.consume_action();
+            dispatcher_ref.consume_action();
         }
         dispatcher
     }

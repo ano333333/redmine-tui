@@ -26,6 +26,7 @@ pub struct FocusState {
     focused_project_index: usize,
     focused_issue_index: usize,
     focused_column: IssueSelectPopupFocusColumn,
+    empty_issue_column_enterable: bool,
 }
 
 impl FocusState {
@@ -35,6 +36,7 @@ impl FocusState {
             focused_project_index: 0,
             focused_issue_index: 0,
             focused_column: IssueSelectPopupFocusColumn::Project,
+            empty_issue_column_enterable: false,
         }
     }
 
@@ -72,6 +74,10 @@ impl FocusState {
 
     pub fn focus_project_column(&mut self) {
         self.focused_column = IssueSelectPopupFocusColumn::Project;
+    }
+
+    pub(super) fn set_empty_issue_column_enterable(&mut self, enterable: bool) {
+        self.empty_issue_column_enterable = enterable;
     }
 
     fn action_from_event(&self, event: Event) -> Option<Action> {
@@ -121,7 +127,7 @@ impl FocusState {
                 self.focused_column = IssueSelectPopupFocusColumn::Project;
             }
             Action::MoveRight => {
-                if self.focused_project_issue_count() > 0 {
+                if self.focused_project_issue_count() > 0 || self.empty_issue_column_enterable {
                     self.focused_column = IssueSelectPopupFocusColumn::Issue;
                 }
             }
@@ -268,6 +274,20 @@ mod tests {
         assert!(state.process_event(key_event(KeyCode::Char('l'))).is_none());
 
         assert_eq!(state.focused_column(), IssueSelectPopupFocusColumn::Project);
+    }
+
+    #[test]
+    fn process_event_l_enters_an_empty_issue_column_when_component_allows_it() {
+        let mut state = FocusState::new();
+        state.replace_project_issue_counts(vec![0]);
+        state.set_empty_issue_column_enterable(true);
+
+        assert!(state.process_event(key_event(KeyCode::Char('l'))).is_none());
+        assert_eq!(state.focused_column(), IssueSelectPopupFocusColumn::Issue);
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('k'))),
+            Some(EventProcessResult::PreviousPageRequested)
+        ));
     }
 
     #[test]
