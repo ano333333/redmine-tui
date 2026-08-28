@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::num::NonZeroUsize;
 use std::rc::Rc;
 
 use crossterm::event::Event;
@@ -13,12 +14,14 @@ use crate::components::issue_property_conflict_popup::{
     EventProcessResult as IssuePropertyConflictEventProcessResult, IssuePropertyConflictComponent,
 };
 use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
-use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
+use crate::components::issue_select_popup::component::{
+    Effect as IssueSelectPopupEffect, IssueSelectPopupComponent,
+};
 use crate::stores::{Dispatcher, IssueAction, Store};
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, TargetVersionId,
-    TimeEntityActivityId, UserId,
+    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, ProjectId,
+    TargetVersionId, TimeEntityActivityId, UserId,
 };
 
 use super::date_picker_popup::component::{
@@ -41,6 +44,10 @@ pub struct EditorResponse {
 
 pub enum AppEffect {
     FetchIssue(IssueId),
+    FetchProjectIssuesPage {
+        project_id: ProjectId,
+        page: NonZeroUsize,
+    },
     OpenEditor(EditorRequest),
     StartIssueUpload(IssueId),
     ContinueIssueUpload {
@@ -83,27 +90,18 @@ impl<'a> AppComponent<'a> {
             }
             None => (None, None),
         };
-        let popup_components = if issue_id.is_none() {
-            let popup_component = {
-                let dispatcher = dispatcher.borrow();
-                let focused_issue_id = dispatcher.store().get_issues().keys().min().copied();
-                IssueSelectPopupComponent::new(dispatcher.store(), focused_issue_id)
-            };
-            VecDeque::from([Rc::new(RefCell::new(PopupComponent::IssueSelect(
-                popup_component,
-            )))])
-        } else {
-            VecDeque::new()
-        };
         let mut app = AppComponent {
             issue_component,
-            popup_components,
+            popup_components: VecDeque::new(),
             dispatcher,
             pending_effect: None,
             pending_editor_context: None,
         };
         if let Some(result) = issue_result {
             app.handle_issue_component_result(result);
+        }
+        if issue_id.is_none() {
+            app.open_issue_select_popup(None);
         }
         app
     }
@@ -160,12 +158,16 @@ impl<'a> AppComponent<'a> {
                         let dispatcher = dispatcher.borrow();
                         popup_component.process_event(event, dispatcher.store())
                     };
+                    let effect = popup_component.take_effect();
+                    if let Some(effect) = effect {
+                        self.install_issue_select_popup_effect(effect);
+                    }
                     match result {
                         Some(IssueSelectPopupEventProcessResult::Selected { issue_id }) => {
                             self.select_issue(issue_id);
                         }
                         Some(IssueSelectPopupEventProcessResult::Quited) => {
-                            self.popup_components.pop_back();
+                            self.close_issue_select_popup();
                         }
                         None => {}
                     }
@@ -206,10 +208,7 @@ impl<'a> AppComponent<'a> {
                     self.install_effect(AppEffect::FetchIssue(id));
                 }
                 Some(IssueEventProcessResult::OpenIssueSelectPopup) => {
-                    let popup =
-                        IssueSelectPopupComponent::new(dispatcher.borrow().store(), Some(issue_id));
-                    self.popup_components
-                        .push_back(Rc::new(RefCell::new(PopupComponent::IssueSelect(popup))));
+                    self.open_issue_select_popup(Some(issue_id));
                 }
                 Some(IssueEventProcessResult::Detail(
                     IssueDetailEventProcessResult::EditIssueBodyRequested { id, body },
@@ -501,6 +500,49 @@ impl<'a> AppComponent<'a> {
         self.pending_effect = Some(effect);
     }
 
+    fn install_issue_select_popup_effect(&mut self, effect: IssueSelectPopupEffect) {
+        match effect {
+            IssueSelectPopupEffect::FetchProjectIssuesPage { project_id, page } => {
+                self.install_effect(AppEffect::FetchProjectIssuesPage { project_id, page });
+            }
+        }
+    }
+
+    fn open_issue_select_popup(&mut self, focused_issue_id: Option<IssueId>) {
+        let mut popup = {
+            let dispatcher = self.dispatcher.borrow();
+            IssueSelectPopupComponent::new(dispatcher.store(), focused_issue_id)
+        };
+        if let Some(effect) = popup.take_effect() {
+            self.install_issue_select_popup_effect(effect);
+        }
+        self.popup_components
+            .push_back(Rc::new(RefCell::new(PopupComponent::IssueSelect(popup))));
+    }
+
+    fn close_issue_select_popup(&mut self) {
+        self.popup_components.pop_back();
+    }
+
+    /// popupへ先にキーを渡し、未処理のqだけをアプリ終了として返す。
+    pub fn handle_key_event(&mut self, event: Event, dispatcher: Rc<RefCell<Dispatcher>>) -> bool {
+        // FIXME: handle_key_eventが「内部で処理したが他のコンポーネントに影響がない」値を返すようにする
+        let is_q = matches!(
+            event,
+            Event::Key(key) if key.code == crossterm::event::KeyCode::Char('q')
+        );
+        let popup_before = self.popup_components.back().cloned();
+        self.process_event(event, dispatcher);
+        if !is_q {
+            return true;
+        }
+        match (popup_before, self.popup_components.back()) {
+            (Some(before), Some(after)) => !Rc::ptr_eq(&before, after),
+            (Some(_), None) => true,
+            (None, _) => false,
+        }
+    }
+
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store, area: Rect) {
         if let Some(issue_component) = &self.issue_component
@@ -663,8 +705,6 @@ impl<'a> AppComponent<'a> {
 mod tests {
     use super::*;
 
-    use std::num::NonZeroUsize;
-
     use crate::entities::{ProjectIssuesPage, ProjectsIssue};
     use crate::stores::ProjectIssuesAction;
     use crate::vos::IssuePropertyDiff;
@@ -693,24 +733,6 @@ mod tests {
             }
         }
         dispatcher
-    }
-
-    fn selectable_project_issues_page() -> ProjectIssuesPage {
-        ProjectIssuesPage {
-            issues: [1_u16, 3_u16, 42_u16]
-                .into_iter()
-                .map(|id| ProjectsIssue {
-                    issue_id: id.into(),
-                    project_id: 1.into(),
-                    subject: format!("issue{id}"),
-                    description: "body".to_string(),
-                    status_id: 1.into(),
-                })
-                .collect(),
-            total_count: 3,
-            offset: 0,
-            limit: 50,
-        }
     }
 
     fn mark_issue_edited(dispatcher: Rc<RefCell<Dispatcher>>, id: IssueId) {
@@ -795,6 +817,54 @@ mod tests {
             dispatcher_ref.consume_action();
         }
         dispatcher
+    }
+
+    fn selectable_project_issues_page() -> ProjectIssuesPage {
+        ProjectIssuesPage {
+            issues: [1_u16, 3_u16, 42_u16]
+                .into_iter()
+                .map(|id| ProjectsIssue {
+                    issue_id: id.into(),
+                    project_id: 1.into(),
+                    subject: format!("issue{id}"),
+                    description: "body".to_string(),
+                    status_id: 1.into(),
+                })
+                .collect(),
+            total_count: 3,
+            offset: 0,
+            limit: 50,
+        }
+    }
+
+    fn complete_initial_popup_page_fetch(
+        app: &mut AppComponent<'_>,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+    ) {
+        let Some(AppEffect::FetchProjectIssuesPage { project_id, page }) = app.take_effect() else {
+            panic!("expected the popup's initial project page effect")
+        };
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+        let request_id = crate::stores::ProjectIssuesRequestId::new();
+        dispatcher
+            .borrow_mut()
+            .dispatch(ProjectIssuesAction::StartLoading {
+                request_id,
+                project_id,
+                page,
+            });
+        dispatcher.borrow_mut().consume_action();
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        dispatcher
+            .borrow_mut()
+            .dispatch(ProjectIssuesAction::LoadSucceeded {
+                request_id,
+                project_id,
+                page,
+                result: selectable_project_issues_page(),
+            });
+        dispatcher.borrow_mut().consume_action();
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
     }
 
     fn focus_property_line(
@@ -942,6 +1012,7 @@ mod tests {
     fn process_event_without_initial_issue_ignores_issue_detail_keys() {
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(dispatcher.clone(), None);
+        let _ = app.take_effect();
         app.process_event(key_event(KeyCode::Char('q')), dispatcher.clone());
 
         for code in [
@@ -1049,6 +1120,7 @@ mod tests {
     fn enter_on_issue_select_popup_creates_issue_detail_component_when_no_issue_is_displayed() {
         let dispatcher = dispatcher_with_selectable_issues();
         let mut app = AppComponent::new(dispatcher.clone(), None);
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone());
 
         app.process_event(key_event(KeyCode::Enter), dispatcher);
 
@@ -1167,6 +1239,11 @@ mod tests {
             &*app.popup_components.back().unwrap().borrow(),
             PopupComponent::IssueSelect(_)
         ));
+        assert!(matches!(
+            app.take_effect(),
+            Some(AppEffect::FetchProjectIssuesPage { project_id, page, .. })
+                if project_id == 1 && page == NonZeroUsize::MIN
+        ));
     }
 
     #[test]
@@ -1214,10 +1291,8 @@ mod tests {
         let dispatcher = dispatcher_with_edited_selectable_issues();
         let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        let popup = IssueSelectPopupComponent::new(dispatcher.borrow().store(), Some(3.into()));
-        app.popup_components
-            .push_back(Rc::new(RefCell::new(PopupComponent::IssueSelect(popup))));
+        app.open_issue_select_popup(Some(3.into()));
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone());
         app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
         app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
         app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
@@ -1241,6 +1316,9 @@ mod tests {
             "test setup must move the old component focus"
         );
         app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
@@ -1252,21 +1330,121 @@ mod tests {
             "same-ID selection must construct a fresh component"
         );
         assert!(app.take_effect().is_none());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
     }
 
     #[test]
     fn selecting_unknown_issue_removes_popup_replaces_component_and_installs_fetch_effect() {
         let dispatcher = dispatcher_with_selectable_issues();
         let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        let popup = IssueSelectPopupComponent::new(dispatcher.borrow().store(), Some(3.into()));
-        app.popup_components
-            .push_back(Rc::new(RefCell::new(PopupComponent::IssueSelect(popup))));
+        app.open_issue_select_popup(Some(3.into()));
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone());
 
-        app.select_issue(IssueId::new(42));
+        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
 
         assert!(app.popup_components.is_empty());
         assert_eq!(app.issue_component.as_ref().unwrap().issue_id(), 42);
         assert!(matches!(app.take_effect(), Some(AppEffect::FetchIssue(id)) if id == 42));
         assert!(app.take_effect().is_none());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+    }
+
+    #[test]
+    fn startup_issue_select_popup_exposes_its_initial_page_fetch_effect_once() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher, None);
+
+        assert!(matches!(
+            app.take_effect(),
+            Some(AppEffect::FetchProjectIssuesPage { project_id, page, .. })
+                if project_id == 1 && page == std::num::NonZeroUsize::MIN
+        ));
+        assert!(app.take_effect().is_none());
+    }
+
+    #[test]
+    fn startup_without_initial_issue_selects_first_project_even_when_issue_store_has_other_projects()
+     {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        {
+            let mut dispatcher_ref = dispatcher.borrow_mut();
+            crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher_ref);
+            let mut lower_id_issue = crate::test_support::sample_issue(
+                1,
+                "project two issue",
+                1.into(),
+                None,
+                None,
+                None,
+                0,
+            );
+            lower_id_issue.project_id = 2.into();
+            let higher_id_issue = crate::test_support::sample_issue(
+                3,
+                "project one issue",
+                1.into(),
+                None,
+                None,
+                None,
+                0,
+            );
+            dispatcher_ref.dispatch(IssueAction::Sync {
+                issue: lower_id_issue,
+            });
+            dispatcher_ref.dispatch(IssueAction::Sync {
+                issue: higher_id_issue,
+            });
+            while dispatcher_ref.consume_actinos_len() > 0 {
+                dispatcher_ref.consume_action();
+            }
+        }
+
+        let mut app = AppComponent::new(dispatcher, None);
+
+        assert!(matches!(
+            app.take_effect(),
+            Some(AppEffect::FetchProjectIssuesPage { project_id, page, .. })
+                if project_id == ProjectId::new(1) && page == NonZeroUsize::MIN
+        ));
+    }
+
+    #[test]
+    fn startup_issue_select_popup_exposes_fetch_without_dispatching_project_issues_action() {
+        let dispatcher = dispatcher_with_selectable_issues();
+        let mut app = AppComponent::new(dispatcher.clone(), None);
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+        assert!(matches!(
+            app.take_effect(),
+            Some(AppEffect::FetchProjectIssuesPage { project_id, page })
+                if project_id == ProjectId::new(1)
+                    && page == NonZeroUsize::MIN
+        ));
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+    }
+
+    #[test]
+    fn q_closes_issue_select_popup_without_dispatching_project_issues_action() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), None);
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone());
+
+        let should_continue =
+            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+
+        assert!(should_continue);
+        assert!(app.popup_components.is_empty());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+    }
+
+    #[test]
+    fn q_without_popup_requests_application_exit() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+
+        assert!(!app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher));
     }
 }

@@ -35,8 +35,8 @@ use self::{
     },
     stores::{Action, Dispatcher, IssueAction, IssueState},
     usecases::redmine::{
-        apply_issue_property_diffs, fetch_issue, fetch_issue_with_conflicts, load_initial_entities,
-        upload_issue,
+        apply_issue_property_diffs, fetch_issue, fetch_issue_with_conflicts,
+        fetch_project_issues_page, load_initial_entities, upload_issue,
     },
     vos::{IssueId, IssuePropertyDiff},
 };
@@ -201,6 +201,9 @@ fn handle_app_effect(
         AppEffect::FetchIssue(id) => {
             start_issue_fetch(dispatcher, runtime, sender, client, id);
         }
+        AppEffect::FetchProjectIssuesPage { project_id, page } => {
+            start_project_issues_page_fetch(dispatcher, runtime, sender, client, project_id, page);
+        }
         AppEffect::OpenEditor(request) => {
             let response = run_editor(terminal, request)?;
             app_component.handle_editor_response(response);
@@ -236,6 +239,24 @@ fn handle_app_effect(
         }
     }
     Ok(())
+}
+
+fn start_project_issues_page_fetch<C>(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    runtime: &Runtime,
+    sender: mpsc::Sender<Action>,
+    client: Arc<C>,
+    project_id: vos::ProjectId,
+    page: std::num::NonZeroUsize,
+) where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    let future = fetch_project_issues_page(dispatcher, client, project_id, page);
+    runtime.spawn(async move {
+        sender
+            .send(future.await.into())
+            .expect("Failed to send Action with mpsc::channel");
+    });
 }
 
 fn start_issue_fetch<C>(
@@ -467,6 +488,65 @@ mod tests {
             1,
             "the spawned future must not dispatch or consume actions itself"
         );
+    }
+
+    #[test]
+    fn project_page_effect_queues_start_loading_and_routes_only_completion_to_worker_channel() {
+        let runtime = init_tokio_runtime().unwrap();
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher.borrow_mut());
+        while dispatcher.borrow().consume_actinos_len() > 0 {
+            dispatcher.borrow_mut().consume_action();
+        }
+        let mut app = AppComponent::new(dispatcher.clone(), None);
+        update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+        let client = Arc::new(IssueUploadClient::new(sample_issue(
+            1,
+            "unused",
+            IssueStatusId::new(1),
+            None,
+            None,
+            None,
+            0,
+        )));
+        let (sender, receiver) = mpsc::channel::<Action>();
+        let effect = app
+            .take_effect()
+            .expect("initial popup effect should be taken at the common loop point");
+        let AppEffect::FetchProjectIssuesPage { project_id, page } = effect else {
+            panic!("initial popup should request a project issue page")
+        };
+
+        start_project_issues_page_fetch(
+            dispatcher.clone(),
+            &runtime,
+            sender,
+            client,
+            project_id,
+            page,
+        );
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        assert!(
+            dispatcher
+                .borrow()
+                .store()
+                .get_project_issues_page_state(1, std::num::NonZeroUsize::MIN)
+                .is_none()
+        );
+        let completion = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("page completion should be sent by the runtime task");
+        assert!(matches!(
+            completion,
+            Action::ProjectIssues(stores::ProjectIssuesAction::LoadSucceeded {
+                project_id,
+                page,
+                ..
+            }) if project_id == vos::ProjectId::new(1)
+                && page == std::num::NonZeroUsize::MIN
+        ));
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
     }
 
     #[test]
