@@ -11,7 +11,7 @@ mod vos;
 mod widgets;
 
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{self, Event},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -127,11 +127,12 @@ fn main() -> ExitCode {
         if event::poll(tick_rate).unwrap() {
             match event::read() {
                 Ok(event) => {
+                    let size = terminal.size().expect("failed to get terminal size");
                     if !handle_key_event(
                         event,
-                        &mut terminal,
                         &mut app_component,
                         dispatcher.clone(),
+                        area_from_terminal_size(size.width, size.height),
                     ) {
                         break;
                     }
@@ -172,20 +173,17 @@ fn area_from_terminal_size(width: u16, height: u16) -> Rect {
 
 fn handle_key_event(
     event: Event,
-    terminal: &mut DefaultTerminal,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
+    area: Rect,
 ) -> bool {
-    if let Event::Key(key) = event {
-        if key.code == KeyCode::Char('q') {
-            return false;
-        }
-        app_component.process_event(event, dispatcher.clone());
-    }
-    let size = terminal.size().expect("failed to get terminal size");
-    let area = area_from_terminal_size(size.width, size.height);
+    let should_continue = match event {
+        Event::Key(_) => app_component.handle_key_event(event, dispatcher.clone()),
+        _ => true,
+    };
     update(dispatcher.clone(), app_component, area);
-    true
+    app_component.update(dispatcher.clone(), dispatcher.borrow().store(), area);
+    should_continue
 }
 
 fn handle_app_effect(
@@ -434,16 +432,104 @@ mod tests {
 
     use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
     use crate::entities::{
-        Category, Issue, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity,
-        Tracker, User,
+        Category, Issue, IssueStatus, Priority, Project, ProjectIssuesPage, ProjectsIssue,
+        TargetVersion, TimeEntityActivity, Tracker, User,
     };
+    use crate::stores::ProjectIssuesAction;
     use crate::test_support::sample_issue;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId};
+    use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn area_from_terminal_size_uses_the_latest_dimensions() {
         assert_eq!(area_from_terminal_size(120, 40), Rect::new(0, 0, 120, 40));
+    }
+
+    #[test]
+    fn key_event_updates_issue_popup_preview_even_when_it_dispatches_no_action() {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher.borrow_mut());
+        while dispatcher.borrow().consume_actinos_len() > 0 {
+            dispatcher.borrow_mut().consume_action();
+        }
+        let mut app = AppComponent::new(dispatcher.clone(), None);
+        let Some(AppEffect::FetchProjectIssuesPage { project_id, page }) = app.take_effect() else {
+            panic!("expected the initial project page effect")
+        };
+        update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+        let request_id = crate::stores::ProjectIssuesRequestId::new();
+        dispatcher
+            .borrow_mut()
+            .dispatch(ProjectIssuesAction::StartLoading {
+                request_id,
+                project_id,
+                page,
+            });
+        dispatcher
+            .borrow_mut()
+            .dispatch(ProjectIssuesAction::LoadSucceeded {
+                request_id,
+                project_id,
+                page,
+                result: ProjectIssuesPage {
+                    issues: vec![
+                        ProjectsIssue {
+                            issue_id: 41.into(),
+                            project_id,
+                            subject: "first issue".to_string(),
+                            description: "first preview marker".to_string(),
+                            status_id: 1.into(),
+                        },
+                        ProjectsIssue {
+                            issue_id: 42.into(),
+                            project_id,
+                            subject: "second issue".to_string(),
+                            description: "second preview marker".to_string(),
+                            status_id: 1.into(),
+                        },
+                    ],
+                    total_count: 2,
+                    offset: 0,
+                    limit: 50,
+                },
+            });
+        update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+
+        assert!(handle_key_event(
+            Event::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('l'),
+                crossterm::event::KeyModifiers::NONE,
+            )),
+            &mut app,
+            dispatcher.clone(),
+            Rect::new(0, 0, 80, 24),
+        ));
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+        assert!(handle_key_event(
+            Event::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('j'),
+                crossterm::event::KeyModifiers::NONE,
+            )),
+            &mut app,
+            dispatcher.clone(),
+            Rect::new(0, 0, 80, 24),
+        ));
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|frame| app.render(dispatcher.borrow().store(), frame, frame.area()))
+            .unwrap();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(rendered.contains("second preview marker"));
+        assert!(!rendered.contains("first preview marker"));
     }
 
     #[test]
