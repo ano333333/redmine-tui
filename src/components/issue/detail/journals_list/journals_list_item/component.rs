@@ -2,12 +2,138 @@ use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::entities::Journal;
-use crate::vos::{EntityIdValue, JournalId};
+use crate::stores::Store;
+use crate::vos::{EntityIdValue, JournalDetail, JournalDetailAttr, JournalId};
 
 use super::focus_state;
-use super::focus_state::FocusState;
 pub use super::focus_state::FocusEvent;
+use super::focus_state::FocusState;
+use super::widget::ResolvedJournalDetail;
 use super::{JournalItemWidget, JournalItemWidgetState};
+
+const NONE_DISPLAY: &str = "(なし)";
+const UNKNOWN_DISPLAY: &str = "(不明)";
+
+fn resolve_journal_details(details: &[JournalDetail], store: &Store) -> Vec<ResolvedJournalDetail> {
+    details
+        .iter()
+        .map(|JournalDetail::Attr(attr)| resolve_attr(attr, store))
+        .collect()
+}
+
+fn resolve_attr(attr: &JournalDetailAttr, store: &Store) -> ResolvedJournalDetail {
+    let (field_label, old_display, new_display) = match attr {
+        JournalDetailAttr::StatusId { old, new } => (
+            "ステータス",
+            store.get_issue_status(*old).name.clone(),
+            store.get_issue_status(*new).name.clone(),
+        ),
+        JournalDetailAttr::TrackerId { old, new } => (
+            "トラッカー",
+            store
+                .get_tracker(*old)
+                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+            store
+                .get_tracker(*new)
+                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+        ),
+        JournalDetailAttr::ProjectId { old, new } => (
+            "プロジェクト",
+            store
+                .get_project(*old)
+                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+            store
+                .get_project(*new)
+                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+        ),
+        JournalDetailAttr::Subject { old, new } => ("件名", old.clone(), new.clone()),
+        JournalDetailAttr::Description { .. } => ("説明", "(変更あり)".into(), "(変更あり)".into()),
+        JournalDetailAttr::CategoryId { old, new } => (
+            "カテゴリ",
+            resolve_optional(*old, |id| store.get_category(id).map(|v| v.name.clone())),
+            resolve_optional(*new, |id| store.get_category(id).map(|v| v.name.clone())),
+        ),
+        JournalDetailAttr::AssignedToId { old, new } => (
+            "担当者",
+            resolve_optional(*old, |id| store.get_user(id).map(|v| v.name.clone())),
+            resolve_optional(*new, |id| store.get_user(id).map(|v| v.name.clone())),
+        ),
+        JournalDetailAttr::PriorityId { old, new } => (
+            "優先度",
+            store
+                .get_priority(*old)
+                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+            store
+                .get_priority(*new)
+                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+        ),
+        JournalDetailAttr::FixedVersionId { old, new } => (
+            "対象バージョン",
+            resolve_optional(*old, |id| {
+                store.get_target_version(id).map(|v| v.name.clone())
+            }),
+            resolve_optional(*new, |id| {
+                store.get_target_version(id).map(|v| v.name.clone())
+            }),
+        ),
+        JournalDetailAttr::AuthorId { old, new } => (
+            "作成者",
+            store
+                .get_user(*old)
+                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+            store
+                .get_user(*new)
+                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+        ),
+        JournalDetailAttr::StartDate { old, new } => {
+            ("開始日", format_date(*old), format_date(*new))
+        }
+        JournalDetailAttr::DueDate { old, new } => ("期日", format_date(*old), format_date(*new)),
+        JournalDetailAttr::DoneRatio { old, new } => {
+            ("進捗率", format!("{}%", old), format!("{}%", new))
+        }
+        JournalDetailAttr::EstimatedHours { old, new } => (
+            "予定工数",
+            old.map_or(NONE_DISPLAY.into(), |v| format!("{}h", v)),
+            new.map_or(NONE_DISPLAY.into(), |v| format!("{}h", v)),
+        ),
+        JournalDetailAttr::ParentId { old, new } => (
+            "親チケット",
+            resolve_optional(*old, |id| Some(resolve_parent_label(id, store))),
+            resolve_optional(*new, |id| Some(resolve_parent_label(id, store))),
+        ),
+        JournalDetailAttr::IsPrivate { old, new } => {
+            ("非公開", format_bool(*old), format_bool(*new))
+        }
+    };
+    ResolvedJournalDetail {
+        field_label,
+        old_display,
+        new_display,
+    }
+}
+
+fn resolve_optional<Id: EntityIdValue>(
+    id: Option<Id>,
+    lookup: impl FnOnce(Id) -> Option<String>,
+) -> String {
+    id.and_then(lookup).unwrap_or(NONE_DISPLAY.into())
+}
+
+fn resolve_parent_label(id: crate::vos::IssueId, store: &Store) -> String {
+    match store.get_issue(id) {
+        Some((issue, _)) => format!("#{} {}", id, issue.subject),
+        None => format!("#{}", id),
+    }
+}
+
+fn format_date(date: Option<chrono::DateTime<chrono::Local>>) -> String {
+    date.map_or(NONE_DISPLAY.into(), |d| d.format("%Y/%m/%d").to_string())
+}
+
+fn format_bool(b: bool) -> String {
+    if b { "はい" } else { "いいえ" }.to_string()
+}
 
 pub enum EventProcessResult {
     CursorLeavedFromBelow { x: u16 },
@@ -64,9 +190,10 @@ impl JournalsListItemComponent {
             .update(width, self.journal.details.len(), self.comment_line_count);
     }
 
-    pub fn create_widget<'a>(&'a self) -> JournalItemWidget<'a> {
+    pub fn create_widget<'a>(&'a self, store: &Store) -> JournalItemWidget<'a> {
         JournalItemWidget::new(
             &self.journal,
+            resolve_journal_details(&self.journal.details, store),
             &self.widget_state,
             self.focus_state.is_focused(),
         )
@@ -88,8 +215,9 @@ mod tests {
     use super::*;
     use crate::{
         entities::Journal,
-        test_support::{local_datetime, render_snapshot},
-        vos::{JournalDetail, JournalDetailAttr, JournalId},
+        stores::Store,
+        test_support::{local_datetime, render_snapshot, sync_fixture_entities},
+        vos::{IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, UserId},
     };
 
     const WIDE_WIDTH: u16 = 32;
@@ -97,6 +225,12 @@ mod tests {
 
     fn key_event(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn fixture_store() -> Store {
+        let mut store = Store::new();
+        sync_fixture_entities(&mut store);
+        store
     }
 
     fn create_journal(id: u16, details: Vec<JournalDetail>, notes: impl Into<String>) -> Journal {
@@ -109,29 +243,26 @@ mod tests {
         }
     }
 
-    fn assigned_to_detail(old: Option<&str>, new: Option<&str>) -> JournalDetail {
-        JournalDetail::Attr(JournalDetailAttr::AssignedTo {
-            old: old.map(str::to_string),
-            new: new.map(str::to_string),
+    fn assigned_to_detail(old: Option<u16>, new: Option<u16>) -> JournalDetail {
+        JournalDetail::Attr(JournalDetailAttr::AssignedToId {
+            old: old.map(UserId::new),
+            new: new.map(UserId::new),
         })
     }
 
-    fn status_detail(old: &str, new: &str) -> JournalDetail {
+    fn status_detail(old: u16, new: u16) -> JournalDetail {
         JournalDetail::Attr(JournalDetailAttr::StatusId {
-            old: old.to_string(),
-            new: new.to_string(),
+            old: IssueStatusId::new(old),
+            new: IssueStatusId::new(new),
         })
     }
 
     fn details() -> Vec<JournalDetail> {
-        vec![
-            status_detail("新規", "進行中"),
-            assigned_to_detail(None, Some("bob")),
-        ]
+        vec![status_detail(1, 2), assigned_to_detail(None, Some(1001))]
     }
 
     fn one_detail() -> Vec<JournalDetail> {
-        vec![assigned_to_detail(None, Some("bob"))]
+        vec![assigned_to_detail(None, Some(1001))]
     }
 
     fn notes() -> &'static str {
@@ -160,6 +291,7 @@ mod tests {
 
     #[test]
     fn update_initial_state_is_unfocused_and_rendered() {
+        let store = fixture_store();
         let journal = create_journal(1, details(), notes());
         let mut component = JournalsListItemComponent::new(&journal);
 
@@ -170,12 +302,13 @@ mod tests {
             "journals_list_item_component_initial_unfocused",
             WIDE_WIDTH,
             component.line_count(WIDE_WIDTH),
-            component.create_widget(),
+            component.create_widget(&store),
         );
     }
 
     #[test]
     fn update_changed_notes_updates_line_count_and_widget() {
+        let store = fixture_store();
         let initial_journal = create_journal(1, one_detail(), notes());
         let mut component = component_with_update(&initial_journal, WIDE_WIDTH);
         let updated_journal = create_journal(1, one_detail(), updated_notes());
@@ -187,12 +320,13 @@ mod tests {
             "journals_list_item_component_update_changed_notes",
             WIDE_WIDTH,
             component.line_count(WIDE_WIDTH),
-            component.create_widget(),
+            component.create_widget(&store),
         );
     }
 
     #[test]
     fn focus_event_updates_cursor_and_widget_focus() {
+        let store = fixture_store();
         let journal = create_journal(1, details(), notes());
         let mut component = component_with_update(&journal, WIDE_WIDTH);
 
@@ -203,12 +337,13 @@ mod tests {
             "journals_list_item_component_focus_from_above_to_detail",
             WIDE_WIDTH,
             component.line_count(WIDE_WIDTH),
-            component.create_widget(),
+            component.create_widget(&store),
         );
     }
 
     #[test]
     fn unfocused_removes_widget_focus() {
+        let store = fixture_store();
         let journal = create_journal(1, details(), notes());
         let mut component = component_with_update(&journal, WIDE_WIDTH);
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 6 });
@@ -220,7 +355,7 @@ mod tests {
             "journals_list_item_component_unfocused",
             WIDE_WIDTH,
             component.line_count(WIDE_WIDTH),
-            component.create_widget(),
+            component.create_widget(&store),
         );
     }
 
@@ -245,7 +380,10 @@ mod tests {
         let result = component.process_event(key_event(KeyCode::Char('e')));
 
         match result {
-            Some(EventProcessResult::EditRequested { id, notes: edit_notes }) => {
+            Some(EventProcessResult::EditRequested {
+                id,
+                notes: edit_notes,
+            }) => {
                 assert_eq!(id, JournalId::new(1));
                 assert_eq!(edit_notes, notes());
             }

@@ -339,7 +339,7 @@ impl IssueDetailComponent {
             self.property.create_widget(store),
             self.body.create_widget(),
             self.children_list.create_widget(store),
-            self.journals_list.create_widget(),
+            self.journals_list.create_widget(store),
             &self.widget_state,
         )
     }

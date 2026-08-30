@@ -163,12 +163,13 @@ mod tests {
     use super::*;
     use crate::components::issue::detail::body::widget::BodyWidgetState;
     use crate::components::issue::detail::children_list::widget::ChildIssueRow;
+    use crate::components::issue::detail::journals_list::journals_list_item::widget::ResolvedJournalDetail;
     use crate::components::issue::detail::journals_list::journals_list_item::{
         JournalItemWidget, JournalItemWidgetState,
     };
     use crate::entities::{Issue, IssueStatus, Journal};
     use crate::test_support::{local_datetime, render_snapshot, sample_issue};
-    use crate::vos::{JournalDetail, JournalDetailAttr, JournalId};
+    use crate::vos::JournalId;
 
     const WIDTH: u16 = 40;
     const HEIGHT: u16 = 10;
@@ -208,10 +209,7 @@ mod tests {
                 id: JournalId::new(1),
                 user: journal_user,
                 updated_on: journal_updated_on,
-                details: vec![JournalDetail::Attr(JournalDetailAttr::AssignedTo {
-                    old: None,
-                    new: Some("bob".to_string()),
-                })],
+                details: vec![],
                 notes: journal_notes,
             };
 
@@ -300,8 +298,14 @@ mod tests {
         }
 
         fn journals_list_widget(&self) -> JournalsListWidget<'_> {
+            let details = vec![ResolvedJournalDetail {
+                field_label: "担当者",
+                old_display: "(なし)".to_string(),
+                new_display: "bob".to_string(),
+            }];
             JournalsListWidget::new(vec![JournalItemWidget::new(
                 &self.journal,
+                details,
                 &self.journal_state,
                 false,
             )])

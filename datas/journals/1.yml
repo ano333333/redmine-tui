@@ -5,5 +5,5 @@ notes:
 details:
   - type: attr
     name: status_id
-    old: 新規(new)
-    new: 割り当て(assigned)
+    old: 1
+    new: 2

@@ -2,6 +2,7 @@ use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::entities::Journal;
+use crate::stores::Store;
 use crate::vos::JournalId;
 
 use super::journals_list_item::EventProcessResult as ChildEventProcessResult;
@@ -101,7 +102,7 @@ impl JournalsListComponent {
                 let mut line_count_sum = 0;
                 let mut new_index = None;
                 for (index, component) in self.items.iter().enumerate() {
-                    let line_count = component.create_widget().line_count(self.width);
+                    let line_count = component.line_count(self.width);
                     if line_count_sum + line_count > position.y {
                         new_index = Some(index);
                         break;
@@ -200,11 +201,11 @@ impl JournalsListComponent {
         None
     }
 
-    pub fn create_widget<'a>(&'a self) -> JournalsListWidget<'a> {
+    pub fn create_widget<'a>(&'a self, store: &Store) -> JournalsListWidget<'a> {
         JournalsListWidget::new(
             self.items
                 .iter()
-                .map(|component| component.create_widget())
+                .map(|component| component.create_widget(store))
                 .collect(),
         )
     }
@@ -227,8 +228,7 @@ impl JournalsListComponent {
                 position.y += line_count;
                 return position;
             }
-            let widget = component.create_widget();
-            line_count += widget.line_count(width);
+            line_count += component.line_count(width);
         }
         Position::new(0, 0)
     }

@@ -10,11 +10,17 @@ use ratatui::text::Text;
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use crate::entities::Journal;
-use crate::vos::{JournalDetail, JournalDetailAttr};
 
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 const EMPTY_NOTES_PLACEHOLDER: &str = "(none)";
+
+/// JournalDetailAttrをStoreで解決した、表示用の値。WidgetはStoreを知らない。
+pub struct ResolvedJournalDetail {
+    pub field_label: &'static str,
+    pub old_display: String,
+    pub new_display: String,
+}
 
 pub struct JournalItemWidgetState {
     comment_buffer: Buffer,
@@ -49,18 +55,16 @@ impl JournalItemWidgetState {
 
 pub struct JournalItemWidget<'a> {
     journal: &'a Journal,
+    details: Vec<ResolvedJournalDetail>,
     comment_state: &'a JournalItemWidgetState,
     focused: bool,
 }
 
 impl<'a> Widget for JournalItemWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let property_height = self.journal.details.len() as u16 + 3;
-        let property = create_property_paragraph(
-            &self.journal.user,
-            &self.journal.details,
-            &self.journal.updated_on,
-        );
+        let property_height = self.details.len() as u16 + 3;
+        let property =
+            create_property_paragraph(&self.journal.user, &self.details, &self.journal.updated_on);
 
         let property_area = Rect::new(
             area.x,
@@ -108,72 +112,42 @@ impl<'a> Widget for JournalItemWidget<'a> {
 impl<'a> JournalItemWidget<'a> {
     pub fn new(
         journal: &'a Journal,
+        details: Vec<ResolvedJournalDetail>,
         comment_state: &'a JournalItemWidgetState,
         focused: bool,
     ) -> Self {
         Self {
             journal,
+            details,
             comment_state,
             focused,
         }
     }
 
     pub fn line_count(&self, _: u16) -> u16 {
-        1 + 1 + self.journal.details.len() as u16 + 1 + self.comment_state.comment_line_count() + 1
+        1 + 1 + self.details.len() as u16 + 1 + self.comment_state.comment_line_count() + 1
     }
 }
 
 fn create_property_paragraph(
     user: &str,
-    details: &[JournalDetail],
+    details: &[ResolvedJournalDetail],
     updated_on: &DateTime<Local>,
 ) -> Paragraph<'static> {
     let title = create_header(user, updated_on);
     let mut lines = vec![title, Line::from("")];
     for detail in details {
-        match detail {
-            JournalDetail::Attr(attr) => match attr {
-                JournalDetailAttr::StatusId { old, new } => {
-                    let line = Line::from(vec![
-                        Span::from("  ・ "),
-                        Span::from("ステータス").bold(),
-                        Span::from(" を "),
-                        Span::from(old.clone()).italic(),
-                        Span::from(" から "),
-                        Span::from(new.clone()).italic(),
-                        Span::from(" に変更"),
-                    ])
-                    .gray();
-                    lines.push(line);
-                }
-                JournalDetailAttr::DueDate { old, new } => {
-                    let line = Line::from(vec![
-                        Span::from("  ・ "),
-                        Span::from("期日").bold(),
-                        Span::from(" を "),
-                        Span::from(old.format("%Y/%m/%d").to_string()).italic(),
-                        Span::from(" から "),
-                        Span::from(new.format("%Y/%m/%d").to_string()).italic(),
-                        Span::from(" に変更"),
-                    ])
-                    .gray();
-                    lines.push(line);
-                }
-                JournalDetailAttr::AssignedTo { old, new } => {
-                    let line = Line::from(vec![
-                        Span::from("  ・ "),
-                        Span::from("担当者").bold(),
-                        Span::from(" を "),
-                        Span::from(old.clone().unwrap_or("(なし)".to_string())).italic(),
-                        Span::from(" から "),
-                        Span::from(new.clone().unwrap_or("(なし)".to_string())).italic(),
-                        Span::from(" に変更"),
-                    ])
-                    .gray();
-                    lines.push(line);
-                }
-            },
-        }
+        let line = Line::from(vec![
+            Span::from("  ・ "),
+            Span::from(detail.field_label).bold(),
+            Span::from(" を "),
+            Span::from(detail.old_display.clone()).italic(),
+            Span::from(" から "),
+            Span::from(detail.new_display.clone()).italic(),
+            Span::from(" に変更"),
+        ])
+        .gray();
+        lines.push(line);
     }
     lines.push(Line::from(""));
     Paragraph::new(Text::from(lines))
@@ -210,21 +184,32 @@ mod tests {
     use crate::{
         entities::Journal,
         test_support::{local_datetime, render_snapshot},
-        vos::{JournalDetail, JournalDetailAttr, JournalId},
+        vos::JournalId,
     };
 
-    fn create_journal(
-        user: String,
-        updated_on: DateTime<Local>,
-        details: Vec<JournalDetail>,
-        notes: &str,
-    ) -> Journal {
+    fn create_journal(user: String, updated_on: DateTime<Local>, notes: &str) -> Journal {
         Journal {
             id: JournalId::new(1),
             user,
             updated_on,
-            details,
+            details: vec![],
             notes: notes.to_owned(),
+        }
+    }
+
+    fn assigned_to_detail(old: Option<&str>, new: Option<&str>) -> ResolvedJournalDetail {
+        ResolvedJournalDetail {
+            field_label: "担当者",
+            old_display: old.map(str::to_string).unwrap_or("(なし)".to_string()),
+            new_display: new.map(str::to_string).unwrap_or("(なし)".to_string()),
+        }
+    }
+
+    fn status_detail(old: &str, new: &str) -> ResolvedJournalDetail {
+        ResolvedJournalDetail {
+            field_label: "ステータス",
+            old_display: old.to_string(),
+            new_display: new.to_string(),
         }
     }
 
@@ -233,14 +218,8 @@ mod tests {
         let creator = "alice".to_string();
         let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
         let properties = vec![
-            JournalDetail::Attr(JournalDetailAttr::StatusId {
-                old: "新規".to_string(),
-                new: "進行中".to_string(),
-            }),
-            JournalDetail::Attr(JournalDetailAttr::AssignedTo {
-                old: None,
-                new: Some("bob".to_string()),
-            }),
+            status_detail("新規", "進行中"),
+            assigned_to_detail(None, Some("bob")),
         ];
         let notes = "short line\n\nwrapping words for the comment area".to_string();
         let width = 20;
@@ -248,8 +227,8 @@ mod tests {
         let mut state = JournalItemWidgetState::new();
         state.update(width, &creator, &updated_at, &notes);
 
-        let journal = create_journal(creator, updated_at, properties, &notes);
-        let widget = JournalItemWidget::new(&journal, &state, false);
+        let journal = create_journal(creator, updated_at, &notes);
+        let widget = JournalItemWidget::new(&journal, properties, &state, false);
 
         assert_eq!(widget.line_count(width), 10);
     }
@@ -258,18 +237,15 @@ mod tests {
     fn line_count_for_empty_notes_includes_placeholder_line() {
         let creator = "alice".to_string();
         let updated_at = local_datetime("2026-01-15T00:00:00+09:00");
-        let properties = vec![JournalDetail::Attr(JournalDetailAttr::AssignedTo {
-            old: None,
-            new: Some("bob".to_string()),
-        })];
+        let properties = vec![assigned_to_detail(None, Some("bob"))];
         let notes = "".to_string();
         let width = 20;
 
         let mut state = JournalItemWidgetState::new();
         state.update(width, &creator, &updated_at, &notes);
 
-        let journal = create_journal(creator, updated_at, properties, &notes);
-        let widget = JournalItemWidget::new(&journal, &state, false);
+        let journal = create_journal(creator, updated_at, &notes);
+        let widget = JournalItemWidget::new(&journal, properties, &state, false);
 
         assert_eq!(state.comment_line_count(), 1);
         assert_eq!(widget.line_count(width), 6);
@@ -279,18 +255,15 @@ mod tests {
     fn snapshot_journal_item_matches_expected_section_order() {
         let user = "alice".to_string();
         let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
-        let details = vec![JournalDetail::Attr(JournalDetailAttr::AssignedTo {
-            old: None,
-            new: Some("bob".to_string()),
-        })];
+        let details = vec![assigned_to_detail(None, Some("bob"))];
         let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
         let width = 24;
 
         let mut state = JournalItemWidgetState::new();
         state.update(width, &user, &updated_on, &notes);
 
-        let journal = create_journal(user, updated_on, details, &notes);
-        let widget = JournalItemWidget::new(&journal, &state, true);
+        let journal = create_journal(user, updated_on, &notes);
+        let widget = JournalItemWidget::new(&journal, details, &state, true);
         let line_count = widget.line_count(width);
 
         render_snapshot("journal_item_expected_layout", width, line_count, widget);
@@ -300,18 +273,15 @@ mod tests {
     fn snapshot_journal_item_clips_without_relayout_when_height_is_short() {
         let user = "alice".to_string();
         let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
-        let details = vec![JournalDetail::Attr(JournalDetailAttr::AssignedTo {
-            old: None,
-            new: Some("bob".to_string()),
-        })];
+        let details = vec![assigned_to_detail(None, Some("bob"))];
         let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
         let width = 24;
 
         let mut state = JournalItemWidgetState::new();
         state.update(width, &user, &updated_on, &notes);
 
-        let journal = create_journal(user, updated_on, details, &notes);
-        let widget = JournalItemWidget::new(&journal, &state, true);
+        let journal = create_journal(user, updated_on, &notes);
+        let widget = JournalItemWidget::new(&journal, details, &state, true);
 
         render_snapshot("journal_item_clipped_height", width, 5, widget);
     }
@@ -320,18 +290,15 @@ mod tests {
     fn snapshot_journal_item_empty_notes_renders_placeholder() {
         let user = "alice".to_string();
         let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
-        let details = vec![JournalDetail::Attr(JournalDetailAttr::AssignedTo {
-            old: None,
-            new: Some("bob".to_string()),
-        })];
+        let details = vec![assigned_to_detail(None, Some("bob"))];
         let notes = "".to_string();
         let width = 24;
 
         let mut state = JournalItemWidgetState::new();
         state.update(width, &user, &updated_on, &notes);
 
-        let journal = create_journal(user, updated_on, details, &notes);
-        let widget = JournalItemWidget::new(&journal, &state, true);
+        let journal = create_journal(user, updated_on, &notes);
+        let widget = JournalItemWidget::new(&journal, details, &state, true);
         let line_count = widget.line_count(width);
 
         render_snapshot(

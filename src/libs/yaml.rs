@@ -39,7 +39,6 @@ fn as_string(yaml: &Yaml, key: &str) -> String {
         .to_string()
 }
 
-#[cfg(test)]
 fn as_bool(yaml: &Yaml, key: &str) -> bool {
     yaml[key].as_bool().expect(format!("no {}", key).as_str())
 }
@@ -58,10 +57,6 @@ fn as_u16_option(yaml: &Yaml, key: &str) -> Option<u16> {
 
 fn as_f64_option(yaml: &Yaml, key: &str) -> Option<f64> {
     yaml[key].as_f64()
-}
-
-fn as_string_option(yaml: &Yaml, key: &str) -> Option<String> {
-    yaml[key].as_str().map(|s| s.to_string())
 }
 
 fn as_local_datetime_option(yaml: &Yaml, key: &str) -> Option<DateTime<Local>> {
@@ -96,7 +91,7 @@ pub fn parse_journal_yaml(id: JournalId) -> Journal {
     );
     let user = as_string(&yaml, "user");
     let updated_on = as_local_datetime(&yaml, "updated_on");
-    let notes = read_required_string_option(&yaml, "notes").unwrap_or_default();
+    let notes = yaml["notes"].as_str().unwrap_or_default().to_string();
     let details = yaml["details"]
         .as_vec()
         .expect("no details")
@@ -123,26 +118,71 @@ pub fn parse_journal_detail_yaml(yaml: &yaml_rust::Yaml) -> JournalDetail {
 pub fn parse_journal_detail_attr_yaml(yaml: &yaml_rust::Yaml) -> JournalDetailAttr {
     match as_string(yaml, "name").as_str() {
         "status_id" => JournalDetailAttr::StatusId {
+            old: IssueStatusId::new(as_u16(yaml, "old")),
+            new: IssueStatusId::new(as_u16(yaml, "new")),
+        },
+        "tracker_id" => JournalDetailAttr::TrackerId {
+            old: TrackerId::new(as_u16(yaml, "old")),
+            new: TrackerId::new(as_u16(yaml, "new")),
+        },
+        "project_id" => JournalDetailAttr::ProjectId {
+            old: ProjectId::new(as_u16(yaml, "old")),
+            new: ProjectId::new(as_u16(yaml, "new")),
+        },
+        "subject" => JournalDetailAttr::Subject {
             old: as_string(yaml, "old"),
             new: as_string(yaml, "new"),
         },
-        "due_date" => JournalDetailAttr::DueDate {
-            old: as_local_datetime(yaml, "old"),
-            new: as_local_datetime(yaml, "new"),
+        "description" => JournalDetailAttr::Description {
+            old: as_string(yaml, "old"),
+            new: as_string(yaml, "new"),
         },
-        "assigned_to" => JournalDetailAttr::AssignedTo {
-            old: read_required_string_option(yaml, "old"),
-            new: read_required_string_option(yaml, "new"),
+        "category_id" => JournalDetailAttr::CategoryId {
+            old: as_u16_option(yaml, "old").map(CategoryId::new),
+            new: as_u16_option(yaml, "new").map(CategoryId::new),
+        },
+        "assigned_to_id" => JournalDetailAttr::AssignedToId {
+            old: as_u16_option(yaml, "old").map(UserId::new),
+            new: as_u16_option(yaml, "new").map(UserId::new),
+        },
+        "priority_id" => JournalDetailAttr::PriorityId {
+            old: PriorityId::new(as_u16(yaml, "old")),
+            new: PriorityId::new(as_u16(yaml, "new")),
+        },
+        "fixed_version_id" => JournalDetailAttr::FixedVersionId {
+            old: as_u16_option(yaml, "old").map(TargetVersionId::new),
+            new: as_u16_option(yaml, "new").map(TargetVersionId::new),
+        },
+        "author_id" => JournalDetailAttr::AuthorId {
+            old: UserId::new(as_u16(yaml, "old")),
+            new: UserId::new(as_u16(yaml, "new")),
+        },
+        "start_date" => JournalDetailAttr::StartDate {
+            old: as_local_datetime_option(yaml, "old"),
+            new: as_local_datetime_option(yaml, "new"),
+        },
+        "due_date" => JournalDetailAttr::DueDate {
+            old: as_local_datetime_option(yaml, "old"),
+            new: as_local_datetime_option(yaml, "new"),
+        },
+        "done_ratio" => JournalDetailAttr::DoneRatio {
+            old: as_u16(yaml, "old"),
+            new: as_u16(yaml, "new"),
+        },
+        "estimated_hours" => JournalDetailAttr::EstimatedHours {
+            old: as_u16_option(yaml, "old"),
+            new: as_u16_option(yaml, "new"),
+        },
+        "parent_id" => JournalDetailAttr::ParentId {
+            old: as_u16_option(yaml, "old").map(IssueId::new),
+            new: as_u16_option(yaml, "new").map(IssueId::new),
+        },
+        "is_private" => JournalDetailAttr::IsPrivate {
+            old: as_bool(yaml, "old"),
+            new: as_bool(yaml, "new"),
         },
         attr_name => panic!("unsupported journal detail attr: {}", attr_name),
     }
-}
-
-fn read_required_string_option(yaml: &yaml_rust::Yaml, key: &str) -> Option<String> {
-    if yaml[key].is_badvalue() {
-        panic!("no {}", key);
-    }
-    as_string_option(yaml, key)
 }
 
 pub fn parse_issue_yaml(id: u16) -> Issue {
