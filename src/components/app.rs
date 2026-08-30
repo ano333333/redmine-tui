@@ -464,8 +464,9 @@ impl<'a> AppComponent<'a> {
                     IssueDetailEventProcessResult::EditJournalRequested { id, notes },
                 )) => {
                     self.pending_editor_context = Some(PendingEditorContext::Journal { id });
-                    self.pending_effect =
-                        Some(AppEffect::OpenEditor(EditorRequest { initial_text: notes }));
+                    self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                        initial_text: notes,
+                    }));
                 }
                 None => {}
             }

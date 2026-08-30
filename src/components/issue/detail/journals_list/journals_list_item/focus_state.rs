@@ -87,7 +87,9 @@ impl FocusState {
             KeyCode::Char('h') => Some(Action::MoveLeft),
             KeyCode::Char('l') => Some(Action::MoveRight),
             // 本文編集はNotes位置にフォーカスがある場合のみ許可する(Detail位置では無視)
-            KeyCode::Char('e') if matches!(self.focused_position, Some(FocusedPosition::Notes(_))) => {
+            KeyCode::Char('e')
+                if matches!(self.focused_position, Some(FocusedPosition::Notes(_))) =>
+            {
                 Some(Action::Edit)
             }
             _ => None,
