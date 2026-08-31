@@ -1,5 +1,5 @@
 use crate::clients::redmine::{RedmineClient, RedmineClientError};
-use crate::entities::Issue;
+use crate::entities::IssueAggregate;
 use crate::vos::{EntityIdValue, IssueId, IssuePropertyDiff, JournalId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,7 +36,7 @@ pub async fn fetch_issue_with_conflicts(
     client: &impl RedmineClient,
     id: IssueId,
     diffs: &[IssuePropertyDiff],
-) -> Result<(Issue, Vec<IssuePropertyDiff>), RedmineClientError> {
+) -> Result<(IssueAggregate, Vec<IssuePropertyDiff>), RedmineClientError> {
     let issue = client.get_issue(id).await?;
     let conflicts = fold_property_diffs(diffs)
         .into_iter()
@@ -49,7 +49,7 @@ pub async fn fetch_issue_with_conflicts(
 ///
 /// 編集していない property には最新のサーバー値を残し、編集した property にはローカルの
 /// 最終値を採用するため、Issue の現在値と diff の `before` は意図的に比較しない。
-pub(crate) fn apply_issue_property_diffs(issue: &mut Issue, diffs: &[IssuePropertyDiff]) {
+pub(crate) fn apply_issue_property_diffs(issue: &mut IssueAggregate, diffs: &[IssuePropertyDiff]) {
     for diff in &fold_property_diffs(diffs) {
         match diff {
             IssuePropertyDiff::Subject(diff) => issue.subject = diff.after.clone(),
@@ -133,7 +133,7 @@ pub(crate) fn same_issue_property(left: &IssuePropertyDiff, right: &IssuePropert
 
 /// diffの`before`を、指定したサーバーIssueの現在値に置き換える。
 pub(crate) fn with_server_value_as_before(
-    issue: &Issue,
+    issue: &IssueAggregate,
     diff: &IssuePropertyDiff,
 ) -> IssuePropertyDiff {
     let mut resolved = diff.clone();
@@ -171,7 +171,7 @@ pub(crate) fn with_server_value_as_before(
 
 /// diffの`after`を、指定したサーバーIssueの現在値に置き換える。
 pub(crate) fn with_server_value_as_after(
-    issue: &Issue,
+    issue: &IssueAggregate,
     diff: &IssuePropertyDiff,
 ) -> IssuePropertyDiff {
     let mut resolved = diff.clone();
@@ -252,7 +252,7 @@ fn is_net_zero(diff: &IssuePropertyDiff) -> bool {
     match_same_diff!(diff, diff, |left, right| left.before == right.after)
 }
 
-fn conflicts_with_issue(issue: &Issue, diff: &IssuePropertyDiff) -> bool {
+fn conflicts_with_issue(issue: &IssueAggregate, diff: &IssuePropertyDiff) -> bool {
     macro_rules! conflict {
         ($server:expr, $diff:expr) => {{
             let server = &$server;
@@ -302,8 +302,8 @@ mod tests {
 
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::entities::{
-        Category, Issue, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity,
-        Tracker, User,
+        Category, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
+        TimeEntityActivity, Tracker, User,
     };
     use crate::test_support::{local_datetime, sample_issue};
     use crate::vos::issue_property_diff::{
@@ -426,19 +426,19 @@ mod tests {
         })
     }
 
-    fn issue(subject: &str, description: &str, status: u16) -> Issue {
+    fn issue(subject: &str, description: &str, status: u16) -> IssueAggregate {
         let mut issue = sample_issue(1, subject, IssueStatusId::new(status), None, None, None, 0);
         issue.description = description.to_string();
         issue
     }
 
     struct StubClient {
-        issue: Issue,
+        issue: IssueAggregate,
         requested_ids: Mutex<Vec<IssueId>>,
     }
 
     impl StubClient {
-        fn new(issue: Issue) -> Self {
+        fn new(issue: IssueAggregate) -> Self {
             Self {
                 issue,
                 requested_ids: Mutex::new(Vec::new()),
@@ -451,12 +451,12 @@ mod tests {
     }
 
     impl RedmineClient for StubClient {
-        async fn get_issue(&self, id: IssueId) -> Result<Issue, RedmineClientError> {
+        async fn get_issue(&self, id: IssueId) -> Result<IssueAggregate, RedmineClientError> {
             self.requested_ids.lock().unwrap().push(id);
             Ok(self.issue.clone())
         }
 
-        async fn update_issue(&self, _: &Issue) -> Result<(), RedmineClientError> {
+        async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {
             unreachable!()
         }
 
