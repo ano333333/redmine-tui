@@ -228,10 +228,12 @@ impl<'a> AppComponent<'a> {
                         .iter()
                         .map(|(id, status)| (id.get(), status.name.clone()))
                         .collect::<Vec<_>>();
+                    let (items, focused_index) =
+                        Self::build_select_options(issue_statuses, None, false);
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::SelectBox(SelectBoxPopupComponent::new(
-                            &issue_statuses,
-                            0,
+                            &items,
+                            focused_index,
                             false,
                             Box::new(move |status_id| {
                                 if let Some(status_id) = status_id {
@@ -252,22 +254,21 @@ impl<'a> AppComponent<'a> {
                     let current_assigned_to_id = store
                         .get_issue(issue_id)
                         .and_then(|(issue, _)| issue.assigned_to_id);
-                    let mut users = store
+                    let users = store
                         .get_users()
                         .iter()
                         .map(|(id, user)| (id.get(), user.name.clone()))
                         .collect::<Vec<_>>();
-                    users.sort_by_key(|(id, _)| *id);
-                    let focused_index = current_assigned_to_id
-                        .and_then(|current_id| {
-                            users.iter().position(|(id, _)| *id == current_id.get())
-                        })
-                        .unwrap_or(0);
                     drop(dispatcher_ref);
+                    let (items, focused_index) = Self::build_select_options(
+                        users,
+                        current_assigned_to_id.map(|id| id.get()),
+                        true,
+                    );
 
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::SelectBox(SelectBoxPopupComponent::new(
-                            &users,
+                            &items,
                             focused_index,
                             true,
                             Box::new(move |assigned_to_id| {
@@ -289,24 +290,21 @@ impl<'a> AppComponent<'a> {
                     let current_target_version_id = store
                         .get_issue(issue_id)
                         .and_then(|(issue, _)| issue.target_version_id);
-                    let mut target_versions = store
+                    let target_versions = store
                         .get_target_versions()
                         .iter()
                         .map(|(id, target_version)| (id.get(), target_version.name.clone()))
                         .collect::<Vec<_>>();
-                    target_versions.sort_by_key(|(id, _)| *id);
-                    let focused_index = current_target_version_id
-                        .and_then(|current_id| {
-                            target_versions
-                                .iter()
-                                .position(|(id, _)| *id == current_id.get())
-                        })
-                        .unwrap_or(0);
                     drop(dispatcher_ref);
+                    let (items, focused_index) = Self::build_select_options(
+                        target_versions,
+                        current_target_version_id.map(|id| id.get()),
+                        true,
+                    );
 
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::SelectBox(SelectBoxPopupComponent::new(
-                            &target_versions,
+                            &items,
                             focused_index,
                             true,
                             Box::new(move |target_version_id| {
@@ -384,14 +382,12 @@ impl<'a> AppComponent<'a> {
                         .step_by(10)
                         .map(|ratio| (ratio, ratio.to_string()))
                         .collect::<Vec<_>>();
-                    let focused_index = done_ratios
-                        .iter()
-                        .position(|(ratio, _)| *ratio == current_done_ratio)
-                        .unwrap_or(0);
+                    let (items, focused_index) =
+                        Self::build_select_options(done_ratios, Some(current_done_ratio), false);
 
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::SelectBox(SelectBoxPopupComponent::new(
-                            &done_ratios,
+                            &items,
                             focused_index,
                             false,
                             Box::new(move |done_ratio| {
@@ -415,24 +411,21 @@ impl<'a> AppComponent<'a> {
                     let current_category_id = store
                         .get_issue(issue_id)
                         .and_then(|(issue, _)| issue.category_id);
-                    let mut categories = store
+                    let categories = store
                         .get_categories()
                         .iter()
                         .map(|(id, category)| (id.get(), category.name.clone()))
                         .collect::<Vec<_>>();
-                    categories.sort_by_key(|(id, _)| *id);
-                    let focused_index = current_category_id
-                        .and_then(|current_id| {
-                            categories
-                                .iter()
-                                .position(|(id, _)| *id == current_id.get())
-                        })
-                        .unwrap_or(0);
                     drop(dispatcher_ref);
+                    let (items, focused_index) = Self::build_select_options(
+                        categories,
+                        current_category_id.map(|id| id.get()),
+                        true,
+                    );
 
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::SelectBox(SelectBoxPopupComponent::new(
-                            &categories,
+                            &items,
                             focused_index,
                             true,
                             Box::new(move |category_id| {
@@ -531,6 +524,26 @@ impl<'a> AppComponent<'a> {
 
     fn close_issue_select_popup(&mut self) {
         self.popup_components.pop_back();
+    }
+
+    /// idと名前のentry一覧と現在値から、SelectBoxPopupComponent::new用の
+    /// items(id昇順ソート、`sorted`指定時)とfocused_indexを組み立てる。
+    ///
+    /// 現在値が見つからない場合、及び`current_id`がNoneの場合はfocused_indexを0にする。
+    /// `include_none`によるoffsetはSelectBoxPopupComponent::new側で行うため、ここでは
+    /// entries内でのインデックスをそのまま返す。
+    fn build_select_options(
+        mut entries: Vec<(u16, String)>,
+        current_id: Option<u16>,
+        sorted: bool,
+    ) -> (Vec<(u16, String)>, usize) {
+        if sorted {
+            entries.sort_by_key(|(id, _)| *id);
+        }
+        let focused_index = current_id
+            .and_then(|current_id| entries.iter().position(|(id, _)| *id == current_id))
+            .unwrap_or(0);
+        (entries, focused_index)
     }
 
     /// popupへ先にキーを渡し、未処理のqだけをアプリ終了として返す。
