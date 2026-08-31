@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::entities::{Journal, LocalJournal};
-use crate::vos::{IssueId, JournalKey, JournalNotesDiff, LocalJournalId};
+use crate::vos::{IssueId, JournalId, JournalKey, JournalNotesDiff, LocalJournalId};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RemoteJournalState {
@@ -40,6 +40,10 @@ pub enum JournalAction {
     },
     EditLocalNotes {
         id: LocalJournalId,
+        notes: String,
+    },
+    EditRemoteNotes {
+        id: JournalId,
         notes: String,
     },
 }
@@ -104,6 +108,31 @@ impl JournalStore {
                     panic!("local journal does not exist");
                 };
                 journal.notes = notes;
+            }
+            JournalAction::EditRemoteNotes { id, notes } => {
+                let Some(JournalEntry::Remote {
+                    journal,
+                    state,
+                    notes_diff,
+                    ..
+                }) = self.entries.get_mut(&JournalKey::Remote(id))
+                else {
+                    panic!("remote journal does not exist");
+                };
+                let before = notes_diff
+                    .as_ref()
+                    .map_or_else(|| journal.notes.clone(), |diff| diff.before.clone());
+                journal.notes = notes.clone();
+                if notes == before {
+                    *state = RemoteJournalState::Synced;
+                    *notes_diff = None;
+                } else {
+                    *state = RemoteJournalState::Edited;
+                    *notes_diff = Some(JournalNotesDiff {
+                        before,
+                        after: notes,
+                    });
+                }
             }
         }
     }

@@ -68,6 +68,176 @@ fn load_journal_adds_a_remote_entry_for_its_loaded_issue() {
 }
 
 #[test]
+fn edit_remote_notes_creates_a_diff_and_updates_visible_notes() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Load {
+        id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(Action::LoadJournal {
+        id: JournalId::new(1),
+    });
+    dispatcher.consume_action();
+    let before = parse_journal_yaml(JournalId::new(1)).notes;
+
+    dispatcher.dispatch(JournalAction::EditRemoteNotes {
+        id: JournalId::new(1),
+        notes: "edited notes".to_string(),
+    });
+    dispatcher.consume_action();
+
+    let JournalEntry::Remote {
+        journal,
+        state,
+        notes_diff,
+        ..
+    } = dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+        .expect("edited remote journal should remain stored")
+    else {
+        panic!("remote key should refer to a remote journal");
+    };
+    assert_eq!(journal.notes, "edited notes");
+    assert_eq!(state, &RemoteJournalState::Edited);
+    let diff = notes_diff.as_ref().expect("an edit should create a diff");
+    assert_eq!(diff.before, before);
+    assert_eq!(diff.after, "edited notes");
+}
+
+#[test]
+fn editing_synced_remote_notes_to_the_same_value_keeps_it_synced_without_a_diff() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Load {
+        id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(Action::LoadJournal {
+        id: JournalId::new(1),
+    });
+    dispatcher.consume_action();
+    let notes = parse_journal_yaml(JournalId::new(1)).notes;
+
+    dispatcher.dispatch(JournalAction::EditRemoteNotes {
+        id: JournalId::new(1),
+        notes: notes.clone(),
+    });
+    dispatcher.consume_action();
+
+    let JournalEntry::Remote {
+        journal,
+        state,
+        notes_diff,
+        ..
+    } = dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+        .expect("unchanged remote journal should remain stored")
+    else {
+        panic!("remote key should refer to a remote journal");
+    };
+    assert_eq!(journal.notes, notes);
+    assert_eq!(state, &RemoteJournalState::Synced);
+    assert_eq!(notes_diff, &None);
+}
+
+#[test]
+fn repeated_remote_edits_keep_the_first_before_and_latest_after() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Load {
+        id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(Action::LoadJournal {
+        id: JournalId::new(1),
+    });
+    dispatcher.consume_action();
+    let before = parse_journal_yaml(JournalId::new(1)).notes;
+    dispatcher.dispatch(JournalAction::EditRemoteNotes {
+        id: JournalId::new(1),
+        notes: "first edit".to_string(),
+    });
+    dispatcher.consume_action();
+
+    dispatcher.dispatch(JournalAction::EditRemoteNotes {
+        id: JournalId::new(1),
+        notes: "latest edit".to_string(),
+    });
+    dispatcher.consume_action();
+
+    let JournalEntry::Remote {
+        journal,
+        state,
+        notes_diff,
+        ..
+    } = dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+        .expect("edited remote journal should remain stored")
+    else {
+        panic!("remote key should refer to a remote journal");
+    };
+    assert_eq!(journal.notes, "latest edit");
+    assert_eq!(state, &RemoteJournalState::Edited);
+    let diff = notes_diff.as_ref().expect("edits should keep a diff");
+    assert_eq!(diff.before, before);
+    assert_eq!(diff.after, "latest edit");
+}
+
+#[test]
+fn reverting_remote_notes_clears_the_diff_and_restores_synced_state() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Load {
+        id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(Action::LoadJournal {
+        id: JournalId::new(1),
+    });
+    dispatcher.consume_action();
+    let before = parse_journal_yaml(JournalId::new(1)).notes;
+    dispatcher.dispatch(JournalAction::EditRemoteNotes {
+        id: JournalId::new(1),
+        notes: "edited notes".to_string(),
+    });
+    dispatcher.consume_action();
+
+    dispatcher.dispatch(JournalAction::EditRemoteNotes {
+        id: JournalId::new(1),
+        notes: before.clone(),
+    });
+    dispatcher.consume_action();
+
+    let JournalEntry::Remote {
+        journal,
+        state,
+        notes_diff,
+        ..
+    } = dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+        .expect("reverted remote journal should remain stored")
+    else {
+        panic!("remote key should refer to a remote journal");
+    };
+    assert_eq!(journal.notes, before);
+    assert_eq!(state, &RemoteJournalState::Synced);
+    assert_eq!(notes_diff, &None);
+}
+
+#[test]
+#[should_panic(expected = "remote journal does not exist")]
+fn edit_remote_notes_rejects_a_missing_id() {
+    let mut dispatcher = Dispatcher::new();
+
+    dispatcher.dispatch(JournalAction::EditRemoteNotes {
+        id: JournalId::new(999),
+        notes: "edited notes".to_string(),
+    });
+    dispatcher.consume_action();
+}
+
+#[test]
 #[should_panic(expected = "fixture journal must belong to exactly one loaded issue")]
 fn load_journal_rejects_a_missing_owner() {
     let mut dispatcher = Dispatcher::new();

@@ -116,7 +116,8 @@ impl Store {
                 }
                 let created_id = match &action {
                     JournalAction::CreateLocal { id, .. } => Some(*id),
-                    JournalAction::EditLocalNotes { .. } => None,
+                    JournalAction::EditLocalNotes { .. }
+                    | JournalAction::EditRemoteNotes { .. } => None,
                 };
                 self.journal_store.consume_action(action);
                 if let Some(id) = created_id {
