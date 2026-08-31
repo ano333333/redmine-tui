@@ -777,7 +777,7 @@ mod tests {
             .get_issue_property_diffs(IssueId::new(3))
             .to_vec();
         let mut server_issue = dispatcher.borrow().store().get_issue(3).unwrap().0.clone();
-        server_issue.description = "server body".to_string();
+        server_issue.issue.description = "server body".to_string();
         {
             let mut dispatcher = dispatcher.borrow_mut();
             dispatcher.dispatch(IssueAction::StartUpload { id: 3.into() });

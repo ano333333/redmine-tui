@@ -217,7 +217,7 @@ impl IssueSelectPopupComponent {
                         issue.project_id,
                         issue.id,
                         loaded.issue.subject.clone(),
-                        loaded.description.clone(),
+                        loaded.issue.description.clone(),
                     )
                 } else {
                     IssueSelectPopupIssue::new(
@@ -466,6 +466,8 @@ mod tests {
         let mut loaded_issue =
             sample_issue_aggregate(1, "loaded subject", 1.into(), None, None, None, 0);
         loaded_issue.subject = "legacy subject".to_string();
+        loaded_issue.issue.description = "loaded body".to_string();
+        loaded_issue.description = "legacy body".to_string();
         store.consume_action(
             IssueAction::Sync {
                 issue: loaded_issue,
@@ -492,7 +494,7 @@ mod tests {
         assert_eq!(widget.issues[0].subject, "loaded subject");
         assert_eq!(
             widget.issues[0].description,
-            store.get_issue(1).unwrap().0.description
+            store.get_issue(1).unwrap().0.issue.description
         );
         assert_eq!(widget.issues[1].subject, "unloaded subject");
         assert_eq!(widget.issues[1].description, "unloaded body");

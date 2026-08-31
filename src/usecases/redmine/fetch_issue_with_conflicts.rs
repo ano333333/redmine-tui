@@ -68,7 +68,7 @@ pub(crate) fn apply_issue_property_diffs(issue: &mut IssueAggregate, diffs: &[Is
             IssuePropertyDiff::EstimatedHours(diff) => issue.estimated_hours = diff.after,
             IssuePropertyDiff::TotalSpentHours(diff) => issue.total_spent_hours = diff.after,
             IssuePropertyDiff::CategoryId(diff) => issue.category_id = diff.after,
-            IssuePropertyDiff::Description(diff) => issue.description = diff.after.clone(),
+            IssuePropertyDiff::Description(diff) => issue.issue.description = diff.after.clone(),
             IssuePropertyDiff::ChildIds(diff) => issue.child_ids = diff.after.clone(),
             IssuePropertyDiff::JournalIds(diff) => {
                 issue.journal_ids = diff.after.iter().copied().map(JournalId::new).collect()
@@ -154,7 +154,7 @@ pub(crate) fn with_server_value_as_before(
         IssuePropertyDiff::EstimatedHours(diff) => diff.before = issue.estimated_hours,
         IssuePropertyDiff::TotalSpentHours(diff) => diff.before = issue.total_spent_hours,
         IssuePropertyDiff::CategoryId(diff) => diff.before = issue.category_id,
-        IssuePropertyDiff::Description(diff) => diff.before = issue.description.clone(),
+        IssuePropertyDiff::Description(diff) => diff.before = issue.issue.description.clone(),
         IssuePropertyDiff::ChildIds(diff) => diff.before = issue.child_ids.clone(),
         IssuePropertyDiff::JournalIds(diff) => {
             diff.before = issue.journal_ids.iter().map(|id| id.get()).collect()
@@ -192,7 +192,7 @@ pub(crate) fn with_server_value_as_after(
         IssuePropertyDiff::EstimatedHours(diff) => diff.after = issue.estimated_hours,
         IssuePropertyDiff::TotalSpentHours(diff) => diff.after = issue.total_spent_hours,
         IssuePropertyDiff::CategoryId(diff) => diff.after = issue.category_id,
-        IssuePropertyDiff::Description(diff) => diff.after = issue.description.clone(),
+        IssuePropertyDiff::Description(diff) => diff.after = issue.issue.description.clone(),
         IssuePropertyDiff::ChildIds(diff) => diff.after = issue.child_ids.clone(),
         IssuePropertyDiff::JournalIds(diff) => {
             diff.after = issue.journal_ids.iter().map(|id| id.get()).collect()
@@ -277,7 +277,7 @@ fn conflicts_with_issue(issue: &IssueAggregate, diff: &IssuePropertyDiff) -> boo
         IssuePropertyDiff::EstimatedHours(diff) => conflict!(issue.estimated_hours, diff),
         IssuePropertyDiff::TotalSpentHours(diff) => conflict!(issue.total_spent_hours, diff),
         IssuePropertyDiff::CategoryId(diff) => conflict!(issue.category_id, diff),
-        IssuePropertyDiff::Description(diff) => conflict!(issue.description, diff),
+        IssuePropertyDiff::Description(diff) => conflict!(issue.issue.description, diff),
         IssuePropertyDiff::ChildIds(diff) => conflict!(issue.child_ids, diff),
         IssuePropertyDiff::JournalIds(diff) => {
             let server = issue
@@ -379,6 +379,20 @@ mod tests {
         assert!(after_conflicts.is_empty());
     }
 
+    #[tokio::test]
+    async fn description_conflicts_use_the_nested_issue_value() {
+        let mut server_issue = issue("subject", "legacy local", 1);
+        server_issue.issue.description = "server edit".to_string();
+        let client = StubClient::new(server_issue);
+        let diff = description_diff("original", "legacy local");
+
+        let (_, conflicts) = fetch_issue_with_conflicts(&client, 1.into(), &[diff.clone()])
+            .await
+            .unwrap();
+
+        assert_eq!(conflicts, vec![diff]);
+    }
+
     #[test]
     fn applies_local_after_values_over_different_server_values_in_order() {
         let mut server_issue = issue("server subject", "server edit", 3);
@@ -398,7 +412,7 @@ mod tests {
         apply_issue_property_diffs(&mut server_issue, &diffs);
 
         assert_eq!(server_issue.issue.subject, "server subject");
-        assert_eq!(server_issue.description, "local edit");
+        assert_eq!(server_issue.issue.description, "local edit");
         assert_eq!(server_issue.status_id, IssueStatusId::new(2));
         assert_eq!(
             server_issue.due_date,
@@ -424,6 +438,24 @@ mod tests {
     }
 
     #[test]
+    fn applies_description_diff_to_nested_issue_without_synchronizing_legacy_description() {
+        let mut server_issue = issue("subject", "legacy description", 1);
+        server_issue.issue.description = "server description".to_string();
+        server_issue.description = "legacy description".to_string();
+
+        apply_issue_property_diffs(
+            &mut server_issue,
+            &[description_diff(
+                "original description",
+                "local description",
+            )],
+        );
+
+        assert_eq!(server_issue.issue.description, "local description");
+        assert_eq!(server_issue.description, "legacy description");
+    }
+
+    #[test]
     fn applying_net_zero_diff_preserves_the_server_value() {
         let mut server_issue = issue("subject", "server edit", 1);
         let diffs = vec![
@@ -433,7 +465,7 @@ mod tests {
 
         apply_issue_property_diffs(&mut server_issue, &diffs);
 
-        assert_eq!(server_issue.description, "server edit");
+        assert_eq!(server_issue.issue.description, "server edit");
     }
 
     fn description_diff(before: &str, after: &str) -> IssuePropertyDiff {
@@ -446,7 +478,7 @@ mod tests {
     fn issue(subject: &str, description: &str, status: u16) -> IssueAggregate {
         let mut issue =
             sample_issue_aggregate(1, subject, IssueStatusId::new(status), None, None, None, 0);
-        issue.description = description.to_string();
+        issue.issue.description = description.to_string();
         issue
     }
 

@@ -210,7 +210,7 @@ fn diff_value_text(server_issue: &IssueAggregate, diff: &IssuePropertyDiff) -> D
             option_id_diff_text(diff.before, diff.after, server_issue.category_id)
         }
         IssuePropertyDiff::Description(diff) => {
-            diff_text(&diff.before, &diff.after, &server_issue.description)
+            diff_text(&diff.before, &diff.after, &server_issue.issue.description)
         }
         IssuePropertyDiff::ChildIds(diff) => diff_text(
             &diff
@@ -379,7 +379,7 @@ mod tests {
     fn component(diffs: Vec<IssuePropertyDiff>) -> IssuePropertyConflictComponent {
         let mut server_issue =
             sample_issue_aggregate(1, "server subject", 1.into(), None, None, None, 0);
-        server_issue.description = "server body".to_string();
+        server_issue.issue.description = "server body".to_string();
         IssuePropertyConflictComponent::new(server_issue, diffs)
     }
 
@@ -387,7 +387,8 @@ mod tests {
     fn diff_value_text_uses_the_server_issue_value() {
         let mut server_issue =
             sample_issue_aggregate(1, "server subject", 9.into(), None, None, None, 0);
-        server_issue.description = "# server body".to_string();
+        server_issue.issue.description = "# server body".to_string();
+        server_issue.description = "legacy server body".to_string();
 
         let status = diff_value_text(
             &server_issue,

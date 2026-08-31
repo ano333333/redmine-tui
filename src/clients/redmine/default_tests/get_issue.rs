@@ -55,7 +55,10 @@ fn get_issue_maps_success_response() {
     assert_eq!(issue.estimated_hours, Some(8));
     assert_eq!(issue.total_spent_hours, Some(2.5));
     assert_eq!(issue.category_id.unwrap().get(), 4);
-    assert_eq!(issue.description, "Login fails with valid credentials");
+    assert_eq!(
+        issue.issue.description,
+        "Login fails with valid credentials"
+    );
     assert_eq!(issue.child_ids[0].get(), 43);
     assert_eq!(issue.journal_ids[0].get(), 500);
     assert_eq!(issue.issue.id, issue.id);

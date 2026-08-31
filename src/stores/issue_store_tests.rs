@@ -1,7 +1,7 @@
 use super::{IssueAction, IssueState, Store};
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
-use crate::vos::issue_property_diff::{IssueDueDateDiff, IssueStartDateDiff};
+use crate::vos::issue_property_diff::{IssueDescriptionDiff, IssueDueDateDiff, IssueStartDateDiff};
 use crate::vos::{CategoryId, IssueId, TargetVersionId};
 
 #[test]
@@ -155,6 +155,35 @@ fn update_issue_due_date_updates_issue_and_records_diff() {
             before,
             after
         }))
+    );
+}
+
+#[test]
+fn update_issue_description_writes_only_the_nested_issue_and_diffs_from_it() {
+    let id = IssueId::new(99);
+    let mut issue = sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0);
+    issue.issue.description = "nested before".to_string();
+    issue.description = "legacy before".to_string();
+    let mut store = Store::new();
+    store.consume_action(IssueAction::Sync { issue }.into());
+
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id,
+            body: "nested after".to_string(),
+        }
+        .into(),
+    );
+
+    let (issue, _) = store.get_issue(id).expect("issue should be loaded");
+    assert_eq!(issue.issue.description, "nested after");
+    assert_eq!(issue.description, "legacy before");
+    assert_eq!(
+        store.get_issue_property_diffs(id),
+        &[IssuePropertyDiff::Description(IssueDescriptionDiff {
+            before: "nested before".to_string(),
+            after: "nested after".to_string(),
+        })]
     );
 }
 
@@ -403,7 +432,7 @@ fn sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
 
     let (issue, state) = store.get_issue(9).expect("issue should be synced");
     assert_eq!(issue.issue.subject, "server issue after upload");
-    assert_eq!(issue.description, "body");
+    assert_eq!(issue.issue.description, "body");
     assert_eq!(state, &IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
 }
@@ -451,7 +480,7 @@ fn upload_success_sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
 
     let (issue, state) = store.get_issue(9).expect("issue should be synced");
     assert_eq!(issue.issue.subject, "server issue after upload");
-    assert_eq!(issue.description, "body");
+    assert_eq!(issue.issue.description, "body");
     assert_eq!(state, &IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
 }
@@ -520,7 +549,7 @@ fn loaded_issue_states_ignore_start_fetching_and_retain_local_data() {
         store.consume_action(IssueAction::StartFetching { id }.into());
 
         let (issue, state) = store.get_issue(id).expect("loaded issue must remain");
-        assert_eq!(issue.description, "local edit");
+        assert_eq!(issue.issue.description, "local edit");
         assert_eq!(
             state,
             if start_upload {
@@ -734,7 +763,7 @@ fn late_fetch_completions_do_not_overwrite_edited_or_uploading_issues() {
         );
 
         let (issue, state) = store.get_issue(id).expect("loaded issue must remain");
-        assert_eq!(issue.description, "local edit");
+        assert_eq!(issue.issue.description, "local edit");
         assert_eq!(
             state,
             if start_upload {

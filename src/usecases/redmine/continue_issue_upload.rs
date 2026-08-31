@@ -62,7 +62,8 @@ mod tests {
         let local_description = original_diffs[0].clone();
         let conflicts = original_diffs[..2].to_vec();
         let mut server_issue = dispatcher.store().get_issue(id).unwrap().0.clone();
-        server_issue.description = "server body".to_string();
+        server_issue.issue.description = "server body".to_string();
+        server_issue.description = "legacy server body".to_string();
         server_issue.status_id = 9.into();
         dispatcher.dispatch(IssueAction::UploadConflictsDetected {
             server_issue,
@@ -101,7 +102,7 @@ mod tests {
         let mut dispatcher = Dispatcher::new();
         let mut issue: IssueAggregate =
             sample_issue_aggregate(1, "subject", 1.into(), None, None, None, 0);
-        issue.description = "original body".to_string();
+        issue.issue.description = "original body".to_string();
         dispatcher.dispatch(IssueAction::Sync { issue });
         dispatcher.consume_action();
         dispatcher.dispatch(IssueAction::UpdateDescription {

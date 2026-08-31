@@ -207,8 +207,8 @@ impl IssueStore {
                 if self.can_update_issue(id)
                     && let Some(issue) = self.issues.get_mut(&id)
                 {
-                    let before = issue.description.clone();
-                    issue.description = body.clone();
+                    let before = issue.issue.description.clone();
+                    issue.issue.description = body.clone();
                     self.issue_property_diffs.entry(id).or_default().push(
                         IssuePropertyDiff::Description(IssueDescriptionDiff {
                             before,
