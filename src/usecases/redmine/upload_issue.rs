@@ -41,7 +41,7 @@ mod tests {
         let uploaded = client.uploaded.lock().unwrap();
         assert_eq!(uploaded.len(), 1);
         assert_eq!(uploaded[0].issue.id, issue.issue.id);
-        assert_eq!(uploaded[0].subject, issue.subject);
+        assert_eq!(uploaded[0].issue.subject, issue.issue.subject);
     }
 
     #[tokio::test]

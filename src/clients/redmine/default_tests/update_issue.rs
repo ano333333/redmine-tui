@@ -22,6 +22,7 @@ fn update_issue_sends_redmine_put_request_to_nested_issue_id() {
         30,
     );
     issue.id = IssueId::new(99);
+    issue.subject = "legacy subject".to_string();
     let expected_body = json!({
         "issue": {
             "subject": "Fix login",

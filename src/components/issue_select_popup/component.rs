@@ -216,7 +216,7 @@ impl IssueSelectPopupComponent {
                     IssueSelectPopupIssue::new(
                         issue.project_id,
                         issue.id,
-                        loaded.subject.clone(),
+                        loaded.issue.subject.clone(),
                         loaded.description.clone(),
                     )
                 } else {
@@ -461,7 +461,17 @@ mod tests {
 
     #[test]
     fn loaded_projects_issues_are_displayed_and_loaded_issue_values_take_precedence() {
-        let mut store = unloaded_store();
+        let mut store = Store::new();
+        sync_fixture_entities(&mut store);
+        let mut loaded_issue =
+            sample_issue_aggregate(1, "loaded subject", 1.into(), None, None, None, 0);
+        loaded_issue.subject = "legacy subject".to_string();
+        store.consume_action(
+            IssueAction::Sync {
+                issue: loaded_issue,
+            }
+            .into(),
+        );
         load_project_page(
             &mut store,
             1,
@@ -479,10 +489,7 @@ mod tests {
 
         let widget = component.create_widget(&store);
         assert_eq!(widget.issues.len(), 2);
-        assert_eq!(
-            widget.issues[0].subject,
-            store.get_issue(1).unwrap().0.subject
-        );
+        assert_eq!(widget.issues[0].subject, "loaded subject");
         assert_eq!(
             widget.issues[0].description,
             store.get_issue(1).unwrap().0.description

@@ -708,12 +708,12 @@ mod tests {
         let Action::Issue(IssueAction::Sync { issue }) = action else {
             panic!("expected Sync");
         };
-        assert_eq!(issue.subject, "server subject");
+        assert_eq!(issue.issue.subject, "server subject");
         assert_eq!(issue.updated_on, server_issue.updated_on);
         assert_eq!(issue.description, "local description");
         let uploaded = client.uploaded.lock().unwrap();
         assert_eq!(uploaded.len(), 1);
-        assert_eq!(uploaded[0].subject, issue.subject);
+        assert_eq!(uploaded[0].issue.subject, issue.issue.subject);
         assert_eq!(uploaded[0].description, issue.description);
         assert_eq!(uploaded[0].updated_on, issue.updated_on);
     }

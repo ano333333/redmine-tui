@@ -110,7 +110,7 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
         ])
         .split(row);
     create_id_widget(issue.issue.id, is_closed).render(cols[0], buffer);
-    create_title_widget(&issue.subject).render(cols[2], buffer);
+    create_title_widget(&issue.issue.subject).render(cols[2], buffer);
     create_status_widget(status_name).render(cols[4], buffer);
     create_person_in_charge_widget(child.assigned_to_name).render(cols[6], buffer);
     create_start_date_widget(&issue.start_date).render(cols[8], buffer);

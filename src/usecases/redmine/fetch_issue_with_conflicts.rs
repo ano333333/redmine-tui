@@ -52,7 +52,7 @@ pub async fn fetch_issue_with_conflicts(
 pub(crate) fn apply_issue_property_diffs(issue: &mut IssueAggregate, diffs: &[IssuePropertyDiff]) {
     for diff in &fold_property_diffs(diffs) {
         match diff {
-            IssuePropertyDiff::Subject(diff) => issue.subject = diff.after.clone(),
+            IssuePropertyDiff::Subject(diff) => issue.issue.subject = diff.after.clone(),
             IssuePropertyDiff::AuthorId(diff) => issue.author_id = diff.after,
             IssuePropertyDiff::CreatedOn(diff) => issue.created_on = diff.after,
             IssuePropertyDiff::UpdatedOn(diff) => issue.updated_on = diff.after,
@@ -138,7 +138,7 @@ pub(crate) fn with_server_value_as_before(
 ) -> IssuePropertyDiff {
     let mut resolved = diff.clone();
     match &mut resolved {
-        IssuePropertyDiff::Subject(diff) => diff.before = issue.subject.clone(),
+        IssuePropertyDiff::Subject(diff) => diff.before = issue.issue.subject.clone(),
         IssuePropertyDiff::AuthorId(diff) => diff.before = issue.author_id,
         IssuePropertyDiff::CreatedOn(diff) => diff.before = issue.created_on,
         IssuePropertyDiff::UpdatedOn(diff) => diff.before = issue.updated_on,
@@ -176,7 +176,7 @@ pub(crate) fn with_server_value_as_after(
 ) -> IssuePropertyDiff {
     let mut resolved = diff.clone();
     match &mut resolved {
-        IssuePropertyDiff::Subject(diff) => diff.after = issue.subject.clone(),
+        IssuePropertyDiff::Subject(diff) => diff.after = issue.issue.subject.clone(),
         IssuePropertyDiff::AuthorId(diff) => diff.after = issue.author_id,
         IssuePropertyDiff::CreatedOn(diff) => diff.after = issue.created_on,
         IssuePropertyDiff::UpdatedOn(diff) => diff.after = issue.updated_on,
@@ -261,7 +261,7 @@ fn conflicts_with_issue(issue: &IssueAggregate, diff: &IssuePropertyDiff) -> boo
     }
 
     match diff {
-        IssuePropertyDiff::Subject(diff) => conflict!(issue.subject, diff),
+        IssuePropertyDiff::Subject(diff) => conflict!(issue.issue.subject, diff),
         IssuePropertyDiff::AuthorId(diff) => conflict!(issue.author_id, diff),
         IssuePropertyDiff::CreatedOn(diff) => conflict!(issue.created_on, diff),
         IssuePropertyDiff::UpdatedOn(diff) => conflict!(issue.updated_on, diff),
@@ -307,7 +307,7 @@ mod tests {
     };
     use crate::test_support::{local_datetime, sample_issue_aggregate};
     use crate::vos::issue_property_diff::{
-        IssueDescriptionDiff, IssueDueDateDiff, IssueStatusIdDiff,
+        IssueDescriptionDiff, IssueDueDateDiff, IssueStatusIdDiff, IssueSubjectDiff,
     };
     use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId};
 
@@ -324,7 +324,7 @@ mod tests {
 
         assert_eq!(client.requested_ids(), vec![IssueId::new(42)]);
         assert_eq!(actual.issue.id, server_issue.issue.id);
-        assert_eq!(actual.subject, server_issue.subject);
+        assert_eq!(actual.issue.subject, server_issue.issue.subject);
         assert!(conflicts.is_empty());
     }
 
@@ -397,13 +397,30 @@ mod tests {
 
         apply_issue_property_diffs(&mut server_issue, &diffs);
 
-        assert_eq!(server_issue.subject, "server subject");
+        assert_eq!(server_issue.issue.subject, "server subject");
         assert_eq!(server_issue.description, "local edit");
         assert_eq!(server_issue.status_id, IssueStatusId::new(2));
         assert_eq!(
             server_issue.due_date,
             Some(local_datetime("2026-08-23T00:00:00+09:00"))
         );
+    }
+
+    #[test]
+    fn applies_subject_diff_to_nested_issue_without_synchronizing_legacy_subject() {
+        let mut server_issue = issue("server subject", "description", 1);
+        server_issue.subject = "legacy subject".to_string();
+
+        apply_issue_property_diffs(
+            &mut server_issue,
+            &[IssuePropertyDiff::Subject(IssueSubjectDiff {
+                before: "original subject".to_string(),
+                after: "local subject".to_string(),
+            })],
+        );
+
+        assert_eq!(server_issue.issue.subject, "local subject");
+        assert_eq!(server_issue.subject, "legacy subject");
     }
 
     #[test]

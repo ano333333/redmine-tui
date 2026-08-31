@@ -666,7 +666,7 @@ struct UpdateIssue {
 impl From<&IssueAggregate> for UpdateIssue {
     fn from(issue: &IssueAggregate) -> Self {
         Self {
-            subject: issue.subject.clone(),
+            subject: issue.issue.subject.clone(),
             description: issue.description.clone(),
             status_id: issue.status_id.get(),
             priority_id: issue.priority_id.get(),

@@ -203,7 +203,7 @@ fn issue_upload_conflicts_are_retained_while_uploading() {
     let (actual_issue, actual_conflicts) = store
         .get_issue_upload_conflict(1.into())
         .expect("issue upload conflict should be retained");
-    assert_eq!(actual_issue.subject, server_issue.subject);
+    assert_eq!(actual_issue.issue.subject, server_issue.issue.subject);
     assert_eq!(actual_conflicts, conflicts);
     assert_eq!(store.get_issue(1).unwrap().1, &IssueState::Uploading);
 }
@@ -402,7 +402,7 @@ fn sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
     );
 
     let (issue, state) = store.get_issue(9).expect("issue should be synced");
-    assert_eq!(issue.subject, "server issue after upload");
+    assert_eq!(issue.issue.subject, "server issue after upload");
     assert_eq!(issue.description, "body");
     assert_eq!(state, &IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
@@ -450,7 +450,7 @@ fn upload_success_sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
     );
 
     let (issue, state) = store.get_issue(9).expect("issue should be synced");
-    assert_eq!(issue.subject, "server issue after upload");
+    assert_eq!(issue.issue.subject, "server issue after upload");
     assert_eq!(issue.description, "body");
     assert_eq!(state, &IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
@@ -543,7 +543,7 @@ fn matching_fetch_success_registers_the_issue_as_synced() {
     store.consume_action(IssueAction::FetchSucceeded { id, issue }.into());
 
     let (issue, state) = store.get_issue(id).expect("issue should be fetched");
-    assert_eq!(issue.subject, "fetched");
+    assert_eq!(issue.issue.subject, "fetched");
     assert_eq!(state, &IssueState::Synced);
     assert!(store.get_issue_property_diffs(id).is_empty());
     assert!(store.get_issue_upload_conflict(id).is_none());
@@ -642,7 +642,7 @@ fn late_fetch_success_and_failure_do_not_change_a_synced_issue() {
     let id = IssueId::new(1);
     let mut store = Store::new();
     store.consume_action(IssueAction::Load { id }.into());
-    let original_subject = store.get_issue(id).unwrap().0.subject.clone();
+    let original_subject = store.get_issue(id).unwrap().0.issue.subject.clone();
 
     store.consume_action(
         IssueAction::FetchSucceeded {
@@ -660,7 +660,7 @@ fn late_fetch_success_and_failure_do_not_change_a_synced_issue() {
     );
 
     let (issue, state) = store.get_issue(id).expect("synced issue must remain");
-    assert_eq!(issue.subject, original_subject);
+    assert_eq!(issue.issue.subject, original_subject);
     assert_eq!(state, &IssueState::Synced);
 }
 

@@ -122,7 +122,7 @@ fn resolve_optional<Id: EntityIdValue>(
 
 fn resolve_parent_label(id: crate::vos::IssueId, store: &Store) -> String {
     match store.get_issue(id) {
-        Some((issue, _)) => format!("#{} {}", id, issue.subject),
+        Some((issue, _)) => format!("#{} {}", id, issue.issue.subject),
         None => format!("#{}", id),
     }
 }
