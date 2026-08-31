@@ -171,9 +171,21 @@ impl Store {
                     .collect();
             }
             Action::LoadJournal { id } => {
+                let mut owners = self
+                    .issue_store
+                    .get_issues()
+                    .values()
+                    .filter(|issue| issue.journal_ids.contains(&id))
+                    .map(|issue| issue.issue.id);
+                let issue_id = owners
+                    .next()
+                    .filter(|_| owners.next().is_none())
+                    .expect("fixture journal must belong to exactly one loaded issue");
+                let journal = parse_journal_yaml(id);
                 self.journals
                     .entry(id)
-                    .or_insert((parse_journal_yaml(id), JournalState::Synced));
+                    .or_insert((journal.clone(), JournalState::Synced));
+                self.journal_store.load_fixture_remote(journal, issue_id);
             }
             Action::UpdateJournal { id, notes } => {
                 if let Some((journal, state)) = self.journals.get_mut(&id.into()) {

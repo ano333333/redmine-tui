@@ -1,5 +1,12 @@
-use super::{Dispatcher, JournalAction, JournalEntry, LocalJournalState, Store};
-use crate::vos::{IssueId, JournalId, JournalKey, LocalJournalId};
+use super::{
+    Action, Dispatcher, IssueAction, JournalAction, JournalEntry, LocalJournalState,
+    RemoteJournalState, Store,
+};
+use crate::libs::yaml::parse_journal_yaml;
+use crate::test_support::sample_issue_aggregate;
+use crate::vos::{
+    IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, JournalKey, LocalJournalId,
+};
 
 #[test]
 fn empty_store_has_no_remote_or_local_entry() {
@@ -15,6 +22,116 @@ fn empty_store_has_no_remote_or_local_entry() {
             .get_journal_entry(JournalKey::Local(LocalJournalId::new(1)))
             .is_none()
     );
+}
+
+#[test]
+fn load_journal_adds_a_remote_entry_for_its_loaded_issue() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Load {
+        id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+
+    dispatcher.dispatch(Action::LoadJournal {
+        id: JournalId::new(1),
+    });
+    dispatcher.consume_action();
+
+    let entry = dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+        .expect("fixture journal should be stored as a remote entry");
+    let JournalEntry::Remote {
+        journal,
+        issue_id,
+        state,
+        notes_diff,
+    } = entry
+    else {
+        panic!("remote key should refer to a remote journal");
+    };
+    let expected = parse_journal_yaml(JournalId::new(1));
+    assert_eq!(journal.id, expected.id);
+    assert_eq!(journal.user, expected.user);
+    assert_eq!(journal.updated_on, expected.updated_on);
+    let [JournalDetail::Attr(JournalDetailAttr::StatusId { old, new })] =
+        journal.details.as_slice()
+    else {
+        panic!("fixture journal should retain its status detail");
+    };
+    assert_eq!(*old, IssueStatusId::new(1));
+    assert_eq!(*new, IssueStatusId::new(2));
+    assert_eq!(journal.notes, expected.notes);
+    assert_eq!(*issue_id, IssueId::new(3));
+    assert_eq!(state, &RemoteJournalState::Synced);
+    assert_eq!(notes_diff, &None);
+}
+
+#[test]
+#[should_panic(expected = "fixture journal must belong to exactly one loaded issue")]
+fn load_journal_rejects_a_missing_owner() {
+    let mut dispatcher = Dispatcher::new();
+
+    dispatcher.dispatch(Action::LoadJournal {
+        id: JournalId::new(1),
+    });
+    dispatcher.consume_action();
+}
+
+#[test]
+#[should_panic(expected = "fixture journal must belong to exactly one loaded issue")]
+fn load_journal_rejects_multiple_owners() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Load {
+        id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    let mut other_issue =
+        sample_issue_aggregate(2, "other", IssueStatusId::new(1), None, None, None, 0);
+    other_issue.journal_ids.push(JournalId::new(1));
+    dispatcher.dispatch(IssueAction::Sync { issue: other_issue });
+    dispatcher.consume_action();
+
+    dispatcher.dispatch(Action::LoadJournal {
+        id: JournalId::new(1),
+    });
+    dispatcher.consume_action();
+}
+
+#[test]
+fn loading_the_same_remote_journal_keeps_the_existing_entry() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Load {
+        id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(Action::LoadJournal {
+        id: JournalId::new(1),
+    });
+    dispatcher.consume_action();
+    let original_user_address = match dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+        .expect("fixture journal should be stored")
+    {
+        JournalEntry::Remote { journal, .. } => journal.user.as_ptr(),
+        JournalEntry::Local { .. } => panic!("remote key should refer to a remote journal"),
+    };
+
+    dispatcher.dispatch(Action::LoadJournal {
+        id: JournalId::new(1),
+    });
+    dispatcher.consume_action();
+
+    let reloaded_user_address = match dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+        .expect("fixture journal should remain stored")
+    {
+        JournalEntry::Remote { journal, .. } => journal.user.as_ptr(),
+        JournalEntry::Local { .. } => panic!("remote key should refer to a remote journal"),
+    };
+    assert_eq!(reloaded_user_address, original_user_address);
 }
 
 #[test]

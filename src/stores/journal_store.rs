@@ -59,6 +59,17 @@ impl JournalStore {
         self.entries.get(&key)
     }
 
+    pub(super) fn load_fixture_remote(&mut self, journal: Journal, issue_id: IssueId) {
+        self.entries
+            .entry(JournalKey::Remote(journal.id))
+            .or_insert(JournalEntry::Remote {
+                journal,
+                issue_id,
+                state: RemoteJournalState::Synced,
+                notes_diff: None,
+            });
+    }
+
     pub(super) fn consume_action(&mut self, action: JournalAction) {
         match action {
             JournalAction::CreateLocal {
