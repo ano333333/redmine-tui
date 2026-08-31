@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
-    Category, Issue, IssueStatus, Priority, Project, ProjectIssuesPage, ProjectsIssue,
+    Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, ProjectsIssue,
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
@@ -138,7 +138,7 @@ impl RedmineClient for DefaultRedmineClient {
         Ok(categories)
     }
 
-    async fn get_issue(&self, id: IssueId) -> Result<Issue, RedmineClientError> {
+    async fn get_issue(&self, id: IssueId) -> Result<IssueAggregate, RedmineClientError> {
         let response: IssueResponse = self
             .get_json(&format!("/issues/{id}.json?include=children,journals"))
             .await?;
@@ -146,7 +146,7 @@ impl RedmineClient for DefaultRedmineClient {
         response.issue.try_into()
     }
 
-    async fn update_issue(&self, issue: &Issue) -> Result<(), RedmineClientError> {
+    async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError> {
         self.put_empty(
             &format!("/issues/{}.json", issue.id.get()),
             &UpdateIssueRequest::from(issue),
@@ -640,8 +640,8 @@ struct UpdateIssueRequest {
     issue: UpdateIssue,
 }
 
-impl From<&Issue> for UpdateIssueRequest {
-    fn from(issue: &Issue) -> Self {
+impl From<&IssueAggregate> for UpdateIssueRequest {
+    fn from(issue: &IssueAggregate) -> Self {
         Self {
             issue: UpdateIssue::from(issue),
         }
@@ -663,8 +663,8 @@ struct UpdateIssue {
     category_id: Option<u16>,
 }
 
-impl From<&Issue> for UpdateIssue {
-    fn from(issue: &Issue) -> Self {
+impl From<&IssueAggregate> for UpdateIssue {
+    fn from(issue: &IssueAggregate) -> Self {
         Self {
             subject: issue.subject.clone(),
             description: issue.description.clone(),
@@ -719,7 +719,7 @@ struct RedmineIssue {
     journals: Vec<RedmineIdRef>,
 }
 
-impl TryFrom<RedmineIssue> for Issue {
+impl TryFrom<RedmineIssue> for IssueAggregate {
     type Error = RedmineClientError;
 
     fn try_from(value: RedmineIssue) -> Result<Self, Self::Error> {
