@@ -17,7 +17,7 @@ use crate::components::issue_select_popup::component::EventProcessResult as Issu
 use crate::components::issue_select_popup::component::{
     Effect as IssueSelectPopupEffect, IssueSelectPopupComponent,
 };
-use crate::stores::{Action, Dispatcher, IssueAction, Store};
+use crate::stores::{Dispatcher, IssueAction, JournalAction, Store};
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, ProjectId,
@@ -621,7 +621,7 @@ impl<'a> AppComponent<'a> {
             Some(PendingEditorContext::Journal { id }) => {
                 self.dispatcher
                     .borrow_mut()
-                    .dispatch(Action::UpdateJournal {
+                    .dispatch(JournalAction::EditRemoteNotes {
                         id,
                         notes: response.edited_text,
                     });
@@ -723,9 +723,9 @@ mod tests {
     use super::*;
 
     use crate::entities::{Issue, ProjectIssuesPage};
-    use crate::stores::ProjectIssuesAction;
-    use crate::vos::IssuePropertyDiff;
+    use crate::stores::{Action, JournalEntry, ProjectIssuesAction};
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
+    use crate::vos::{IssuePropertyDiff, JournalKey};
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
     const AREA: Rect = Rect {
@@ -1288,8 +1288,11 @@ mod tests {
         let notes = dispatcher
             .borrow()
             .store()
-            .get_journal(1)
-            .map(|(journal, _)| journal.notes.clone());
+            .get_journal_entry(JournalKey::Remote(1.into()))
+            .and_then(|entry| match entry {
+                JournalEntry::Remote { journal, .. } => Some(journal.notes.clone()),
+                JournalEntry::Local { .. } => None,
+            });
         assert_eq!(notes, Some("updated notes".to_string()));
     }
 

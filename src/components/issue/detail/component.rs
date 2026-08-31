@@ -7,8 +7,8 @@ use ratatui::layout::{Offset, Position, Rect};
 use ratatui::widgets::Widget;
 
 use crate::entities::Journal;
-use crate::stores::{Dispatcher, Store};
-use crate::vos::{IssueId, JournalId};
+use crate::stores::{Dispatcher, JournalEntry, Store};
+use crate::vos::{IssueId, JournalId, JournalKey};
 
 use super::body::BodyComponent;
 use super::body::EventProcessResult as BodyEventProcessResult;
@@ -311,10 +311,11 @@ impl IssueDetailComponent {
             let journals = issue
                 .journal_ids
                 .iter()
-                .map(|id| store.get_journal(*id))
-                .filter(|journal_state| journal_state.is_some())
-                .map(|journal_state| journal_state.unwrap())
-                .map(|(journal, _)| journal)
+                .filter_map(|id| store.get_journal_entry(JournalKey::Remote(*id)))
+                .filter_map(|entry| match entry {
+                    JournalEntry::Remote { journal, .. } => Some(journal),
+                    JournalEntry::Local { .. } => None,
+                })
                 .collect::<Vec<&Journal>>();
 
             self.journals_list.update(journals, self.width);

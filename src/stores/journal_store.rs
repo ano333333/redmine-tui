@@ -73,7 +73,7 @@ impl JournalStore {
         self.entries.get(&key)
     }
 
-    pub(super) fn load_fixture_remote(&mut self, journal: Journal, issue_id: IssueId) {
+    pub(super) fn load_remote_fixture(&mut self, journal: Journal, issue_id: IssueId) {
         self.entries
             .entry(JournalKey::Remote(journal.id))
             .or_insert(JournalEntry::Remote {

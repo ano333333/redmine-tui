@@ -8,7 +8,7 @@ use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
+    Category, Issue, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
     TimeEntityActivity, Tracker, User,
 };
 use crate::libs::yaml::parse_journal_yaml;
@@ -57,11 +57,6 @@ impl Dispatcher {
     }
 }
 
-pub enum JournalState {
-    Synced,
-    Updated,
-}
-
 pub struct Store {
     issue_store: IssueStore,
     project_issues_store: ProjectIssuesStore,
@@ -69,7 +64,6 @@ pub struct Store {
     next_local_journal_id: u64,
     issued_local_journal_ids: HashSet<LocalJournalId>,
     used_local_journal_ids: HashSet<LocalJournalId>,
-    journals: HashMap<JournalId, (Journal, JournalState)>,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
     priorities: HashMap<PriorityId, Priority>,
@@ -89,7 +83,6 @@ impl Store {
             next_local_journal_id: 1,
             issued_local_journal_ids: HashSet::new(),
             used_local_journal_ids: HashSet::new(),
-            journals: HashMap::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
             priorities: HashMap::new(),
@@ -179,16 +172,7 @@ impl Store {
                     .filter(|_| owners.next().is_none())
                     .expect("fixture journal must belong to exactly one loaded issue");
                 let journal = parse_journal_yaml(id);
-                self.journals
-                    .entry(id)
-                    .or_insert((journal.clone(), JournalState::Synced));
-                self.journal_store.load_fixture_remote(journal, issue_id);
-            }
-            Action::UpdateJournal { id, notes } => {
-                if let Some((journal, state)) = self.journals.get_mut(&id.into()) {
-                    journal.notes = notes;
-                    *state = JournalState::Updated;
-                }
+                self.journal_store.load_remote_fixture(journal, issue_id);
             }
         }
     }
@@ -237,13 +221,6 @@ impl Store {
 
     pub fn get_issue_property_diffs(&self, issue_id: impl Into<IssueId>) -> &[IssuePropertyDiff] {
         self.issue_store.get_issue_property_diffs(issue_id)
-    }
-
-    pub fn get_journal(
-        &self,
-        journal_id: impl Into<JournalId>,
-    ) -> Option<&(Journal, JournalState)> {
-        self.journals.get(&journal_id.into())
     }
 
     pub fn get_journal_entry(&self, key: JournalKey) -> Option<&JournalEntry> {
@@ -355,10 +332,6 @@ pub enum Action {
     },
     LoadJournal {
         id: JournalId,
-    },
-    UpdateJournal {
-        id: JournalId,
-        notes: String,
     },
 }
 
