@@ -2,7 +2,7 @@ use chrono::{DateTime, Local};
 use insta::assert_snapshot;
 use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
-use crate::entities::IssueAggregate;
+use crate::entities::{Issue, IssueAggregate};
 use crate::libs::yaml::{
     parse_categories_yaml, parse_issue_statuses_yaml, parse_priorities_yaml, parse_projects_yaml,
     parse_target_versions_yaml, parse_time_entity_activities_yaml, parse_trackers_yaml,
@@ -122,6 +122,13 @@ pub fn sample_issue_aggregate(
     progress: u16,
 ) -> IssueAggregate {
     IssueAggregate {
+        issue: Issue {
+            id: IssueId::new(id),
+            project_id: ProjectId::new(1),
+            subject: title.to_string(),
+            description: "body".to_string(),
+            status_id: issue_status_id,
+        },
         id: IssueId::new(id),
         subject: title.to_string(),
         author_id: UserId::new(1),
@@ -142,5 +149,30 @@ pub fn sample_issue_aggregate(
         description: "body".to_string(),
         child_ids: vec![],
         journal_ids: vec![],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sample_issue_aggregate;
+    use crate::vos::IssueStatusId;
+
+    #[test]
+    fn sample_issue_aggregate_keeps_lightweight_issue_fields_in_sync() {
+        let aggregate = sample_issue_aggregate(
+            42,
+            "Fix login",
+            IssueStatusId::new(3),
+            Some(1001),
+            None,
+            None,
+            30,
+        );
+
+        assert_eq!(aggregate.issue.id, aggregate.id);
+        assert_eq!(aggregate.issue.project_id, aggregate.project_id);
+        assert_eq!(aggregate.issue.subject, aggregate.subject);
+        assert_eq!(aggregate.issue.description, aggregate.description);
+        assert_eq!(aggregate.issue.status_id, aggregate.status_id);
     }
 }

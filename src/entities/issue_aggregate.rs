@@ -1,5 +1,6 @@
 use chrono::{DateTime, Local};
 
+use crate::entities::Issue;
 use crate::vos::{
     CategoryId, IssueId, IssueStatusId, JournalId, PriorityId, ProjectId, TargetVersionId,
     TrackerId, UserId,
@@ -7,6 +8,7 @@ use crate::vos::{
 
 #[derive(Debug, Clone)]
 pub struct IssueAggregate {
+    pub issue: Issue,
     pub id: IssueId,
     pub subject: String,
     pub author_id: UserId,

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use crate::entities::{
     Category, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity, Tracker, User,
 };
-use crate::entities::{IssueAggregate, Journal};
+use crate::entities::{Issue, IssueAggregate, Journal};
 #[cfg(test)]
 use crate::vos::TimeEntityActivityId;
 use crate::vos::{
@@ -215,6 +215,13 @@ pub fn parse_issue_yaml(id: u16) -> IssueAggregate {
         .map(|id| JournalId::new(*id))
         .collect();
     IssueAggregate {
+        issue: Issue {
+            id,
+            project_id,
+            subject: subject.clone(),
+            description: description.clone(),
+            status_id,
+        },
         id,
         subject,
         author_id,
@@ -378,4 +385,20 @@ pub fn parse_time_entity_activities_yaml() -> HashMap<TimeEntityActivityId, Time
             (act.id, act)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_issue_yaml;
+
+    #[test]
+    fn parsed_issue_keeps_lightweight_issue_fields_in_sync() {
+        let aggregate = parse_issue_yaml(1);
+
+        assert_eq!(aggregate.issue.id, aggregate.id);
+        assert_eq!(aggregate.issue.project_id, aggregate.project_id);
+        assert_eq!(aggregate.issue.subject, aggregate.subject);
+        assert_eq!(aggregate.issue.description, aggregate.description);
+        assert_eq!(aggregate.issue.status_id, aggregate.status_id);
+    }
 }
