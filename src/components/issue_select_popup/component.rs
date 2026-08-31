@@ -332,7 +332,7 @@ mod tests {
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
     use crate::components::issue_select_popup::widget::IssueSelectPopupFocusColumn;
-    use crate::entities::{ProjectIssuesPage, ProjectsIssue};
+    use crate::entities::{Issue, ProjectIssuesPage};
     use crate::stores::IssueAction;
     use crate::stores::ProjectIssuesAction;
     use crate::test_support::{render_snapshot, sample_issue_aggregate, sync_fixture_entities};
@@ -382,7 +382,7 @@ mod tests {
         store: &mut Store,
         project_id: u16,
         page_number: usize,
-        issues: Vec<ProjectsIssue>,
+        issues: Vec<Issue>,
         total_count: usize,
         offset: usize,
     ) {
@@ -411,8 +411,8 @@ mod tests {
         );
     }
 
-    fn project_issue(id: u16, project_id: u16, subject: &str, description: &str) -> ProjectsIssue {
-        ProjectsIssue {
+    fn project_issue(id: u16, project_id: u16, subject: &str, description: &str) -> Issue {
+        Issue {
             id: id.into(),
             project_id: project_id.into(),
             subject: subject.to_string(),

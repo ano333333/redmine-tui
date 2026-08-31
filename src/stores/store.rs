@@ -7,8 +7,8 @@ use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
 use crate::entities::{
-    Category, IssueAggregate, IssueStatus, Journal, Priority, Project, ProjectsIssue,
-    TargetVersion, TimeEntityActivity, Tracker, User,
+    Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
+    TimeEntityActivity, Tracker, User,
 };
 use crate::libs::yaml::parse_journal_yaml;
 use crate::vos::{
@@ -173,7 +173,7 @@ impl Store {
         &self,
         project_id: impl Into<ProjectId>,
         page: NonZeroUsize,
-    ) -> Option<&[ProjectsIssue]> {
+    ) -> Option<&[Issue]> {
         self.project_issues_store.issues(project_id.into(), page)
     }
 

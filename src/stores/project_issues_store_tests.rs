@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use super::{ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesRequestId, Store};
-use crate::entities::{ProjectIssuesPage, ProjectsIssue};
+use crate::entities::{Issue, ProjectIssuesPage};
 use crate::vos::{EntityIdValue, IssueId, IssueStatusId, ProjectId};
 use uuid::Uuid;
 
@@ -13,8 +13,8 @@ fn page(value: usize) -> NonZeroUsize {
     NonZeroUsize::new(value).expect("test pages are one-based")
 }
 
-fn issue(issue_id: u16, project_id: u16) -> ProjectsIssue {
-    ProjectsIssue {
+fn issue(issue_id: u16, project_id: u16) -> Issue {
+    Issue {
         id: IssueId::new(issue_id),
         project_id: ProjectId::new(project_id),
         subject: format!("issue {issue_id}"),
@@ -23,7 +23,7 @@ fn issue(issue_id: u16, project_id: u16) -> ProjectsIssue {
     }
 }
 
-fn result(issues: Vec<ProjectsIssue>, total_count: usize, offset: usize) -> ProjectIssuesPage {
+fn result(issues: Vec<Issue>, total_count: usize, offset: usize) -> ProjectIssuesPage {
     ProjectIssuesPage {
         issues,
         total_count,
