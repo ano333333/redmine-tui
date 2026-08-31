@@ -393,6 +393,16 @@
         margin-top: 7px;
       }
 
+      /* Mermaid */
+      .mermaid-block {
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 8px;
+        padding: 16px 18px;
+        overflow-x: auto;
+        margin: 16px 0;
+      }
+
       /* Test section */
       .test-grid {
         display: grid;
@@ -466,6 +476,7 @@
       <nav>
         <div class="nav-title">Architecture</div>
         <a href="#directory">ディレクトリ構成</a>
+        <a href="#dependency">ディレクトリ間の依存</a>
         <a href="#flux">Flux を参考にした構成</a>
         <a href="#lifecycle">Component lifecycle</a>
         <a href="#split">実装分割</a>
@@ -476,6 +487,7 @@
         <div class="nav-section">
           <div class="nav-title" style="margin-top: 0">ADR</div>
           <a href="adrs/1.html">ADR 1 — String/str 方針</a>
+          <a href="adrs/2.html">ADR 2 — Issue 保存フロー</a>
         </div>
       </nav>
 
@@ -499,38 +511,56 @@
             <div class="dir-item">
               <span class="dir-path">src/main.rs</span>
               <span class="dir-desc"
-                >terminal 初期化、main loop、最上位 layout を持つ。loop は
-                AppContainer::update、draw、crossterm event
-                read、AppContainer::handle_key_event の順に進む。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/app_container.rs</span>
-              <span class="dir-desc"
-                >terminal と application component の接続点。Dispatcher と
-                AppComponent を保持する。editor 起動など terminal
-                外部副作用を扱う。</span
+                >terminal 初期化、main loop、最上位 layout を持つ。Dispatcher
+                と AppComponent を保持し、tokio runtime、Redmine client、editor
+                起動など terminal・プロセス外部副作用の実行点を兼ねる（旧
+                <code>app_container.rs</code> はここへ統合済み）。副作用を生じる
+                非同期処理を行う Usecase を AppComponent
+                から使用する場合、イベントを受け取り非同期タスクを tokio
+                task として spawn する。完了 Action を
+                <code>mpsc::channel</code> 経由で loop に戻す。</span
               >
             </div>
             <div class="dir-item">
               <span class="dir-path">src/stores/</span>
               <span class="dir-desc"
-                ><code>mod.rs</code> は Store subsystem
-                の公開型を再エクスポートし、内部のファイル配置を隠蔽する。<br />
-                <code>store.rs</code> は親 Action、Dispatcher、Store、Journal
-                とマスターデータの状態を定義する。<br />
-                <code>issue_store.rs</code> は IssueStore、IssueState、IssueAction
-                と Issue Action の処理を定義する。<br />
-                <code>issue_store_tests.rs</code> は親 Store
-                の公開インターフェースを通して Issue Action を検証する。</span
+                ><code>store.rs</code> は、子 Store・子 Action
+                の統合を行う。外部からはこのファイルからエクスポートされる
+                Store と Action を公開インターフェースとして用いる。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/usecases/</span>
+              <span class="dir-desc"
+                >アプリ固有の操作を置く。Store・Client
+                の情報統合、および同期的な Dispatch や非同期タスクによる
+                Action の形成を担う。<br />
+                非同期 usecase について、同期的な Action dispatch はここで
+                即座に行い、非同期で形成する Action は Future
+                として返却する形が基本形である。Store
+                を直接書き換えず、Dispatcher::dispatch を介して Action
+                を積む。呼び出し側（main.rs）が Future を tokio task
+                として spawn し、完了 Action を Dispatcher へ戻す。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/clients/</span>
+              <span class="dir-desc"
+                >外部プロセスとの通信を行う。<br />
+                <code>redmine/base.rs</code> は RedmineClient trait
+                を定義し、Redmine との通信のインターフェースを定義する。
+                <code>redmine/default.rs</code> は
+                DefaultRedmineClient（実 HTTP 実装）を定義する。</span
               >
             </div>
             <div class="dir-item">
               <span class="dir-path">src/components/</span>
               <span class="dir-desc"
                 >TUI の画面部品を置く。app.rs は全体 component と popup stack
-                を統括する。issue/ は issue detail 画面とその子 component
-                を置く。*_popup/ は popup component を置く。</span
+                を統括する。issue/ はIssue取得状態を解決する外側componentを
+                置き、issue/detail/
+                は読み込み済みIssueの詳細画面とその子componentを置く。*_popup/
+                は popup component を置く。</span
               >
             </div>
             <div class="dir-item">
@@ -559,6 +589,12 @@
               >
             </div>
             <div class="dir-item">
+              <span class="dir-path">src/logging.rs</span>
+              <span class="dir-desc"
+                ><code>trace_dbg!</code> などのログ初期化・補助マクロを置く。</span
+              >
+            </div>
+            <div class="dir-item">
               <span class="dir-path">src/test_support.rs</span>
               <span class="dir-desc"
                 >snapshot rendering や test fixture を置く。</span
@@ -572,6 +608,70 @@
               <span class="dir-path">docs/adrs/</span>
               <span class="dir-desc">アーキテクチャ判断の記録を置く。</span>
             </div>
+          </div>
+        </section>
+
+        <!-- Dependency -->
+        <section id="dependency">
+          <h2>ディレクトリ間の依存</h2>
+          <p>
+            矢印は「依存する → 依存される」の向きを表す。<code>entities</code>
+            と <code>vos</code>
+            は他のどのディレクトリにも依存しない末端、<code>components</code>
+            と <code>widgets</code> は TUI 描画を担う UI 層、
+            <code>usecases</code> と <code>clients</code>
+            はそれぞれ単独のレイヤとして扱う。<code>main.rs</code>、
+            <code>stores</code>、<code>libs</code>
+            はどの分類にも属さない「その他」としてまとめる。<code
+              >main.rs</code
+            >
+            は各ディレクトリを束ねる最上位に位置する。ブロック間の依存は
+            ブロック単位の矢印に統一し、同一ブロック内の依存（<code
+              >main.rs -&gt; stores</code
+            >、<code>components -&gt; widgets</code
+            >）だけ個別ノード間の矢印で表す。
+          </p>
+          <pre class="mermaid mermaid-block">
+flowchart TD
+    subgraph grp_other["その他"]
+        main["main.rs"] --&gt; stores["src/stores/"]
+        libs["src/libs/"]
+    end
+
+    subgraph grp_ui["UI"]
+        components["src/components/"] --&gt; widgets["src/widgets/"]
+    end
+
+    usecases["src/usecases/"]
+    clients["src/clients/"]
+
+    subgraph grp_core["entities / vos"]
+        entities["src/entities/"]
+        vos["src/vos/"]
+    end
+
+    grp_other --&gt; grp_ui
+    grp_other --&gt; usecases
+    grp_other --&gt; clients
+    grp_other --&gt; grp_core
+
+    grp_ui --&gt; usecases
+    grp_ui --&gt; grp_core
+
+    usecases --&gt; clients
+    usecases --&gt; grp_core
+
+    clients --&gt; grp_core
+</pre>
+          <div class="callout" style="margin-top: 16px">
+            <strong>規則:</strong> <code>usecases</code> は
+            <code>components</code> に依存しない。Component から usecase
+            の関数を呼ぶことはあるが（例: app.rs が issue_popup_options や
+            redmine::{cancel_issue_upload, continue_issue_upload}
+            を呼ぶ）、逆方向の依存は発生させない。同様に
+            <code>clients</code> は <code>stores</code> にも
+            <code>usecases</code> にも依存せず、RedmineClient trait と HTTP
+            実装のみを提供する。
           </div>
         </section>
 
@@ -647,8 +747,12 @@
             <div class="diff-item">
               <div class="diff-bullet"></div>
               <div>
-                editor 起動などの外部副作用は <code>AppEffect</code> として
-                Component から取り出し、<code>AppContainer</code> 側で実行する。
+                editor 起動、Redmine への非同期取得・保存などの外部副作用は
+                <code>AppEffect</code> として Component から取り出し、
+                <code>main.rs</code> の main loop 側で実行する。Redmine
+                関連の AppEffect は usecases::redmine の関数を tokio task
+                として spawn し、完了 Action を mpsc::channel 経由で
+                Dispatcher に戻す。
               </div>
             </div>
             <div class="diff-item">
@@ -931,5 +1035,12 @@
         </section>
       </main>
     </div>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/+esm";
+      mermaid.initialize({
+        securityLevel: "loose",
+        theme: "dark",
+      });
+    </script>
   </body>
 </html>

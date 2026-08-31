@@ -7,16 +7,16 @@
 
 - `src/main.rs`
   - terminal 初期化、main loop、最上位 layout を持つ。
-  - loop は `AppContainer::update`、draw、crossterm event read、`AppContainer::handle_key_event` の順に進む。
-- `src/app_container.rs`
-  - terminal と application component の接続点。
-  - `Dispatcher` と `AppComponent` を保持する。
-  - editor 起動など terminal 外部副作用を扱う。
+  - `Dispatcher` と `AppComponent` を保持し、tokio runtime、Redmine client、editor 起動など terminal・プロセス外部副作用の実行点を兼ねる（旧 `app_container.rs` はここへ統合済み）。
+  - 副作用を生じる非同期処理を行う Usecase を AppComponent から使用する場合、イベントを受け取り非同期タスクを tokio task として spawn する。完了 Action を `mpsc::channel` 経由で loop に戻す。
 - `src/stores/`
-  - `mod.rs` は Store subsystem の公開型を再エクスポートし、内部のファイル配置を隠蔽する。
-  - `store.rs` は親 `Action`、`Dispatcher`、`Store`、Journal とマスターデータの状態を定義する。
-  - `issue_store.rs` は `IssueStore`、`IssueState`、`IssueAction` と Issue Action の処理を定義する。
-  - `issue_store_tests.rs` は親 `Store` の公開インターフェースを通して Issue Action を検証する。
+  - `store.rs` は、子 Store ・子 Action の統合を行う。外部からはこのファイルからエクスポートされる Store と Action を公開インターフェースとして用いる。
+- `src/usecases/`
+  - アプリ固有の操作を置く。Store・Client の情報統合、および同期的な Dispatch や非同期タスクによる Action の形成を担う。
+  - 非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期で形成する Action は `Future` として返却する形が基本形である。`Store` を直接書き換えず、`Dispatcher::dispatch` を介して Action を積む。呼び出し側（`main.rs`）が Future を tokio task として spawn し、完了 Action を Dispatcher へ戻す。
+- `src/clients/`
+  - 外部プロセスとの通信を行う。
+  - `redmine/base.rs` は `RedmineClient` trait を定義し、 Redmine との通信のインターフェースを定義する。`redmine/default.rs` は `DefaultRedmineClient`（実 HTTP 実装）を定義する。
 - `src/components/`
   - TUI の画面部品を置く。
   - `app.rs` は全体 component と popup stack を統括する。
@@ -30,12 +30,59 @@
   - 複数 component から使う汎用 widget を置く。
 - `src/libs/`
   - YAML読み込みなど、外部表現から domain data へ変換する補助処理を置く。
+- `src/logging.rs`
+  - `trace_dbg!` などのログ初期化・補助マクロを置く。
 - `src/test_support.rs`
   - snapshot rendering や test fixture を置く。
 - `src/snapshots/`
   - insta snapshot を置く。
 - `docs/adrs/`
   - アーキテクチャ判断の記録を置く。
+
+## ディレクトリ間の依存
+
+矢印は「依存する → 依存される」の向きを表す。
+`entities` と `vos` は他のどのディレクトリにも依存しない末端、`components` と `widgets` は TUI 描画を担う UI 層、`usecases` と `clients` はそれぞれ単独のレイヤとして扱う。
+`main.rs`、`stores`、`libs` はどの分類にも属さない「その他」としてまとめる。
+`main.rs` は各ディレクトリを束ねる最上位に位置する。
+ブロック間の依存はブロック単位の矢印に統一し、同一ブロック内の依存（`main.rs -> stores`、`components -> widgets`）だけ個別ノード間の矢印で表す。
+
+```mermaid
+flowchart TD
+    subgraph grp_other["その他"]
+        main["main.rs"] --> stores["src/stores/"]
+        libs["src/libs/"]
+    end
+
+    subgraph grp_ui["UI"]
+        components["src/components/"] --> widgets["src/widgets/"]
+    end
+
+    usecases["src/usecases/"]
+    clients["src/clients/"]
+
+    subgraph grp_core["entities / vos"]
+        entities["src/entities/"]
+        vos["src/vos/"]
+    end
+
+    grp_other --> grp_ui
+    grp_other --> usecases
+    grp_other --> clients
+    grp_other --> grp_core
+
+    grp_ui --> usecases
+    grp_ui --> grp_core
+
+    usecases --> clients
+    usecases --> grp_core
+
+    clients --> grp_core
+```
+
+`usecases` は `components` に依存しない。
+Component から usecase の関数を呼ぶことはあるが（例: `app.rs` が `issue_popup_options` や `redmine::{cancel_issue_upload, continue_issue_upload}` を呼ぶ）、逆方向の依存は発生させない。
+同様に `clients` は `stores` にも `usecases` にも依存せず、`RedmineClient` trait と HTTP 実装のみを提供する。
 
 ## Flux を参考にした構成
 
@@ -54,7 +101,7 @@ Store の更新は原則として Dispatcher を介して行う。
 - Component と usecase は `IssueStore` を直接参照せず、親 `Store` の Issue getter を通して entity、同期状態、diff、競合情報を取得する。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。
-- editor 起動などの外部副作用は `AppEffect` として Component から取り出し、`AppContainer` 側で実行する。
+- editor 起動、Redmine への非同期取得・保存などの外部副作用は `AppEffect` として Component から取り出し、`main.rs` の main loop 側で実行する。Redmine 関連の `AppEffect` は `usecases::redmine` の関数を tokio task として spawn し、完了 Action を `mpsc::channel` 経由で Dispatcher に戻す。
 - `create_widget(&Store)` で Store を参照して表示用 entity を取得してよい。
 
 ## Component lifecycle
