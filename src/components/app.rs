@@ -18,6 +18,10 @@ use crate::components::issue_select_popup::component::{
     Effect as IssueSelectPopupEffect, IssueSelectPopupComponent,
 };
 use crate::stores::{Action, Dispatcher, IssueAction, Store};
+use crate::usecases::issue_popup_options::{
+    build_assigned_to_options, build_category_options, build_done_ratio_options,
+    build_issue_status_options, build_target_version_options,
+};
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, ProjectId,
@@ -221,103 +225,59 @@ impl<'a> AppComponent<'a> {
                 Some(IssueEventProcessResult::Detail(
                     IssueDetailEventProcessResult::OpenIssueStatusPopup,
                 )) => {
-                    let issue_statuses = dispatcher
-                        .borrow()
-                        .store()
-                        .get_issue_statuses()
-                        .iter()
-                        .map(|(id, status)| (id.get(), status.name.clone()))
-                        .collect::<Vec<_>>();
                     let (items, focused_index) =
-                        Self::build_select_options(issue_statuses, None, false);
-                    self.popup_components.push_back(Rc::new(RefCell::new(
-                        PopupComponent::SelectBox(SelectBoxPopupComponent::new(
-                            &items,
-                            focused_index,
-                            false,
-                            Box::new(move |status_id| {
-                                if let Some(status_id) = status_id {
-                                    dispatcher.borrow_mut().dispatch(IssueAction::UpdateStatus {
-                                        id: issue_id,
-                                        status_id: IssueStatusId::new(status_id),
-                                    });
-                                }
-                            }),
-                        )),
-                    )));
+                        build_issue_status_options(dispatcher.borrow().store());
+                    self.push_select_box_popup(
+                        &items,
+                        focused_index,
+                        false,
+                        Box::new(move |status_id| {
+                            if let Some(status_id) = status_id {
+                                dispatcher.borrow_mut().dispatch(IssueAction::UpdateStatus {
+                                    id: issue_id,
+                                    status_id: IssueStatusId::new(status_id),
+                                });
+                            }
+                        }),
+                    );
                 }
                 Some(IssueEventProcessResult::Detail(
                     IssueDetailEventProcessResult::OpenAssignedToPopup,
                 )) => {
-                    let dispatcher_ref = dispatcher.borrow();
-                    let store = dispatcher_ref.store();
-                    let current_assigned_to_id = store
-                        .get_issue(issue_id)
-                        .and_then(|(issue, _)| issue.assigned_to_id);
-                    let users = store
-                        .get_users()
-                        .iter()
-                        .map(|(id, user)| (id.get(), user.name.clone()))
-                        .collect::<Vec<_>>();
-                    drop(dispatcher_ref);
-                    let (items, focused_index) = Self::build_select_options(
-                        users,
-                        current_assigned_to_id.map(|id| id.get()),
+                    let (items, focused_index) =
+                        build_assigned_to_options(dispatcher.borrow().store(), issue_id);
+                    self.push_select_box_popup(
+                        &items,
+                        focused_index,
                         true,
+                        Box::new(move |assigned_to_id| {
+                            dispatcher
+                                .borrow_mut()
+                                .dispatch(IssueAction::UpdateAssignedTo {
+                                    id: issue_id.into(),
+                                    assigned_to_id: assigned_to_id.map(UserId::new),
+                                });
+                        }),
                     );
-
-                    self.popup_components.push_back(Rc::new(RefCell::new(
-                        PopupComponent::SelectBox(SelectBoxPopupComponent::new(
-                            &items,
-                            focused_index,
-                            true,
-                            Box::new(move |assigned_to_id| {
-                                dispatcher
-                                    .borrow_mut()
-                                    .dispatch(IssueAction::UpdateAssignedTo {
-                                        id: issue_id.into(),
-                                        assigned_to_id: assigned_to_id.map(UserId::new),
-                                    });
-                            }),
-                        )),
-                    )));
                 }
                 Some(IssueEventProcessResult::Detail(
                     IssueDetailEventProcessResult::OpenTargetVersionPopup,
                 )) => {
-                    let dispatcher_ref = dispatcher.borrow();
-                    let store = dispatcher_ref.store();
-                    let current_target_version_id = store
-                        .get_issue(issue_id)
-                        .and_then(|(issue, _)| issue.target_version_id);
-                    let target_versions = store
-                        .get_target_versions()
-                        .iter()
-                        .map(|(id, target_version)| (id.get(), target_version.name.clone()))
-                        .collect::<Vec<_>>();
-                    drop(dispatcher_ref);
-                    let (items, focused_index) = Self::build_select_options(
-                        target_versions,
-                        current_target_version_id.map(|id| id.get()),
+                    let (items, focused_index) =
+                        build_target_version_options(dispatcher.borrow().store(), issue_id);
+                    self.push_select_box_popup(
+                        &items,
+                        focused_index,
                         true,
+                        Box::new(move |target_version_id| {
+                            dispatcher
+                                .borrow_mut()
+                                .dispatch(IssueAction::UpdateTargetVersion {
+                                    id: issue_id.into(),
+                                    target_version_id: target_version_id.map(TargetVersionId::new),
+                                });
+                        }),
                     );
-
-                    self.popup_components.push_back(Rc::new(RefCell::new(
-                        PopupComponent::SelectBox(SelectBoxPopupComponent::new(
-                            &items,
-                            focused_index,
-                            true,
-                            Box::new(move |target_version_id| {
-                                dispatcher.borrow_mut().dispatch(
-                                    IssueAction::UpdateTargetVersion {
-                                        id: issue_id.into(),
-                                        target_version_id: target_version_id
-                                            .map(TargetVersionId::new),
-                                    },
-                                );
-                            }),
-                        )),
-                    )));
                 }
                 Some(IssueEventProcessResult::Detail(
                     IssueDetailEventProcessResult::OpenStartDatePopup,
@@ -372,72 +332,42 @@ impl<'a> AppComponent<'a> {
                 Some(IssueEventProcessResult::Detail(
                     IssueDetailEventProcessResult::OpenDoneRatioPopup,
                 )) => {
-                    let current_done_ratio = dispatcher
-                        .borrow()
-                        .store()
-                        .get_issue(issue_id)
-                        .map(|(issue, _)| issue.done_ratio)
-                        .unwrap_or(0);
-                    let done_ratios = (0..=100)
-                        .step_by(10)
-                        .map(|ratio| (ratio, ratio.to_string()))
-                        .collect::<Vec<_>>();
                     let (items, focused_index) =
-                        Self::build_select_options(done_ratios, Some(current_done_ratio), false);
-
-                    self.popup_components.push_back(Rc::new(RefCell::new(
-                        PopupComponent::SelectBox(SelectBoxPopupComponent::new(
-                            &items,
-                            focused_index,
-                            false,
-                            Box::new(move |done_ratio| {
-                                if let Some(done_ratio) = done_ratio {
-                                    dispatcher.borrow_mut().dispatch(
-                                        IssueAction::UpdateDoneRatio {
-                                            id: issue_id.into(),
-                                            done_ratio,
-                                        },
-                                    );
-                                }
-                            }),
-                        )),
-                    )));
+                        build_done_ratio_options(dispatcher.borrow().store(), issue_id);
+                    self.push_select_box_popup(
+                        &items,
+                        focused_index,
+                        false,
+                        Box::new(move |done_ratio| {
+                            if let Some(done_ratio) = done_ratio {
+                                dispatcher
+                                    .borrow_mut()
+                                    .dispatch(IssueAction::UpdateDoneRatio {
+                                        id: issue_id.into(),
+                                        done_ratio,
+                                    });
+                            }
+                        }),
+                    );
                 }
                 Some(IssueEventProcessResult::Detail(
                     IssueDetailEventProcessResult::OpenCategoryPopup,
                 )) => {
-                    let dispatcher_ref = dispatcher.borrow();
-                    let store = dispatcher_ref.store();
-                    let current_category_id = store
-                        .get_issue(issue_id)
-                        .and_then(|(issue, _)| issue.category_id);
-                    let categories = store
-                        .get_categories()
-                        .iter()
-                        .map(|(id, category)| (id.get(), category.name.clone()))
-                        .collect::<Vec<_>>();
-                    drop(dispatcher_ref);
-                    let (items, focused_index) = Self::build_select_options(
-                        categories,
-                        current_category_id.map(|id| id.get()),
+                    let (items, focused_index) =
+                        build_category_options(dispatcher.borrow().store(), issue_id);
+                    self.push_select_box_popup(
+                        &items,
+                        focused_index,
                         true,
+                        Box::new(move |category_id| {
+                            dispatcher
+                                .borrow_mut()
+                                .dispatch(IssueAction::UpdateCategory {
+                                    id: issue_id.into(),
+                                    category_id: category_id.map(CategoryId::new),
+                                });
+                        }),
                     );
-
-                    self.popup_components.push_back(Rc::new(RefCell::new(
-                        PopupComponent::SelectBox(SelectBoxPopupComponent::new(
-                            &items,
-                            focused_index,
-                            true,
-                            Box::new(move |category_id| {
-                                dispatcher
-                                    .borrow_mut()
-                                    .dispatch(IssueAction::UpdateCategory {
-                                        id: issue_id.into(),
-                                        category_id: category_id.map(CategoryId::new),
-                                    });
-                            }),
-                        )),
-                    )));
                 }
                 Some(IssueEventProcessResult::Detail(
                     IssueDetailEventProcessResult::OpenSpentTimeInputPopup,
@@ -526,24 +456,18 @@ impl<'a> AppComponent<'a> {
         self.popup_components.pop_back();
     }
 
-    /// idと名前のentry一覧と現在値から、SelectBoxPopupComponent::new用の
-    /// items(id昇順ソート、`sorted`指定時)とfocused_indexを組み立てる。
-    ///
-    /// 現在値が見つからない場合、及び`current_id`がNoneの場合はfocused_indexを0にする。
-    /// `include_none`によるoffsetはSelectBoxPopupComponent::new側で行うため、ここでは
-    /// entries内でのインデックスをそのまま返す。
-    fn build_select_options(
-        mut entries: Vec<(u16, String)>,
-        current_id: Option<u16>,
-        sorted: bool,
-    ) -> (Vec<(u16, String)>, usize) {
-        if sorted {
-            entries.sort_by_key(|(id, _)| *id);
-        }
-        let focused_index = current_id
-            .and_then(|current_id| entries.iter().position(|(id, _)| *id == current_id))
-            .unwrap_or(0);
-        (entries, focused_index)
+    /// SelectBoxPopupComponentを構築し、popup stackへ積む。
+    fn push_select_box_popup(
+        &mut self,
+        items: &[(u16, String)],
+        focused_index: usize,
+        include_none: bool,
+        observer: Box<dyn FnMut(Option<u16>) + 'a>,
+    ) {
+        self.popup_components
+            .push_back(Rc::new(RefCell::new(PopupComponent::SelectBox(
+                SelectBoxPopupComponent::new(items, focused_index, include_none, observer),
+            ))));
     }
 
     /// popupへ先にキーを渡し、未処理のqだけをアプリ終了として返す。
