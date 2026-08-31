@@ -7,8 +7,8 @@ use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
 use crate::entities::{
-    Category, Issue, IssueStatus, Journal, Priority, Project, ProjectsIssue, TargetVersion,
-    TimeEntityActivity, Tracker, User,
+    Category, IssueAggregate, IssueStatus, Journal, Priority, Project, ProjectsIssue,
+    TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::libs::yaml::parse_journal_yaml;
 use crate::vos::{
@@ -145,7 +145,10 @@ impl Store {
         }
     }
 
-    pub fn get_issue(&self, issue_id: impl Into<IssueId>) -> Option<(&Issue, &IssueState)> {
+    pub fn get_issue(
+        &self,
+        issue_id: impl Into<IssueId>,
+    ) -> Option<(&IssueAggregate, &IssueState)> {
         self.issue_store.get_issue(issue_id)
     }
 
@@ -153,7 +156,7 @@ impl Store {
         self.issue_store.get_issue_state(issue_id)
     }
 
-    pub fn get_issues(&self) -> &HashMap<IssueId, Issue> {
+    pub fn get_issues(&self) -> &HashMap<IssueId, IssueAggregate> {
         self.issue_store.get_issues()
     }
 
@@ -252,7 +255,10 @@ impl Store {
     }
 
     /// 保存処理で検出した競合について、比較時点のサーバー Issue と差分を返す。
-    pub fn get_issue_upload_conflict(&self, id: IssueId) -> Option<(&Issue, &[IssuePropertyDiff])> {
+    pub fn get_issue_upload_conflict(
+        &self,
+        id: IssueId,
+    ) -> Option<(&IssueAggregate, &[IssuePropertyDiff])> {
         self.issue_store.get_issue_upload_conflict(id)
     }
 }
