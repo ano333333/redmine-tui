@@ -21,7 +21,8 @@ use crate::stores::{Action, Dispatcher, IssueAction, Store};
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
     build_done_ratio_options, build_issue_status_options, build_target_version_options,
-    category_popup_observer, done_ratio_popup_observer, issue_status_popup_observer,
+    category_popup_observer, current_due_date, current_start_date, done_ratio_popup_observer,
+    due_date_popup_observer, issue_status_popup_observer, start_date_popup_observer,
     target_version_popup_observer,
 };
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
@@ -262,50 +263,22 @@ impl<'a> AppComponent<'a> {
                 Some(IssueEventProcessResult::Detail(
                     IssueDetailEventProcessResult::OpenStartDatePopup,
                 )) => {
-                    let selected_date = dispatcher
-                        .borrow()
-                        .store()
-                        .get_issue(issue_id)
-                        .and_then(|(issue, _)| issue.start_date);
-
+                    let selected_date = current_start_date(dispatcher.borrow().store(), issue_id);
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::DatePicker(DatePickerPopupComponent::new(
                             selected_date,
-                            Box::new(move |date| {
-                                if let Some(date) = date {
-                                    dispatcher.borrow_mut().dispatch(
-                                        IssueAction::UpdateStartDate {
-                                            id: issue_id.into(),
-                                            start_date: Some(date),
-                                        },
-                                    );
-                                }
-                            }),
+                            start_date_popup_observer(dispatcher.clone(), issue_id),
                         )),
                     )));
                 }
                 Some(IssueEventProcessResult::Detail(
                     IssueDetailEventProcessResult::OpenDueDatePopup,
                 )) => {
-                    let selected_date = dispatcher
-                        .borrow()
-                        .store()
-                        .get_issue(issue_id)
-                        .and_then(|(issue, _)| issue.due_date);
-
+                    let selected_date = current_due_date(dispatcher.borrow().store(), issue_id);
                     self.popup_components.push_back(Rc::new(RefCell::new(
                         PopupComponent::DatePicker(DatePickerPopupComponent::new(
                             selected_date,
-                            Box::new(move |date| {
-                                if let Some(date) = date {
-                                    dispatcher
-                                        .borrow_mut()
-                                        .dispatch(IssueAction::UpdateDueDate {
-                                            id: issue_id.into(),
-                                            due_date: Some(date),
-                                        });
-                                }
-                            }),
+                            due_date_popup_observer(dispatcher.clone(), issue_id),
                         )),
                     )));
                 }
