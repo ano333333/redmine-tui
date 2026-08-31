@@ -42,10 +42,10 @@ fn get_issue_maps_success_response() {
 
     let issue = block_on(client.get_issue(IssueId::new(42))).unwrap();
 
-    assert_eq!(issue.id.get(), 42);
+    assert_eq!(issue.issue.id.get(), 42);
     assert_eq!(issue.subject, "Fix login");
     assert_eq!(issue.author_id.get(), 1000);
-    assert_eq!(issue.project_id.get(), 10);
+    assert_eq!(issue.issue.project_id.get(), 10);
     assert_eq!(issue.tracker_id.get(), 2);
     assert_eq!(issue.status_id.get(), 1);
     assert_eq!(issue.priority_id.get(), 5);
@@ -148,10 +148,10 @@ async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::
         .await
         .map_err(|error| test_error(format!("get_issue(1) returned {error:?}")))?;
 
-    assert_eq!(issue.id.get(), 1);
+    assert_eq!(issue.issue.id.get(), 1);
     assert_eq!(issue.subject, "issue1");
     assert_eq!(issue.author_id.get(), 1001);
-    assert_eq!(issue.project_id.get(), 1);
+    assert_eq!(issue.issue.project_id.get(), 1);
 
     Ok(())
 }

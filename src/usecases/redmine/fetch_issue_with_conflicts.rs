@@ -56,7 +56,7 @@ pub(crate) fn apply_issue_property_diffs(issue: &mut IssueAggregate, diffs: &[Is
             IssuePropertyDiff::AuthorId(diff) => issue.author_id = diff.after,
             IssuePropertyDiff::CreatedOn(diff) => issue.created_on = diff.after,
             IssuePropertyDiff::UpdatedOn(diff) => issue.updated_on = diff.after,
-            IssuePropertyDiff::ProjectId(diff) => issue.project_id = diff.after,
+            IssuePropertyDiff::ProjectId(diff) => issue.issue.project_id = diff.after,
             IssuePropertyDiff::TrackerId(diff) => issue.tracker_id = diff.after,
             IssuePropertyDiff::StatusId(diff) => issue.status_id = diff.after,
             IssuePropertyDiff::PriorityId(diff) => issue.priority_id = diff.after,
@@ -142,7 +142,7 @@ pub(crate) fn with_server_value_as_before(
         IssuePropertyDiff::AuthorId(diff) => diff.before = issue.author_id,
         IssuePropertyDiff::CreatedOn(diff) => diff.before = issue.created_on,
         IssuePropertyDiff::UpdatedOn(diff) => diff.before = issue.updated_on,
-        IssuePropertyDiff::ProjectId(diff) => diff.before = issue.project_id,
+        IssuePropertyDiff::ProjectId(diff) => diff.before = issue.issue.project_id,
         IssuePropertyDiff::TrackerId(diff) => diff.before = issue.tracker_id,
         IssuePropertyDiff::StatusId(diff) => diff.before = issue.status_id,
         IssuePropertyDiff::PriorityId(diff) => diff.before = issue.priority_id,
@@ -180,7 +180,7 @@ pub(crate) fn with_server_value_as_after(
         IssuePropertyDiff::AuthorId(diff) => diff.after = issue.author_id,
         IssuePropertyDiff::CreatedOn(diff) => diff.after = issue.created_on,
         IssuePropertyDiff::UpdatedOn(diff) => diff.after = issue.updated_on,
-        IssuePropertyDiff::ProjectId(diff) => diff.after = issue.project_id,
+        IssuePropertyDiff::ProjectId(diff) => diff.after = issue.issue.project_id,
         IssuePropertyDiff::TrackerId(diff) => diff.after = issue.tracker_id,
         IssuePropertyDiff::StatusId(diff) => diff.after = issue.status_id,
         IssuePropertyDiff::PriorityId(diff) => diff.after = issue.priority_id,
@@ -265,7 +265,7 @@ fn conflicts_with_issue(issue: &IssueAggregate, diff: &IssuePropertyDiff) -> boo
         IssuePropertyDiff::AuthorId(diff) => conflict!(issue.author_id, diff),
         IssuePropertyDiff::CreatedOn(diff) => conflict!(issue.created_on, diff),
         IssuePropertyDiff::UpdatedOn(diff) => conflict!(issue.updated_on, diff),
-        IssuePropertyDiff::ProjectId(diff) => conflict!(issue.project_id, diff),
+        IssuePropertyDiff::ProjectId(diff) => conflict!(issue.issue.project_id, diff),
         IssuePropertyDiff::TrackerId(diff) => conflict!(issue.tracker_id, diff),
         IssuePropertyDiff::StatusId(diff) => conflict!(issue.status_id, diff),
         IssuePropertyDiff::PriorityId(diff) => conflict!(issue.priority_id, diff),
@@ -323,7 +323,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(client.requested_ids(), vec![IssueId::new(42)]);
-        assert_eq!(actual.id, server_issue.id);
+        assert_eq!(actual.issue.id, server_issue.issue.id);
         assert_eq!(actual.subject, server_issue.subject);
         assert!(conflicts.is_empty());
     }

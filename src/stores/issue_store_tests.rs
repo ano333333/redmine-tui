@@ -12,7 +12,7 @@ fn load_action_is_consumed_through_parent_store() {
     store.consume_action(IssueAction::Load { id }.into());
 
     let (issue, state) = store.get_issue(id).expect("issue should be loaded");
-    assert_eq!(issue.id, id);
+    assert_eq!(issue.issue.id, id);
     assert_eq!(state, &IssueState::Synced);
 }
 
@@ -547,6 +547,24 @@ fn matching_fetch_success_registers_the_issue_as_synced() {
     assert_eq!(state, &IssueState::Synced);
     assert!(store.get_issue_property_diffs(id).is_empty());
     assert!(store.get_issue_upload_conflict(id).is_none());
+}
+
+#[test]
+fn fetch_success_matches_and_registers_by_nested_issue_id() {
+    let id = IssueId::new(99);
+    let mut issue = sample_issue_aggregate(99, "fetched", 1.into(), None, None, None, 0);
+    issue.id = IssueId::new(100);
+    let mut store = Store::new();
+    store.consume_action(IssueAction::StartFetching { id }.into());
+
+    store.consume_action(IssueAction::FetchSucceeded { id, issue }.into());
+
+    let (issue, state) = store
+        .get_issue(id)
+        .expect("nested issue id should be the canonical store key");
+    assert_eq!(issue.issue.id, id);
+    assert_eq!(state, &IssueState::Synced);
+    assert!(store.get_issue(IssueId::new(100)).is_none());
 }
 
 #[test]

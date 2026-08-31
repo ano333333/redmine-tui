@@ -7,12 +7,12 @@ use crate::clients::redmine::{
     DefaultRedmineClient, RedmineClient, RedmineClientError, RedmineHttpError,
 };
 use crate::test_support::sample_issue_aggregate;
-use crate::vos::IssueStatusId;
+use crate::vos::{IssueId, IssueStatusId};
 
 #[test]
-fn update_issue_sends_redmine_put_request() {
+fn update_issue_sends_redmine_put_request_to_nested_issue_id() {
     let mock_server = block_on(MockServer::start());
-    let issue = sample_issue_aggregate(
+    let mut issue = sample_issue_aggregate(
         42,
         "Fix login",
         IssueStatusId::new(3),
@@ -21,6 +21,7 @@ fn update_issue_sends_redmine_put_request() {
         Some("2026-08-31T00:00:00+09:00"),
         30,
     );
+    issue.id = IssueId::new(99);
     let expected_body = json!({
         "issue": {
             "subject": "Fix login",

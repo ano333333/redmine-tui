@@ -1448,7 +1448,7 @@ mod tests {
                 None,
                 0,
             );
-            lower_id_issue.project_id = 2.into();
+            lower_id_issue.issue.project_id = 2.into();
             let higher_id_issue = crate::test_support::sample_issue_aggregate(
                 3,
                 "project one issue",

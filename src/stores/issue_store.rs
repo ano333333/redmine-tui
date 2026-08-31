@@ -114,7 +114,7 @@ impl IssueStore {
                 }
             }
             IssueAction::Sync { issue } => {
-                let id = issue.id;
+                let id = issue.issue.id;
                 if let Some(state) = self.get_issue_state(id)
                     && !matches!(state, IssueState::Edited | IssueState::Uploading)
                 {
@@ -142,7 +142,8 @@ impl IssueStore {
                 }
             }
             IssueAction::FetchSucceeded { id, issue } => {
-                if matches!(self.get_issue_state(id), Some(IssueState::Fetching)) && issue.id == id
+                if matches!(self.get_issue_state(id), Some(IssueState::Fetching))
+                    && issue.issue.id == id
                 {
                     self.issues.insert(id, issue);
                     self.issue_property_diffs.remove(&id);
@@ -194,7 +195,7 @@ impl IssueStore {
                 server_issue,
                 conflicts,
             } => {
-                let id = server_issue.id;
+                let id = server_issue.issue.id;
                 let state = self.state_or_synced(id);
                 if state != &IssueState::Uploading {
                     panic!("cannot retain issue upload conflicts while issue {id} is {state:?}");

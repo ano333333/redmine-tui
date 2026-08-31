@@ -74,7 +74,7 @@ fn create_property_widget<'a>(
         .map(|priority| priority.name.as_str())
         .unwrap_or("(unknown)");
     let project = store
-        .get_project(issue.project_id)
+        .get_project(issue.issue.project_id)
         .map(|project| project.name.as_str())
         .unwrap_or("(unknown)");
     let tracker = store
@@ -93,7 +93,7 @@ fn create_property_widget<'a>(
         None => "-",
     };
     PropertyWidget::new(
-        issue.id,
+        issue.issue.id,
         author,
         issue.created_on,
         issue.updated_on,

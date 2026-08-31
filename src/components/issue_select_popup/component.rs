@@ -48,7 +48,11 @@ impl IssueSelectPopupComponent {
         let focused_issues_project =
             |project_id: &ProjectId| projects.iter().any(|project| project.id == *project_id);
         let focused_issues_project_id = focused_issue_id
-            .and_then(|issue_id| store.get_issue(issue_id).map(|(issue, _)| issue.project_id))
+            .and_then(|issue_id| {
+                store
+                    .get_issue(issue_id)
+                    .map(|(issue, _)| issue.issue.project_id)
+            })
             .filter(focused_issues_project);
         let focused_project_id =
             focused_issues_project_id.or_else(|| projects.first().map(|project| project.id));
@@ -521,7 +525,7 @@ mod tests {
     }
 
     #[test]
-    fn issue_store_project_outside_the_popup_snapshot_falls_back_to_the_first_project() {
+    fn legacy_issue_project_outside_the_popup_snapshot_does_not_override_nested_project() {
         let mut store = unloaded_store();
         let mut issue = sample_issue_aggregate(42, "detail", 1.into(), None, None, None, 0);
         issue.project_id = 99.into();
@@ -546,9 +550,11 @@ mod tests {
     }
 
     #[test]
-    fn issue_store_project_in_the_popup_snapshot_sets_the_initial_project() {
+    fn nested_issue_project_sets_the_initial_project_when_legacy_project_differs() {
         let mut store = unloaded_store();
-        let issue = sample_issue_aggregate(42, "detail", 1.into(), None, None, None, 0);
+        let mut issue = sample_issue_aggregate(42, "detail", 1.into(), None, None, None, 0);
+        issue.issue.project_id = 2.into();
+        issue.project_id = 99.into();
         store.consume_action(IssueAction::Sync { issue }.into());
         load_project_page(
             &mut store,
@@ -561,11 +567,11 @@ mod tests {
 
         let mut component = IssueSelectPopupComponent::new(&store, Some(42.into()));
 
-        assert_eq!(component.create_widget(&store).focused_project_index, 0);
+        assert_eq!(component.create_widget(&store).focused_project_index, 1);
         assert!(matches!(
             component.take_effect(),
             Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page, .. })
-                if project_id == 1 && requested_page == page(1)
+                if project_id == 2 && requested_page == page(1)
         ));
     }
 

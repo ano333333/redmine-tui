@@ -567,7 +567,7 @@ mod tests {
         assert!(matches!(
             completion,
             Action::Issue(IssueAction::FetchSucceeded { id, issue })
-                if id == IssueId::new(42) && issue.id == IssueId::new(42)
+                if id == IssueId::new(42) && issue.issue.id == IssueId::new(42)
         ));
         assert_eq!(
             dispatcher.borrow().consume_actinos_len(),
