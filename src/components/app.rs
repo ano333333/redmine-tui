@@ -19,13 +19,14 @@ use crate::components::issue_select_popup::component::{
 };
 use crate::stores::{Action, Dispatcher, IssueAction, Store};
 use crate::usecases::issue_popup_options::{
-    build_assigned_to_options, build_category_options, build_done_ratio_options,
-    build_issue_status_options, build_target_version_options,
+    assigned_to_popup_observer, build_assigned_to_options, build_category_options,
+    build_done_ratio_options, build_issue_status_options, build_target_version_options,
+    category_popup_observer, done_ratio_popup_observer, issue_status_popup_observer,
+    target_version_popup_observer,
 };
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, ProjectId,
-    TargetVersionId, TimeEntityActivityId, UserId,
+    EntityIdValue, IssueId, IssuePropertyDiff, JournalId, ProjectId, TimeEntityActivityId,
 };
 
 use super::date_picker_popup::component::{
@@ -231,14 +232,7 @@ impl<'a> AppComponent<'a> {
                         &items,
                         focused_index,
                         false,
-                        Box::new(move |status_id| {
-                            if let Some(status_id) = status_id {
-                                dispatcher.borrow_mut().dispatch(IssueAction::UpdateStatus {
-                                    id: issue_id,
-                                    status_id: IssueStatusId::new(status_id),
-                                });
-                            }
-                        }),
+                        issue_status_popup_observer(dispatcher.clone(), issue_id),
                     );
                 }
                 Some(IssueEventProcessResult::Detail(
@@ -250,14 +244,7 @@ impl<'a> AppComponent<'a> {
                         &items,
                         focused_index,
                         true,
-                        Box::new(move |assigned_to_id| {
-                            dispatcher
-                                .borrow_mut()
-                                .dispatch(IssueAction::UpdateAssignedTo {
-                                    id: issue_id.into(),
-                                    assigned_to_id: assigned_to_id.map(UserId::new),
-                                });
-                        }),
+                        assigned_to_popup_observer(dispatcher.clone(), issue_id),
                     );
                 }
                 Some(IssueEventProcessResult::Detail(
@@ -269,14 +256,7 @@ impl<'a> AppComponent<'a> {
                         &items,
                         focused_index,
                         true,
-                        Box::new(move |target_version_id| {
-                            dispatcher
-                                .borrow_mut()
-                                .dispatch(IssueAction::UpdateTargetVersion {
-                                    id: issue_id.into(),
-                                    target_version_id: target_version_id.map(TargetVersionId::new),
-                                });
-                        }),
+                        target_version_popup_observer(dispatcher.clone(), issue_id),
                     );
                 }
                 Some(IssueEventProcessResult::Detail(
@@ -338,16 +318,7 @@ impl<'a> AppComponent<'a> {
                         &items,
                         focused_index,
                         false,
-                        Box::new(move |done_ratio| {
-                            if let Some(done_ratio) = done_ratio {
-                                dispatcher
-                                    .borrow_mut()
-                                    .dispatch(IssueAction::UpdateDoneRatio {
-                                        id: issue_id.into(),
-                                        done_ratio,
-                                    });
-                            }
-                        }),
+                        done_ratio_popup_observer(dispatcher.clone(), issue_id),
                     );
                 }
                 Some(IssueEventProcessResult::Detail(
@@ -359,14 +330,7 @@ impl<'a> AppComponent<'a> {
                         &items,
                         focused_index,
                         true,
-                        Box::new(move |category_id| {
-                            dispatcher
-                                .borrow_mut()
-                                .dispatch(IssueAction::UpdateCategory {
-                                    id: issue_id.into(),
-                                    category_id: category_id.map(CategoryId::new),
-                                });
-                        }),
+                        category_popup_observer(dispatcher.clone(), issue_id),
                     );
                 }
                 Some(IssueEventProcessResult::Detail(

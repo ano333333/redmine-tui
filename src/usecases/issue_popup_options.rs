@@ -1,5 +1,8 @@
-use crate::stores::Store;
-use crate::vos::{EntityIdValue, IssueId};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use crate::stores::{Dispatcher, IssueAction, Store};
+use crate::vos::{CategoryId, EntityIdValue, IssueId, IssueStatusId, TargetVersionId, UserId};
 
 /// idと名前のentry一覧と現在値から、SelectBoxPopupComponent::new用の
 /// items(id昇順ソート、`sorted`指定時)とフォーカス箇所のindexを組み立てる。
@@ -88,6 +91,87 @@ pub fn build_category_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, St
         .map(|(id, category)| (id.get(), category.name.clone()))
         .collect::<Vec<_>>();
     build_select_options(categories, current_category_id.map(|id| id.get()), true)
+}
+
+/// IssueStatusPopupの選択結果からUpdateStatusをdispatchするobserverを組み立てる。
+///
+/// statusは必須項目のため、選択なし(None)は無視する。
+pub fn issue_status_popup_observer(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    issue_id: IssueId,
+) -> Box<dyn FnMut(Option<u16>)> {
+    Box::new(move |status_id| {
+        if let Some(status_id) = status_id {
+            dispatcher.borrow_mut().dispatch(IssueAction::UpdateStatus {
+                id: issue_id,
+                status_id: IssueStatusId::new(status_id),
+            });
+        }
+    })
+}
+
+/// AssignedToPopupの選択結果からUpdateAssignedToをdispatchするobserverを組み立てる。
+pub fn assigned_to_popup_observer(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    issue_id: IssueId,
+) -> Box<dyn FnMut(Option<u16>)> {
+    Box::new(move |assigned_to_id| {
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateAssignedTo {
+                id: issue_id,
+                assigned_to_id: assigned_to_id.map(UserId::new),
+            });
+    })
+}
+
+/// TargetVersionPopupの選択結果からUpdateTargetVersionをdispatchするobserverを組み立てる。
+pub fn target_version_popup_observer(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    issue_id: IssueId,
+) -> Box<dyn FnMut(Option<u16>)> {
+    Box::new(move |target_version_id| {
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateTargetVersion {
+                id: issue_id,
+                target_version_id: target_version_id.map(TargetVersionId::new),
+            });
+    })
+}
+
+/// DoneRatioPopupの選択結果からUpdateDoneRatioをdispatchするobserverを組み立てる。
+///
+/// 選択なし(None)はキャンセルとして扱い、dispatchしない。
+pub fn done_ratio_popup_observer(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    issue_id: IssueId,
+) -> Box<dyn FnMut(Option<u16>)> {
+    Box::new(move |done_ratio| {
+        if let Some(done_ratio) = done_ratio {
+            dispatcher
+                .borrow_mut()
+                .dispatch(IssueAction::UpdateDoneRatio {
+                    id: issue_id,
+                    done_ratio,
+                });
+        }
+    })
+}
+
+/// CategoryPopupの選択結果からUpdateCategoryをdispatchするobserverを組み立てる。
+pub fn category_popup_observer(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    issue_id: IssueId,
+) -> Box<dyn FnMut(Option<u16>)> {
+    Box::new(move |category_id| {
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateCategory {
+                id: issue_id,
+                category_id: category_id.map(CategoryId::new),
+            });
+    })
 }
 
 #[cfg(test)]
@@ -236,5 +320,134 @@ mod tests {
         let (items, focused_index) = build_category_options(dispatcher.store(), 3.into());
 
         assert_eq!(items[focused_index].0, current_category_id.get());
+    }
+
+    fn shared_loaded_dispatcher() -> Rc<RefCell<Dispatcher>> {
+        Rc::new(RefCell::new(loaded_dispatcher()))
+    }
+
+    #[test]
+    fn issue_status_observer_dispatches_update_status_when_selected() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = issue_status_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(Some(2));
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        dispatcher.borrow_mut().consume_action();
+        assert_eq!(
+            dispatcher
+                .borrow()
+                .store()
+                .get_issue(3)
+                .unwrap()
+                .0
+                .status_id,
+            IssueStatusId::new(2)
+        );
+    }
+
+    #[test]
+    fn issue_status_observer_ignores_none() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = issue_status_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(None);
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+    }
+
+    #[test]
+    fn assigned_to_observer_dispatches_update_assigned_to_even_when_cleared() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = assigned_to_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(None);
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        dispatcher.borrow_mut().consume_action();
+        assert_eq!(
+            dispatcher
+                .borrow()
+                .store()
+                .get_issue(3)
+                .unwrap()
+                .0
+                .assigned_to_id,
+            None
+        );
+    }
+
+    #[test]
+    fn target_version_observer_dispatches_update_target_version_even_when_cleared() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = target_version_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(None);
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        dispatcher.borrow_mut().consume_action();
+        assert_eq!(
+            dispatcher
+                .borrow()
+                .store()
+                .get_issue(3)
+                .unwrap()
+                .0
+                .target_version_id,
+            None
+        );
+    }
+
+    #[test]
+    fn done_ratio_observer_ignores_none() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = done_ratio_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(None);
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+    }
+
+    #[test]
+    fn done_ratio_observer_dispatches_update_done_ratio_when_selected() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = done_ratio_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(Some(40));
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        dispatcher.borrow_mut().consume_action();
+        assert_eq!(
+            dispatcher
+                .borrow()
+                .store()
+                .get_issue(3)
+                .unwrap()
+                .0
+                .done_ratio,
+            40
+        );
+    }
+
+    #[test]
+    fn category_observer_dispatches_update_category_even_when_cleared() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = category_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(None);
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        dispatcher.borrow_mut().consume_action();
+        assert_eq!(
+            dispatcher
+                .borrow()
+                .store()
+                .get_issue(3)
+                .unwrap()
+                .0
+                .category_id,
+            None
+        );
     }
 }
