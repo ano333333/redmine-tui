@@ -61,7 +61,7 @@ mod tests {
 
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::entities::{
-        Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, ProjectsIssue,
+        Category, Issue, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage,
         TargetVersion, TimeEntityActivity, Tracker, User,
     };
     use crate::stores::{Dispatcher, ProjectIssuesAction, ProjectIssuesRequestId};
@@ -273,7 +273,7 @@ mod tests {
     fn page_result(total_count: usize, offset: usize) -> ProjectIssuesPage {
         ProjectIssuesPage {
             issues: (total_count > 0)
-                .then(|| ProjectsIssue {
+                .then(|| Issue {
                     id: IssueId::new(1),
                     project_id: PROJECT_ID,
                     subject: "listed issue".to_string(),

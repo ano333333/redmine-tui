@@ -722,7 +722,7 @@ impl<'a> AppComponent<'a> {
 mod tests {
     use super::*;
 
-    use crate::entities::{ProjectIssuesPage, ProjectsIssue};
+    use crate::entities::{Issue, ProjectIssuesPage};
     use crate::stores::ProjectIssuesAction;
     use crate::vos::IssuePropertyDiff;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
@@ -840,7 +840,7 @@ mod tests {
         ProjectIssuesPage {
             issues: [1_u16, 3_u16, 42_u16]
                 .into_iter()
-                .map(|id| ProjectsIssue {
+                .map(|id| Issue {
                     id: id.into(),
                     project_id: 1.into(),
                     subject: format!("issue{id}"),

@@ -432,7 +432,7 @@ mod tests {
 
     use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
     use crate::entities::{
-        Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, ProjectsIssue,
+        Category, Issue, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage,
         TargetVersion, TimeEntityActivity, Tracker, User,
     };
     use crate::stores::ProjectIssuesAction;
@@ -474,14 +474,14 @@ mod tests {
                 page,
                 result: ProjectIssuesPage {
                     issues: vec![
-                        ProjectsIssue {
+                        Issue {
                             id: 41.into(),
                             project_id,
                             subject: "first issue".to_string(),
                             description: "first preview marker".to_string(),
                             status_id: 1.into(),
                         },
-                        ProjectsIssue {
+                        Issue {
                             id: 42.into(),
                             project_id,
                             subject: "second issue".to_string(),

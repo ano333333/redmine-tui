@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
-    Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, ProjectsIssue,
+    Category, Issue, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage,
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
@@ -216,7 +216,7 @@ impl RedmineClient for DefaultRedmineClient {
             });
         }
 
-        let issues: Vec<ProjectsIssue> = response.issues.into_iter().map(Into::into).collect();
+        let issues: Vec<Issue> = response.issues.into_iter().map(Into::into).collect();
         if issues.iter().any(|issue| issue.project_id != project_id) {
             return Err(RedmineClientError::Client {
                 reason: format!(
@@ -623,7 +623,7 @@ struct RedmineProjectIssue {
     status: RedmineIdRef,
 }
 
-impl From<RedmineProjectIssue> for ProjectsIssue {
+impl From<RedmineProjectIssue> for Issue {
     fn from(value: RedmineProjectIssue) -> Self {
         Self {
             id: IssueId::new(value.id),
