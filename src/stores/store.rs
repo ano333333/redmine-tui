@@ -3,6 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroUsize;
 
 use super::issue_store::{IssueAction, IssueState, IssueStore};
+use super::journal_store::{JournalEntry, JournalStore};
 use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
@@ -12,8 +13,8 @@ use crate::entities::{
 };
 use crate::libs::yaml::parse_journal_yaml;
 use crate::vos::{
-    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, PriorityId, ProjectId,
-    TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, JournalKey, PriorityId,
+    ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
 pub struct Dispatcher {
@@ -52,6 +53,7 @@ pub enum JournalState {
 pub struct Store {
     issue_store: IssueStore,
     project_issues_store: ProjectIssuesStore,
+    journal_store: JournalStore,
     journals: HashMap<JournalId, (Journal, JournalState)>,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
@@ -68,6 +70,7 @@ impl Store {
         Self {
             issue_store: IssueStore::new(),
             project_issues_store: ProjectIssuesStore::new(),
+            journal_store: JournalStore::new(),
             journals: HashMap::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
@@ -186,6 +189,10 @@ impl Store {
         journal_id: impl Into<JournalId>,
     ) -> Option<&(Journal, JournalState)> {
         self.journals.get(&journal_id.into())
+    }
+
+    pub fn get_journal_entry(&self, key: JournalKey) -> Option<&JournalEntry> {
+        self.journal_store.entry(key)
     }
 
     pub fn get_users(&self) -> &HashMap<UserId, User> {
