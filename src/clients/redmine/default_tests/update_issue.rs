@@ -7,7 +7,7 @@ use crate::clients::redmine::{
     DefaultRedmineClient, RedmineClient, RedmineClientError, RedmineHttpError,
 };
 use crate::test_support::sample_issue_aggregate;
-use crate::vos::IssueStatusId;
+use crate::vos::{IssueStatusId, JournalId, JournalKey, LocalJournalId};
 
 #[test]
 fn update_issue_sends_redmine_put_request() {
@@ -23,6 +23,10 @@ fn update_issue_sends_redmine_put_request() {
     );
     issue.issue.description = "nested body".to_string();
     issue.issue.status_id = IssueStatusId::new(4);
+    issue.journal_keys = vec![
+        JournalKey::Remote(JournalId::new(500)),
+        JournalKey::Local(LocalJournalId::new(1)),
+    ];
     let expected_body = json!({
         "issue": {
             "subject": "Fix login",

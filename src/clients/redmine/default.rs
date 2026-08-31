@@ -11,8 +11,8 @@ use crate::entities::{
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalId, PriorityId, ProjectId,
-    TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalId, JournalKey, PriorityId,
+    ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
 // FIXME: ユーザーを全列挙しないことを前提としたStore管理
@@ -754,10 +754,10 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
                 .into_iter()
                 .map(|child| IssueId::new(child.id))
                 .collect(),
-            journal_ids: value
+            journal_keys: value
                 .journals
                 .into_iter()
-                .map(|journal| JournalId::new(journal.id))
+                .map(|journal| JournalKey::Remote(JournalId::new(journal.id)))
                 .collect(),
             issue,
         })

@@ -15,7 +15,7 @@ use crate::entities::{Issue, IssueAggregate, Journal};
 use crate::vos::TimeEntityActivityId;
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId,
-    PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
+    JournalKey, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
 };
 
 fn read_yaml(path: &str) -> Yaml {
@@ -210,9 +210,9 @@ pub fn parse_issue_yaml(id: u16) -> IssueAggregate {
         .into_iter()
         .map(IssueId::new)
         .collect();
-    let journal_ids = as_u16_array(&yaml, "journal_ids")
+    let journal_keys = as_u16_array(&yaml, "journal_ids")
         .iter()
-        .map(|id| JournalId::new(*id))
+        .map(|id| JournalKey::Remote(JournalId::new(*id)))
         .collect();
     IssueAggregate {
         issue: Issue {
@@ -236,7 +236,7 @@ pub fn parse_issue_yaml(id: u16) -> IssueAggregate {
         total_spent_hours,
         category_id,
         child_ids,
-        journal_ids,
+        journal_keys,
     }
 }
 

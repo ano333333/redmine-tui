@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local};
 
 use crate::entities::Issue;
-use crate::vos::{CategoryId, IssueId, JournalId, PriorityId, TargetVersionId, TrackerId, UserId};
+use crate::vos::{CategoryId, IssueId, JournalKey, PriorityId, TargetVersionId, TrackerId, UserId};
 
 #[derive(Debug, Clone)]
 pub struct IssueAggregate {
@@ -20,5 +20,5 @@ pub struct IssueAggregate {
     pub total_spent_hours: Option<f64>,
     pub category_id: Option<CategoryId>,
     pub child_ids: Vec<IssueId>,
-    pub journal_ids: Vec<JournalId>,
+    pub journal_keys: Vec<JournalKey>,
 }

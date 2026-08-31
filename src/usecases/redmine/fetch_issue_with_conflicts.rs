@@ -1,6 +1,6 @@
 use crate::clients::redmine::{RedmineClient, RedmineClientError};
 use crate::entities::IssueAggregate;
-use crate::vos::{EntityIdValue, IssueId, IssuePropertyDiff, JournalId};
+use crate::vos::{IssueId, IssuePropertyDiff};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum IssueProperty {
@@ -24,7 +24,6 @@ enum IssueProperty {
     CategoryId,
     Description,
     ChildIds,
-    JournalIds,
 }
 
 /// サーバーから最新の Issue を取得し、競合するローカルの property diff を返す。
@@ -70,9 +69,6 @@ pub(crate) fn apply_issue_property_diffs(issue: &mut IssueAggregate, diffs: &[Is
             IssuePropertyDiff::CategoryId(diff) => issue.category_id = diff.after,
             IssuePropertyDiff::Description(diff) => issue.issue.description = diff.after.clone(),
             IssuePropertyDiff::ChildIds(diff) => issue.child_ids = diff.after.clone(),
-            IssuePropertyDiff::JournalIds(diff) => {
-                issue.journal_ids = diff.after.iter().copied().map(JournalId::new).collect()
-            }
             IssuePropertyDiff::FixedVersion(_) => {
                 panic!("cannot apply FixedVersion diff: Issue has no fixed_version property")
             }
@@ -122,7 +118,6 @@ fn property_of(diff: &IssuePropertyDiff) -> IssueProperty {
         IssuePropertyDiff::CategoryId(_) => IssueProperty::CategoryId,
         IssuePropertyDiff::Description(_) => IssueProperty::Description,
         IssuePropertyDiff::ChildIds(_) => IssueProperty::ChildIds,
-        IssuePropertyDiff::JournalIds(_) => IssueProperty::JournalIds,
     }
 }
 
@@ -156,9 +151,6 @@ pub(crate) fn with_server_value_as_before(
         IssuePropertyDiff::CategoryId(diff) => diff.before = issue.category_id,
         IssuePropertyDiff::Description(diff) => diff.before = issue.issue.description.clone(),
         IssuePropertyDiff::ChildIds(diff) => diff.before = issue.child_ids.clone(),
-        IssuePropertyDiff::JournalIds(diff) => {
-            diff.before = issue.journal_ids.iter().map(|id| id.get()).collect()
-        }
         IssuePropertyDiff::FixedVersion(_) => {
             panic!("サーバーIssueにfixed_version propertyがないため解決できません")
         }
@@ -194,9 +186,6 @@ pub(crate) fn with_server_value_as_after(
         IssuePropertyDiff::CategoryId(diff) => diff.after = issue.category_id,
         IssuePropertyDiff::Description(diff) => diff.after = issue.issue.description.clone(),
         IssuePropertyDiff::ChildIds(diff) => diff.after = issue.child_ids.clone(),
-        IssuePropertyDiff::JournalIds(diff) => {
-            diff.after = issue.journal_ids.iter().map(|id| id.get()).collect()
-        }
         IssuePropertyDiff::FixedVersion(_) => {
             panic!("サーバーIssueにfixed_version propertyがないため解決できません")
         }
@@ -234,7 +223,6 @@ macro_rules! match_same_diff {
             (IssuePropertyDiff::CategoryId($a), IssuePropertyDiff::CategoryId($b)) => $body,
             (IssuePropertyDiff::Description($a), IssuePropertyDiff::Description($b)) => $body,
             (IssuePropertyDiff::ChildIds($a), IssuePropertyDiff::ChildIds($b)) => $body,
-            (IssuePropertyDiff::JournalIds($a), IssuePropertyDiff::JournalIds($b)) => $body,
             _ => unreachable!("property identity must match diff variants"),
         }
     };
@@ -279,14 +267,6 @@ fn conflicts_with_issue(issue: &IssueAggregate, diff: &IssuePropertyDiff) -> boo
         IssuePropertyDiff::CategoryId(diff) => conflict!(issue.category_id, diff),
         IssuePropertyDiff::Description(diff) => conflict!(issue.issue.description, diff),
         IssuePropertyDiff::ChildIds(diff) => conflict!(issue.child_ids, diff),
-        IssuePropertyDiff::JournalIds(diff) => {
-            let server = issue
-                .journal_ids
-                .iter()
-                .map(|id| id.get())
-                .collect::<Vec<_>>();
-            conflict!(server, diff)
-        }
         IssuePropertyDiff::FixedVersion(_) => {
             panic!("cannot compare FixedVersion diff: Issue has no fixed_version property")
         }

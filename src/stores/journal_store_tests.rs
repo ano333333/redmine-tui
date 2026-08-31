@@ -296,7 +296,9 @@ fn load_journal_rejects_multiple_owners() {
     dispatcher.consume_action();
     let mut other_issue =
         sample_issue_aggregate(2, "other", IssueStatusId::new(1), None, None, None, 0);
-    other_issue.journal_ids.push(JournalId::new(1));
+    other_issue
+        .journal_keys
+        .push(JournalKey::Remote(JournalId::new(1)));
     dispatcher.dispatch(IssueAction::Sync { issue: other_issue });
     dispatcher.consume_action();
 

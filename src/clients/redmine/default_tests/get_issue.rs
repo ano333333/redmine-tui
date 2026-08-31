@@ -4,7 +4,7 @@ use super::integration_support::{
 };
 use super::{block_on, expect_error, http_error_for_url, mount_get};
 use crate::clients::redmine::{DefaultRedmineClient, RedmineClient, RedmineClientError};
-use crate::vos::{EntityIdValue, IssueId};
+use crate::vos::{EntityIdValue, IssueId, JournalId, JournalKey};
 
 #[test]
 fn get_issue_maps_success_response() {
@@ -34,7 +34,7 @@ fn get_issue_maps_success_response() {
                 "category": {"id": 4},
                 "description": "Login fails with valid credentials",
                 "children": [{"id": 43}],
-                "journals": [{"id": 500}]
+                "journals": [{"id": 500}, {"id": 501}]
             }
         }"#,
     );
@@ -60,7 +60,13 @@ fn get_issue_maps_success_response() {
         "Login fails with valid credentials"
     );
     assert_eq!(issue.child_ids[0].get(), 43);
-    assert_eq!(issue.journal_ids[0].get(), 500);
+    assert_eq!(
+        issue.journal_keys,
+        vec![
+            JournalKey::Remote(JournalId::new(500)),
+            JournalKey::Remote(JournalId::new(501)),
+        ]
+    );
 }
 
 #[test]

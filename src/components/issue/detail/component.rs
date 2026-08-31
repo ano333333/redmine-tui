@@ -309,9 +309,12 @@ impl IssueDetailComponent {
             self.children_list.update(store);
 
             let journals = issue
-                .journal_ids
+                .journal_keys
                 .iter()
-                .filter_map(|id| store.get_journal_entry(JournalKey::Remote(*id)))
+                .filter_map(|key| match key {
+                    JournalKey::Remote(_) => store.get_journal_entry(*key),
+                    JournalKey::Local(_) => None,
+                })
                 .filter_map(|entry| match entry {
                     JournalEntry::Remote { journal, .. } => Some(journal),
                     JournalEntry::Local { .. } => None,

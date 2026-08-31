@@ -165,7 +165,7 @@ impl Store {
                     .issue_store
                     .get_issues()
                     .values()
-                    .filter(|issue| issue.journal_ids.contains(&id))
+                    .filter(|issue| issue.journal_keys.contains(&JournalKey::Remote(id)))
                     .map(|issue| issue.issue.id);
                 let issue_id = owners
                     .next()

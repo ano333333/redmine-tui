@@ -125,12 +125,6 @@ pub struct IssueChildIdsDiff {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct IssueJournalIdsDiff {
-    pub before: Vec<u16>,
-    pub after: Vec<u16>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub enum IssuePropertyDiff {
     Subject(IssueSubjectDiff),
     AuthorId(IssueAuthorIdDiff),
@@ -152,5 +146,4 @@ pub enum IssuePropertyDiff {
     CategoryId(IssueCategoryIdDiff),
     Description(IssueDescriptionDiff),
     ChildIds(IssueChildIdsDiff),
-    JournalIds(IssueJournalIdsDiff),
 }
