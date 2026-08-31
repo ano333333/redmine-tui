@@ -6,7 +6,7 @@ use crate::vos::{
 };
 
 #[derive(Debug, Clone)]
-pub struct Issue {
+pub struct IssueAggregate {
     pub id: IssueId,
     pub subject: String,
     pub author_id: UserId,
