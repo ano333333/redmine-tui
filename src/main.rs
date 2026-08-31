@@ -432,7 +432,7 @@ mod tests {
 
     use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
     use crate::entities::{
-        Category, Issue, IssueStatus, Priority, Project, ProjectIssuesPage, ProjectsIssue,
+        Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, ProjectsIssue,
         TargetVersion, TimeEntityActivity, Tracker, User,
     };
     use crate::stores::ProjectIssuesAction;
@@ -771,14 +771,14 @@ mod tests {
     }
 
     struct IssueUploadClient {
-        issue: Option<Issue>,
+        issue: Option<IssueAggregate>,
         get_error: bool,
         update_error: bool,
-        uploaded: Mutex<Vec<Issue>>,
+        uploaded: Mutex<Vec<IssueAggregate>>,
     }
 
     impl IssueUploadClient {
-        fn new(issue: Issue) -> Self {
+        fn new(issue: IssueAggregate) -> Self {
             Self {
                 issue: Some(issue),
                 get_error: false,
@@ -796,7 +796,7 @@ mod tests {
             }
         }
 
-        fn failing_update(issue: Issue) -> Self {
+        fn failing_update(issue: IssueAggregate) -> Self {
             Self {
                 issue: Some(issue),
                 get_error: false,
@@ -813,14 +813,20 @@ mod tests {
     }
 
     impl RedmineClient for IssueUploadClient {
-        async fn get_issue(&self, _: IssueId) -> std::result::Result<Issue, RedmineClientError> {
+        async fn get_issue(
+            &self,
+            _: IssueId,
+        ) -> std::result::Result<IssueAggregate, RedmineClientError> {
             if self.get_error {
                 return Err(Self::network_error());
             }
             Ok(self.issue.clone().expect("test issue must exist"))
         }
 
-        async fn update_issue(&self, issue: &Issue) -> std::result::Result<(), RedmineClientError> {
+        async fn update_issue(
+            &self,
+            issue: &IssueAggregate,
+        ) -> std::result::Result<(), RedmineClientError> {
             if self.update_error {
                 return Err(Self::network_error());
             }
@@ -907,11 +913,17 @@ mod tests {
             Err(self.unauthorized())
         }
 
-        async fn get_issue(&self, _: IssueId) -> std::result::Result<Issue, RedmineClientError> {
+        async fn get_issue(
+            &self,
+            _: IssueId,
+        ) -> std::result::Result<IssueAggregate, RedmineClientError> {
             Err(self.unauthorized())
         }
 
-        async fn update_issue(&self, _: &Issue) -> std::result::Result<(), RedmineClientError> {
+        async fn update_issue(
+            &self,
+            _: &IssueAggregate,
+        ) -> std::result::Result<(), RedmineClientError> {
             Err(self.unauthorized())
         }
 

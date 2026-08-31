@@ -167,7 +167,7 @@ mod tests {
     use crate::components::issue::detail::journals_list::journals_list_item::{
         JournalItemWidget, JournalItemWidgetState,
     };
-    use crate::entities::{Issue, IssueStatus, Journal};
+    use crate::entities::{IssueAggregate, IssueStatus, Journal};
     use crate::test_support::{local_datetime, render_snapshot, sample_issue_aggregate};
     use crate::vos::JournalId;
 
@@ -185,7 +185,7 @@ mod tests {
         target_version: Option<String>,
         component: String,
         body_state: BodyWidgetState,
-        child_issue: Issue,
+        child_issue: IssueAggregate,
         child_status: IssueStatus,
         journal: Journal,
         journal_state: JournalItemWidgetState,

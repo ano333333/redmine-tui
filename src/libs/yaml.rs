@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use crate::entities::{
     Category, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity, Tracker, User,
 };
-use crate::entities::{Issue, Journal};
+use crate::entities::{IssueAggregate, Journal};
 #[cfg(test)]
 use crate::vos::TimeEntityActivityId;
 use crate::vos::{
@@ -185,7 +185,7 @@ pub fn parse_journal_detail_attr_yaml(yaml: &yaml_rust::Yaml) -> JournalDetailAt
     }
 }
 
-pub fn parse_issue_yaml(id: u16) -> Issue {
+pub fn parse_issue_yaml(id: u16) -> IssueAggregate {
     let path = format!("datas/issues/{}.yml", id);
     let yaml = read_yaml(path.as_str());
     let id = IssueId::new(as_u16(&yaml, "id"));
@@ -214,7 +214,7 @@ pub fn parse_issue_yaml(id: u16) -> Issue {
         .iter()
         .map(|id| JournalId::new(*id))
         .collect();
-    Issue {
+    IssueAggregate {
         id,
         subject,
         author_id,
