@@ -39,13 +39,13 @@ pub struct DatePickerPopupComponent<'a> {
     focused_date: DateTime<Local>,
     selected_date: Option<DateTime<Local>>,
     focused_field: FocusField,
-    observer: Box<dyn FnMut(Option<DateTime<Local>>) + 'a>,
+    observer: Box<dyn FnMut(DateTime<Local>) + 'a>,
 }
 
 impl<'a> DatePickerPopupComponent<'a> {
     pub fn new(
         selected_date: Option<DateTime<Local>>,
-        observer: Box<dyn FnMut(Option<DateTime<Local>>) + 'a>,
+        observer: Box<dyn FnMut(DateTime<Local>) + 'a>,
     ) -> Self {
         let has_selected_date = selected_date.is_some();
         let input_date = selected_date
@@ -255,18 +255,15 @@ impl<'a> DatePickerPopupComponent<'a> {
             FocusField::Year | FocusField::Month | FocusField::Day => {
                 let date = self.input_date()?;
                 self.selected_date = Some(date);
-                (self.observer)(Some(date));
+                (self.observer)(date);
                 Some(EventProcessResult::Entered)
             }
             FocusField::Calendar => {
                 self.selected_date = Some(self.focused_date);
-                (self.observer)(Some(self.focused_date));
+                (self.observer)(self.focused_date);
                 Some(EventProcessResult::Entered)
             }
-            FocusField::Cancel => {
-                (self.observer)(None);
-                Some(EventProcessResult::Canceled)
-            }
+            FocusField::Cancel => Some(EventProcessResult::Canceled),
         }
     }
 
@@ -332,7 +329,7 @@ mod tests {
     }
 
     fn component_with_observer(
-        selected: Rc<RefCell<Option<Option<chrono::DateTime<chrono::Local>>>>>,
+        selected: Rc<RefCell<Option<chrono::DateTime<chrono::Local>>>>,
     ) -> DatePickerPopupComponent<'static> {
         DatePickerPopupComponent::new(
             Some(local_datetime("2026-02-16T00:00:00+09:00")),
@@ -360,7 +357,8 @@ mod tests {
 
     #[test]
     fn new_without_selected_date_uses_todays_recent_sunday() {
-        let selected = Rc::new(RefCell::new(None));
+        let selected: Rc<RefCell<Option<chrono::DateTime<chrono::Local>>>> =
+            Rc::new(RefCell::new(None));
         let before_today = start_of_local_day(Local::now());
 
         let component = DatePickerPopupComponent::new(
@@ -529,7 +527,7 @@ mod tests {
         assert!(matches!(result, Some(EventProcessResult::Entered)));
         assert_eq!(
             *selected.borrow(),
-            Some(Some(local_datetime("2026-02-17T00:00:00+09:00")))
+            Some(local_datetime("2026-02-17T00:00:00+09:00"))
         );
     }
 
@@ -549,7 +547,7 @@ mod tests {
         assert!(matches!(result, Some(EventProcessResult::Entered)));
         assert_eq!(
             *selected.borrow(),
-            Some(Some(local_datetime("2026-04-30T00:00:00+09:00")))
+            Some(local_datetime("2026-04-30T00:00:00+09:00"))
         );
     }
 
@@ -569,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_cancel_notifies_observer_with_none() {
+    fn enter_on_cancel_does_not_notify_observer() {
         let selected = Rc::new(RefCell::new(None));
         let mut component = component_with_observer(selected.clone());
         component.focused_field = FocusField::Cancel;
@@ -577,7 +575,7 @@ mod tests {
         let result = component.process_event(key_event(KeyCode::Enter));
 
         assert!(matches!(result, Some(EventProcessResult::Canceled)));
-        assert_eq!(*selected.borrow(), Some(None));
+        assert_eq!(*selected.borrow(), None);
     }
 
     #[test]

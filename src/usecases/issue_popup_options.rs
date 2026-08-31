@@ -191,44 +191,32 @@ pub fn current_due_date(store: &Store, issue_id: IssueId) -> Option<DateTime<Loc
 }
 
 /// StartDatePopupの選択結果からUpdateStartDateをdispatchするobserverを組み立てる。
-///
-/// DatePickerPopupComponentはCancelボタンでの確定時もobserverをNoneで呼び出すため、
-/// このobserverはNoneを受け取った場合dispatchせずに無視する。
 pub fn start_date_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
-) -> Box<dyn FnMut(Option<DateTime<Local>>)> {
-    // FIXME: StartDatePopupがキャンセル・クローズ時にオブザーバーにNoneを渡さないよう修正
+) -> Box<dyn FnMut(DateTime<Local>)> {
     Box::new(move |date| {
-        if let Some(date) = date {
-            dispatcher
-                .borrow_mut()
-                .dispatch(IssueAction::UpdateStartDate {
-                    id: issue_id,
-                    start_date: Some(date),
-                });
-        }
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateStartDate {
+                id: issue_id,
+                start_date: Some(date),
+            });
     })
 }
 
 /// DueDatePopupの選択結果からUpdateDueDateをdispatchするobserverを組み立てる。
-///
-/// DatePickerPopupComponentはCancelボタンでの確定時もobserverをNoneで呼び出すため、
-/// このobserverはNoneを受け取った場合dispatchせずに無視する。
 pub fn due_date_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
-) -> Box<dyn FnMut(Option<DateTime<Local>>)> {
-    // FIXME: DueDatePopupがキャンセル・クローズ時にオブザーバーにNoneを渡さないよう修正
+) -> Box<dyn FnMut(DateTime<Local>)> {
     Box::new(move |date| {
-        if let Some(date) = date {
-            dispatcher
-                .borrow_mut()
-                .dispatch(IssueAction::UpdateDueDate {
-                    id: issue_id,
-                    due_date: Some(date),
-                });
-        }
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateDueDate {
+                id: issue_id,
+                due_date: Some(date),
+            });
     })
 }
 
@@ -548,7 +536,7 @@ mod tests {
         let dispatcher = shared_loaded_dispatcher();
         let mut observer = start_date_popup_observer(dispatcher.clone(), 3.into());
 
-        observer(Some(sample_date()));
+        observer(sample_date());
 
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
@@ -565,21 +553,11 @@ mod tests {
     }
 
     #[test]
-    fn start_date_observer_ignores_none() {
-        let dispatcher = shared_loaded_dispatcher();
-        let mut observer = start_date_popup_observer(dispatcher.clone(), 3.into());
-
-        observer(None);
-
-        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
-    }
-
-    #[test]
     fn due_date_observer_dispatches_update_due_date_when_selected() {
         let dispatcher = shared_loaded_dispatcher();
         let mut observer = due_date_popup_observer(dispatcher.clone(), 3.into());
 
-        observer(Some(sample_date()));
+        observer(sample_date());
 
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
@@ -587,15 +565,5 @@ mod tests {
             dispatcher.borrow().store().get_issue(3).unwrap().0.due_date,
             Some(sample_date())
         );
-    }
-
-    #[test]
-    fn due_date_observer_ignores_none() {
-        let dispatcher = shared_loaded_dispatcher();
-        let mut observer = due_date_popup_observer(dispatcher.clone(), 3.into());
-
-        observer(None);
-
-        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
     }
 }
