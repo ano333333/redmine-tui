@@ -5,14 +5,14 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
-use crate::entities::{Issue, IssueStatus};
+use crate::entities::{IssueAggregate, IssueStatus};
 use crate::vos::IssueId;
 
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 
 pub struct ChildIssueRow<'a> {
-    pub issue: &'a Issue,
+    pub issue: &'a IssueAggregate,
     pub issue_status: &'a IssueStatus,
     pub assigned_to_name: Option<&'a str>,
 }
@@ -175,11 +175,11 @@ fn create_progress_widget(progress: u16) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{render_snapshot, sample_issue};
+    use crate::test_support::{render_snapshot, sample_issue_aggregate};
 
     #[test]
     fn snapshot_children_mixed_option_and_status_display() {
-        let done = sample_issue(
+        let done = sample_issue_aggregate(
             7,
             "Done child",
             3.into(),
@@ -188,7 +188,7 @@ mod tests {
             Some("2026-01-15T00:00:00+09:00"),
             100,
         );
-        let open = sample_issue(
+        let open = sample_issue_aggregate(
             8,
             "Open child without assignee and dates",
             5.into(),
@@ -234,8 +234,8 @@ mod tests {
 
     #[test]
     fn line_count_children_current_values() {
-        let child_a = sample_issue(7, "Done child", 3.into(), Some(1), None, None, 100);
-        let child_b = sample_issue(8, "Open child", 5.into(), None, None, None, 35);
+        let child_a = sample_issue_aggregate(7, "Done child", 3.into(), Some(1), None, None, 100);
+        let child_b = sample_issue_aggregate(8, "Open child", 5.into(), None, None, None, 35);
         let child_a_status = IssueStatus {
             id: 3.into(),
             name: "完了(closed)".to_string(),

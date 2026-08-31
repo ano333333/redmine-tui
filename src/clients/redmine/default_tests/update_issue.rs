@@ -6,13 +6,13 @@ use super::{block_on, expect_error};
 use crate::clients::redmine::{
     DefaultRedmineClient, RedmineClient, RedmineClientError, RedmineHttpError,
 };
-use crate::test_support::sample_issue;
+use crate::test_support::sample_issue_aggregate;
 use crate::vos::IssueStatusId;
 
 #[test]
 fn update_issue_sends_redmine_put_request() {
     let mock_server = block_on(MockServer::start());
-    let issue = sample_issue(
+    let issue = sample_issue_aggregate(
         42,
         "Fix login",
         IssueStatusId::new(3),
@@ -54,7 +54,7 @@ fn update_issue_sends_redmine_put_request() {
 #[test]
 fn update_issue_maps_unauthorized_with_response_context() {
     let mock_server = block_on(MockServer::start());
-    let issue = sample_issue(
+    let issue = sample_issue_aggregate(
         42,
         "Fix login",
         IssueStatusId::new(3),

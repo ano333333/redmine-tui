@@ -347,7 +347,7 @@ mod tests {
     use ratatui::layout::{Position, Rect};
 
     use crate::test_support::render_snapshot;
-    use crate::test_support::sample_issue;
+    use crate::test_support::sample_issue_aggregate;
 
     use crate::vos::IssuePropertyDiff;
     use crate::vos::issue_property_diff::{IssueDescriptionDiff, IssueStatusIdDiff};
@@ -377,14 +377,16 @@ mod tests {
     }
 
     fn component(diffs: Vec<IssuePropertyDiff>) -> IssuePropertyConflictComponent {
-        let mut server_issue = sample_issue(1, "server subject", 1.into(), None, None, None, 0);
+        let mut server_issue =
+            sample_issue_aggregate(1, "server subject", 1.into(), None, None, None, 0);
         server_issue.description = "server body".to_string();
         IssuePropertyConflictComponent::new(server_issue, diffs)
     }
 
     #[test]
     fn diff_value_text_uses_the_server_issue_value() {
-        let mut server_issue = sample_issue(1, "server subject", 9.into(), None, None, None, 0);
+        let mut server_issue =
+            sample_issue_aggregate(1, "server subject", 9.into(), None, None, None, 0);
         server_issue.description = "# server body".to_string();
 
         let status = diff_value_text(

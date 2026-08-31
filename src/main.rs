@@ -436,7 +436,7 @@ mod tests {
         TargetVersion, TimeEntityActivity, Tracker, User,
     };
     use crate::stores::ProjectIssuesAction;
-    use crate::test_support::sample_issue;
+    use crate::test_support::sample_issue_aggregate;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId};
     use ratatui::{Terminal, backend::TestBackend};
@@ -538,7 +538,7 @@ mod tests {
         let runtime = init_tokio_runtime().unwrap();
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         let mut app = AppComponent::new(dispatcher.clone(), Some(42.into()));
-        let client = Arc::new(IssueUploadClient::new(sample_issue(
+        let client = Arc::new(IssueUploadClient::new(sample_issue_aggregate(
             42,
             "fetched issue",
             IssueStatusId::new(1),
@@ -586,7 +586,7 @@ mod tests {
         }
         let mut app = AppComponent::new(dispatcher.clone(), None);
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-        let client = Arc::new(IssueUploadClient::new(sample_issue(
+        let client = Arc::new(IssueUploadClient::new(sample_issue_aggregate(
             1,
             "unused",
             IssueStatusId::new(1),
@@ -686,7 +686,7 @@ mod tests {
 
     #[tokio::test]
     async fn issue_upload_uses_server_issue_as_merge_base() {
-        let mut server_issue = sample_issue(
+        let mut server_issue = sample_issue_aggregate(
             1,
             "server subject",
             IssueStatusId::new(1),
@@ -733,7 +733,8 @@ mod tests {
 
     #[tokio::test]
     async fn issue_upload_returns_fail_action_when_update_fails() {
-        let server_issue = sample_issue(1, "subject", IssueStatusId::new(1), None, None, None, 0);
+        let server_issue =
+            sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         let client = IssueUploadClient::failing_update(server_issue);
 
         let action = issue_upload_action(&client, 1.into(), &[]).await;
@@ -747,7 +748,7 @@ mod tests {
     #[tokio::test]
     async fn issue_upload_returns_conflict_action_when_property_conflicts() {
         let mut server_issue =
-            sample_issue(1, "subject", IssueStatusId::new(1), None, None, None, 0);
+            sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         server_issue.description = "server description".to_string();
         let client = IssueUploadClient::new(server_issue);
         let diffs = vec![IssuePropertyDiff::Description(IssueDescriptionDiff {

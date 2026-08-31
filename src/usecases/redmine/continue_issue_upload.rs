@@ -48,7 +48,7 @@ pub fn continue_issue_upload(
 mod tests {
     use crate::entities::IssueAggregate;
     use crate::stores::{Dispatcher, IssueAction};
-    use crate::test_support::sample_issue;
+    use crate::test_support::sample_issue_aggregate;
     use crate::vos::issue_property_diff::{IssueDescriptionDiff, IssueDueDateDiff};
     use crate::vos::{IssueId, IssuePropertyDiff};
 
@@ -99,7 +99,8 @@ mod tests {
 
     fn uploading_dispatcher(id: IssueId) -> Dispatcher {
         let mut dispatcher = Dispatcher::new();
-        let mut issue: IssueAggregate = sample_issue(1, "subject", 1.into(), None, None, None, 0);
+        let mut issue: IssueAggregate =
+            sample_issue_aggregate(1, "subject", 1.into(), None, None, None, 0);
         issue.description = "original body".to_string();
         dispatcher.dispatch(IssueAction::Sync { issue });
         dispatcher.consume_action();

@@ -64,7 +64,7 @@ mod tests {
         TimeEntityActivity, Tracker, User,
     };
     use crate::stores::{Dispatcher, IssueAction, IssueState};
-    use crate::test_support::sample_issue;
+    use crate::test_support::sample_issue_aggregate;
     use crate::vos::{IssueId, IssueStatusId};
 
     use super::fetch_issue;
@@ -226,7 +226,7 @@ mod tests {
     }
 
     fn issue(id: u16) -> IssueAggregate {
-        sample_issue(id, "subject", IssueStatusId::new(1), None, None, None, 0)
+        sample_issue_aggregate(id, "subject", IssueStatusId::new(1), None, None, None, 0)
     }
 
     struct StubClient {

@@ -335,7 +335,7 @@ mod tests {
     use crate::entities::{ProjectIssuesPage, ProjectsIssue};
     use crate::stores::IssueAction;
     use crate::stores::ProjectIssuesAction;
-    use crate::test_support::{render_snapshot, sample_issue, sync_fixture_entities};
+    use crate::test_support::{render_snapshot, sample_issue_aggregate, sync_fixture_entities};
 
     const AREA: Rect = Rect {
         x: 0,
@@ -523,7 +523,7 @@ mod tests {
     #[test]
     fn issue_store_project_outside_the_popup_snapshot_falls_back_to_the_first_project() {
         let mut store = unloaded_store();
-        let mut issue = sample_issue(42, "detail", 1.into(), None, None, None, 0);
+        let mut issue = sample_issue_aggregate(42, "detail", 1.into(), None, None, None, 0);
         issue.project_id = 99.into();
         store.consume_action(IssueAction::Sync { issue }.into());
         load_project_page(
@@ -548,7 +548,7 @@ mod tests {
     #[test]
     fn issue_store_project_in_the_popup_snapshot_sets_the_initial_project() {
         let mut store = unloaded_store();
-        let issue = sample_issue(42, "detail", 1.into(), None, None, None, 0);
+        let issue = sample_issue_aggregate(42, "detail", 1.into(), None, None, None, 0);
         store.consume_action(IssueAction::Sync { issue }.into());
         load_project_page(
             &mut store,

@@ -18,7 +18,7 @@ mod tests {
         Category, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
         TimeEntityActivity, Tracker, User,
     };
-    use crate::test_support::sample_issue;
+    use crate::test_support::sample_issue_aggregate;
     use crate::vos::{IssueId, IssueStatusId};
 
     use super::upload_issue;
@@ -26,7 +26,7 @@ mod tests {
     #[tokio::test]
     async fn uploads_the_supplied_issue() {
         let client = StubClient::succeeds();
-        let issue = sample_issue(
+        let issue = sample_issue_aggregate(
             7,
             "merged subject",
             IssueStatusId::new(2),
@@ -50,7 +50,8 @@ mod tests {
             reason: "offline".to_string(),
         };
         let client = StubClient::fails(expected.clone());
-        let issue = sample_issue(7, "subject", IssueStatusId::new(1), None, None, None, 0);
+        let issue =
+            sample_issue_aggregate(7, "subject", IssueStatusId::new(1), None, None, None, 0);
 
         let actual = upload_issue(&client, &issue).await.unwrap_err();
 

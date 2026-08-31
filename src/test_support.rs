@@ -2,7 +2,7 @@ use chrono::{DateTime, Local};
 use insta::assert_snapshot;
 use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
-use crate::entities::Issue;
+use crate::entities::IssueAggregate;
 use crate::libs::yaml::{
     parse_categories_yaml, parse_issue_statuses_yaml, parse_priorities_yaml, parse_projects_yaml,
     parse_target_versions_yaml, parse_time_entity_activities_yaml, parse_trackers_yaml,
@@ -112,7 +112,7 @@ fn fixture_entity_actions() -> Vec<Action> {
     ]
 }
 
-pub fn sample_issue(
+pub fn sample_issue_aggregate(
     id: u16,
     title: &str,
     issue_status_id: IssueStatusId,
@@ -120,8 +120,8 @@ pub fn sample_issue(
     start_date: Option<&str>,
     due: Option<&str>,
     progress: u16,
-) -> Issue {
-    Issue {
+) -> IssueAggregate {
+    IssueAggregate {
         id: IssueId::new(id),
         subject: title.to_string(),
         author_id: UserId::new(1),

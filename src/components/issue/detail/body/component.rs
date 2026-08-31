@@ -4,7 +4,7 @@ use super::widget::{BodyWidget, BodyWidgetState};
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::entities::Issue;
+use crate::entities::IssueAggregate;
 use crate::vos::IssueId;
 
 pub enum EventProcessResult {
@@ -51,7 +51,7 @@ impl BodyComponent {
         self.focus_state.focus_event(event);
     }
 
-    pub fn update(&mut self, issue: &Issue, width: u16) {
+    pub fn update(&mut self, issue: &IssueAggregate, width: u16) {
         self.body = issue.description.clone();
         self.widget_state.update(width, &self.body);
         let height = self.widget_state.line_count(width) as u16;
@@ -75,7 +75,7 @@ impl BodyComponent {
 mod tests {
     use super::super::focus_state::FocusEvent;
     use super::*;
-    use crate::test_support::{render_snapshot, sample_issue};
+    use crate::test_support::{render_snapshot, sample_issue_aggregate};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Position;
 
@@ -89,8 +89,8 @@ mod tests {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
-    fn issue_with_body(body: &str) -> Issue {
-        let mut issue = sample_issue(
+    fn issue_with_body(body: &str) -> IssueAggregate {
+        let mut issue = sample_issue_aggregate(
             ISSUE_ID,
             "Body component issue",
             1.into(),

@@ -1439,7 +1439,7 @@ mod tests {
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
             crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher_ref);
-            let mut lower_id_issue = crate::test_support::sample_issue(
+            let mut lower_id_issue = crate::test_support::sample_issue_aggregate(
                 1,
                 "project two issue",
                 1.into(),
@@ -1449,7 +1449,7 @@ mod tests {
                 0,
             );
             lower_id_issue.project_id = 2.into();
-            let higher_id_issue = crate::test_support::sample_issue(
+            let higher_id_issue = crate::test_support::sample_issue_aggregate(
                 3,
                 "project one issue",
                 1.into(),

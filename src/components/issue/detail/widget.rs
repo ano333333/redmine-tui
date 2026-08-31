@@ -168,7 +168,7 @@ mod tests {
         JournalItemWidget, JournalItemWidgetState,
     };
     use crate::entities::{Issue, IssueStatus, Journal};
-    use crate::test_support::{local_datetime, render_snapshot, sample_issue};
+    use crate::test_support::{local_datetime, render_snapshot, sample_issue_aggregate};
     use crate::vos::JournalId;
 
     const WIDTH: u16 = 40;
@@ -223,7 +223,7 @@ mod tests {
                 target_version: Some("2026 Spring".to_string()),
                 component: "Admin UI".to_string(),
                 body_state,
-                child_issue: sample_issue(
+                child_issue: sample_issue_aggregate(
                     7,
                     "Open child",
                     5.into(),

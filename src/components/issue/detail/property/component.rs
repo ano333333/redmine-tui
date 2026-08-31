@@ -3,7 +3,7 @@ use super::widget::PropertyWidget;
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::entities::{Issue, IssueStatus};
+use crate::entities::{IssueAggregate, IssueStatus};
 use crate::stores::Store;
 use crate::vos::IssueId;
 
@@ -56,7 +56,7 @@ impl PropertyComponent {
 }
 
 fn create_property_widget<'a>(
-    issue: &'a Issue,
+    issue: &'a IssueAggregate,
     store: &'a Store,
     issue_status: &'a IssueStatus,
     focused_y: Option<u16>,
