@@ -841,7 +841,7 @@ mod tests {
             issues: [1_u16, 3_u16, 42_u16]
                 .into_iter()
                 .map(|id| ProjectsIssue {
-                    issue_id: id.into(),
+                    id: id.into(),
                     project_id: 1.into(),
                     subject: format!("issue{id}"),
                     description: "body".to_string(),

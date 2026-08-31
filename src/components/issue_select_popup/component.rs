@@ -208,17 +208,17 @@ impl IssueSelectPopupComponent {
             .unwrap_or_default()
             .iter()
             .map(|issue| {
-                if let Some((loaded, _)) = store.get_issue(issue.issue_id) {
+                if let Some((loaded, _)) = store.get_issue(issue.id) {
                     IssueSelectPopupIssue::new(
                         issue.project_id,
-                        issue.issue_id,
+                        issue.id,
                         loaded.subject.clone(),
                         loaded.description.clone(),
                     )
                 } else {
                     IssueSelectPopupIssue::new(
                         issue.project_id,
-                        issue.issue_id,
+                        issue.id,
                         issue.subject.clone(),
                         issue.description.clone(),
                     )
@@ -244,7 +244,7 @@ impl IssueSelectPopupComponent {
         let Some(issue_index) = self
             .focused_project_and_page()
             .and_then(|(project_id, page)| store.get_project_issues(project_id, page))
-            .and_then(|issues| issues.iter().position(|issue| issue.issue_id == issue_id))
+            .and_then(|issues| issues.iter().position(|issue| issue.id == issue_id))
         else {
             return;
         };
@@ -256,7 +256,7 @@ impl IssueSelectPopupComponent {
         self.focused_project_and_page()
             .and_then(|(project_id, page)| store.get_project_issues(project_id, page))
             .and_then(|issues| issues.get(self.focus_state.focused_issue_index()))
-            .map(|issue| issue.issue_id)
+            .map(|issue| issue.id)
     }
 
     fn focus_project(&mut self, project_id: ProjectId) {
@@ -413,7 +413,7 @@ mod tests {
 
     fn project_issue(id: u16, project_id: u16, subject: &str, description: &str) -> ProjectsIssue {
         ProjectsIssue {
-            issue_id: id.into(),
+            id: id.into(),
             project_id: project_id.into(),
             subject: subject.to_string(),
             description: description.to_string(),

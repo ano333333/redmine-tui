@@ -15,7 +15,7 @@ fn page(value: usize) -> NonZeroUsize {
 
 fn issue(issue_id: u16, project_id: u16) -> ProjectsIssue {
     ProjectsIssue {
-        issue_id: IssueId::new(issue_id),
+        id: IssueId::new(issue_id),
         project_id: ProjectId::new(project_id),
         subject: format!("issue {issue_id}"),
         description: String::new(),
@@ -163,11 +163,11 @@ fn different_exact_keys_complete_independently() {
     succeed(&mut store, request_id(1), first_project, page(1), 41);
 
     assert_eq!(
-        store.get_project_issues(first_project, page(1)).unwrap()[0].issue_id,
+        store.get_project_issues(first_project, page(1)).unwrap()[0].id,
         IssueId::new(41)
     );
     assert_eq!(
-        store.get_project_issues(second_project, page(2)).unwrap()[0].issue_id,
+        store.get_project_issues(second_project, page(2)).unwrap()[0].id,
         IssueId::new(82)
     );
 }
@@ -200,11 +200,11 @@ fn different_pages_of_the_same_project_complete_independently() {
     succeed(&mut store, first_request, project_id, first_page, 41);
 
     assert_eq!(
-        store.get_project_issues(project_id, first_page).unwrap()[0].issue_id,
+        store.get_project_issues(project_id, first_page).unwrap()[0].id,
         IssueId::new(41)
     );
     assert_eq!(
-        store.get_project_issues(project_id, second_page).unwrap()[0].issue_id,
+        store.get_project_issues(project_id, second_page).unwrap()[0].id,
         IssueId::new(82)
     );
 }

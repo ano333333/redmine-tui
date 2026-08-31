@@ -475,14 +475,14 @@ mod tests {
                 result: ProjectIssuesPage {
                     issues: vec![
                         ProjectsIssue {
-                            issue_id: 41.into(),
+                            id: 41.into(),
                             project_id,
                             subject: "first issue".to_string(),
                             description: "first preview marker".to_string(),
                             status_id: 1.into(),
                         },
                         ProjectsIssue {
-                            issue_id: 42.into(),
+                            id: 42.into(),
                             project_id,
                             subject: "second issue".to_string(),
                             description: "second preview marker".to_string(),
