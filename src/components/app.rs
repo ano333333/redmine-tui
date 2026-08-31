@@ -115,221 +115,235 @@ impl<'a> AppComponent<'a> {
 
     /// crosstermの同期イベントを処理する。updateとrenderがこの順で後続する
     pub fn process_event(&mut self, event: Event, dispatcher: Rc<RefCell<Dispatcher>>) {
-        if let Some(popup_component) = self.popup_components.back() {
-            let popup_component_rc = popup_component.clone();
-            match &mut *(popup_component_rc.borrow_mut()) {
-                PopupComponent::SelectBox(popup_component) => {
-                    let result = popup_component.process_event(event, self.dispatcher.clone());
-                    match result {
-                        Some(SelectBoxPopupEventProcessResult::Entered)
-                        | Some(SelectBoxPopupEventProcessResult::Quited) => {
-                            self.popup_components.pop_back();
-                        }
-                        None => {}
-                    }
-                }
-                PopupComponent::SpentTimeInput(popup_component) => {
-                    let result = popup_component.process_event(event);
-                    match result {
-                        Some(SpentTimeInputPopupEventProcessResult::Quited) => {
-                            self.popup_components.pop_back();
-                        }
-                        Some(
-                            SpentTimeInputPopupEventProcessResult::OpenTimeEntityActivitiesPopup,
-                        ) => {
-                            let popup_component = Self::create_spent_time_input_popup_component(
-                                dispatcher.clone(),
-                                popup_component_rc.clone(),
-                            );
-                            self.popup_components.push_back(popup_component);
-                        }
-                        Some(SpentTimeInputPopupEventProcessResult::Submited) => {
-                            // FIXME: Storeの更新
-                            self.popup_components.pop_back();
-                        }
-                        None => {}
-                    }
-                }
-                PopupComponent::DatePicker(popup_component) => {
-                    let result = popup_component.process_event(event);
-                    match result {
-                        Some(DatePickerPopupEventProcessResult::Entered)
-                        | Some(DatePickerPopupEventProcessResult::Canceled) => {
-                            self.popup_components.pop_back();
-                        }
-                        None => {}
-                    }
-                }
-                PopupComponent::IssueSelect(popup_component) => {
-                    let result = {
-                        let dispatcher = dispatcher.borrow();
-                        popup_component.process_event(event, dispatcher.store())
-                    };
-                    let effect = popup_component.take_effect();
-                    if let Some(effect) = effect {
-                        self.install_issue_select_popup_effect(effect);
-                    }
-                    match result {
-                        Some(IssueSelectPopupEventProcessResult::Selected { issue_id }) => {
-                            self.select_issue(issue_id);
-                        }
-                        Some(IssueSelectPopupEventProcessResult::Quited) => {
-                            self.close_issue_select_popup();
-                        }
-                        None => {}
-                    }
-                }
-                PopupComponent::IssuePropertyConflict {
-                    issue_id,
-                    component,
-                } => match component.process_event(event) {
-                    Some(IssuePropertyConflictEventProcessResult::Canceled) => {
-                        cancel_issue_upload(&mut dispatcher.borrow_mut(), *issue_id);
-                        self.popup_components.pop_back();
-                    }
-                    Some(IssuePropertyConflictEventProcessResult::Continued { diffs }) => {
-                        let retry_diffs =
-                            continue_issue_upload(&mut dispatcher.borrow_mut(), *issue_id, diffs);
-                        self.pending_effect = Some(AppEffect::ContinueIssueUpload {
-                            id: *issue_id,
-                            diffs: retry_diffs,
-                        });
+        if self.popup_components.back().is_some() {
+            self.process_popup_event(event, dispatcher);
+        } else if self.issue_component.is_some() {
+            self.process_issue_event(event, dispatcher);
+        }
+    }
+
+    /// 最前面のpopupへイベントを渡し、結果に応じてpopup stackを更新する。
+    fn process_popup_event(&mut self, event: Event, dispatcher: Rc<RefCell<Dispatcher>>) {
+        let popup_component_rc = self
+            .popup_components
+            .back()
+            .expect("caller checked that a popup exists")
+            .clone();
+        match &mut *(popup_component_rc.borrow_mut()) {
+            PopupComponent::SelectBox(popup_component) => {
+                let result = popup_component.process_event(event, self.dispatcher.clone());
+                match result {
+                    Some(SelectBoxPopupEventProcessResult::Entered)
+                    | Some(SelectBoxPopupEventProcessResult::Quited) => {
                         self.popup_components.pop_back();
                     }
                     None => {}
-                },
+                }
             }
-        } else if self.issue_component.is_some() {
-            let (result, issue_id) = {
-                let issue_component = self
-                    .issue_component
-                    .as_mut()
-                    .expect("checked that IssueComponent exists");
-                (
-                    issue_component.process_event(event, self.dispatcher.clone()),
-                    issue_component.issue_id(),
-                )
-            };
-            match result {
-                Some(IssueEventProcessResult::FetchRequested { id }) => {
-                    self.install_effect(AppEffect::FetchIssue(id));
+            PopupComponent::SpentTimeInput(popup_component) => {
+                let result = popup_component.process_event(event);
+                match result {
+                    Some(SpentTimeInputPopupEventProcessResult::Quited) => {
+                        self.popup_components.pop_back();
+                    }
+                    Some(SpentTimeInputPopupEventProcessResult::OpenTimeEntityActivitiesPopup) => {
+                        let popup_component = Self::create_spent_time_input_popup_component(
+                            dispatcher.clone(),
+                            popup_component_rc.clone(),
+                        );
+                        self.popup_components.push_back(popup_component);
+                    }
+                    Some(SpentTimeInputPopupEventProcessResult::Submited) => {
+                        // FIXME: Storeの更新
+                        self.popup_components.pop_back();
+                    }
+                    None => {}
                 }
-                Some(IssueEventProcessResult::OpenIssueSelectPopup) => {
-                    self.open_issue_select_popup(Some(issue_id));
+            }
+            PopupComponent::DatePicker(popup_component) => {
+                let result = popup_component.process_event(event);
+                match result {
+                    Some(DatePickerPopupEventProcessResult::Entered)
+                    | Some(DatePickerPopupEventProcessResult::Canceled) => {
+                        self.popup_components.pop_back();
+                    }
+                    None => {}
                 }
-                Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::EditIssueBodyRequested { id, body },
-                )) => {
-                    self.pending_editor_context = Some(PendingEditorContext::IssueBody { id });
-                    self.pending_effect =
-                        Some(AppEffect::OpenEditor(EditorRequest { initial_text: body }));
+            }
+            PopupComponent::IssueSelect(popup_component) => {
+                let result = {
+                    let dispatcher = dispatcher.borrow();
+                    popup_component.process_event(event, dispatcher.store())
+                };
+                let effect = popup_component.take_effect();
+                if let Some(effect) = effect {
+                    self.install_issue_select_popup_effect(effect);
                 }
-                Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::OpenIssueStatusPopup,
-                )) => {
-                    let (items, focused_index) =
-                        build_issue_status_options(dispatcher.borrow().store());
-                    self.push_select_box_popup(
-                        &items,
-                        focused_index,
-                        false,
-                        issue_status_popup_observer(dispatcher.clone(), issue_id),
-                    );
+                match result {
+                    Some(IssueSelectPopupEventProcessResult::Selected { issue_id }) => {
+                        self.select_issue(issue_id);
+                    }
+                    Some(IssueSelectPopupEventProcessResult::Quited) => {
+                        self.close_issue_select_popup();
+                    }
+                    None => {}
                 }
-                Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::OpenAssignedToPopup,
-                )) => {
-                    let (items, focused_index) =
-                        build_assigned_to_options(dispatcher.borrow().store(), issue_id);
-                    self.push_select_box_popup(
-                        &items,
-                        focused_index,
-                        true,
-                        assigned_to_popup_observer(dispatcher.clone(), issue_id),
-                    );
+            }
+            PopupComponent::IssuePropertyConflict {
+                issue_id,
+                component,
+            } => match component.process_event(event) {
+                Some(IssuePropertyConflictEventProcessResult::Canceled) => {
+                    cancel_issue_upload(&mut dispatcher.borrow_mut(), *issue_id);
+                    self.popup_components.pop_back();
                 }
-                Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::OpenTargetVersionPopup,
-                )) => {
-                    let (items, focused_index) =
-                        build_target_version_options(dispatcher.borrow().store(), issue_id);
-                    self.push_select_box_popup(
-                        &items,
-                        focused_index,
-                        true,
-                        target_version_popup_observer(dispatcher.clone(), issue_id),
-                    );
-                }
-                Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::OpenStartDatePopup,
-                )) => {
-                    let selected_date = current_start_date(dispatcher.borrow().store(), issue_id);
-                    self.popup_components.push_back(Rc::new(RefCell::new(
-                        PopupComponent::DatePicker(DatePickerPopupComponent::new(
-                            selected_date,
-                            start_date_popup_observer(dispatcher.clone(), issue_id),
-                        )),
-                    )));
-                }
-                Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::OpenDueDatePopup,
-                )) => {
-                    let selected_date = current_due_date(dispatcher.borrow().store(), issue_id);
-                    self.popup_components.push_back(Rc::new(RefCell::new(
-                        PopupComponent::DatePicker(DatePickerPopupComponent::new(
-                            selected_date,
-                            due_date_popup_observer(dispatcher.clone(), issue_id),
-                        )),
-                    )));
-                }
-                Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::OpenDoneRatioPopup,
-                )) => {
-                    let (items, focused_index) =
-                        build_done_ratio_options(dispatcher.borrow().store(), issue_id);
-                    self.push_select_box_popup(
-                        &items,
-                        focused_index,
-                        false,
-                        done_ratio_popup_observer(dispatcher.clone(), issue_id),
-                    );
-                }
-                Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::OpenCategoryPopup,
-                )) => {
-                    let (items, focused_index) =
-                        build_category_options(dispatcher.borrow().store(), issue_id);
-                    self.push_select_box_popup(
-                        &items,
-                        focused_index,
-                        true,
-                        category_popup_observer(dispatcher.clone(), issue_id),
-                    );
-                }
-                Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::OpenSpentTimeInputPopup,
-                )) => {
-                    self.popup_components.push_back(Rc::new(RefCell::new(
-                        PopupComponent::SpentTimeInput(SpentTimeInputPopupComponent::new(
-                            dispatcher.borrow().store(),
-                        )),
-                    )));
-                }
-                Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::StartIssueUpload,
-                )) => {
-                    self.pending_effect = Some(AppEffect::StartIssueUpload(issue_id));
-                }
-                Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::EditJournalRequested { id, notes },
-                )) => {
-                    self.pending_editor_context = Some(PendingEditorContext::Journal { id });
-                    self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
-                        initial_text: notes,
-                    }));
+                Some(IssuePropertyConflictEventProcessResult::Continued { diffs }) => {
+                    let retry_diffs =
+                        continue_issue_upload(&mut dispatcher.borrow_mut(), *issue_id, diffs);
+                    self.pending_effect = Some(AppEffect::ContinueIssueUpload {
+                        id: *issue_id,
+                        diffs: retry_diffs,
+                    });
+                    self.popup_components.pop_back();
                 }
                 None => {}
+            },
+        }
+    }
+
+    /// IssueComponentへイベントを渡し、結果に応じてpopupの開閉やeffectの設置を行う。
+    fn process_issue_event(&mut self, event: Event, dispatcher: Rc<RefCell<Dispatcher>>) {
+        let (result, issue_id) = {
+            let issue_component = self
+                .issue_component
+                .as_mut()
+                .expect("caller checked that IssueComponent exists");
+            (
+                issue_component.process_event(event, self.dispatcher.clone()),
+                issue_component.issue_id(),
+            )
+        };
+        match result {
+            Some(IssueEventProcessResult::FetchRequested { id }) => {
+                self.install_effect(AppEffect::FetchIssue(id));
             }
+            Some(IssueEventProcessResult::OpenIssueSelectPopup) => {
+                self.open_issue_select_popup(Some(issue_id));
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::EditIssueBodyRequested { id, body },
+            )) => {
+                self.pending_editor_context = Some(PendingEditorContext::IssueBody { id });
+                self.pending_effect =
+                    Some(AppEffect::OpenEditor(EditorRequest { initial_text: body }));
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::OpenIssueStatusPopup,
+            )) => {
+                let (items, focused_index) =
+                    build_issue_status_options(dispatcher.borrow().store());
+                self.push_select_box_popup(
+                    &items,
+                    focused_index,
+                    false,
+                    issue_status_popup_observer(dispatcher.clone(), issue_id),
+                );
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::OpenAssignedToPopup,
+            )) => {
+                let (items, focused_index) =
+                    build_assigned_to_options(dispatcher.borrow().store(), issue_id);
+                self.push_select_box_popup(
+                    &items,
+                    focused_index,
+                    true,
+                    assigned_to_popup_observer(dispatcher.clone(), issue_id),
+                );
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::OpenTargetVersionPopup,
+            )) => {
+                let (items, focused_index) =
+                    build_target_version_options(dispatcher.borrow().store(), issue_id);
+                self.push_select_box_popup(
+                    &items,
+                    focused_index,
+                    true,
+                    target_version_popup_observer(dispatcher.clone(), issue_id),
+                );
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::OpenStartDatePopup,
+            )) => {
+                let selected_date = current_start_date(dispatcher.borrow().store(), issue_id);
+                self.popup_components
+                    .push_back(Rc::new(RefCell::new(PopupComponent::DatePicker(
+                        DatePickerPopupComponent::new(
+                            selected_date,
+                            start_date_popup_observer(dispatcher.clone(), issue_id),
+                        ),
+                    ))));
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::OpenDueDatePopup,
+            )) => {
+                let selected_date = current_due_date(dispatcher.borrow().store(), issue_id);
+                self.popup_components
+                    .push_back(Rc::new(RefCell::new(PopupComponent::DatePicker(
+                        DatePickerPopupComponent::new(
+                            selected_date,
+                            due_date_popup_observer(dispatcher.clone(), issue_id),
+                        ),
+                    ))));
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::OpenDoneRatioPopup,
+            )) => {
+                let (items, focused_index) =
+                    build_done_ratio_options(dispatcher.borrow().store(), issue_id);
+                self.push_select_box_popup(
+                    &items,
+                    focused_index,
+                    false,
+                    done_ratio_popup_observer(dispatcher.clone(), issue_id),
+                );
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::OpenCategoryPopup,
+            )) => {
+                let (items, focused_index) =
+                    build_category_options(dispatcher.borrow().store(), issue_id);
+                self.push_select_box_popup(
+                    &items,
+                    focused_index,
+                    true,
+                    category_popup_observer(dispatcher.clone(), issue_id),
+                );
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::OpenSpentTimeInputPopup,
+            )) => {
+                self.popup_components.push_back(Rc::new(RefCell::new(
+                    PopupComponent::SpentTimeInput(SpentTimeInputPopupComponent::new(
+                        dispatcher.borrow().store(),
+                    )),
+                )));
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::StartIssueUpload,
+            )) => {
+                self.pending_effect = Some(AppEffect::StartIssueUpload(issue_id));
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::EditJournalRequested { id, notes },
+            )) => {
+                self.pending_editor_context = Some(PendingEditorContext::Journal { id });
+                self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                    initial_text: notes,
+                }));
+            }
+            None => {}
         }
     }
 
