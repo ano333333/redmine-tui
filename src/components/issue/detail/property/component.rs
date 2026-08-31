@@ -30,8 +30,12 @@ impl PropertyComponent {
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
         if let Some((issue, _)) = store.get_issue(self.id) {
-            let paragraph =
-                create_property_widget(issue, store, store.get_issue_status(issue.status_id), None);
+            let paragraph = create_property_widget(
+                issue,
+                store,
+                store.get_issue_status(issue.issue.status_id),
+                None,
+            );
             paragraph.line_count(width) as u16
         } else {
             0
@@ -45,7 +49,7 @@ impl PropertyComponent {
         create_property_widget(
             issue,
             store,
-            store.get_issue_status(issue.status_id),
+            store.get_issue_status(issue.issue.status_id),
             self.focus_state.focused_y(),
         )
     }
@@ -117,9 +121,11 @@ fn create_property_widget<'a>(
 mod tests {
     use super::*;
     use crate::stores::IssueAction;
-    use crate::test_support::{render_snapshot, sync_fixture_entities};
+    use crate::test_support::{render_snapshot, sample_issue_aggregate, sync_fixture_entities};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::layout::Position;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::{Position, Rect};
+    use ratatui::widgets::Widget;
 
     const ISSUE_ID: u16 = 1;
     const WIDTH: u16 = 40;
@@ -225,6 +231,29 @@ mod tests {
             component.line_count(&store, WIDTH),
             component.create_widget(&store),
         );
+    }
+
+    #[test]
+    fn widget_displays_the_nested_issue_status() {
+        let id = 99;
+        let mut store = Store::new();
+        sync_fixture_entities(&mut store);
+        let mut issue = sample_issue_aggregate(id, "issue", 1.into(), None, None, None, 0);
+        issue.issue.status_id = 2.into();
+        issue.status_id = 1.into();
+        store.consume_action(IssueAction::Sync { issue }.into());
+        let component = PropertyComponent::new(id);
+        let area = Rect::new(0, 0, WIDTH, PROPERTY_LINE_COUNT);
+        let mut buffer = Buffer::empty(area);
+
+        component.create_widget(&store).render(area, &mut buffer);
+
+        let status_line = (0..WIDTH)
+            .map(|x| buffer[(x, 3)].symbol())
+            .collect::<String>();
+        let compact_status_line = status_line.split_whitespace().collect::<String>();
+        assert!(compact_status_line.contains("割り当て"));
+        assert!(!compact_status_line.contains("新規"));
     }
 
     #[test]

@@ -64,7 +64,7 @@ mod tests {
         let mut server_issue = dispatcher.store().get_issue(id).unwrap().0.clone();
         server_issue.issue.description = "server body".to_string();
         server_issue.description = "legacy server body".to_string();
-        server_issue.status_id = 9.into();
+        server_issue.issue.status_id = 9.into();
         dispatcher.dispatch(IssueAction::UploadConflictsDetected {
             server_issue,
             conflicts,

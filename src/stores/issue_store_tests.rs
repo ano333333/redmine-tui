@@ -1,8 +1,10 @@
 use super::{IssueAction, IssueState, Store};
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
-use crate::vos::issue_property_diff::{IssueDescriptionDiff, IssueDueDateDiff, IssueStartDateDiff};
-use crate::vos::{CategoryId, IssueId, TargetVersionId};
+use crate::vos::issue_property_diff::{
+    IssueDescriptionDiff, IssueDueDateDiff, IssueStartDateDiff, IssueStatusIdDiff,
+};
+use crate::vos::{CategoryId, IssueId, IssueStatusId, TargetVersionId};
 
 #[test]
 fn load_action_is_consumed_through_parent_store() {
@@ -183,6 +185,34 @@ fn update_issue_description_writes_only_the_nested_issue_and_diffs_from_it() {
         &[IssuePropertyDiff::Description(IssueDescriptionDiff {
             before: "nested before".to_string(),
             after: "nested after".to_string(),
+        })]
+    );
+}
+
+#[test]
+fn update_issue_status_writes_only_the_nested_issue_and_diffs_from_it() {
+    let id = IssueId::new(99);
+    let mut issue = sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0);
+    issue.issue.status_id = 2.into();
+    let mut store = Store::new();
+    store.consume_action(IssueAction::Sync { issue }.into());
+
+    store.consume_action(
+        IssueAction::UpdateStatus {
+            id,
+            status_id: 3.into(),
+        }
+        .into(),
+    );
+
+    let (issue, _) = store.get_issue(id).expect("issue should be loaded");
+    assert_eq!(issue.issue.status_id, IssueStatusId::new(3));
+    assert_eq!(issue.status_id, IssueStatusId::new(1));
+    assert_eq!(
+        store.get_issue_property_diffs(id),
+        &[IssuePropertyDiff::StatusId(IssueStatusIdDiff {
+            before: 2.into(),
+            after: 3.into(),
         })]
     );
 }

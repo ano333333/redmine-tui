@@ -25,11 +25,12 @@ fn update_issue_sends_redmine_put_request_from_nested_issue_fields() {
     issue.subject = "legacy subject".to_string();
     issue.issue.description = "nested body".to_string();
     issue.description = "legacy body".to_string();
+    issue.issue.status_id = IssueStatusId::new(4);
     let expected_body = json!({
         "issue": {
             "subject": "Fix login",
             "description": "nested body",
-            "status_id": 3,
+            "status_id": 4,
             "priority_id": 1,
             "assigned_to_id": 1001,
             "fixed_version_id": 1,

@@ -58,7 +58,7 @@ pub(crate) fn apply_issue_property_diffs(issue: &mut IssueAggregate, diffs: &[Is
             IssuePropertyDiff::UpdatedOn(diff) => issue.updated_on = diff.after,
             IssuePropertyDiff::ProjectId(diff) => issue.issue.project_id = diff.after,
             IssuePropertyDiff::TrackerId(diff) => issue.tracker_id = diff.after,
-            IssuePropertyDiff::StatusId(diff) => issue.status_id = diff.after,
+            IssuePropertyDiff::StatusId(diff) => issue.issue.status_id = diff.after,
             IssuePropertyDiff::PriorityId(diff) => issue.priority_id = diff.after,
             IssuePropertyDiff::AssignedToId(diff) => issue.assigned_to_id = diff.after,
             IssuePropertyDiff::TargetVersionId(diff) => issue.target_version_id = diff.after,
@@ -144,7 +144,7 @@ pub(crate) fn with_server_value_as_before(
         IssuePropertyDiff::UpdatedOn(diff) => diff.before = issue.updated_on,
         IssuePropertyDiff::ProjectId(diff) => diff.before = issue.issue.project_id,
         IssuePropertyDiff::TrackerId(diff) => diff.before = issue.tracker_id,
-        IssuePropertyDiff::StatusId(diff) => diff.before = issue.status_id,
+        IssuePropertyDiff::StatusId(diff) => diff.before = issue.issue.status_id,
         IssuePropertyDiff::PriorityId(diff) => diff.before = issue.priority_id,
         IssuePropertyDiff::AssignedToId(diff) => diff.before = issue.assigned_to_id,
         IssuePropertyDiff::TargetVersionId(diff) => diff.before = issue.target_version_id,
@@ -182,7 +182,7 @@ pub(crate) fn with_server_value_as_after(
         IssuePropertyDiff::UpdatedOn(diff) => diff.after = issue.updated_on,
         IssuePropertyDiff::ProjectId(diff) => diff.after = issue.issue.project_id,
         IssuePropertyDiff::TrackerId(diff) => diff.after = issue.tracker_id,
-        IssuePropertyDiff::StatusId(diff) => diff.after = issue.status_id,
+        IssuePropertyDiff::StatusId(diff) => diff.after = issue.issue.status_id,
         IssuePropertyDiff::PriorityId(diff) => diff.after = issue.priority_id,
         IssuePropertyDiff::AssignedToId(diff) => diff.after = issue.assigned_to_id,
         IssuePropertyDiff::TargetVersionId(diff) => diff.after = issue.target_version_id,
@@ -267,7 +267,7 @@ fn conflicts_with_issue(issue: &IssueAggregate, diff: &IssuePropertyDiff) -> boo
         IssuePropertyDiff::UpdatedOn(diff) => conflict!(issue.updated_on, diff),
         IssuePropertyDiff::ProjectId(diff) => conflict!(issue.issue.project_id, diff),
         IssuePropertyDiff::TrackerId(diff) => conflict!(issue.tracker_id, diff),
-        IssuePropertyDiff::StatusId(diff) => conflict!(issue.status_id, diff),
+        IssuePropertyDiff::StatusId(diff) => conflict!(issue.issue.status_id, diff),
         IssuePropertyDiff::PriorityId(diff) => conflict!(issue.priority_id, diff),
         IssuePropertyDiff::AssignedToId(diff) => conflict!(issue.assigned_to_id, diff),
         IssuePropertyDiff::TargetVersionId(diff) => conflict!(issue.target_version_id, diff),
@@ -393,6 +393,23 @@ mod tests {
         assert_eq!(conflicts, vec![diff]);
     }
 
+    #[tokio::test]
+    async fn status_conflicts_use_the_nested_issue_value() {
+        let mut server_issue = issue("subject", "description", 1);
+        server_issue.issue.status_id = IssueStatusId::new(3);
+        let client = StubClient::new(server_issue);
+        let diff = IssuePropertyDiff::StatusId(IssueStatusIdDiff {
+            before: IssueStatusId::new(1),
+            after: IssueStatusId::new(2),
+        });
+
+        let (_, conflicts) = fetch_issue_with_conflicts(&client, 1.into(), &[diff.clone()])
+            .await
+            .unwrap();
+
+        assert_eq!(conflicts, vec![diff]);
+    }
+
     #[test]
     fn applies_local_after_values_over_different_server_values_in_order() {
         let mut server_issue = issue("server subject", "server edit", 3);
@@ -413,7 +430,7 @@ mod tests {
 
         assert_eq!(server_issue.issue.subject, "server subject");
         assert_eq!(server_issue.issue.description, "local edit");
-        assert_eq!(server_issue.status_id, IssueStatusId::new(2));
+        assert_eq!(server_issue.issue.status_id, IssueStatusId::new(2));
         assert_eq!(
             server_issue.due_date,
             Some(local_datetime("2026-08-23T00:00:00+09:00"))
@@ -453,6 +470,23 @@ mod tests {
 
         assert_eq!(server_issue.issue.description, "local description");
         assert_eq!(server_issue.description, "legacy description");
+    }
+
+    #[test]
+    fn applies_status_diff_to_nested_issue_without_synchronizing_legacy_status() {
+        let mut server_issue = issue("subject", "description", 1);
+        server_issue.issue.status_id = IssueStatusId::new(3);
+
+        apply_issue_property_diffs(
+            &mut server_issue,
+            &[IssuePropertyDiff::StatusId(IssueStatusIdDiff {
+                before: IssueStatusId::new(3),
+                after: IssueStatusId::new(2),
+            })],
+        );
+
+        assert_eq!(server_issue.issue.status_id, IssueStatusId::new(2));
+        assert_eq!(server_issue.status_id, IssueStatusId::new(1));
     }
 
     #[test]
