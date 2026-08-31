@@ -4,7 +4,7 @@ mod project_issues_store;
 mod store;
 
 pub use issue_store::{IssueAction, IssueState};
-pub use journal_store::{JournalEntry, LocalJournalState, RemoteJournalState};
+pub use journal_store::{JournalAction, JournalEntry, LocalJournalState, RemoteJournalState};
 pub use project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesRequestId,
 };

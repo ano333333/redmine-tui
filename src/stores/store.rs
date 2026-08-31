@@ -1,9 +1,9 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use std::num::NonZeroUsize;
 
 use super::issue_store::{IssueAction, IssueState, IssueStore};
-use super::journal_store::{JournalEntry, JournalStore};
+use super::journal_store::{JournalAction, JournalEntry, JournalStore};
 use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
@@ -13,8 +13,8 @@ use crate::entities::{
 };
 use crate::libs::yaml::parse_journal_yaml;
 use crate::vos::{
-    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, JournalKey, PriorityId,
-    ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, JournalKey, LocalJournalId,
+    PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
 pub struct Dispatcher {
@@ -43,6 +43,18 @@ impl Dispatcher {
             self.store.consume_action(action);
         }
     }
+
+    /// Reserves an ID for a Local Journal without creating the Journal itself.
+    ///
+    /// Pass the returned ID to [`JournalAction::CreateLocal`] through this same
+    /// Dispatcher. IDs increase monotonically and are never reused. If creation
+    /// is abandoned, the reserved ID remains unused and becomes a permitted gap.
+    ///
+    /// The ID does not encode Store provenance. Mixing IDs between different
+    /// Dispatcher/Store instances is unsupported and must be avoided by callers.
+    pub fn new_local_journal_id(&mut self) -> LocalJournalId {
+        self.store.new_local_journal_id()
+    }
 }
 
 pub enum JournalState {
@@ -54,6 +66,9 @@ pub struct Store {
     issue_store: IssueStore,
     project_issues_store: ProjectIssuesStore,
     journal_store: JournalStore,
+    next_local_journal_id: u64,
+    issued_local_journal_ids: HashSet<LocalJournalId>,
+    used_local_journal_ids: HashSet<LocalJournalId>,
     journals: HashMap<JournalId, (Journal, JournalState)>,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
@@ -71,6 +86,9 @@ impl Store {
             issue_store: IssueStore::new(),
             project_issues_store: ProjectIssuesStore::new(),
             journal_store: JournalStore::new(),
+            next_local_journal_id: 1,
+            issued_local_journal_ids: HashSet::new(),
+            used_local_journal_ids: HashSet::new(),
             journals: HashMap::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
@@ -87,6 +105,18 @@ impl Store {
         match action {
             Action::Issue(action) => self.issue_store.consume_action(action),
             Action::ProjectIssues(action) => self.project_issues_store.consume_action(action),
+            Action::Journal(action) => {
+                let JournalAction::CreateLocal { id, .. } = &action;
+                let id = *id;
+                if !self.issued_local_journal_ids.contains(&id) {
+                    panic!("local journal ID was not issued by this Store");
+                }
+                if self.used_local_journal_ids.contains(&id) {
+                    panic!("local journal ID has already been used");
+                }
+                self.journal_store.consume_action(action);
+                self.used_local_journal_ids.insert(id);
+            }
             Action::SyncUsers { users } => {
                 self.users = users.into_iter().map(|user| (user.id, user)).collect();
             }
@@ -146,6 +176,16 @@ impl Store {
                 }
             }
         }
+    }
+
+    fn new_local_journal_id(&mut self) -> LocalJournalId {
+        let id = LocalJournalId::new(self.next_local_journal_id);
+        self.next_local_journal_id = self
+            .next_local_journal_id
+            .checked_add(1)
+            .expect("local journal ID space exhausted");
+        self.issued_local_journal_ids.insert(id);
+        id
     }
 
     pub fn get_issue(
@@ -273,6 +313,7 @@ impl Store {
 pub enum Action {
     Issue(IssueAction),
     ProjectIssues(ProjectIssuesAction),
+    Journal(JournalAction),
     SyncUsers {
         users: Vec<User>,
     },
@@ -315,6 +356,12 @@ impl From<IssueAction> for Action {
 impl From<ProjectIssuesAction> for Action {
     fn from(action: ProjectIssuesAction) -> Self {
         Self::ProjectIssues(action)
+    }
+}
+
+impl From<JournalAction> for Action {
+    fn from(action: JournalAction) -> Self {
+        Self::Journal(action)
     }
 }
 
