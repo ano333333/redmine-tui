@@ -12,7 +12,6 @@ pub mod user;
 
 pub use category::Category;
 pub use issue_aggregate::IssueAggregate;
-pub type Issue = IssueAggregate;
 pub use issue_status::IssueStatus;
 pub use journal::Journal;
 pub use priority::Priority;
