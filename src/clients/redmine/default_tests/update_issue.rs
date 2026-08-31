@@ -7,10 +7,10 @@ use crate::clients::redmine::{
     DefaultRedmineClient, RedmineClient, RedmineClientError, RedmineHttpError,
 };
 use crate::test_support::sample_issue_aggregate;
-use crate::vos::{IssueId, IssueStatusId};
+use crate::vos::IssueStatusId;
 
 #[test]
-fn update_issue_sends_redmine_put_request_from_nested_issue_fields() {
+fn update_issue_sends_redmine_put_request() {
     let mock_server = block_on(MockServer::start());
     let mut issue = sample_issue_aggregate(
         42,
@@ -21,10 +21,7 @@ fn update_issue_sends_redmine_put_request_from_nested_issue_fields() {
         Some("2026-08-31T00:00:00+09:00"),
         30,
     );
-    issue.id = IssueId::new(99);
-    issue.subject = "legacy subject".to_string();
     issue.issue.description = "nested body".to_string();
-    issue.description = "legacy body".to_string();
     issue.issue.status_id = IssueStatusId::new(4);
     let expected_body = json!({
         "issue": {

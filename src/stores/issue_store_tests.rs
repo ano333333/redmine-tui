@@ -161,11 +161,10 @@ fn update_issue_due_date_updates_issue_and_records_diff() {
 }
 
 #[test]
-fn update_issue_description_writes_only_the_nested_issue_and_diffs_from_it() {
+fn update_issue_description_updates_issue_and_records_diff() {
     let id = IssueId::new(99);
     let mut issue = sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0);
     issue.issue.description = "nested before".to_string();
-    issue.description = "legacy before".to_string();
     let mut store = Store::new();
     store.consume_action(IssueAction::Sync { issue }.into());
 
@@ -179,7 +178,6 @@ fn update_issue_description_writes_only_the_nested_issue_and_diffs_from_it() {
 
     let (issue, _) = store.get_issue(id).expect("issue should be loaded");
     assert_eq!(issue.issue.description, "nested after");
-    assert_eq!(issue.description, "legacy before");
     assert_eq!(
         store.get_issue_property_diffs(id),
         &[IssuePropertyDiff::Description(IssueDescriptionDiff {
@@ -190,7 +188,7 @@ fn update_issue_description_writes_only_the_nested_issue_and_diffs_from_it() {
 }
 
 #[test]
-fn update_issue_status_writes_only_the_nested_issue_and_diffs_from_it() {
+fn update_issue_status_updates_issue_and_records_diff() {
     let id = IssueId::new(99);
     let mut issue = sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0);
     issue.issue.status_id = 2.into();
@@ -207,7 +205,6 @@ fn update_issue_status_writes_only_the_nested_issue_and_diffs_from_it() {
 
     let (issue, _) = store.get_issue(id).expect("issue should be loaded");
     assert_eq!(issue.issue.status_id, IssueStatusId::new(3));
-    assert_eq!(issue.status_id, IssueStatusId::new(1));
     assert_eq!(
         store.get_issue_property_diffs(id),
         &[IssuePropertyDiff::StatusId(IssueStatusIdDiff {
@@ -606,24 +603,6 @@ fn matching_fetch_success_registers_the_issue_as_synced() {
     assert_eq!(state, &IssueState::Synced);
     assert!(store.get_issue_property_diffs(id).is_empty());
     assert!(store.get_issue_upload_conflict(id).is_none());
-}
-
-#[test]
-fn fetch_success_matches_and_registers_by_nested_issue_id() {
-    let id = IssueId::new(99);
-    let mut issue = sample_issue_aggregate(99, "fetched", 1.into(), None, None, None, 0);
-    issue.id = IssueId::new(100);
-    let mut store = Store::new();
-    store.consume_action(IssueAction::StartFetching { id }.into());
-
-    store.consume_action(IssueAction::FetchSucceeded { id, issue }.into());
-
-    let (issue, state) = store
-        .get_issue(id)
-        .expect("nested issue id should be the canonical store key");
-    assert_eq!(issue.issue.id, id);
-    assert_eq!(state, &IssueState::Synced);
-    assert!(store.get_issue(IssueId::new(100)).is_none());
 }
 
 #[test]

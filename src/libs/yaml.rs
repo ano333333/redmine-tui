@@ -222,14 +222,10 @@ pub fn parse_issue_yaml(id: u16) -> IssueAggregate {
             description: description.clone(),
             status_id,
         },
-        id,
-        subject,
         author_id,
         created_on,
         updated_on,
-        project_id,
         tracker_id,
-        status_id,
         priority_id,
         assigned_to_id,
         target_version_id,
@@ -239,7 +235,6 @@ pub fn parse_issue_yaml(id: u16) -> IssueAggregate {
         estimated_hours,
         total_spent_hours,
         category_id,
-        description,
         child_ids,
         journal_ids,
     }
@@ -385,20 +380,4 @@ pub fn parse_time_entity_activities_yaml() -> HashMap<TimeEntityActivityId, Time
             (act.id, act)
         })
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::parse_issue_yaml;
-
-    #[test]
-    fn parsed_issue_keeps_lightweight_issue_fields_in_sync() {
-        let aggregate = parse_issue_yaml(1);
-
-        assert_eq!(aggregate.issue.id, aggregate.id);
-        assert_eq!(aggregate.issue.project_id, aggregate.project_id);
-        assert_eq!(aggregate.issue.subject, aggregate.subject);
-        assert_eq!(aggregate.issue.description, aggregate.description);
-        assert_eq!(aggregate.issue.status_id, aggregate.status_id);
-    }
 }

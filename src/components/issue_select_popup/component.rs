@@ -465,9 +465,7 @@ mod tests {
         sync_fixture_entities(&mut store);
         let mut loaded_issue =
             sample_issue_aggregate(1, "loaded subject", 1.into(), None, None, None, 0);
-        loaded_issue.subject = "legacy subject".to_string();
         loaded_issue.issue.description = "loaded body".to_string();
-        loaded_issue.description = "legacy body".to_string();
         store.consume_action(
             IssueAction::Sync {
                 issue: loaded_issue,
@@ -530,57 +528,6 @@ mod tests {
             component.take_effect(),
             Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page, .. })
                 if project_id == 1 && requested_page == page(1)
-        ));
-    }
-
-    #[test]
-    fn legacy_issue_project_outside_the_popup_snapshot_does_not_override_nested_project() {
-        let mut store = unloaded_store();
-        let mut issue = sample_issue_aggregate(42, "detail", 1.into(), None, None, None, 0);
-        issue.project_id = 99.into();
-        store.consume_action(IssueAction::Sync { issue }.into());
-        load_project_page(
-            &mut store,
-            2,
-            3,
-            vec![project_issue(42, 2, "project two", "body")],
-            1,
-            100,
-        );
-
-        let mut component = IssueSelectPopupComponent::new(&store, Some(42.into()));
-
-        assert_eq!(component.create_widget(&store).focused_project_index, 0);
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page, .. })
-                if project_id == 1 && requested_page == page(1)
-        ));
-    }
-
-    #[test]
-    fn nested_issue_project_sets_the_initial_project_when_legacy_project_differs() {
-        let mut store = unloaded_store();
-        let mut issue = sample_issue_aggregate(42, "detail", 1.into(), None, None, None, 0);
-        issue.issue.project_id = 2.into();
-        issue.project_id = 99.into();
-        store.consume_action(IssueAction::Sync { issue }.into());
-        load_project_page(
-            &mut store,
-            2,
-            3,
-            vec![project_issue(42, 2, "project two", "body")],
-            1,
-            100,
-        );
-
-        let mut component = IssueSelectPopupComponent::new(&store, Some(42.into()));
-
-        assert_eq!(component.create_widget(&store).focused_project_index, 1);
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page, .. })
-                if project_id == 2 && requested_page == page(1)
         ));
     }
 

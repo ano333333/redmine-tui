@@ -102,24 +102,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn matches_the_response_by_nested_issue_id() {
-        let dispatcher = dispatcher();
-        let mut response = issue(42);
-        response.id = IssueId::new(99);
-        let client = Arc::new(StubClient::succeeds(response));
-
-        let action = fetch_issue(dispatcher, client, IssueId::new(42))
-            .expect("unregistered issue should start fetching")
-            .await;
-
-        assert!(matches!(
-            action,
-            IssueAction::FetchSucceeded { id, issue }
-                if id == IssueId::new(42) && issue.issue.id == IssueId::new(42)
-        ));
-    }
-
-    #[tokio::test]
     async fn converts_client_error_to_fetch_failed() {
         let dispatcher = dispatcher();
         let client = Arc::new(StubClient::fails(RedmineClientError::Network {

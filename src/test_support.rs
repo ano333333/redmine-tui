@@ -129,14 +129,10 @@ pub fn sample_issue_aggregate(
             description: "body".to_string(),
             status_id: issue_status_id,
         },
-        id: IssueId::new(id),
-        subject: title.to_string(),
         author_id: UserId::new(1),
         created_on: local_datetime("2026-01-10T00:00:00+09:00"),
         updated_on: local_datetime("2026-01-15T00:00:00+09:00"),
-        project_id: ProjectId::new(1),
         tracker_id: 1.into(),
-        status_id: issue_status_id,
         priority_id: PriorityId::new(1),
         assigned_to_id: person_in_charge_id.map(UserId::new),
         target_version_id: Some(TargetVersionId::new(1)),
@@ -146,33 +142,7 @@ pub fn sample_issue_aggregate(
         estimated_hours: Some(8),
         total_spent_hours: Some(3.5),
         category_id: Some(CategoryId::new(1)),
-        description: "body".to_string(),
         child_ids: vec![],
         journal_ids: vec![],
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::sample_issue_aggregate;
-    use crate::vos::IssueStatusId;
-
-    #[test]
-    fn sample_issue_aggregate_keeps_lightweight_issue_fields_in_sync() {
-        let aggregate = sample_issue_aggregate(
-            42,
-            "Fix login",
-            IssueStatusId::new(3),
-            Some(1001),
-            None,
-            None,
-            30,
-        );
-
-        assert_eq!(aggregate.issue.id, aggregate.id);
-        assert_eq!(aggregate.issue.project_id, aggregate.project_id);
-        assert_eq!(aggregate.issue.subject, aggregate.subject);
-        assert_eq!(aggregate.issue.description, aggregate.description);
-        assert_eq!(aggregate.issue.status_id, aggregate.status_id);
     }
 }

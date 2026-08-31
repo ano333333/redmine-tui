@@ -388,7 +388,6 @@ mod tests {
         let mut server_issue =
             sample_issue_aggregate(1, "server subject", 9.into(), None, None, None, 0);
         server_issue.issue.description = "# server body".to_string();
-        server_issue.description = "legacy server body".to_string();
 
         let status = diff_value_text(
             &server_issue,

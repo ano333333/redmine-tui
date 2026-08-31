@@ -77,10 +77,7 @@ mod tests {
     use super::*;
     use crate::test_support::{render_snapshot, sample_issue_aggregate};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::buffer::Buffer;
     use ratatui::layout::Position;
-    use ratatui::layout::Rect;
-    use ratatui::widgets::Widget;
 
     const ISSUE_ID: u16 = 1;
     const WIDE_WIDTH: u16 = 32;
@@ -238,32 +235,6 @@ mod tests {
             component.line_count(WIDE_WIDTH),
             component.create_widget(),
         );
-    }
-
-    #[test]
-    fn update_displays_and_edits_the_nested_issue_description() {
-        let mut issue = issue_with_body("legacy body");
-        issue.issue.description = "nested body".to_string();
-        let mut component = BodyComponent::new(ISSUE_ID);
-        component.update(&issue, WIDE_WIDTH);
-        component.focus_event(FocusEvent::Focused {
-            position: Position::new(0, 0),
-        });
-
-        let area = Rect::new(0, 0, WIDE_WIDTH, 1);
-        let mut buffer = Buffer::empty(area);
-        component.create_widget().render(area, &mut buffer);
-        let rendered = (0..WIDE_WIDTH)
-            .map(|x| buffer[(x, 0)].symbol())
-            .collect::<String>();
-        let result = component.process_event(key_event(KeyCode::Char('e')));
-
-        assert!(rendered.contains("nested body"));
-        assert!(!rendered.contains("legacy body"));
-        assert!(matches!(
-            result,
-            Some(EventProcessResult::EditRequested { body, .. }) if body == "nested body"
-        ));
     }
 
     #[test]
