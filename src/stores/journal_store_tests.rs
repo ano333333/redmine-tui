@@ -8,6 +8,44 @@ use crate::vos::{
     IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, JournalKey, LocalJournalId,
 };
 
+fn remote_edited_dispatcher() -> Dispatcher {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Load {
+        id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(Action::LoadJournal {
+        id: JournalId::new(1),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::EditRemoteNotes {
+        id: JournalId::new(1),
+        notes: "edited notes".to_string(),
+    });
+    dispatcher.consume_action();
+    dispatcher
+}
+
+fn local_only_dispatcher() -> (Dispatcher, LocalJournalId) {
+    let mut dispatcher = Dispatcher::new();
+    let id = dispatcher.new_local_journal_id();
+    dispatcher.dispatch(JournalAction::CreateLocal {
+        id,
+        issue_id: IssueId::new(1),
+        notes: "local notes".to_string(),
+    });
+    dispatcher.consume_action();
+    (dispatcher, id)
+}
+
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|message| (*message).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .expect("panic should contain a string message")
+}
+
 #[test]
 fn empty_store_has_no_remote_or_local_entry() {
     let store = Store::new();
@@ -432,6 +470,320 @@ fn create_local_rejects_reusing_an_issued_id() {
         id,
         issue_id: IssueId::new(2),
         notes: String::new(),
+    });
+    dispatcher.consume_action();
+}
+
+#[test]
+fn start_upload_transitions_edited_remote_and_local_only_entries() {
+    let mut remote = remote_edited_dispatcher();
+    remote.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    remote.consume_action();
+    let (mut local, id) = local_only_dispatcher();
+    local.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Local(id),
+    });
+    local.consume_action();
+
+    assert!(matches!(
+        remote
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1))),
+        Some(JournalEntry::Remote {
+            state: RemoteJournalState::Uploading,
+            ..
+        })
+    ));
+    assert!(matches!(
+        local.store().get_journal_entry(JournalKey::Local(id)),
+        Some(JournalEntry::Local {
+            state: LocalJournalState::Uploading,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn start_upload_is_a_no_op_for_synced_remote_and_uploading_entries() {
+    let mut synced = Dispatcher::new();
+    synced.dispatch(IssueAction::Load {
+        id: IssueId::new(3),
+    });
+    synced.consume_action();
+    synced.dispatch(Action::LoadJournal {
+        id: JournalId::new(1),
+    });
+    synced.consume_action();
+    synced.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    synced.consume_action();
+    assert!(matches!(
+        synced
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1))),
+        Some(JournalEntry::Remote {
+            state: RemoteJournalState::Synced,
+            ..
+        })
+    ));
+
+    let mut uploading = remote_edited_dispatcher();
+    let action = JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    };
+    uploading.dispatch(action);
+    uploading.consume_action();
+    uploading.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    uploading.consume_action();
+    assert!(matches!(
+        uploading
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1))),
+        Some(JournalEntry::Remote {
+            state: RemoteJournalState::Uploading,
+            ..
+        })
+    ));
+
+    let (mut local, id) = local_only_dispatcher();
+    local.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Local(id),
+    });
+    local.consume_action();
+    local.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Local(id),
+    });
+    local.consume_action();
+    assert!(matches!(
+        local.store().get_journal_entry(JournalKey::Local(id)),
+        Some(JournalEntry::Local {
+            state: LocalJournalState::Uploading,
+            ..
+        })
+    ));
+}
+
+#[test]
+#[should_panic(expected = "journal does not exist")]
+fn start_upload_rejects_a_missing_key() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(999)),
+    });
+    dispatcher.consume_action();
+}
+
+#[test]
+fn failed_upload_restores_the_editable_state_and_content() {
+    let mut remote = remote_edited_dispatcher();
+    remote.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    remote.consume_action();
+    remote.dispatch(JournalAction::FailUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    remote.consume_action();
+    let Some(JournalEntry::Remote {
+        journal,
+        state,
+        notes_diff,
+        ..
+    }) = remote
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+    else {
+        panic!()
+    };
+    assert_eq!(journal.notes, "edited notes");
+    assert_eq!(state, &RemoteJournalState::Edited);
+    assert_eq!(notes_diff.as_ref().unwrap().after, "edited notes");
+
+    let (mut local, id) = local_only_dispatcher();
+    local.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Local(id),
+    });
+    local.consume_action();
+    local.dispatch(JournalAction::FailUpload {
+        key: JournalKey::Local(id),
+    });
+    local.consume_action();
+    let Some(JournalEntry::Local { journal, state }) =
+        local.store().get_journal_entry(JournalKey::Local(id))
+    else {
+        panic!()
+    };
+    assert_eq!(journal.notes, "local notes");
+    assert_eq!(state, &LocalJournalState::LocalOnly);
+}
+
+#[test]
+fn fail_upload_rejects_a_non_uploading_entry_without_changing_its_state() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let (mut dispatcher, id) = local_only_dispatcher();
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        dispatcher.dispatch(JournalAction::FailUpload {
+            key: JournalKey::Local(id),
+        });
+        dispatcher.consume_action();
+    }));
+    assert_eq!(
+        panic_message(result.unwrap_err()),
+        "journal is not uploading"
+    );
+    assert!(matches!(
+        dispatcher.store().get_journal_entry(JournalKey::Local(id)),
+        Some(JournalEntry::Local {
+            state: LocalJournalState::LocalOnly,
+            ..
+        })
+    ));
+}
+
+#[test]
+#[should_panic(expected = "journal is not uploading")]
+fn fail_upload_rejects_an_edited_remote_entry() {
+    let mut dispatcher = remote_edited_dispatcher();
+    dispatcher.dispatch(JournalAction::FailUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    dispatcher.consume_action();
+}
+
+#[test]
+#[should_panic(expected = "journal does not exist")]
+fn fail_upload_rejects_a_missing_key() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(JournalAction::FailUpload {
+        key: JournalKey::Local(LocalJournalId::new(999)),
+    });
+    dispatcher.consume_action();
+}
+
+#[test]
+fn uploading_entries_reject_edits_without_changing_content() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let mut remote = remote_edited_dispatcher();
+    remote.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    remote.consume_action();
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        remote.dispatch(JournalAction::EditRemoteNotes {
+            id: JournalId::new(1),
+            notes: "later".to_string(),
+        });
+        remote.consume_action();
+    }));
+    assert_eq!(
+        panic_message(result.unwrap_err()),
+        "cannot edit a remote journal while uploading"
+    );
+    let Some(JournalEntry::Remote {
+        journal,
+        state,
+        notes_diff,
+        ..
+    }) = remote
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+    else {
+        panic!()
+    };
+    assert_eq!(journal.notes, "edited notes");
+    assert_eq!(state, &RemoteJournalState::Uploading);
+    assert_eq!(notes_diff.as_ref().unwrap().after, "edited notes");
+
+    let (mut local, id) = local_only_dispatcher();
+    local.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Local(id),
+    });
+    local.consume_action();
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        local.dispatch(JournalAction::EditLocalNotes {
+            id,
+            notes: "later".to_string(),
+        });
+        local.consume_action();
+    }));
+    assert_eq!(
+        panic_message(result.unwrap_err()),
+        "cannot edit a local journal while uploading"
+    );
+    let Some(JournalEntry::Local { journal, state }) =
+        local.store().get_journal_entry(JournalKey::Local(id))
+    else {
+        panic!()
+    };
+    assert_eq!(journal.notes, "local notes");
+    assert_eq!(state, &LocalJournalState::Uploading);
+}
+
+#[test]
+fn complete_remote_upload_preserves_metadata_and_clears_the_diff() {
+    let expected = parse_journal_yaml(JournalId::new(1));
+    let mut dispatcher = remote_edited_dispatcher();
+    dispatcher.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::CompleteRemoteUpload {
+        id: JournalId::new(1),
+        notes: "sent notes".to_string(),
+    });
+    dispatcher.consume_action();
+
+    let Some(JournalEntry::Remote {
+        journal,
+        state,
+        notes_diff,
+        ..
+    }) = dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+    else {
+        panic!()
+    };
+    assert_eq!(journal.id, expected.id);
+    assert_eq!(journal.user, expected.user);
+    assert_eq!(journal.updated_on, expected.updated_on);
+    let [JournalDetail::Attr(JournalDetailAttr::StatusId { old, new })] =
+        journal.details.as_slice()
+    else {
+        panic!("completed upload should preserve journal details");
+    };
+    assert_eq!(*old, IssueStatusId::new(1));
+    assert_eq!(*new, IssueStatusId::new(2));
+    assert_eq!(journal.notes, "sent notes");
+    assert_eq!(state, &RemoteJournalState::Synced);
+    assert_eq!(notes_diff, &None);
+}
+
+#[test]
+#[should_panic(expected = "remote journal is not uploading")]
+fn complete_remote_upload_rejects_a_non_uploading_entry() {
+    let mut dispatcher = remote_edited_dispatcher();
+    dispatcher.dispatch(JournalAction::CompleteRemoteUpload {
+        id: JournalId::new(1),
+        notes: "sent".to_string(),
+    });
+    dispatcher.consume_action();
+}
+
+#[test]
+#[should_panic(expected = "remote journal does not exist")]
+fn complete_remote_upload_rejects_a_missing_id() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(JournalAction::CompleteRemoteUpload {
+        id: JournalId::new(999),
+        notes: "sent".to_string(),
     });
     dispatcher.consume_action();
 }

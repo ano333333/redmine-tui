@@ -46,6 +46,16 @@ pub enum JournalAction {
         id: JournalId,
         notes: String,
     },
+    StartUpload {
+        key: JournalKey,
+    },
+    FailUpload {
+        key: JournalKey,
+    },
+    CompleteRemoteUpload {
+        id: JournalId,
+        notes: String,
+    },
 }
 
 pub(super) struct JournalStore {
@@ -102,11 +112,14 @@ impl JournalStore {
                 );
             }
             JournalAction::EditLocalNotes { id, notes } => {
-                let Some(JournalEntry::Local { journal, .. }) =
+                let Some(JournalEntry::Local { journal, state }) =
                     self.entries.get_mut(&JournalKey::Local(id))
                 else {
                     panic!("local journal does not exist");
                 };
+                if state == &LocalJournalState::Uploading {
+                    panic!("cannot edit a local journal while uploading");
+                }
                 journal.notes = notes;
             }
             JournalAction::EditRemoteNotes { id, notes } => {
@@ -119,6 +132,9 @@ impl JournalStore {
                 else {
                     panic!("remote journal does not exist");
                 };
+                if state == &RemoteJournalState::Uploading {
+                    panic!("cannot edit a remote journal while uploading");
+                }
                 let before = notes_diff
                     .as_ref()
                     .map_or_else(|| journal.notes.clone(), |diff| diff.before.clone());
@@ -133,6 +149,54 @@ impl JournalStore {
                         after: notes,
                     });
                 }
+            }
+            JournalAction::StartUpload { key } => {
+                let Some(entry) = self.entries.get_mut(&key) else {
+                    panic!("journal does not exist");
+                };
+                match entry {
+                    JournalEntry::Remote { state, .. } => match state {
+                        RemoteJournalState::Edited => *state = RemoteJournalState::Uploading,
+                        RemoteJournalState::Synced | RemoteJournalState::Uploading => {}
+                    },
+                    JournalEntry::Local { state, .. } => match state {
+                        LocalJournalState::LocalOnly => *state = LocalJournalState::Uploading,
+                        LocalJournalState::Uploading => {}
+                    },
+                }
+            }
+            JournalAction::FailUpload { key } => {
+                let Some(entry) = self.entries.get_mut(&key) else {
+                    panic!("journal does not exist");
+                };
+                match entry {
+                    JournalEntry::Remote { state, .. }
+                        if state == &RemoteJournalState::Uploading =>
+                    {
+                        *state = RemoteJournalState::Edited;
+                    }
+                    JournalEntry::Local { state, .. } if state == &LocalJournalState::Uploading => {
+                        *state = LocalJournalState::LocalOnly;
+                    }
+                    _ => panic!("journal is not uploading"),
+                }
+            }
+            JournalAction::CompleteRemoteUpload { id, notes } => {
+                let Some(JournalEntry::Remote {
+                    journal,
+                    state,
+                    notes_diff,
+                    ..
+                }) = self.entries.get_mut(&JournalKey::Remote(id))
+                else {
+                    panic!("remote journal does not exist");
+                };
+                if state != &RemoteJournalState::Uploading {
+                    panic!("remote journal is not uploading");
+                }
+                journal.notes = notes;
+                *state = RemoteJournalState::Synced;
+                *notes_diff = None;
             }
         }
     }
