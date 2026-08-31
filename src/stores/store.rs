@@ -106,16 +106,22 @@ impl Store {
             Action::Issue(action) => self.issue_store.consume_action(action),
             Action::ProjectIssues(action) => self.project_issues_store.consume_action(action),
             Action::Journal(action) => {
-                let JournalAction::CreateLocal { id, .. } = &action;
-                let id = *id;
-                if !self.issued_local_journal_ids.contains(&id) {
-                    panic!("local journal ID was not issued by this Store");
+                if let JournalAction::CreateLocal { id, .. } = &action {
+                    if !self.issued_local_journal_ids.contains(id) {
+                        panic!("local journal ID was not issued by this Store");
+                    }
+                    if self.used_local_journal_ids.contains(id) {
+                        panic!("local journal ID has already been used");
+                    }
                 }
-                if self.used_local_journal_ids.contains(&id) {
-                    panic!("local journal ID has already been used");
-                }
+                let created_id = match &action {
+                    JournalAction::CreateLocal { id, .. } => Some(*id),
+                    JournalAction::EditLocalNotes { .. } => None,
+                };
                 self.journal_store.consume_action(action);
-                self.used_local_journal_ids.insert(id);
+                if let Some(id) = created_id {
+                    self.used_local_journal_ids.insert(id);
+                }
             }
             Action::SyncUsers { users } => {
                 self.users = users.into_iter().map(|user| (user.id, user)).collect();

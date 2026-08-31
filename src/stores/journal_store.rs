@@ -38,6 +38,10 @@ pub enum JournalAction {
         issue_id: IssueId,
         notes: String,
     },
+    EditLocalNotes {
+        id: LocalJournalId,
+        notes: String,
+    },
 }
 
 pub(super) struct JournalStore {
@@ -81,6 +85,14 @@ impl JournalStore {
                         state: LocalJournalState::LocalOnly,
                     },
                 );
+            }
+            JournalAction::EditLocalNotes { id, notes } => {
+                let Some(JournalEntry::Local { journal, .. }) =
+                    self.entries.get_mut(&JournalKey::Local(id))
+                else {
+                    panic!("local journal does not exist");
+                };
+                journal.notes = notes;
             }
         }
     }

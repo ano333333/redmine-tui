@@ -55,6 +55,47 @@ fn create_local_adds_an_entry_through_dispatch_and_consume() {
 }
 
 #[test]
+fn edit_local_notes_replaces_notes_and_keeps_local_only_state() {
+    let mut dispatcher = Dispatcher::new();
+    let id = dispatcher.new_local_journal_id();
+
+    dispatcher.dispatch(JournalAction::CreateLocal {
+        id,
+        issue_id: IssueId::new(1),
+        notes: "before".to_string(),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::EditLocalNotes {
+        id,
+        notes: "after".to_string(),
+    });
+    dispatcher.consume_action();
+
+    let entry = dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Local(id))
+        .expect("edited local journal should remain stored");
+    let JournalEntry::Local { journal, state } = entry else {
+        panic!("local key should refer to a local journal");
+    };
+    assert_eq!(journal.notes, "after");
+    assert_eq!(state, &LocalJournalState::LocalOnly);
+}
+
+#[test]
+#[should_panic(expected = "local journal does not exist")]
+fn edit_local_notes_rejects_a_missing_id() {
+    let mut dispatcher = Dispatcher::new();
+    let id = dispatcher.new_local_journal_id();
+
+    dispatcher.dispatch(JournalAction::EditLocalNotes {
+        id,
+        notes: "after".to_string(),
+    });
+    dispatcher.consume_action();
+}
+
+#[test]
 #[should_panic(expected = "issue already has a local journal")]
 fn create_local_rejects_a_second_local_journal_for_the_same_issue() {
     let mut dispatcher = Dispatcher::new();
