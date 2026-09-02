@@ -1,7 +1,8 @@
 use super::{
     Action, Dispatcher, IssueAction, JournalAction, JournalEntry, LocalJournalState,
-    RemoteJournalState, Store,
+    RemoteJournalState, Store, journal_store::merge_fetched_journals,
 };
+use crate::entities::LocalJournal;
 use crate::libs::yaml::parse_journal_yaml;
 use crate::test_support::sample_issue_aggregate;
 use crate::vos::{
@@ -908,4 +909,273 @@ fn complete_remote_upload_rejects_a_missing_id() {
         notes: "sent".to_string(),
     });
     dispatcher.consume_action();
+}
+
+#[test]
+fn fetched_merge_uses_server_order_and_preserves_dirty_and_local_entries() {
+    use std::collections::HashMap;
+
+    let issue_id = IssueId::new(3);
+    let local_id = LocalJournalId::new(1);
+    let mut edited = parse_journal_yaml(JournalId::new(1));
+    edited.notes = "local edit".to_string();
+    let uploading = parse_journal_yaml(JournalId::new(2));
+    let mut edited_four = parse_journal_yaml(JournalId::new(3));
+    edited_four.id = JournalId::new(4);
+    edited_four.notes = "second local edit".to_string();
+    let entries = HashMap::from([
+        (
+            JournalKey::Remote(JournalId::new(4)),
+            JournalEntry::Remote {
+                journal: edited_four,
+                issue_id,
+                state: RemoteJournalState::Edited,
+                notes_diff: Some(crate::vos::JournalNotesDiff {
+                    before: "second server before".to_string(),
+                    after: "second local edit".to_string(),
+                }),
+            },
+        ),
+        (
+            JournalKey::Remote(JournalId::new(1)),
+            JournalEntry::Remote {
+                journal: edited,
+                issue_id,
+                state: RemoteJournalState::Edited,
+                notes_diff: Some(crate::vos::JournalNotesDiff {
+                    before: "server before".to_string(),
+                    after: "local edit".to_string(),
+                }),
+            },
+        ),
+        (
+            JournalKey::Remote(JournalId::new(2)),
+            JournalEntry::Remote {
+                journal: uploading,
+                issue_id,
+                state: RemoteJournalState::Uploading,
+                notes_diff: Some(crate::vos::JournalNotesDiff {
+                    before: "before upload".to_string(),
+                    after: "uploading edit".to_string(),
+                }),
+            },
+        ),
+        (
+            JournalKey::Local(local_id),
+            JournalEntry::Local {
+                journal: LocalJournal {
+                    id: local_id,
+                    issue_id,
+                    notes: "new notes".to_string(),
+                },
+                state: LocalJournalState::LocalOnly,
+            },
+        ),
+    ]);
+    let mut server_two = parse_journal_yaml(JournalId::new(2));
+    server_two.notes = "server changed".to_string();
+    let result = merge_fetched_journals(
+        issue_id,
+        vec![server_two, parse_journal_yaml(JournalId::new(3))],
+        &[
+            JournalKey::Remote(JournalId::new(1)),
+            JournalKey::Remote(JournalId::new(4)),
+            JournalKey::Remote(JournalId::new(2)),
+            JournalKey::Local(local_id),
+        ],
+        &entries,
+    );
+
+    assert_eq!(
+        result.journal_keys,
+        vec![
+            JournalKey::Remote(JournalId::new(2)),
+            JournalKey::Remote(JournalId::new(3)),
+            JournalKey::Remote(JournalId::new(1)),
+            JournalKey::Remote(JournalId::new(4)),
+            JournalKey::Local(local_id),
+        ]
+    );
+    let JournalEntry::Remote { journal, state, .. } = result
+        .entries
+        .get(&JournalKey::Remote(JournalId::new(2)))
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(journal.notes, parse_journal_yaml(JournalId::new(2)).notes);
+    assert_eq!(state, &RemoteJournalState::Uploading);
+    let JournalEntry::Remote { journal, state, .. } = result
+        .entries
+        .get(&JournalKey::Remote(JournalId::new(1)))
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(journal.notes, "local edit");
+    assert_eq!(state, &RemoteJournalState::Edited);
+}
+
+#[test]
+fn fetched_merge_replaces_synced_entries_and_removes_missing_synced_entries() {
+    use std::collections::HashMap;
+
+    let issue_id = IssueId::new(3);
+    let entries = HashMap::from([
+        (
+            JournalKey::Remote(JournalId::new(1)),
+            JournalEntry::Remote {
+                journal: parse_journal_yaml(JournalId::new(1)),
+                issue_id,
+                state: RemoteJournalState::Synced,
+                notes_diff: None,
+            },
+        ),
+        (
+            JournalKey::Remote(JournalId::new(2)),
+            JournalEntry::Remote {
+                journal: parse_journal_yaml(JournalId::new(2)),
+                issue_id,
+                state: RemoteJournalState::Synced,
+                notes_diff: None,
+            },
+        ),
+    ]);
+    let mut fetched = parse_journal_yaml(JournalId::new(1));
+    fetched.notes = "fresh server notes".to_string();
+    let result = merge_fetched_journals(
+        issue_id,
+        vec![fetched],
+        &[
+            JournalKey::Remote(JournalId::new(1)),
+            JournalKey::Remote(JournalId::new(2)),
+        ],
+        &entries,
+    );
+
+    assert_eq!(
+        result.journal_keys,
+        vec![JournalKey::Remote(JournalId::new(1))]
+    );
+    let JournalEntry::Remote {
+        journal,
+        state,
+        notes_diff,
+        ..
+    } = result
+        .entries
+        .get(&JournalKey::Remote(JournalId::new(1)))
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(journal.notes, "fresh server notes");
+    assert_eq!(state, &RemoteJournalState::Synced);
+    assert_eq!(notes_diff, &None);
+    assert!(
+        !result
+            .entries
+            .contains_key(&JournalKey::Remote(JournalId::new(2)))
+    );
+}
+
+#[test]
+fn fetched_merge_rejects_an_id_owned_by_another_issue_without_changing_entries() {
+    use std::collections::HashMap;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let key = JournalKey::Remote(JournalId::new(1));
+    let entries = HashMap::from([(
+        key,
+        JournalEntry::Remote {
+            journal: parse_journal_yaml(JournalId::new(1)),
+            issue_id: IssueId::new(4),
+            state: RemoteJournalState::Synced,
+            notes_diff: None,
+        },
+    )]);
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        merge_fetched_journals(
+            IssueId::new(3),
+            vec![parse_journal_yaml(JournalId::new(1))],
+            &[],
+            &entries,
+        )
+    }));
+
+    let payload = match result {
+        Err(payload) => payload,
+        Ok(_) => panic!("ownership conflict should be rejected"),
+    };
+    assert_eq!(
+        panic_message(payload),
+        "remote journal is already owned by another issue"
+    );
+    let JournalEntry::Remote { issue_id, .. } = entries.get(&key).unwrap() else {
+        panic!()
+    };
+    assert_eq!(*issue_id, IssueId::new(4));
+}
+
+#[test]
+fn fetched_merge_rejects_duplicate_fetched_ids_before_building_a_result() {
+    use std::collections::HashMap;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let entries = HashMap::new();
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        merge_fetched_journals(
+            IssueId::new(3),
+            vec![
+                parse_journal_yaml(JournalId::new(1)),
+                parse_journal_yaml(JournalId::new(1)),
+            ],
+            &[],
+            &entries,
+        )
+    }));
+
+    let payload = match result {
+        Err(payload) => payload,
+        Ok(_) => panic!("duplicate fetched IDs should be rejected"),
+    };
+    assert_eq!(
+        panic_message(payload),
+        "fetched journals contain duplicate IDs"
+    );
+    assert!(entries.is_empty());
+}
+
+#[test]
+fn fetched_merge_rejects_duplicate_old_keys_and_multiple_local_keys() {
+    use std::collections::HashMap;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let entries = HashMap::new();
+    for (keys, message) in [
+        (
+            vec![
+                JournalKey::Remote(JournalId::new(1)),
+                JournalKey::Remote(JournalId::new(1)),
+            ],
+            "old journal keys contain duplicates",
+        ),
+        (
+            vec![
+                JournalKey::Local(LocalJournalId::new(1)),
+                JournalKey::Local(LocalJournalId::new(2)),
+            ],
+            "old journal keys contain multiple local journals",
+        ),
+    ] {
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            merge_fetched_journals(IssueId::new(3), vec![], &keys, &entries)
+        }));
+        let payload = match result {
+            Err(payload) => payload,
+            Ok(_) => panic!("invalid old keys should be rejected"),
+        };
+        assert_eq!(panic_message(payload), message);
+    }
 }

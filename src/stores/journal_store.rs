@@ -16,6 +16,7 @@ pub enum LocalJournalState {
     Uploading,
 }
 
+#[derive(Clone)]
 pub enum JournalEntry {
     Remote {
         journal: Journal,
@@ -64,6 +65,99 @@ pub enum JournalAction {
 
 pub(super) struct JournalStore {
     entries: HashMap<JournalKey, JournalEntry>,
+}
+
+pub(super) struct FetchedJournalsMerge {
+    pub(super) entries: HashMap<JournalKey, JournalEntry>,
+    pub(super) journal_keys: Vec<JournalKey>,
+}
+
+pub(super) fn merge_fetched_journals(
+    issue_id: IssueId,
+    fetched: Vec<Journal>,
+    old_keys: &[JournalKey],
+    entries: &HashMap<JournalKey, JournalEntry>,
+) -> FetchedJournalsMerge {
+    let mut fetched_ids = std::collections::HashSet::new();
+    for journal in &fetched {
+        if !fetched_ids.insert(journal.id) {
+            panic!("fetched journals contain duplicate IDs");
+        }
+        if matches!(
+            entries.get(&JournalKey::Remote(journal.id)),
+            Some(JournalEntry::Remote { issue_id: owner, .. }) if *owner != issue_id
+        ) {
+            panic!("remote journal is already owned by another issue");
+        }
+    }
+    let mut old_key_set = std::collections::HashSet::new();
+    let mut local_count = 0;
+    for key in old_keys {
+        if !old_key_set.insert(*key) {
+            panic!("old journal keys contain duplicates");
+        }
+        if matches!(key, JournalKey::Local(_)) {
+            local_count += 1;
+        }
+    }
+    if local_count > 1 {
+        panic!("old journal keys contain multiple local journals");
+    }
+
+    let mut entries = entries.clone();
+    let mut journal_keys = Vec::with_capacity(fetched.len() + 1);
+
+    for journal in fetched {
+        let key = JournalKey::Remote(journal.id);
+        let entry = match entries.remove(&key) {
+            Some(
+                entry @ JournalEntry::Remote {
+                    issue_id: owner,
+                    state: RemoteJournalState::Edited | RemoteJournalState::Uploading,
+                    ..
+                },
+            ) if owner == issue_id => entry,
+            _ => JournalEntry::Remote {
+                journal,
+                issue_id,
+                state: RemoteJournalState::Synced,
+                notes_diff: None,
+            },
+        };
+        entries.insert(key, entry);
+        journal_keys.push(key);
+    }
+
+    let mut local_keys = Vec::new();
+    for key in old_keys.iter().copied() {
+        if journal_keys.contains(&key) {
+            continue;
+        }
+        match entries.get(&key) {
+            Some(JournalEntry::Remote {
+                issue_id: owner,
+                state: RemoteJournalState::Edited | RemoteJournalState::Uploading,
+                ..
+            }) if *owner == issue_id => journal_keys.push(key),
+            Some(JournalEntry::Local { journal, .. }) if journal.issue_id == issue_id => {
+                local_keys.push(key)
+            }
+            Some(JournalEntry::Remote {
+                issue_id: owner,
+                state: RemoteJournalState::Synced,
+                ..
+            }) if *owner == issue_id => {
+                entries.remove(&key);
+            }
+            _ => {}
+        }
+    }
+    journal_keys.extend(local_keys);
+
+    FetchedJournalsMerge {
+        entries,
+        journal_keys,
+    }
 }
 
 impl JournalStore {
