@@ -227,6 +227,10 @@ impl Store {
         self.journal_store.entry(key)
     }
 
+    pub(crate) fn has_journal_entry_for_issue(&self, issue_id: IssueId) -> bool {
+        self.journal_store.has_entry_for_issue(issue_id)
+    }
+
     pub fn get_users(&self) -> &HashMap<UserId, User> {
         &self.users
     }

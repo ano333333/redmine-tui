@@ -63,6 +63,126 @@ fn empty_store_has_no_remote_or_local_entry() {
 }
 
 #[test]
+fn register_remote_adds_a_synced_entry_with_its_owner() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(JournalAction::RegisterRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+
+    let Some(JournalEntry::Remote {
+        journal,
+        issue_id,
+        state,
+        notes_diff,
+    }) = dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+    else {
+        panic!("registered remote journal should exist");
+    };
+    assert_eq!(journal.id, JournalId::new(1));
+    assert_eq!(*issue_id, IssueId::new(3));
+    assert_eq!(state, &RemoteJournalState::Synced);
+    assert_eq!(notes_diff, &None);
+}
+
+#[test]
+fn register_remote_rejects_an_id_owned_by_another_issue_without_replacing_it() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(JournalAction::RegisterRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::RegisterRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(4),
+    });
+
+    let result = catch_unwind(AssertUnwindSafe(|| dispatcher.consume_action()));
+
+    assert_eq!(
+        panic_message(result.unwrap_err()),
+        "remote journal is already owned by another issue"
+    );
+    let Some(JournalEntry::Remote { issue_id, .. }) = dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+    else {
+        panic!("original remote journal should remain stored");
+    };
+    assert_eq!(*issue_id, IssueId::new(3));
+}
+
+#[test]
+fn register_remote_rejects_existing_synced_edited_and_uploading_entries_without_changes() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    for uploading in [false, true] {
+        let mut dispatcher = remote_edited_dispatcher();
+        if uploading {
+            dispatcher.dispatch(JournalAction::StartUpload {
+                key: JournalKey::Remote(JournalId::new(1)),
+            });
+            dispatcher.consume_action();
+        }
+        dispatcher.dispatch(JournalAction::RegisterRemote {
+            journal: parse_journal_yaml(JournalId::new(1)),
+            issue_id: IssueId::new(3),
+        });
+
+        assert!(catch_unwind(AssertUnwindSafe(|| dispatcher.consume_action())).is_err());
+        let Some(JournalEntry::Remote {
+            journal,
+            state,
+            notes_diff,
+            ..
+        }) = dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+        else {
+            panic!("existing remote journal should remain stored");
+        };
+        assert_eq!(journal.notes, "edited notes");
+        assert_eq!(notes_diff.as_ref().unwrap().after, "edited notes");
+        assert_eq!(
+            state,
+            if uploading {
+                &RemoteJournalState::Uploading
+            } else {
+                &RemoteJournalState::Edited
+            }
+        );
+    }
+
+    let mut synced = Dispatcher::new();
+    synced.dispatch(JournalAction::RegisterRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(3),
+    });
+    synced.consume_action();
+    synced.dispatch(JournalAction::RegisterRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(3),
+    });
+    assert!(catch_unwind(AssertUnwindSafe(|| synced.consume_action())).is_err());
+    assert!(matches!(
+        synced
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1))),
+        Some(JournalEntry::Remote {
+            state: RemoteJournalState::Synced,
+            notes_diff: None,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn load_journal_adds_a_remote_entry_for_its_loaded_issue() {
     let mut dispatcher = Dispatcher::new();
     dispatcher.dispatch(IssueAction::Load {

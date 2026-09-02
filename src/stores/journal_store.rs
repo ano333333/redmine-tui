@@ -30,6 +30,10 @@ pub enum JournalEntry {
 }
 
 pub enum JournalAction {
+    RegisterRemote {
+        journal: Journal,
+        issue_id: IssueId,
+    },
     /// Creates a Local Journal using an ID the caller reserved from the Dispatcher
     /// that will consume this action.
     CreateLocal {
@@ -73,6 +77,13 @@ impl JournalStore {
         self.entries.get(&key)
     }
 
+    pub(super) fn has_entry_for_issue(&self, issue_id: IssueId) -> bool {
+        self.entries.values().any(|entry| match entry {
+            JournalEntry::Remote { issue_id: id, .. } => *id == issue_id,
+            JournalEntry::Local { journal, .. } => journal.issue_id == issue_id,
+        })
+    }
+
     pub(super) fn load_remote_fixture(&mut self, journal: Journal, issue_id: IssueId) {
         self.entries
             .entry(JournalKey::Remote(journal.id))
@@ -86,6 +97,28 @@ impl JournalStore {
 
     pub(super) fn consume_action(&mut self, action: JournalAction) {
         match action {
+            JournalAction::RegisterRemote { journal, issue_id } => {
+                let key = JournalKey::Remote(journal.id);
+                match self.entries.get(&key) {
+                    Some(JournalEntry::Remote {
+                        issue_id: owner, ..
+                    }) if *owner != issue_id => {
+                        panic!("remote journal is already owned by another issue")
+                    }
+                    Some(_) => panic!("remote journal already exists"),
+                    None => {
+                        self.entries.insert(
+                            key,
+                            JournalEntry::Remote {
+                                journal,
+                                issue_id,
+                                state: RemoteJournalState::Synced,
+                                notes_diff: None,
+                            },
+                        );
+                    }
+                }
+            }
             JournalAction::CreateLocal {
                 id,
                 issue_id,
