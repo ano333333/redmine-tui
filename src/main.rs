@@ -271,9 +271,11 @@ fn start_issue_fetch<C>(
     };
 
     runtime.spawn(async move {
-        sender
-            .send(future.await.into())
-            .expect("Failed to send Action with mpsc::channel");
+        for action in future.await {
+            sender
+                .send(action)
+                .expect("Failed to send Action with mpsc::channel");
+        }
     });
 }
 
@@ -432,13 +434,14 @@ mod tests {
 
     use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
     use crate::entities::{
-        Category, Issue, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage,
-        TargetVersion, TimeEntityActivity, Tracker, User,
+        Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project,
+        ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
     };
+    use crate::libs::yaml::parse_journal_yaml;
     use crate::stores::ProjectIssuesAction;
     use crate::test_support::sample_issue_aggregate;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
-    use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId};
+    use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId, JournalId, JournalKey};
     use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
@@ -538,7 +541,7 @@ mod tests {
         let runtime = init_tokio_runtime().unwrap();
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         let mut app = AppComponent::new(dispatcher.clone(), Some(42.into()));
-        let client = Arc::new(IssueUploadClient::new(sample_issue_aggregate(
+        let mut fetched = sample_issue_aggregate(
             42,
             "fetched issue",
             IssueStatusId::new(1),
@@ -546,8 +549,14 @@ mod tests {
             None,
             None,
             0,
-        )));
+        );
+        fetched.journal_keys = vec![JournalKey::Remote(JournalId::new(2))];
+        let client = Arc::new(IssueUploadClient::with_journals(
+            fetched,
+            vec![parse_journal_yaml(JournalId::new(2))],
+        ));
         let (sender, receiver) = mpsc::channel::<Action>();
+        let completion_sender = sender.clone();
 
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
         let effect = app
@@ -558,21 +567,65 @@ mod tests {
         };
         start_issue_fetch(dispatcher.clone(), &runtime, sender, client, id);
 
-        assert!(app.take_effect().is_none());
-        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-        assert_eq!(dispatcher.borrow().store().get_issue_state(42), None);
-        let completion = receiver
-            .recv_timeout(Duration::from_secs(1))
-            .expect("fetch completion should be sent by the runtime task");
-        assert!(matches!(
-            completion,
-            Action::Issue(IssueAction::FetchSucceeded { id, issue })
-                if id == IssueId::new(42) && issue.issue.id == IssueId::new(42)
-        ));
+        let completions = (0..2)
+            .map(|_| {
+                receiver
+                    .recv_timeout(Duration::from_secs(1))
+                    .expect("fetch completion should be sent by the runtime task")
+            })
+            .collect::<Vec<_>>();
+        for action in completions {
+            completion_sender.send(action).unwrap();
+        }
+        move_worker_action(&receiver, dispatcher.clone());
+        update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+        let borrow = dispatcher.borrow();
+        let (issue, state) = borrow.store().get_issue(42).unwrap();
+        assert_eq!(state, &IssueState::Synced);
         assert_eq!(
-            dispatcher.borrow().consume_actinos_len(),
-            1,
-            "the spawned future must not dispatch or consume actions itself"
+            issue.journal_keys,
+            vec![JournalKey::Remote(JournalId::new(2))]
+        );
+        assert!(
+            borrow
+                .store()
+                .get_journal_entry(JournalKey::Remote(JournalId::new(2)))
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn worker_issue_fetch_failure_only_transitions_the_fetching_issue() {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        let mut app = AppComponent::new(dispatcher.clone(), Some(42.into()));
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::StartFetching { id: 42.into() });
+        let (sender, receiver) = mpsc::channel();
+        sender
+            .send(
+                IssueAction::FetchFailed {
+                    id: 42.into(),
+                    message: "offline".to_string(),
+                }
+                .into(),
+            )
+            .unwrap();
+
+        move_worker_action(&receiver, dispatcher.clone());
+        update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+
+        assert_eq!(
+            dispatcher.borrow().store().get_issue_state(42),
+            Some(&IssueState::FetchFailed {
+                message: "offline".to_string()
+            })
+        );
+        assert!(
+            !dispatcher
+                .borrow()
+                .store()
+                .has_journal_entry_for_issue(42.into())
         );
     }
 
@@ -772,6 +825,7 @@ mod tests {
 
     struct IssueUploadClient {
         issue: Option<IssueAggregate>,
+        journals: Vec<Journal>,
         get_error: bool,
         update_error: bool,
         uploaded: Mutex<Vec<IssueAggregate>>,
@@ -779,8 +833,13 @@ mod tests {
 
     impl IssueUploadClient {
         fn new(issue: IssueAggregate) -> Self {
+            Self::with_journals(issue, Vec::new())
+        }
+
+        fn with_journals(issue: IssueAggregate, journals: Vec<Journal>) -> Self {
             Self {
                 issue: Some(issue),
+                journals,
                 get_error: false,
                 update_error: false,
                 uploaded: Mutex::new(Vec::new()),
@@ -790,6 +849,7 @@ mod tests {
         fn failing_get() -> Self {
             Self {
                 issue: None,
+                journals: Vec::new(),
                 get_error: true,
                 update_error: false,
                 uploaded: Mutex::new(Vec::new()),
@@ -799,6 +859,7 @@ mod tests {
         fn failing_update(issue: IssueAggregate) -> Self {
             Self {
                 issue: Some(issue),
+                journals: Vec::new(),
                 get_error: false,
                 update_error: true,
                 uploaded: Mutex::new(Vec::new()),
@@ -823,7 +884,7 @@ mod tests {
             }
             Ok((
                 self.issue.clone().expect("test issue must exist"),
-                Vec::new(),
+                self.journals.clone(),
             ))
         }
 

@@ -5,14 +5,15 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::clients::redmine::RedmineClient;
-use crate::stores::{Dispatcher, IssueAction, IssueState};
+use crate::stores::{Action, Dispatcher, IssueAction, IssueState};
 use crate::vos::{EntityIdValue, IssueId};
 
-pub type FetchIssueFuture = Pin<Box<dyn Future<Output = IssueAction> + Send + 'static>>;
+pub type FetchIssueFuture = Pin<Box<dyn Future<Output = Vec<Action>> + Send + 'static>>;
 
 /// 未取得、または取得失敗状態のIssueについて詳細取得を開始する。
 ///
-/// 取得開始Actionは同期的にqueueへ追加する。返却したFutureはHTTP完了Actionを返す。
+/// 取得開始Actionは同期的にqueueへ追加する。返却したFutureは、その後ろへ順番に
+/// 追加するHTTP完了Action列を返す。
 pub fn fetch_issue<C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     client: Arc<C>,
@@ -35,19 +36,27 @@ where
 
     Some(Box::pin(async move {
         match client.get_issue(id).await {
-            Ok((issue, _)) if issue.issue.id == id => IssueAction::FetchSucceeded { id, issue },
-            Ok((issue, _)) => IssueAction::FetchFailed {
-                id,
-                message: format!(
-                    "requested issue {} but Redmine returned issue {}",
-                    id.get(),
-                    issue.issue.id.get()
-                ),
-            },
-            Err(error) => IssueAction::FetchFailed {
-                id,
-                message: error.to_string(),
-            },
+            Ok((issue, journals)) if issue.issue.id == id => {
+                super::initial_issue_details_actions(issue, journals)
+            }
+            Ok((issue, _)) => vec![
+                IssueAction::FetchFailed {
+                    id,
+                    message: format!(
+                        "requested issue {} but Redmine returned issue {}",
+                        id.get(),
+                        issue.issue.id.get()
+                    ),
+                }
+                .into(),
+            ],
+            Err(error) => vec![
+                IssueAction::FetchFailed {
+                    id,
+                    message: error.to_string(),
+                }
+                .into(),
+            ],
         }
     }))
 }
@@ -63,14 +72,15 @@ mod tests {
         Category, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
         TimeEntityActivity, Tracker, User,
     };
-    use crate::stores::{Dispatcher, IssueAction, IssueState};
+    use crate::libs::yaml::parse_journal_yaml;
+    use crate::stores::{Action, Dispatcher, IssueAction, IssueState, JournalAction};
     use crate::test_support::sample_issue_aggregate;
-    use crate::vos::{IssueId, IssueStatusId};
+    use crate::vos::{IssueId, IssueStatusId, JournalId, JournalKey};
 
     use super::fetch_issue;
 
     #[tokio::test]
-    async fn dispatches_start_synchronously_without_consuming_it() {
+    async fn queues_start_before_starting_the_http_request() {
         let dispatcher = dispatcher();
         let client = Arc::new(StubClient::succeeds(issue(42)));
 
@@ -78,26 +88,52 @@ mod tests {
 
         assert!(future.is_some());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-        assert_eq!(dispatcher.borrow().store().get_issue_state(42), None);
         assert_eq!(client.requested_ids(), Vec::<IssueId>::new());
     }
 
     #[tokio::test]
-    async fn returns_fetch_succeeded_after_getting_the_requested_issue() {
+    async fn returns_issue_and_journals_after_getting_the_requested_issue() {
         let dispatcher = dispatcher();
-        let client = Arc::new(StubClient::succeeds(issue(42)));
+        let mut fetched_issue = issue(42);
+        fetched_issue.journal_keys = vec![
+            JournalKey::Remote(JournalId::new(2)),
+            JournalKey::Remote(JournalId::new(1)),
+        ];
+        let client = Arc::new(StubClient::succeeds_with_journals(
+            fetched_issue,
+            vec![
+                parse_journal_yaml(JournalId::new(2)),
+                parse_journal_yaml(JournalId::new(1)),
+            ],
+        ));
 
-        let action = fetch_issue(dispatcher, client.clone(), IssueId::new(42))
+        let actions = fetch_issue(dispatcher, client.clone(), IssueId::new(42))
             .expect("unregistered issue should start fetching")
             .await;
 
-        match action {
-            IssueAction::FetchSucceeded { id, issue } => {
-                assert_eq!(id, IssueId::new(42));
-                assert_eq!(issue.issue.id, IssueId::new(42));
-            }
-            _ => panic!("successful request must return FetchSucceeded"),
-        }
+        let [
+            Action::Journal(JournalAction::RegisterRemote {
+                journal: first,
+                issue_id: first_owner,
+            }),
+            Action::Journal(JournalAction::RegisterRemote {
+                journal: second,
+                issue_id: second_owner,
+            }),
+            Action::Issue(IssueAction::FetchSucceeded { id, issue }),
+        ] = actions.as_slice()
+        else {
+            panic!("successful request must return journals then the issue")
+        };
+        assert_eq!(
+            (*first_owner, *second_owner, *id),
+            (42.into(), 42.into(), 42.into())
+        );
+        assert_eq!(
+            (first.id, second.id),
+            (JournalId::new(2), JournalId::new(1))
+        );
+        assert_eq!(issue.issue.id, IssueId::new(42));
         assert_eq!(client.requested_ids(), vec![IssueId::new(42)]);
     }
 
@@ -108,13 +144,13 @@ mod tests {
             reason: "offline".to_string(),
         }));
 
-        let action = fetch_issue(dispatcher, client, IssueId::new(42))
+        let actions = fetch_issue(dispatcher, client, IssueId::new(42))
             .expect("unregistered issue should start fetching")
             .await;
 
-        match action {
-            IssueAction::FetchFailed { id, message } => {
-                assert_eq!(id, IssueId::new(42));
+        match actions.as_slice() {
+            [Action::Issue(IssueAction::FetchFailed { id, message })] => {
+                assert_eq!(*id, IssueId::new(42));
                 assert_eq!(message, "network error: offline");
             }
             _ => panic!("client error must return FetchFailed"),
@@ -126,13 +162,13 @@ mod tests {
         let dispatcher = dispatcher();
         let client = Arc::new(StubClient::succeeds(issue(99)));
 
-        let action = fetch_issue(dispatcher, client, IssueId::new(42))
+        let actions = fetch_issue(dispatcher, client, IssueId::new(42))
             .expect("unregistered issue should start fetching")
             .await;
 
-        match action {
-            IssueAction::FetchFailed { id, message } => {
-                assert_eq!(id, IssueId::new(42));
+        match actions.as_slice() {
+            [Action::Issue(IssueAction::FetchFailed { id, message })] => {
+                assert_eq!(*id, IssueId::new(42));
                 assert!(message.contains("42"));
                 assert!(message.contains("99"));
             }
@@ -230,14 +266,21 @@ mod tests {
     }
 
     struct StubClient {
-        result: Result<IssueAggregate, RedmineClientError>,
+        result: Result<(IssueAggregate, Vec<crate::entities::Journal>), RedmineClientError>,
         requested_ids: Mutex<Vec<IssueId>>,
     }
 
     impl StubClient {
         fn succeeds(issue: IssueAggregate) -> Self {
+            Self::succeeds_with_journals(issue, Vec::new())
+        }
+
+        fn succeeds_with_journals(
+            issue: IssueAggregate,
+            journals: Vec<crate::entities::Journal>,
+        ) -> Self {
             Self {
-                result: Ok(issue),
+                result: Ok((issue, journals)),
                 requested_ids: Mutex::new(Vec::new()),
             }
         }
@@ -260,7 +303,7 @@ mod tests {
             id: IssueId,
         ) -> Result<(IssueAggregate, Vec<crate::entities::Journal>), RedmineClientError> {
             self.requested_ids.lock().unwrap().push(id);
-            self.result.clone().map(|issue| (issue, Vec::new()))
+            self.result.clone()
         }
 
         async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {

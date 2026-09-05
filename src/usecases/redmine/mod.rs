@@ -19,5 +19,5 @@ pub use load_initial_entities::load_initial_entities;
 #[allow(unused_imports)]
 pub use sync_fetched_journals::sync_fetched_journals;
 #[allow(unused_imports)]
-pub use sync_initial_issue_details::sync_initial_issue_details;
+pub use sync_initial_issue_details::initial_issue_details_actions;
 pub use upload_issue::upload_issue;

@@ -38,6 +38,7 @@ impl Dispatcher {
     pub fn consume_actinos_len(&self) -> usize {
         self.actions.len()
     }
+    // FIXME: Usecaseから直接consumeできないexport/visibility範囲へ制限する。
     pub fn consume_action(&mut self) {
         if let Some(action) = self.actions.pop_front() {
             self.store.consume_action(action);
