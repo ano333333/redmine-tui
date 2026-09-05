@@ -4,6 +4,7 @@ mod fetch_issue;
 mod fetch_issue_with_conflicts;
 mod fetch_project_issues_page;
 mod load_initial_entities;
+mod sync_fetched_journals;
 mod sync_initial_issue_details;
 mod upload_issue;
 
@@ -15,6 +16,8 @@ pub use fetch_issue_with_conflicts::fetch_issue_with_conflicts;
 #[allow(unused_imports)]
 pub use fetch_project_issues_page::fetch_project_issues_page;
 pub use load_initial_entities::load_initial_entities;
+#[allow(unused_imports)]
+pub use sync_fetched_journals::sync_fetched_journals;
 #[allow(unused_imports)]
 pub use sync_initial_issue_details::sync_initial_issue_details;
 pub use upload_issue::upload_issue;

@@ -88,12 +88,12 @@ pub(super) struct JournalStore {
     entries: HashMap<JournalKey, JournalEntry>,
 }
 
-pub(super) struct FetchedJournalsMerge {
-    pub(super) entries: HashMap<JournalKey, JournalEntry>,
-    pub(super) journal_keys: Vec<JournalKey>,
+pub(crate) struct FetchedJournalsMerge {
+    pub(crate) entries: HashMap<JournalKey, JournalEntry>,
+    pub(crate) journal_keys: Vec<JournalKey>,
 }
 
-pub(super) fn merge_fetched_journals(
+pub(crate) fn merge_fetched_journals(
     issue_id: IssueId,
     fetched: Vec<Journal>,
     old_keys: &[JournalKey],
