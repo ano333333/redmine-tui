@@ -35,6 +35,27 @@ pub enum JournalAction {
         journal: Journal,
         issue_id: IssueId,
     },
+    /// Applies one Remote Journal returned by a server fetch.
+    ///
+    /// A missing entry is registered as [`RemoteJournalState::Synced`]. An
+    /// existing `Synced` entry owned by the same Issue is replaced with the
+    /// server value. `Edited` and `Uploading` entries are left unchanged to
+    /// preserve local edits. An entry owned by another Issue is rejected.
+    SyncFetchedRemote {
+        journal: Journal,
+        issue_id: IssueId,
+    },
+    /// Removes a server-missing Remote Journal only when it is `Synced` and
+    /// owned by the specified Issue.
+    ///
+    /// `Edited` and `Uploading` entries are rejected to preserve local edits.
+    /// Entries owned by another Issue and missing Remote entries are also
+    /// rejected. The action addresses only a Remote key derived from its
+    /// `JournalId`, so a Local entry with the same numeric value is unaffected.
+    RemoveSyncedRemote {
+        id: JournalId,
+        issue_id: IssueId,
+    },
     /// Creates a Local Journal using an ID the caller reserved from the Dispatcher
     /// that will consume this action.
     CreateLocal {
@@ -211,6 +232,53 @@ impl JournalStore {
                             },
                         );
                     }
+                }
+            }
+            JournalAction::SyncFetchedRemote { journal, issue_id } => {
+                let key = JournalKey::Remote(journal.id);
+                match self.entries.get_mut(&key) {
+                    Some(JournalEntry::Remote {
+                        journal: stored,
+                        issue_id: owner,
+                        state: RemoteJournalState::Synced,
+                        ..
+                    }) if *owner == issue_id => *stored = journal,
+                    Some(JournalEntry::Remote {
+                        issue_id: owner,
+                        state: RemoteJournalState::Edited | RemoteJournalState::Uploading,
+                        ..
+                    }) if *owner == issue_id => {}
+                    Some(_) => panic!("remote journal is already owned by another issue"),
+                    None => {
+                        self.entries.insert(
+                            key,
+                            JournalEntry::Remote {
+                                journal,
+                                issue_id,
+                                state: RemoteJournalState::Synced,
+                                notes_diff: None,
+                            },
+                        );
+                    }
+                }
+            }
+            JournalAction::RemoveSyncedRemote { id, issue_id } => {
+                let key = JournalKey::Remote(id);
+                match self.entries.get(&key) {
+                    Some(JournalEntry::Remote {
+                        issue_id: owner,
+                        state: RemoteJournalState::Synced,
+                        ..
+                    }) if *owner == issue_id => {
+                        self.entries.remove(&key);
+                    }
+                    Some(JournalEntry::Remote {
+                        issue_id: owner, ..
+                    }) if *owner != issue_id => panic!("remote journal belongs to another issue"),
+                    Some(JournalEntry::Remote { .. }) => {
+                        panic!("cannot remove a dirty remote journal")
+                    }
+                    _ => panic!("remote journal does not exist"),
                 }
             }
             JournalAction::CreateLocal {

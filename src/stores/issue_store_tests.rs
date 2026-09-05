@@ -1,10 +1,10 @@
-use super::{IssueAction, IssueState, Store};
+use super::{Dispatcher, IssueAction, IssueState, Store};
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
 use crate::vos::issue_property_diff::{
     IssueDescriptionDiff, IssueDueDateDiff, IssueStartDateDiff, IssueStatusIdDiff,
 };
-use crate::vos::{CategoryId, IssueId, IssueStatusId, TargetVersionId};
+use crate::vos::{CategoryId, IssueId, IssueStatusId, JournalId, JournalKey, TargetVersionId};
 
 #[test]
 fn load_action_is_consumed_through_parent_store() {
@@ -852,4 +852,44 @@ fn fetch_failed_issue_sync_panics() {
         }
         .into(),
     );
+}
+
+#[test]
+fn replace_journal_keys_preserves_issue_fields_diffs_and_state() {
+    let id = IssueId::new(99);
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Sync {
+        issue: sample_issue_aggregate(99, "subject", 1.into(), None, None, None, 0),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(IssueAction::UpdateDescription {
+        id,
+        body: "edited".to_string(),
+    });
+    dispatcher.consume_action();
+    let keys = vec![JournalKey::Remote(JournalId::new(1))];
+
+    dispatcher.dispatch(IssueAction::ReplaceJournalKeys {
+        id,
+        journal_keys: keys.clone(),
+    });
+    dispatcher.consume_action();
+
+    let (issue, state) = dispatcher.store().get_issue(id).unwrap();
+    assert_eq!(issue.issue.subject, "subject");
+    assert_eq!(issue.issue.description, "edited");
+    assert_eq!(issue.journal_keys, keys);
+    assert_eq!(state, &IssueState::Edited);
+    assert_eq!(dispatcher.store().get_issue_property_diffs(id).len(), 1);
+}
+
+#[test]
+#[should_panic(expected = "cannot replace journal keys for a missing issue")]
+fn replace_journal_keys_rejects_a_missing_issue() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::ReplaceJournalKeys {
+        id: IssueId::new(99),
+        journal_keys: vec![],
+    });
+    dispatcher.consume_action();
 }

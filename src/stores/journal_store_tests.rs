@@ -1179,3 +1179,227 @@ fn fetched_merge_rejects_duplicate_old_keys_and_multiple_local_keys() {
         assert_eq!(panic_message(payload), message);
     }
 }
+
+#[test]
+fn sync_fetched_remote_registers_missing_and_replaces_synced_entries() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(JournalAction::RegisterRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    let mut replacement = parse_journal_yaml(JournalId::new(1));
+    replacement.notes = "fresh".to_string();
+    dispatcher.dispatch(JournalAction::SyncFetchedRemote {
+        journal: replacement,
+        issue_id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::SyncFetchedRemote {
+        journal: parse_journal_yaml(JournalId::new(2)),
+        issue_id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+
+    for (id, notes) in [
+        (1, "fresh"),
+        (2, parse_journal_yaml(JournalId::new(2)).notes.as_str()),
+    ] {
+        let Some(JournalEntry::Remote {
+            journal,
+            state,
+            notes_diff,
+            ..
+        }) = dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(id)))
+        else {
+            panic!()
+        };
+        assert_eq!(journal.notes, notes);
+        assert_eq!(state, &RemoteJournalState::Synced);
+        assert_eq!(notes_diff, &None);
+    }
+}
+
+#[test]
+fn sync_fetched_remote_preserves_edited_and_uploading_entries() {
+    for uploading in [false, true] {
+        let mut dispatcher = remote_edited_dispatcher();
+        if uploading {
+            dispatcher.dispatch(JournalAction::StartUpload {
+                key: JournalKey::Remote(JournalId::new(1)),
+            });
+            dispatcher.consume_action();
+        }
+        dispatcher.dispatch(JournalAction::SyncFetchedRemote {
+            journal: parse_journal_yaml(JournalId::new(1)),
+            issue_id: IssueId::new(3),
+        });
+        dispatcher.consume_action();
+
+        let Some(JournalEntry::Remote { journal, state, .. }) = dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+        else {
+            panic!()
+        };
+        assert_eq!(journal.notes, "edited notes");
+        assert_eq!(
+            state,
+            if uploading {
+                &RemoteJournalState::Uploading
+            } else {
+                &RemoteJournalState::Edited
+            }
+        );
+    }
+}
+
+#[test]
+fn sync_fetched_remote_rejects_another_owner_without_replacing_it() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(JournalAction::RegisterRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(4),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::SyncFetchedRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(3),
+    });
+
+    assert!(catch_unwind(AssertUnwindSafe(|| dispatcher.consume_action())).is_err());
+    assert!(matches!(
+        dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1))),
+        Some(JournalEntry::Remote { issue_id, .. }) if *issue_id == IssueId::new(4)
+    ));
+}
+
+#[test]
+fn remove_synced_remote_removes_only_an_owned_synced_entry() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(JournalAction::RegisterRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::RemoveSyncedRemote {
+        id: JournalId::new(1),
+        issue_id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+
+    assert!(
+        dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+            .is_none()
+    );
+}
+
+#[test]
+fn remove_synced_remote_rejects_dirty_other_owner_missing_and_local_entries() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    for uploading in [false, true] {
+        let mut dirty = remote_edited_dispatcher();
+        if uploading {
+            dirty.dispatch(JournalAction::StartUpload {
+                key: JournalKey::Remote(JournalId::new(1)),
+            });
+            dirty.consume_action();
+        }
+        dirty.dispatch(JournalAction::RemoveSyncedRemote {
+            id: JournalId::new(1),
+            issue_id: IssueId::new(3),
+        });
+        let result = catch_unwind(AssertUnwindSafe(|| dirty.consume_action()));
+        assert_eq!(
+            panic_message(result.unwrap_err()),
+            "cannot remove a dirty remote journal"
+        );
+        assert!(matches!(
+            dirty
+                .store()
+                .get_journal_entry(JournalKey::Remote(JournalId::new(1))),
+            Some(JournalEntry::Remote {
+                journal,
+                state,
+                notes_diff: Some(diff),
+                ..
+            }) if journal.notes == "edited notes"
+                && diff.after == "edited notes"
+                && state == if uploading {
+                    &RemoteJournalState::Uploading
+                } else {
+                    &RemoteJournalState::Edited
+                }
+        ));
+    }
+
+    let mut other = Dispatcher::new();
+    other.dispatch(JournalAction::RegisterRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(4),
+    });
+    other.consume_action();
+    other.dispatch(JournalAction::RemoveSyncedRemote {
+        id: JournalId::new(1),
+        issue_id: IssueId::new(3),
+    });
+    let result = catch_unwind(AssertUnwindSafe(|| other.consume_action()));
+    assert_eq!(
+        panic_message(result.unwrap_err()),
+        "remote journal belongs to another issue"
+    );
+    assert!(matches!(
+        other
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1))),
+        Some(JournalEntry::Remote {
+            issue_id,
+            state: RemoteJournalState::Synced,
+            notes_diff: None,
+            ..
+        }) if *issue_id == IssueId::new(4)
+    ));
+
+    let (mut local, local_id) = local_only_dispatcher();
+    local.dispatch(JournalAction::RemoveSyncedRemote {
+        id: JournalId::new(1),
+        issue_id: IssueId::new(1),
+    });
+    let result = catch_unwind(AssertUnwindSafe(|| local.consume_action()));
+    assert_eq!(
+        panic_message(result.unwrap_err()),
+        "remote journal does not exist"
+    );
+    assert!(
+        local
+            .store()
+            .get_journal_entry(JournalKey::Local(local_id))
+            .is_some()
+    );
+
+    let mut missing = Dispatcher::new();
+    missing.dispatch(JournalAction::RemoveSyncedRemote {
+        id: JournalId::new(99),
+        issue_id: IssueId::new(3),
+    });
+    let result = catch_unwind(AssertUnwindSafe(|| missing.consume_action()));
+    assert_eq!(
+        panic_message(result.unwrap_err()),
+        "remote journal does not exist"
+    );
+    assert!(
+        missing
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(99)))
+            .is_none()
+    );
+}

@@ -7,7 +7,8 @@ use crate::vos::issue_property_diff::{
     IssueDueDateDiff, IssueStartDateDiff, IssueStatusIdDiff, IssueTargetVersionIdDiff,
 };
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, TargetVersionId, UserId,
+    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalKey,
+    TargetVersionId, UserId,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,6 +26,10 @@ pub enum IssueAction {
     },
     Sync {
         issue: IssueAggregate,
+    },
+    ReplaceJournalKeys {
+        id: IssueId,
+        journal_keys: Vec<JournalKey>,
     },
     StartFetching {
         id: IssueId,
@@ -127,6 +132,12 @@ impl IssueStore {
                 self.issue_property_diffs.remove(&id);
                 self.issue_upload_conflicts.remove(&id);
                 self.issue_states.insert(id, IssueState::Synced);
+            }
+            IssueAction::ReplaceJournalKeys { id, journal_keys } => {
+                self.issues
+                    .get_mut(&id)
+                    .expect("cannot replace journal keys for a missing issue")
+                    .journal_keys = journal_keys;
             }
             IssueAction::StartFetching { id } => {
                 let can_start = match self.get_issue_state(id) {
