@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage,
+    Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project, ProjectIssuesPage,
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
@@ -140,12 +140,25 @@ impl RedmineClient for DefaultRedmineClient {
         Ok(categories)
     }
 
-    async fn get_issue(&self, id: IssueId) -> Result<IssueAggregate, RedmineClientError> {
-        let response: IssueResponse = self
+    async fn get_issue(
+        &self,
+        id: IssueId,
+    ) -> Result<(IssueAggregate, Vec<Journal>), RedmineClientError> {
+        let mut response: IssueResponse = self
             .get_json(&format!("/issues/{id}.json?include=children,journals"))
             .await?;
 
-        response.issue.try_into()
+        let journals = std::mem::take(&mut response.issue.journals)
+            .into_iter()
+            .map(Journal::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let journal_keys = journals
+            .iter()
+            .map(|journal| JournalKey::Remote(journal.id))
+            .collect();
+        let mut issue: IssueAggregate = response.issue.try_into()?;
+        issue.journal_keys = journal_keys;
+        Ok((issue, journals))
     }
 
     async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError> {
@@ -703,7 +716,36 @@ struct RedmineIssue {
     #[serde(default)]
     children: Vec<RedmineIdRef>,
     #[serde(default)]
-    journals: Vec<RedmineIdRef>,
+    journals: Vec<RedmineJournal>,
+}
+
+#[derive(Deserialize)]
+struct RedmineJournal {
+    id: u16,
+    user: NamedRedmineEntity,
+    updated_on: String,
+    #[serde(default)]
+    notes: String,
+    #[serde(default)]
+    details: Vec<journal_detail_conversion::RedmineJournalDetail>,
+}
+
+impl TryFrom<RedmineJournal> for Journal {
+    type Error = RedmineClientError;
+
+    fn try_from(value: RedmineJournal) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: JournalId::new(value.id),
+            user: value.user.name,
+            updated_on: journal_detail_value_conversion::parse_timestamp(&value.updated_on)?,
+            notes: value.notes,
+            details: value
+                .details
+                .into_iter()
+                .filter_map(|detail| detail.try_into_domain().transpose())
+                .collect::<Result<_, _>>()?,
+        })
+    }
 }
 
 impl TryFrom<RedmineIssue> for IssueAggregate {

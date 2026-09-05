@@ -3,8 +3,8 @@ use serde::Serialize;
 use std::num::NonZeroUsize;
 
 use crate::entities::{
-    Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, TargetVersion,
-    TimeEntityActivity, Tracker, User,
+    Category, IssueAggregate, IssueStatus, Journal, Priority, Project, ProjectIssuesPage,
+    TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{IssueId, JournalId, ProjectId};
 
@@ -66,7 +66,9 @@ pub trait RedmineClient {
     fn get_issue(
         &self,
         id: IssueId,
-    ) -> impl std::future::Future<Output = Result<IssueAggregate, RedmineClientError>> + Send;
+    ) -> impl std::future::Future<
+        Output = Result<(IssueAggregate, Vec<Journal>), RedmineClientError>,
+    > + Send;
     async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError>;
     async fn update_journal_notes(
         &self,
@@ -99,11 +101,22 @@ mod tests {
         assert_send(client.get_project_issues(ProjectId::new(1), NonZeroUsize::new(1).unwrap()));
     }
 
+    fn assert_issue_future_is_send<C: RedmineClient>(client: &C) {
+        assert_send(client.get_issue(IssueId::new(1)));
+    }
+
     #[test]
     fn project_issues_future_is_send() {
         let client =
             crate::clients::redmine::DefaultRedmineClient::new("http://example.test", "token");
 
         assert_project_issues_future_is_send(&client);
+    }
+
+    #[test]
+    fn issue_future_is_send() {
+        let client =
+            crate::clients::redmine::DefaultRedmineClient::new("http://example.test", "token");
+        assert_issue_future_is_send(&client);
     }
 }

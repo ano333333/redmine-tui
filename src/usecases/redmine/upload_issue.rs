@@ -96,7 +96,10 @@ mod tests {
             unreachable!()
         }
 
-        async fn get_issue(&self, _: IssueId) -> Result<IssueAggregate, RedmineClientError> {
+        async fn get_issue(
+            &self,
+            _: IssueId,
+        ) -> Result<(IssueAggregate, Vec<crate::entities::Journal>), RedmineClientError> {
             unreachable!()
         }
 

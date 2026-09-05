@@ -266,7 +266,10 @@ mod tests {
             }])
         }
 
-        async fn get_issue(&self, id: IssueId) -> Result<IssueAggregate, RedmineClientError> {
+        async fn get_issue(
+            &self,
+            id: IssueId,
+        ) -> Result<(IssueAggregate, Vec<crate::entities::Journal>), RedmineClientError> {
             panic!("initial entity load should not load issue {}", id.get());
         }
 

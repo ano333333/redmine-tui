@@ -329,7 +329,10 @@ mod tests {
         async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError> {
             unreachable!()
         }
-        async fn get_issue(&self, _: IssueId) -> Result<IssueAggregate, RedmineClientError> {
+        async fn get_issue(
+            &self,
+            _: IssueId,
+        ) -> Result<(IssueAggregate, Vec<crate::entities::Journal>), RedmineClientError> {
             unreachable!()
         }
         async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {

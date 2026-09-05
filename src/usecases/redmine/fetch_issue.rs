@@ -35,8 +35,8 @@ where
 
     Some(Box::pin(async move {
         match client.get_issue(id).await {
-            Ok(issue) if issue.issue.id == id => IssueAction::FetchSucceeded { id, issue },
-            Ok(issue) => IssueAction::FetchFailed {
+            Ok((issue, _)) if issue.issue.id == id => IssueAction::FetchSucceeded { id, issue },
+            Ok((issue, _)) => IssueAction::FetchFailed {
                 id,
                 message: format!(
                     "requested issue {} but Redmine returned issue {}",
@@ -255,9 +255,12 @@ mod tests {
     }
 
     impl RedmineClient for StubClient {
-        async fn get_issue(&self, id: IssueId) -> Result<IssueAggregate, RedmineClientError> {
+        async fn get_issue(
+            &self,
+            id: IssueId,
+        ) -> Result<(IssueAggregate, Vec<crate::entities::Journal>), RedmineClientError> {
             self.requested_ids.lock().unwrap().push(id);
-            self.result.clone()
+            self.result.clone().map(|issue| (issue, Vec::new()))
         }
 
         async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {

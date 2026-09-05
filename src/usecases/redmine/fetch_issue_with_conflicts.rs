@@ -36,7 +36,7 @@ pub async fn fetch_issue_with_conflicts(
     id: IssueId,
     diffs: &[IssuePropertyDiff],
 ) -> Result<(IssueAggregate, Vec<IssuePropertyDiff>), RedmineClientError> {
-    let issue = client.get_issue(id).await?;
+    let (issue, _) = client.get_issue(id).await?;
     let conflicts = fold_property_diffs(diffs)
         .into_iter()
         .filter(|diff| conflicts_with_issue(&issue, diff))
@@ -432,9 +432,12 @@ mod tests {
     }
 
     impl RedmineClient for StubClient {
-        async fn get_issue(&self, id: IssueId) -> Result<IssueAggregate, RedmineClientError> {
+        async fn get_issue(
+            &self,
+            id: IssueId,
+        ) -> Result<(IssueAggregate, Vec<crate::entities::Journal>), RedmineClientError> {
             self.requested_ids.lock().unwrap().push(id);
-            Ok(self.issue.clone())
+            Ok((self.issue.clone(), Vec::new()))
         }
 
         async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {

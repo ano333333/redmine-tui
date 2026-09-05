@@ -816,11 +816,15 @@ mod tests {
         async fn get_issue(
             &self,
             _: IssueId,
-        ) -> std::result::Result<IssueAggregate, RedmineClientError> {
+        ) -> std::result::Result<(IssueAggregate, Vec<crate::entities::Journal>), RedmineClientError>
+        {
             if self.get_error {
                 return Err(Self::network_error());
             }
-            Ok(self.issue.clone().expect("test issue must exist"))
+            Ok((
+                self.issue.clone().expect("test issue must exist"),
+                Vec::new(),
+            ))
         }
 
         async fn update_issue(
@@ -924,7 +928,8 @@ mod tests {
         async fn get_issue(
             &self,
             _: IssueId,
-        ) -> std::result::Result<IssueAggregate, RedmineClientError> {
+        ) -> std::result::Result<(IssueAggregate, Vec<crate::entities::Journal>), RedmineClientError>
+        {
             Err(self.unauthorized())
         }
 
