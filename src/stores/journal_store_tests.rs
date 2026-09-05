@@ -1,6 +1,6 @@
 use super::{
     Action, Dispatcher, IssueAction, JournalAction, JournalEntry, LocalJournalState,
-    RemoteJournalState, Store, journal_store::merge_fetched_journals,
+    RemoteJournalState, RemoteJournalUploadConflict, Store, journal_store::merge_fetched_journals,
 };
 use crate::entities::LocalJournal;
 use crate::libs::yaml::parse_journal_yaml;
@@ -1516,6 +1516,158 @@ fn complete_remote_save_from_fetch_rejects_invalid_entries_without_changes() {
         issue_id: IssueId::new(1),
     });
     assert!(catch_unwind(AssertUnwindSafe(|| missing.consume_action())).is_err());
+}
+
+#[test]
+fn remote_upload_conflict_retains_values_and_leaves_uploading_entry_unchanged() {
+    let mut dispatcher = remote_edited_dispatcher();
+    dispatcher.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    dispatcher.consume_action();
+    let mut server = parse_journal_yaml(JournalId::new(1));
+    server.user = "server user".to_string();
+    server.notes = "server notes".to_string();
+    server.details.clear();
+    let updated_on = server.updated_on + chrono::Duration::seconds(1);
+    server.updated_on = updated_on;
+
+    dispatcher.dispatch(JournalAction::UploadConflictsDetected {
+        conflict: RemoteJournalUploadConflict {
+            id: JournalId::new(1),
+            issue_id: IssueId::new(3),
+            before: "before".to_string(),
+            after: "edited notes".to_string(),
+            server,
+        },
+    });
+    dispatcher.consume_action();
+
+    let conflict = dispatcher
+        .store()
+        .get_remote_journal_upload_conflict(JournalId::new(1))
+        .expect("remote conflict should be retained by ID");
+    assert_eq!((conflict.id, conflict.issue_id), (1.into(), 3.into()));
+    assert_eq!(
+        (conflict.before.as_str(), conflict.after.as_str()),
+        ("before", "edited notes")
+    );
+    assert_eq!(
+        (
+            conflict.server.user.as_str(),
+            conflict.server.notes.as_str()
+        ),
+        ("server user", "server notes")
+    );
+    assert_eq!(conflict.server.updated_on, updated_on);
+    assert!(conflict.server.details.is_empty());
+    assert!(matches!(
+        dispatcher.store().get_journal_entry(JournalKey::Remote(JournalId::new(1))),
+        Some(JournalEntry::Remote { journal, issue_id, state: RemoteJournalState::Uploading, notes_diff: Some(diff) })
+            if journal.notes == "edited notes" && *issue_id == IssueId::new(3)
+                && diff.before != diff.after && diff.after == "edited notes"
+    ));
+}
+
+#[test]
+fn remote_upload_conflict_rejects_owner_and_server_id_before_mutation() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let mut dispatcher = remote_edited_dispatcher();
+    dispatcher.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    dispatcher.consume_action();
+    let original = RemoteJournalUploadConflict {
+        id: 1.into(),
+        issue_id: 3.into(),
+        before: "before".to_string(),
+        after: "edited notes".to_string(),
+        server: parse_journal_yaml(1.into()),
+    };
+    dispatcher.dispatch(JournalAction::UploadConflictsDetected { conflict: original });
+    dispatcher.consume_action();
+
+    for conflict in [
+        RemoteJournalUploadConflict {
+            id: 1.into(),
+            issue_id: 4.into(),
+            before: "bad".to_string(),
+            after: "bad".to_string(),
+            server: parse_journal_yaml(1.into()),
+        },
+        RemoteJournalUploadConflict {
+            id: 1.into(),
+            issue_id: 3.into(),
+            before: "bad".to_string(),
+            after: "bad".to_string(),
+            server: parse_journal_yaml(2.into()),
+        },
+    ] {
+        dispatcher.dispatch(JournalAction::UploadConflictsDetected { conflict });
+        assert!(catch_unwind(AssertUnwindSafe(|| dispatcher.consume_action())).is_err());
+        let retained = dispatcher
+            .store()
+            .get_remote_journal_upload_conflict(1.into())
+            .unwrap();
+        assert_eq!(
+            (retained.before.as_str(), retained.after.as_str()),
+            ("before", "edited notes")
+        );
+    }
+}
+
+#[test]
+fn remote_upload_conflict_rejects_non_uploading_and_missing_entries() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let mut edited = remote_edited_dispatcher();
+    edited.dispatch(JournalAction::UploadConflictsDetected {
+        conflict: RemoteJournalUploadConflict {
+            id: 1.into(),
+            issue_id: 3.into(),
+            before: "before".to_string(),
+            after: "edited notes".to_string(),
+            server: parse_journal_yaml(1.into()),
+        },
+    });
+    assert!(catch_unwind(AssertUnwindSafe(|| edited.consume_action())).is_err());
+    assert!(
+        edited
+            .store()
+            .get_remote_journal_upload_conflict(1.into())
+            .is_none()
+    );
+    assert!(matches!(
+        edited
+            .store()
+            .get_journal_entry(JournalKey::Remote(1.into())),
+        Some(JournalEntry::Remote {
+            state: RemoteJournalState::Edited,
+            notes_diff: Some(_),
+            ..
+        })
+    ));
+
+    let mut missing = Dispatcher::new();
+    let mut missing_server = parse_journal_yaml(1.into());
+    missing_server.id = JournalId::new(9);
+    missing.dispatch(JournalAction::UploadConflictsDetected {
+        conflict: RemoteJournalUploadConflict {
+            id: 9.into(),
+            issue_id: 3.into(),
+            before: "before".to_string(),
+            after: "after".to_string(),
+            server: missing_server,
+        },
+    });
+    assert!(catch_unwind(AssertUnwindSafe(|| missing.consume_action())).is_err());
+    assert!(
+        missing
+            .store()
+            .get_remote_journal_upload_conflict(9.into())
+            .is_none()
+    );
 }
 
 #[test]

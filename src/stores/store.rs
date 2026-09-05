@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::num::NonZeroUsize;
 
 use super::issue_store::{IssueAction, IssueState, IssueStore};
-use super::journal_store::{JournalAction, JournalEntry, JournalStore};
+use super::journal_store::{
+    JournalAction, JournalEntry, JournalStore, RemoteJournalUploadConflict,
+};
 use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
@@ -226,6 +228,13 @@ impl Store {
 
     pub fn get_journal_entry(&self, key: JournalKey) -> Option<&JournalEntry> {
         self.journal_store.entry(key)
+    }
+
+    pub fn get_remote_journal_upload_conflict(
+        &self,
+        id: JournalId,
+    ) -> Option<&RemoteJournalUploadConflict> {
+        self.journal_store.upload_conflict(id)
     }
 
     pub(crate) fn has_journal_entry_for_issue(&self, issue_id: IssueId) -> bool {

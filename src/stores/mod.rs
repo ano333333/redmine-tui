@@ -5,7 +5,9 @@ mod store;
 
 pub use issue_store::{IssueAction, IssueState};
 pub(crate) use journal_store::merge_fetched_journals;
-pub use journal_store::{JournalAction, JournalEntry, LocalJournalState, RemoteJournalState};
+pub use journal_store::{
+    JournalAction, JournalEntry, LocalJournalState, RemoteJournalState, RemoteJournalUploadConflict,
+};
 pub use project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesRequestId,
 };

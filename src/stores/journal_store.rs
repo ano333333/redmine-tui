@@ -30,6 +30,15 @@ pub enum JournalEntry {
     },
 }
 
+#[derive(Clone)]
+pub struct RemoteJournalUploadConflict {
+    pub id: JournalId,
+    pub issue_id: IssueId,
+    pub before: String,
+    pub after: String,
+    pub server: Journal,
+}
+
 pub enum JournalAction {
     RegisterRemote {
         journal: Journal,
@@ -91,10 +100,18 @@ pub enum JournalAction {
         id: JournalId,
         issue_id: IssueId,
     },
+    /// Retains the before, after, and full server snapshot for conflict resolution.
+    ///
+    /// This action does not persist anything to the server. The target Remote
+    /// entry, its notes diff, and its `Uploading` state remain unchanged.
+    UploadConflictsDetected {
+        conflict: RemoteJournalUploadConflict,
+    },
 }
 
 pub(super) struct JournalStore {
     entries: HashMap<JournalKey, JournalEntry>,
+    upload_conflicts: HashMap<JournalId, RemoteJournalUploadConflict>,
 }
 
 pub(crate) struct FetchedJournalsMerge {
@@ -194,6 +211,7 @@ impl JournalStore {
     pub(super) fn new() -> Self {
         Self {
             entries: HashMap::new(),
+            upload_conflicts: HashMap::new(),
         }
     }
 
@@ -441,6 +459,32 @@ impl JournalStore {
                 }
                 self.entries.remove(&key);
             }
+            JournalAction::UploadConflictsDetected { conflict } => {
+                if conflict.server.id != conflict.id {
+                    panic!("remote journal conflict server ID does not match");
+                }
+                match self.entries.get(&JournalKey::Remote(conflict.id)) {
+                    Some(JournalEntry::Remote {
+                        issue_id,
+                        state: RemoteJournalState::Uploading,
+                        ..
+                    }) if *issue_id == conflict.issue_id => {}
+                    Some(JournalEntry::Remote { issue_id, .. })
+                        if *issue_id != conflict.issue_id =>
+                    {
+                        panic!("remote journal belongs to another issue")
+                    }
+                    Some(JournalEntry::Remote { .. }) => {
+                        panic!("remote journal is not uploading")
+                    }
+                    _ => panic!("remote journal does not exist"),
+                }
+                self.upload_conflicts.insert(conflict.id, conflict);
+            }
         }
+    }
+
+    pub(super) fn upload_conflict(&self, id: JournalId) -> Option<&RemoteJournalUploadConflict> {
+        self.upload_conflicts.get(&id)
     }
 }
