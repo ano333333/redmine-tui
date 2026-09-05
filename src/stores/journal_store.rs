@@ -82,6 +82,15 @@ pub enum JournalAction {
         id: JournalId,
         notes: String,
     },
+    CompleteRemoteSaveFromFetch {
+        journal: Journal,
+        issue_id: IssueId,
+    },
+    /// Removes an `Uploading` Remote Journal
+    RemoveUploadingRemote {
+        id: JournalId,
+        issue_id: IssueId,
+    },
 }
 
 pub(super) struct JournalStore {
@@ -392,6 +401,45 @@ impl JournalStore {
                 journal.notes = notes;
                 *state = RemoteJournalState::Synced;
                 *notes_diff = None;
+            }
+            JournalAction::CompleteRemoteSaveFromFetch { journal, issue_id } => {
+                let key = JournalKey::Remote(journal.id);
+                let Some(JournalEntry::Remote {
+                    journal: stored,
+                    issue_id: owner,
+                    state,
+                    notes_diff,
+                }) = self.entries.get_mut(&key)
+                else {
+                    panic!("remote journal does not exist");
+                };
+                if *owner != issue_id {
+                    panic!("remote journal belongs to another issue");
+                }
+                if state != &RemoteJournalState::Uploading {
+                    panic!("remote journal is not uploading");
+                }
+                *stored = journal;
+                *state = RemoteJournalState::Synced;
+                *notes_diff = None;
+            }
+            JournalAction::RemoveUploadingRemote { id, issue_id } => {
+                let key = JournalKey::Remote(id);
+                let Some(JournalEntry::Remote {
+                    issue_id: owner,
+                    state,
+                    ..
+                }) = self.entries.get(&key)
+                else {
+                    panic!("remote journal does not exist");
+                };
+                if *owner != issue_id {
+                    panic!("remote journal belongs to another issue");
+                }
+                if state != &RemoteJournalState::Uploading {
+                    panic!("remote journal is not uploading");
+                }
+                self.entries.remove(&key);
             }
         }
     }

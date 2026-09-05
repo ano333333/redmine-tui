@@ -1403,3 +1403,261 @@ fn remove_synced_remote_rejects_dirty_other_owner_missing_and_local_entries() {
             .is_none()
     );
 }
+
+#[test]
+fn complete_remote_save_from_fetch_replaces_the_full_uploading_journal() {
+    let mut dispatcher = remote_edited_dispatcher();
+    dispatcher.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    dispatcher.consume_action();
+    let mut fetched = parse_journal_yaml(JournalId::new(1));
+    fetched.user = "server user".to_string();
+    fetched.notes = "edited notes".to_string();
+    fetched.details.clear();
+    let expected_updated_on = fetched.updated_on + chrono::Duration::seconds(1);
+    fetched.updated_on = expected_updated_on;
+
+    dispatcher.dispatch(JournalAction::CompleteRemoteSaveFromFetch {
+        journal: fetched,
+        issue_id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+
+    let Some(JournalEntry::Remote {
+        journal,
+        issue_id,
+        state,
+        notes_diff,
+    }) = dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+    else {
+        panic!()
+    };
+    assert_eq!(journal.user, "server user");
+    assert_eq!(journal.updated_on, expected_updated_on);
+    assert!(journal.details.is_empty());
+    assert_eq!(journal.notes, "edited notes");
+    assert_eq!(*issue_id, IssueId::new(3));
+    assert_eq!(state, &RemoteJournalState::Synced);
+    assert_eq!(notes_diff, &None);
+}
+
+#[test]
+fn complete_remote_save_from_fetch_rejects_invalid_entries_without_changes() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    for uploading in [false, true] {
+        let mut dispatcher = remote_edited_dispatcher();
+        if uploading {
+            dispatcher.dispatch(JournalAction::StartUpload {
+                key: JournalKey::Remote(JournalId::new(1)),
+            });
+            dispatcher.consume_action();
+        }
+        dispatcher.dispatch(JournalAction::CompleteRemoteSaveFromFetch {
+            journal: parse_journal_yaml(JournalId::new(1)),
+            issue_id: if uploading {
+                IssueId::new(4)
+            } else {
+                IssueId::new(3)
+            },
+        });
+        assert!(catch_unwind(AssertUnwindSafe(|| dispatcher.consume_action())).is_err());
+        assert!(matches!(
+            dispatcher.store().get_journal_entry(JournalKey::Remote(JournalId::new(1))),
+            Some(JournalEntry::Remote { journal, issue_id, state, notes_diff: Some(diff) })
+                if journal.notes == "edited notes"
+                    && *issue_id == IssueId::new(3)
+                    && diff.after == "edited notes"
+                    && state == if uploading { &RemoteJournalState::Uploading } else { &RemoteJournalState::Edited }
+        ));
+    }
+
+    let mut synced = Dispatcher::new();
+    synced.dispatch(JournalAction::RegisterRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(3),
+    });
+    synced.consume_action();
+    synced.dispatch(JournalAction::CompleteRemoteSaveFromFetch {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(3),
+    });
+    assert!(catch_unwind(AssertUnwindSafe(|| synced.consume_action())).is_err());
+    assert!(matches!(
+        synced
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1))),
+        Some(JournalEntry::Remote {
+            state: RemoteJournalState::Synced,
+            notes_diff: None,
+            ..
+        })
+    ));
+
+    let (mut local, local_id) = local_only_dispatcher();
+    local.dispatch(JournalAction::CompleteRemoteSaveFromFetch {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(1),
+    });
+    assert!(catch_unwind(AssertUnwindSafe(|| local.consume_action())).is_err());
+    assert!(
+        local
+            .store()
+            .get_journal_entry(JournalKey::Local(local_id))
+            .is_some()
+    );
+
+    let mut missing = Dispatcher::new();
+    missing.dispatch(JournalAction::CompleteRemoteSaveFromFetch {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(1),
+    });
+    assert!(catch_unwind(AssertUnwindSafe(|| missing.consume_action())).is_err());
+}
+
+#[test]
+fn remove_uploading_remote_follows_key_removal_and_keeps_other_entries() {
+    let mut dispatcher = Dispatcher::new();
+    let local_id = dispatcher.new_local_journal_id();
+    for id in [1, 2] {
+        dispatcher.dispatch(JournalAction::RegisterRemote {
+            journal: parse_journal_yaml(JournalId::new(id)),
+            issue_id: IssueId::new(3),
+        });
+        dispatcher.consume_action();
+    }
+    dispatcher.dispatch(JournalAction::CreateLocal {
+        id: local_id,
+        issue_id: IssueId::new(3),
+        notes: "local".to_string(),
+    });
+    dispatcher.consume_action();
+    let mut issue = sample_issue_aggregate(3, "issue", IssueStatusId::new(1), None, None, None, 0);
+    issue.journal_keys = vec![
+        JournalKey::Remote(JournalId::new(1)),
+        JournalKey::Remote(JournalId::new(2)),
+        JournalKey::Local(local_id),
+    ];
+    dispatcher.dispatch(IssueAction::Sync { issue });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::EditRemoteNotes {
+        id: JournalId::new(1),
+        notes: "edited".to_string(),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    dispatcher.consume_action();
+
+    dispatcher.dispatch(IssueAction::ReplaceJournalKeys {
+        id: IssueId::new(3),
+        journal_keys: vec![
+            JournalKey::Remote(JournalId::new(2)),
+            JournalKey::Local(local_id),
+        ],
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::RemoveUploadingRemote {
+        id: JournalId::new(1),
+        issue_id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+
+    assert!(
+        dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+            .is_none()
+    );
+    assert!(
+        dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(2)))
+            .is_some()
+    );
+    assert!(
+        dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Local(local_id))
+            .is_some()
+    );
+    assert_eq!(
+        dispatcher.store().get_issue(3).unwrap().0.journal_keys,
+        vec![
+            JournalKey::Remote(JournalId::new(2)),
+            JournalKey::Local(local_id)
+        ]
+    );
+}
+
+#[test]
+fn remove_uploading_remote_rejects_invalid_entries_without_changes() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    for uploading in [false, true] {
+        let mut dispatcher = remote_edited_dispatcher();
+        if uploading {
+            dispatcher.dispatch(JournalAction::StartUpload {
+                key: JournalKey::Remote(JournalId::new(1)),
+            });
+            dispatcher.consume_action();
+        }
+        dispatcher.dispatch(JournalAction::RemoveUploadingRemote {
+            id: JournalId::new(1),
+            issue_id: if uploading {
+                IssueId::new(4)
+            } else {
+                IssueId::new(3)
+            },
+        });
+        assert!(catch_unwind(AssertUnwindSafe(|| dispatcher.consume_action())).is_err());
+        assert!(
+            dispatcher
+                .store()
+                .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+                .is_some()
+        );
+    }
+
+    let mut synced = Dispatcher::new();
+    synced.dispatch(JournalAction::RegisterRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(3),
+    });
+    synced.consume_action();
+    synced.dispatch(JournalAction::RemoveUploadingRemote {
+        id: JournalId::new(1),
+        issue_id: IssueId::new(3),
+    });
+    assert!(catch_unwind(AssertUnwindSafe(|| synced.consume_action())).is_err());
+    assert!(
+        synced
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+            .is_some()
+    );
+
+    let (mut local, local_id) = local_only_dispatcher();
+    local.dispatch(JournalAction::RemoveUploadingRemote {
+        id: JournalId::new(1),
+        issue_id: IssueId::new(1),
+    });
+    assert!(catch_unwind(AssertUnwindSafe(|| local.consume_action())).is_err());
+    assert!(
+        local
+            .store()
+            .get_journal_entry(JournalKey::Local(local_id))
+            .is_some()
+    );
+
+    let mut missing = Dispatcher::new();
+    missing.dispatch(JournalAction::RemoveUploadingRemote {
+        id: JournalId::new(1),
+        issue_id: IssueId::new(1),
+    });
+    assert!(catch_unwind(AssertUnwindSafe(|| missing.consume_action())).is_err());
+}
