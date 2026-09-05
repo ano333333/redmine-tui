@@ -19,7 +19,7 @@ fn get_target_versions_maps_success_response() {
         &mock_server,
         "/projects/10/versions.json",
         200,
-        r#"{"versions":[{"id":7,"name":"v1.0"}]}"#,
+        r#"{"versions":[{"id":7,"name":"v1.0","project":{"id":10,"name":"Redmine TUI"}}]}"#,
     );
     let client = DefaultRedmineClient::new(mock_server.uri(), "secret-token");
 
@@ -28,6 +28,7 @@ fn get_target_versions_maps_success_response() {
     assert_eq!(versions.len(), 1);
     assert_eq!(versions[0].id.get(), 7);
     assert_eq!(versions[0].name, "v1.0");
+    assert_eq!(versions[0].project_id.get(), 10);
 }
 
 #[test]

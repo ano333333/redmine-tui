@@ -521,8 +521,30 @@ impl PaginatedResponse for IssueCategoriesResponse {
 }
 
 #[derive(Deserialize)]
+struct RedmineVersion {
+    id: u16,
+    name: String,
+    project: RedmineVersionProject,
+}
+
+#[derive(Deserialize)]
+struct RedmineVersionProject {
+    id: u16,
+}
+
+impl From<RedmineVersion> for TargetVersion {
+    fn from(value: RedmineVersion) -> Self {
+        Self {
+            id: TargetVersionId::new(value.id),
+            name: value.name,
+            project_id: ProjectId::new(value.project.id),
+        }
+    }
+}
+
+#[derive(Deserialize)]
 struct VersionsResponse {
-    versions: Vec<named_entity::NamedRedmineEntity>,
+    versions: Vec<RedmineVersion>,
     #[serde(flatten)]
     page_info: PageInfo,
 }
