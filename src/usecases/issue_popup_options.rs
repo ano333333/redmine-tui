@@ -52,14 +52,18 @@ pub fn build_target_version_options(
     store: &Store,
     issue_id: IssueId,
 ) -> (Vec<(u16, String)>, usize) {
-    let current_target_version_id = store
-        .get_issue(issue_id)
-        .and_then(|(issue, _)| issue.target_version_id);
-    let target_versions = store
-        .get_target_versions()
-        .iter()
-        .map(|(id, target_version)| (id.get(), target_version.name.clone()))
-        .collect::<Vec<_>>();
+    let issue = store.get_issue(issue_id).map(|(issue, _)| issue);
+    let current_target_version_id = issue.and_then(|issue| issue.target_version_id);
+    let target_versions = issue
+        .map(|issue| issue.issue.project_id)
+        .map(|project_id| {
+            store
+                .get_target_versions(project_id)
+                .into_iter()
+                .map(|target_version| (target_version.id.get(), target_version.name.clone()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     build_select_options(
         target_versions,
         current_target_version_id.map(|id| id.get()),
@@ -284,12 +288,17 @@ mod tests {
     #[test]
     fn target_version_options_are_sorted_and_focus_the_current_value() {
         let mut dispatcher = loaded_dispatcher();
+        let project_id = dispatcher
+            .store()
+            .get_issue(IssueId::new(3))
+            .map(|(issue, _)| issue.issue.project_id)
+            .expect("fixture issue should be loaded");
         let current_target_version_id = dispatcher
             .store()
-            .get_target_versions()
-            .keys()
+            .get_target_versions(project_id)
+            .into_iter()
             .next()
-            .copied()
+            .map(|target_version| target_version.id)
             .expect("fixture has at least one target version");
         dispatcher.dispatch(IssueAction::UpdateTargetVersion {
             id: 3.into(),
