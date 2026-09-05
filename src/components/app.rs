@@ -289,11 +289,20 @@ impl<'a> AppComponent<'a> {
                     let current_target_version_id = store
                         .get_issue(issue_id)
                         .and_then(|(issue, _)| issue.target_version_id);
-                    let mut target_versions = store
-                        .get_target_versions()
-                        .iter()
-                        .map(|(id, target_version)| (id.get(), target_version.name.clone()))
-                        .collect::<Vec<_>>();
+                    let project_id = store
+                        .get_issue(issue_id)
+                        .map(|(issue, _)| issue.issue.project_id);
+                    let mut target_versions = project_id
+                        .map(|project_id| {
+                            store
+                                .get_target_versions(project_id)
+                                .into_iter()
+                                .map(|target_version| {
+                                    (target_version.id.get(), target_version.name.clone())
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
                     target_versions.sort_by_key(|(id, _)| *id);
                     let focused_index = current_target_version_id
                         .and_then(|current_id| {

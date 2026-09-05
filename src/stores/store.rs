@@ -287,8 +287,11 @@ impl Store {
         self.trackers.get(&tracker_id.into())
     }
 
-    pub fn get_target_versions(&self) -> &HashMap<TargetVersionId, TargetVersion> {
-        &self.target_versions
+    pub fn get_target_versions(&self, project_id: ProjectId) -> Vec<&TargetVersion> {
+        self.target_versions
+            .values()
+            .filter(|target_version| target_version.project_id == project_id)
+            .collect()
     }
 
     pub fn get_target_version(&self, target_version_id: TargetVersionId) -> Option<&TargetVersion> {
@@ -375,6 +378,7 @@ impl From<JournalAction> for Action {
 mod tests {
     use super::*;
     use crate::test_support::sync_fixture_entities;
+    use crate::vos::id::EntityIdValue;
     use crate::vos::{
         CategoryId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId,
         TrackerId, UserId,
@@ -401,7 +405,41 @@ mod tests {
             .get_target_version(TargetVersionId::new(1))
             .expect("target version should be loaded");
         assert_eq!(target_version.name, "v1.2.3");
-        assert_eq!(store.get_target_versions().len(), 1);
+        assert_eq!(store.get_target_versions(ProjectId::new(1)).len(), 1);
+    }
+
+    #[test]
+    fn get_target_versions_filters_by_project_id() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::SyncTargetVersions {
+            target_versions: vec![
+                TargetVersion {
+                    id: TargetVersionId::new(1),
+                    name: "version a".to_string(),
+                    project_id: ProjectId::new(1),
+                },
+                TargetVersion {
+                    id: TargetVersionId::new(2),
+                    name: "version b".to_string(),
+                    project_id: ProjectId::new(2),
+                },
+                TargetVersion {
+                    id: TargetVersionId::new(3),
+                    name: "version c".to_string(),
+                    project_id: ProjectId::new(1),
+                },
+            ],
+        });
+
+        let matched = store.get_target_versions(ProjectId::new(1));
+        let matched_ids: Vec<u16> = matched.iter().map(|version| version.id.get()).collect();
+        assert_eq!(matched_ids.len(), 2);
+        assert!(matched_ids.contains(&1));
+        assert!(matched_ids.contains(&3));
+
+        let unmatched = store.get_target_versions(ProjectId::new(99));
+        assert!(unmatched.is_empty());
     }
 
     #[test]
@@ -532,7 +570,8 @@ mod tests {
             }],
         });
 
-        assert_eq!(store.get_target_versions().len(), 1);
+        assert_eq!(store.get_target_versions(ProjectId::new(1)).len(), 1);
+        assert!(store.get_target_versions(ProjectId::new(2)).is_empty());
         assert_eq!(
             store
                 .get_target_version(TargetVersionId::new(50))
