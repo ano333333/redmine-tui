@@ -335,6 +335,13 @@ mod tests {
         async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {
             unreachable!()
         }
+        async fn update_journal_notes(
+            &self,
+            _: crate::vos::JournalId,
+            _: &str,
+        ) -> Result<(), RedmineClientError> {
+            unreachable!()
+        }
         async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
             unreachable!()
         }

@@ -154,6 +154,20 @@ impl RedmineClient for DefaultRedmineClient {
         .await
     }
 
+    async fn update_journal_notes(
+        &self,
+        id: JournalId,
+        notes: &str,
+    ) -> Result<(), RedmineClientError> {
+        self.put_empty(
+            &format!("/journals/{}.json", id.get()),
+            &UpdateJournalNotesRequest {
+                journal: UpdateJournalNotes { notes },
+            },
+        )
+        .await
+    }
+
     async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
         Ok(self
             .get_json::<IssueStatusesResponse>("/issue_statuses.json")
@@ -638,6 +652,16 @@ impl From<RedmineProjectIssue> for Issue {
 #[derive(Serialize)]
 struct UpdateIssueRequest {
     issue: UpdateIssue,
+}
+
+#[derive(Serialize)]
+struct UpdateJournalNotesRequest<'a> {
+    journal: UpdateJournalNotes<'a>,
+}
+
+#[derive(Serialize)]
+struct UpdateJournalNotes<'a> {
+    notes: &'a str,
 }
 
 impl From<&IssueAggregate> for UpdateIssueRequest {

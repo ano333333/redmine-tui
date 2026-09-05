@@ -274,6 +274,14 @@ mod tests {
             panic!("initial entity load should not update issue");
         }
 
+        async fn update_journal_notes(
+            &self,
+            _: crate::vos::JournalId,
+            _: &str,
+        ) -> Result<(), RedmineClientError> {
+            panic!("initial entity load should not update journal notes");
+        }
+
         async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
             self.record("issue_statuses").await;
             Ok(vec![IssueStatus {

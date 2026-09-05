@@ -14,6 +14,7 @@ mod get_target_versions;
 mod get_users;
 mod integration_support;
 mod update_issue;
+mod update_journal_notes;
 
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
     TokioRuntimeBuilder::new_current_thread()
