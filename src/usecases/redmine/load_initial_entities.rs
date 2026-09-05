@@ -331,6 +331,7 @@ mod tests {
             Ok(vec![TargetVersion {
                 id: TargetVersionId::new(1),
                 name: "version".to_string(),
+                project_id: crate::vos::ProjectId::new(1),
             }])
         }
 

@@ -423,15 +423,6 @@ impl From<NamedRedmineEntity> for Project {
     }
 }
 
-impl From<NamedRedmineEntity> for TargetVersion {
-    fn from(value: NamedRedmineEntity) -> Self {
-        Self {
-            id: TargetVersionId::new(value.id),
-            name: value.name,
-        }
-    }
-}
-
 impl From<NamedRedmineEntity> for Tracker {
     fn from(value: NamedRedmineEntity) -> Self {
         Self {
@@ -567,8 +558,25 @@ impl PaginatedResponse for IssueCategoriesResponse {
 }
 
 #[derive(Deserialize)]
+struct RedmineVersion {
+    id: u16,
+    name: String,
+    project: NamedRedmineEntity,
+}
+
+impl From<RedmineVersion> for TargetVersion {
+    fn from(value: RedmineVersion) -> Self {
+        Self {
+            id: TargetVersionId::new(value.id),
+            name: value.name,
+            project_id: ProjectId::new(value.project.id),
+        }
+    }
+}
+
+#[derive(Deserialize)]
 struct VersionsResponse {
-    versions: Vec<NamedRedmineEntity>,
+    versions: Vec<RedmineVersion>,
     #[serde(flatten)]
     page_info: PageInfo,
 }

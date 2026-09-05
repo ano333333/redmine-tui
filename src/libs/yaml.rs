@@ -339,6 +339,7 @@ pub fn parse_target_versions_yaml() -> HashMap<TargetVersionId, TargetVersion> {
             let target_version = TargetVersion {
                 id: TargetVersionId::new(as_u16(entry, "id")),
                 name: as_string(entry, "name"),
+                project_id: ProjectId::new(as_u16(entry, "project_id")),
             };
             (target_version.id, target_version)
         })

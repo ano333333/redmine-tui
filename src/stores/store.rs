@@ -528,6 +528,7 @@ mod tests {
             target_versions: vec![TargetVersion {
                 id: TargetVersionId::new(50),
                 name: "redmine version".to_string(),
+                project_id: ProjectId::new(1),
             }],
         });
 
