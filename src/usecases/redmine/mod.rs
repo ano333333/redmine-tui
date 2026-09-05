@@ -4,6 +4,7 @@ mod fetch_issue;
 mod fetch_issue_with_conflicts;
 mod fetch_project_issues_page;
 mod load_initial_entities;
+mod save_remote_journal;
 mod sync_fetched_journals;
 mod sync_initial_issue_details;
 mod upload_issue;
