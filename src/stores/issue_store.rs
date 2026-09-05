@@ -31,6 +31,10 @@ pub enum IssueAction {
         id: IssueId,
         journal_keys: Vec<JournalKey>,
     },
+    RemoveJournalKey {
+        issue_id: IssueId,
+        key: JournalKey,
+    },
     StartFetching {
         id: IssueId,
     },
@@ -138,6 +142,13 @@ impl IssueStore {
                     .get_mut(&id)
                     .expect("cannot replace journal keys for a missing issue")
                     .journal_keys = journal_keys;
+            }
+            IssueAction::RemoveJournalKey { issue_id, key } => {
+                self.issues
+                    .get_mut(&issue_id)
+                    .expect("cannot remove a journal key from a missing issue")
+                    .journal_keys
+                    .retain(|candidate| *candidate != key);
             }
             IssueAction::StartFetching { id } => {
                 let can_start = match self.get_issue_state(id) {

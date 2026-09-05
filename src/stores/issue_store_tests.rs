@@ -893,3 +893,68 @@ fn replace_journal_keys_rejects_a_missing_issue() {
     });
     dispatcher.consume_action();
 }
+
+#[test]
+fn remove_journal_key_uses_current_keys_and_preserves_other_variants_and_order() {
+    let id = IssueId::new(99);
+    let mut issue = sample_issue_aggregate(99, "subject", 1.into(), None, None, None, 0);
+    issue.journal_keys = vec![JournalKey::Remote(JournalId::new(1))];
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Sync { issue });
+    dispatcher.consume_action();
+    dispatcher.dispatch(IssueAction::ReplaceJournalKeys {
+        id,
+        journal_keys: vec![
+            JournalKey::Remote(JournalId::new(1)),
+            JournalKey::Remote(JournalId::new(2)),
+            JournalKey::Local(crate::vos::LocalJournalId::new(1)),
+        ],
+    });
+    dispatcher.consume_action();
+
+    dispatcher.dispatch(IssueAction::RemoveJournalKey {
+        issue_id: id,
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    dispatcher.consume_action();
+
+    assert_eq!(
+        dispatcher.store().get_issue(id).unwrap().0.journal_keys,
+        vec![
+            JournalKey::Remote(JournalId::new(2)),
+            JournalKey::Local(crate::vos::LocalJournalId::new(1)),
+        ]
+    );
+}
+
+#[test]
+fn remove_journal_key_is_idempotent_when_the_exact_key_is_absent() {
+    let id = IssueId::new(99);
+    let mut issue = sample_issue_aggregate(99, "subject", 1.into(), None, None, None, 0);
+    issue.journal_keys = vec![JournalKey::Local(crate::vos::LocalJournalId::new(1))];
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Sync { issue });
+    dispatcher.consume_action();
+
+    dispatcher.dispatch(IssueAction::RemoveJournalKey {
+        issue_id: id,
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    dispatcher.consume_action();
+
+    assert_eq!(
+        dispatcher.store().get_issue(id).unwrap().0.journal_keys,
+        vec![JournalKey::Local(crate::vos::LocalJournalId::new(1))]
+    );
+}
+
+#[test]
+#[should_panic(expected = "cannot remove a journal key from a missing issue")]
+fn remove_journal_key_rejects_a_missing_issue() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::RemoveJournalKey {
+        issue_id: IssueId::new(99),
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    dispatcher.consume_action();
+}
