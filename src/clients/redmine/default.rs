@@ -14,6 +14,7 @@ use crate::vos::{
     ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
+mod journal_detail_conversion;
 mod journal_detail_value_conversion;
 
 // FIXME: ユーザーを全列挙しないことを前提としたStore管理
