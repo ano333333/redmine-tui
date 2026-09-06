@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 
 use super::issue_store::{IssueAction, IssueState, IssueStore};
 use super::journal_store::{
-    JournalAction, JournalEntry, JournalStore, RemoteJournalUploadConflict,
+    JournalAction, JournalEntry, JournalStore, JournalUploadFailure, RemoteJournalUploadConflict,
 };
 use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
@@ -235,6 +235,10 @@ impl Store {
         id: JournalId,
     ) -> Option<&RemoteJournalUploadConflict> {
         self.journal_store.upload_conflict(id)
+    }
+
+    pub fn get_journal_upload_failure(&self, key: JournalKey) -> Option<&JournalUploadFailure> {
+        self.journal_store.upload_failure(key)
     }
 
     pub(crate) fn has_journal_entry_for_issue(&self, issue_id: IssueId) -> bool {

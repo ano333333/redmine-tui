@@ -16,6 +16,20 @@ pub enum LocalJournalState {
     Uploading,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JournalUploadFailureStage {
+    RemoteFetch,
+    RemotePut,
+    LocalPut,
+    LocalRefresh,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JournalUploadFailure {
+    pub stage: JournalUploadFailureStage,
+    pub message: String,
+}
+
 #[derive(Clone)]
 pub enum JournalEntry {
     Remote {
@@ -86,6 +100,7 @@ pub enum JournalAction {
     },
     FailUpload {
         key: JournalKey,
+        failure: JournalUploadFailure,
     },
     CompleteRemoteUpload {
         id: JournalId,
@@ -112,6 +127,7 @@ pub enum JournalAction {
 pub(super) struct JournalStore {
     entries: HashMap<JournalKey, JournalEntry>,
     upload_conflicts: HashMap<JournalId, RemoteJournalUploadConflict>,
+    upload_failures: HashMap<JournalKey, JournalUploadFailure>,
 }
 
 pub(crate) struct FetchedJournalsMerge {
@@ -212,6 +228,7 @@ impl JournalStore {
         Self {
             entries: HashMap::new(),
             upload_conflicts: HashMap::new(),
+            upload_failures: HashMap::new(),
         }
     }
 
@@ -386,8 +403,9 @@ impl JournalStore {
                         LocalJournalState::Uploading => {}
                     },
                 }
+                self.upload_failures.remove(&key);
             }
-            JournalAction::FailUpload { key } => {
+            JournalAction::FailUpload { key, failure } => {
                 let Some(entry) = self.entries.get_mut(&key) else {
                     panic!("journal does not exist");
                 };
@@ -402,6 +420,7 @@ impl JournalStore {
                     }
                     _ => panic!("journal is not uploading"),
                 }
+                self.upload_failures.insert(key, failure);
             }
             JournalAction::CompleteRemoteUpload { id, notes } => {
                 let Some(JournalEntry::Remote {
@@ -419,6 +438,7 @@ impl JournalStore {
                 journal.notes = notes;
                 *state = RemoteJournalState::Synced;
                 *notes_diff = None;
+                self.upload_failures.remove(&JournalKey::Remote(id));
             }
             JournalAction::CompleteRemoteUploadFromFetch { journal, issue_id } => {
                 let key = JournalKey::Remote(journal.id);
@@ -440,6 +460,7 @@ impl JournalStore {
                 *stored = journal;
                 *state = RemoteJournalState::Synced;
                 *notes_diff = None;
+                self.upload_failures.remove(&key);
             }
             JournalAction::RemoveUploadingRemote { id, issue_id } => {
                 let key = JournalKey::Remote(id);
@@ -458,6 +479,7 @@ impl JournalStore {
                     panic!("remote journal is not uploading");
                 }
                 self.entries.remove(&key);
+                self.upload_failures.remove(&key);
             }
             JournalAction::UploadConflictsDetected { conflict } => {
                 if conflict.server.id != conflict.id {
@@ -486,5 +508,9 @@ impl JournalStore {
 
     pub(super) fn upload_conflict(&self, id: JournalId) -> Option<&RemoteJournalUploadConflict> {
         self.upload_conflicts.get(&id)
+    }
+
+    pub(super) fn upload_failure(&self, key: JournalKey) -> Option<&JournalUploadFailure> {
+        self.upload_failures.get(&key)
     }
 }

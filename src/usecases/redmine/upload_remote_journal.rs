@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{
-    Action, Dispatcher, IssueAction, JournalAction, JournalEntry, RemoteJournalState,
-    RemoteJournalUploadConflict,
+    Action, Dispatcher, IssueAction, JournalAction, JournalEntry, JournalUploadFailure,
+    JournalUploadFailureStage, RemoteJournalState, RemoteJournalUploadConflict,
 };
 use crate::vos::{JournalId, JournalKey, JournalNotesDiff};
 
@@ -83,10 +83,23 @@ where
     Some(Box::pin(async move {
         let (issue, journals) = match client.get_issue(issue_id).await {
             Ok(result) => result,
-            Err(_) => return failed(id),
+            Err(error) => {
+                return failed(
+                    id,
+                    JournalUploadFailureStage::RemoteFetch,
+                    error.to_string(),
+                );
+            }
         };
         if issue.issue.id != issue_id {
-            return failed(id);
+            return failed(
+                id,
+                JournalUploadFailureStage::RemoteFetch,
+                format!(
+                    "fetched issue ID {} does not match expected {}",
+                    issue.issue.id, issue_id
+                ),
+            );
         }
         let Some(server) = journals.into_iter().find(|journal| journal.id == id) else {
             return vec![
@@ -103,8 +116,8 @@ where
                 .into(),
             ],
             RemoteJournalNotesDecision::Upload { notes } => {
-                if client.update_journal_notes(id, &notes).await.is_err() {
-                    return failed(id);
+                if let Err(error) = client.update_journal_notes(id, &notes).await {
+                    return failed(id, JournalUploadFailureStage::RemotePut, error.to_string());
                 }
                 vec![JournalAction::CompleteRemoteUpload { id, notes }.into()]
             }
@@ -128,10 +141,11 @@ where
     }))
 }
 
-fn failed(id: JournalId) -> Vec<Action> {
+fn failed(id: JournalId, stage: JournalUploadFailureStage, message: String) -> Vec<Action> {
     vec![
         JournalAction::FailUpload {
             key: JournalKey::Remote(id),
+            failure: JournalUploadFailure { stage, message },
         }
         .into(),
     ]
@@ -149,7 +163,9 @@ mod tests {
         TimeEntityActivity, Tracker, User,
     };
     use crate::libs::yaml::parse_journal_yaml;
-    use crate::stores::{Action, Dispatcher, IssueAction, JournalAction};
+    use crate::stores::{
+        Action, Dispatcher, IssueAction, JournalAction, JournalUploadFailureStage,
+    };
     use crate::test_support::sample_issue_aggregate;
     use crate::vos::{IssueId, IssueStatusId, JournalId, JournalKey, JournalNotesDiff};
 
@@ -265,7 +281,10 @@ mod tests {
             .await;
 
         assert!(
-            matches!(actions.as_slice(), [Action::Journal(JournalAction::FailUpload { key: JournalKey::Remote(id) })] if id == &JournalId::new(1))
+            matches!(actions.as_slice(), [Action::Journal(JournalAction::FailUpload { key: JournalKey::Remote(id), failure })]
+                if id == &JournalId::new(1)
+                    && failure.stage == JournalUploadFailureStage::RemoteFetch
+                    && failure.message == "network error: offline")
         );
     }
 
@@ -280,7 +299,9 @@ mod tests {
 
         assert!(matches!(
             actions.as_slice(),
-            [Action::Journal(JournalAction::FailUpload { .. })]
+            [Action::Journal(JournalAction::FailUpload { failure, .. })]
+                if failure.stage == JournalUploadFailureStage::RemoteFetch
+                    && failure.message.contains("does not match expected")
         ));
     }
 
@@ -409,7 +430,9 @@ mod tests {
 
         assert!(matches!(
             actions.as_slice(),
-            [Action::Journal(JournalAction::FailUpload { .. })]
+            [Action::Journal(JournalAction::FailUpload { failure, .. })]
+                if failure.stage == JournalUploadFailureStage::RemotePut
+                    && failure.message == "network error: offline"
         ));
     }
 

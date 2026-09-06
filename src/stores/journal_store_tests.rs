@@ -1,6 +1,7 @@
 use super::{
-    Action, Dispatcher, IssueAction, JournalAction, JournalEntry, LocalJournalState,
-    RemoteJournalState, RemoteJournalUploadConflict, Store, journal_store::merge_fetched_journals,
+    Action, Dispatcher, IssueAction, JournalAction, JournalEntry, JournalUploadFailure,
+    JournalUploadFailureStage, LocalJournalState, RemoteJournalState, RemoteJournalUploadConflict,
+    Store, journal_store::merge_fetched_journals,
 };
 use crate::entities::LocalJournal;
 use crate::libs::yaml::parse_journal_yaml;
@@ -45,6 +46,13 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
         .map(|message| (*message).to_string())
         .or_else(|| payload.downcast_ref::<String>().cloned())
         .expect("panic should contain a string message")
+}
+
+fn upload_failure(stage: JournalUploadFailureStage) -> JournalUploadFailure {
+    JournalUploadFailure {
+        stage,
+        message: "failed".to_string(),
+    }
 }
 
 #[test]
@@ -710,6 +718,10 @@ fn failed_upload_restores_the_editable_state_and_content() {
     remote.consume_action();
     remote.dispatch(JournalAction::FailUpload {
         key: JournalKey::Remote(JournalId::new(1)),
+        failure: JournalUploadFailure {
+            stage: JournalUploadFailureStage::RemoteFetch,
+            message: "network error: offline".to_string(),
+        },
     });
     remote.consume_action();
     let Some(JournalEntry::Remote {
@@ -726,6 +738,15 @@ fn failed_upload_restores_the_editable_state_and_content() {
     assert_eq!(journal.notes, "edited notes");
     assert_eq!(state, &RemoteJournalState::Edited);
     assert_eq!(notes_diff.as_ref().unwrap().after, "edited notes");
+    assert_eq!(
+        remote
+            .store()
+            .get_journal_upload_failure(JournalKey::Remote(JournalId::new(1))),
+        Some(&JournalUploadFailure {
+            stage: JournalUploadFailureStage::RemoteFetch,
+            message: "network error: offline".to_string(),
+        })
+    );
 
     let (mut local, id) = local_only_dispatcher();
     local.dispatch(JournalAction::StartUpload {
@@ -734,6 +755,7 @@ fn failed_upload_restores_the_editable_state_and_content() {
     local.consume_action();
     local.dispatch(JournalAction::FailUpload {
         key: JournalKey::Local(id),
+        failure: upload_failure(JournalUploadFailureStage::LocalPut),
     });
     local.consume_action();
     let Some(JournalEntry::Local { journal, state }) =
@@ -746,6 +768,85 @@ fn failed_upload_restores_the_editable_state_and_content() {
 }
 
 #[test]
+fn start_upload_clears_only_the_target_failure() {
+    let mut remote = remote_edited_dispatcher();
+    remote.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    remote.consume_action();
+    remote.dispatch(JournalAction::FailUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+        failure: upload_failure(JournalUploadFailureStage::RemoteFetch),
+    });
+    remote.consume_action();
+
+    let local_id = remote.new_local_journal_id();
+    remote.dispatch(JournalAction::CreateLocal {
+        id: local_id,
+        issue_id: IssueId::new(3),
+        notes: "local".to_string(),
+    });
+    remote.consume_action();
+    remote.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Local(local_id),
+    });
+    remote.consume_action();
+    remote.dispatch(JournalAction::FailUpload {
+        key: JournalKey::Local(local_id),
+        failure: upload_failure(JournalUploadFailureStage::LocalPut),
+    });
+    remote.consume_action();
+
+    remote.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    remote.consume_action();
+
+    assert!(
+        remote
+            .store()
+            .get_journal_upload_failure(JournalKey::Remote(JournalId::new(1)))
+            .is_none()
+    );
+    assert_eq!(
+        remote
+            .store()
+            .get_journal_upload_failure(JournalKey::Local(local_id))
+            .unwrap()
+            .stage,
+        JournalUploadFailureStage::LocalPut
+    );
+}
+
+#[test]
+fn invalid_fail_upload_keeps_the_previous_failure() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let mut dispatcher = remote_edited_dispatcher();
+    let key = JournalKey::Remote(JournalId::new(1));
+    dispatcher.dispatch(JournalAction::StartUpload { key });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::FailUpload {
+        key,
+        failure: upload_failure(JournalUploadFailureStage::RemoteFetch),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::FailUpload {
+        key,
+        failure: JournalUploadFailure {
+            stage: JournalUploadFailureStage::RemotePut,
+            message: "replacement".to_string(),
+        },
+    });
+
+    assert!(catch_unwind(AssertUnwindSafe(|| dispatcher.consume_action())).is_err());
+    assert_eq!(
+        dispatcher.store().get_journal_upload_failure(key),
+        Some(&upload_failure(JournalUploadFailureStage::RemoteFetch))
+    );
+}
+
+#[test]
 fn fail_upload_rejects_a_non_uploading_entry_without_changing_its_state() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -753,6 +854,7 @@ fn fail_upload_rejects_a_non_uploading_entry_without_changing_its_state() {
     let result = catch_unwind(AssertUnwindSafe(|| {
         dispatcher.dispatch(JournalAction::FailUpload {
             key: JournalKey::Local(id),
+            failure: upload_failure(JournalUploadFailureStage::LocalPut),
         });
         dispatcher.consume_action();
     }));
@@ -775,6 +877,7 @@ fn fail_upload_rejects_an_edited_remote_entry() {
     let mut dispatcher = remote_edited_dispatcher();
     dispatcher.dispatch(JournalAction::FailUpload {
         key: JournalKey::Remote(JournalId::new(1)),
+        failure: upload_failure(JournalUploadFailureStage::RemotePut),
     });
     dispatcher.consume_action();
 }
@@ -785,6 +888,7 @@ fn fail_upload_rejects_a_missing_key() {
     let mut dispatcher = Dispatcher::new();
     dispatcher.dispatch(JournalAction::FailUpload {
         key: JournalKey::Local(LocalJournalId::new(999)),
+        failure: upload_failure(JournalUploadFailureStage::LocalRefresh),
     });
     dispatcher.consume_action();
 }
