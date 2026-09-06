@@ -263,6 +263,7 @@ mod tests {
             Ok(vec![Category {
                 id: CategoryId::new(1),
                 name: "category".to_string(),
+                project_id: ProjectId::new(1),
             }])
         }
 

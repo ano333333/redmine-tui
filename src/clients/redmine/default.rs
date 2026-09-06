@@ -396,15 +396,6 @@ struct NamedRedmineEntity {
     name: String,
 }
 
-impl From<NamedRedmineEntity> for Category {
-    fn from(value: NamedRedmineEntity) -> Self {
-        Self {
-            id: CategoryId::new(value.id),
-            name: value.name,
-        }
-    }
-}
-
 impl From<NamedRedmineEntity> for Priority {
     fn from(value: NamedRedmineEntity) -> Self {
         Self {
@@ -540,8 +531,25 @@ impl PaginatedResponse for ProjectsResponse {
 }
 
 #[derive(Deserialize)]
+struct RedmineIssueCategory {
+    id: u16,
+    name: String,
+    project: NamedRedmineEntity,
+}
+
+impl From<RedmineIssueCategory> for Category {
+    fn from(value: RedmineIssueCategory) -> Self {
+        Self {
+            id: CategoryId::new(value.id),
+            name: value.name,
+            project_id: ProjectId::new(value.project.id),
+        }
+    }
+}
+
+#[derive(Deserialize)]
 struct IssueCategoriesResponse {
-    issue_categories: Vec<NamedRedmineEntity>,
+    issue_categories: Vec<RedmineIssueCategory>,
     #[serde(flatten)]
     page_info: PageInfo,
 }

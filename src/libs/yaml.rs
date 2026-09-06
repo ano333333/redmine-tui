@@ -357,6 +357,7 @@ pub fn parse_categories_yaml() -> HashMap<CategoryId, Category> {
             let category = Category {
                 id: CategoryId::new(as_u16(entry, "id")),
                 name: as_string(entry, "name"),
+                project_id: ProjectId::new(as_u16(entry, "project_id")),
             };
             (category.id, category)
         })

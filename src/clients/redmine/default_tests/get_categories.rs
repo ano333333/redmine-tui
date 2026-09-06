@@ -19,7 +19,7 @@ fn get_categories_maps_success_response() {
         &mock_server,
         "/projects/10/issue_categories.json",
         200,
-        r#"{"issue_categories":[{"id":4,"name":"Backend"}]}"#,
+        r#"{"issue_categories":[{"id":4,"name":"Backend","project":{"id":10,"name":"Redmine TUI"}}]}"#,
     );
     let client = DefaultRedmineClient::new(mock_server.uri(), "secret-token");
 
@@ -28,6 +28,7 @@ fn get_categories_maps_success_response() {
     assert_eq!(categories.len(), 1);
     assert_eq!(categories[0].id.get(), 4);
     assert_eq!(categories[0].name, "Backend");
+    assert_eq!(categories[0].project_id.get(), 10);
 }
 
 #[test]
