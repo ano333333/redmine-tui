@@ -298,8 +298,11 @@ impl Store {
         self.target_versions.get(&target_version_id)
     }
 
-    pub fn get_categories(&self) -> &HashMap<CategoryId, Category> {
-        &self.categories
+    pub fn get_categories(&self, project_id: ProjectId) -> Vec<&Category> {
+        self.categories
+            .values()
+            .filter(|category| category.project_id == project_id)
+            .collect()
     }
 
     pub fn get_category(&self, category_id: CategoryId) -> Option<&Category> {
@@ -443,6 +446,40 @@ mod tests {
     }
 
     #[test]
+    fn get_categories_filters_by_project_id() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::SyncCategories {
+            categories: vec![
+                Category {
+                    id: CategoryId::new(1),
+                    name: "category a".to_string(),
+                    project_id: ProjectId::new(1),
+                },
+                Category {
+                    id: CategoryId::new(2),
+                    name: "category b".to_string(),
+                    project_id: ProjectId::new(2),
+                },
+                Category {
+                    id: CategoryId::new(3),
+                    name: "category c".to_string(),
+                    project_id: ProjectId::new(1),
+                },
+            ],
+        });
+
+        let matched = store.get_categories(ProjectId::new(1));
+        let matched_ids: Vec<u16> = matched.iter().map(|category| category.id.get()).collect();
+        assert_eq!(matched_ids.len(), 2);
+        assert!(matched_ids.contains(&1));
+        assert!(matched_ids.contains(&3));
+
+        let unmatched = store.get_categories(ProjectId::new(99));
+        assert!(unmatched.is_empty());
+    }
+
+    #[test]
     fn sync_fixture_entities_populates_categories() {
         let mut store = Store::new();
 
@@ -452,7 +489,7 @@ mod tests {
             .get_category(CategoryId::new(1))
             .expect("category should be loaded");
         assert_eq!(category.name, "category1");
-        assert_eq!(store.get_categories().len(), 1);
+        assert_eq!(store.get_categories(ProjectId::new(1)).len(), 1);
     }
 
     #[test]
@@ -589,10 +626,11 @@ mod tests {
             categories: vec![Category {
                 id: CategoryId::new(60),
                 name: "redmine category".to_string(),
+                project_id: ProjectId::new(1),
             }],
         });
 
-        assert_eq!(store.get_categories().len(), 1);
+        assert_eq!(store.get_categories(ProjectId::new(1)).len(), 1);
         assert_eq!(
             store
                 .get_category(CategoryId::new(60))

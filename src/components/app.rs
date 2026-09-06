@@ -424,11 +424,18 @@ impl<'a> AppComponent<'a> {
                     let current_category_id = store
                         .get_issue(issue_id)
                         .and_then(|(issue, _)| issue.category_id);
-                    let mut categories = store
-                        .get_categories()
-                        .iter()
-                        .map(|(id, category)| (id.get(), category.name.clone()))
-                        .collect::<Vec<_>>();
+                    let project_id = store
+                        .get_issue(issue_id)
+                        .map(|(issue, _)| issue.issue.project_id);
+                    let mut categories = project_id
+                        .map(|project_id| {
+                            store
+                                .get_categories(project_id)
+                                .into_iter()
+                                .map(|category| (category.id.get(), category.name.clone()))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
                     categories.sort_by_key(|(id, _)| *id);
                     let focused_index = current_category_id
                         .and_then(|current_id| {
