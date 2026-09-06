@@ -88,14 +88,18 @@ pub fn build_done_ratio_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, 
 
 /// CategoryPopup用のitems/focused_indexを組み立てる。
 pub fn build_category_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
-    let current_category_id = store
-        .get_issue(issue_id)
-        .and_then(|(issue, _)| issue.category_id);
-    let categories = store
-        .get_categories()
-        .iter()
-        .map(|(id, category)| (id.get(), category.name.clone()))
-        .collect::<Vec<_>>();
+    let issue = store.get_issue(issue_id).map(|(issue, _)| issue);
+    let current_category_id = issue.and_then(|issue| issue.category_id);
+    let categories = issue
+        .map(|issue| issue.issue.project_id)
+        .map(|project_id| {
+            store
+                .get_categories(project_id)
+                .into_iter()
+                .map(|category| (category.id.get(), category.name.clone()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     build_select_options(categories, current_category_id.map(|id| id.get()), true)
 }
 
@@ -359,12 +363,17 @@ mod tests {
     #[test]
     fn category_options_focus_the_current_category() {
         let mut dispatcher = loaded_dispatcher();
+        let project_id = dispatcher
+            .store()
+            .get_issue(IssueId::new(3))
+            .map(|(issue, _)| issue.issue.project_id)
+            .expect("fixture issue should be loaded");
         let current_category_id = dispatcher
             .store()
-            .get_categories()
-            .keys()
+            .get_categories(project_id)
+            .into_iter()
             .next()
-            .copied()
+            .map(|category| category.id)
             .expect("fixture has at least one category");
         dispatcher.dispatch(IssueAction::UpdateCategory {
             id: 3.into(),
