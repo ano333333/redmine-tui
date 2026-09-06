@@ -2,23 +2,14 @@
 
 use serde::Deserialize;
 
-use crate::entities::{Category, Priority, Project, Tracker};
-use crate::vos::{CategoryId, PriorityId, ProjectId, TrackerId};
+use crate::entities::{Priority, Project, Tracker};
+use crate::vos::{PriorityId, ProjectId, TrackerId};
 
 /// レスポンスラッパーが選択したドメイン型へ変換するための中間DTO。
 #[derive(Deserialize)]
 pub(super) struct NamedRedmineEntity {
     id: u16,
     name: String,
-}
-
-impl From<NamedRedmineEntity> for Category {
-    fn from(value: NamedRedmineEntity) -> Self {
-        Self {
-            id: CategoryId::new(value.id),
-            name: value.name,
-        }
-    }
 }
 
 impl From<NamedRedmineEntity> for Priority {

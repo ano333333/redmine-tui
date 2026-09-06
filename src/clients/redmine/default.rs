@@ -503,8 +503,30 @@ impl PaginatedResponse for ProjectsResponse {
 }
 
 #[derive(Deserialize)]
+struct RedmineIssueCategory {
+    id: u16,
+    name: String,
+    project: RedmineIssueCategoryProject,
+}
+
+#[derive(Deserialize)]
+struct RedmineIssueCategoryProject {
+    id: u16,
+}
+
+impl From<RedmineIssueCategory> for Category {
+    fn from(value: RedmineIssueCategory) -> Self {
+        Self {
+            id: CategoryId::new(value.id),
+            name: value.name,
+            project_id: ProjectId::new(value.project.id),
+        }
+    }
+}
+
+#[derive(Deserialize)]
 struct IssueCategoriesResponse {
-    issue_categories: Vec<named_entity::NamedRedmineEntity>,
+    issue_categories: Vec<RedmineIssueCategory>,
     #[serde(flatten)]
     page_info: PageInfo,
 }
