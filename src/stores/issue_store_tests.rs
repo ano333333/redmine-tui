@@ -1,3 +1,5 @@
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
 use super::{Dispatcher, IssueAction, IssueState, Store};
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
@@ -953,6 +955,103 @@ fn remove_journal_key_is_idempotent_when_the_exact_key_is_absent() {
 fn remove_journal_key_rejects_a_missing_issue() {
     let mut dispatcher = Dispatcher::new();
     dispatcher.dispatch(IssueAction::RemoveJournalKey {
+        issue_id: IssueId::new(99),
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    dispatcher.consume_action();
+}
+
+#[test]
+fn append_journal_key_preserves_existing_order_and_appends_at_the_end() {
+    let id = IssueId::new(99);
+    let mut issue = sample_issue_aggregate(99, "subject", 1.into(), None, None, None, 0);
+    issue.journal_keys = vec![JournalKey::Remote(JournalId::new(2))];
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Sync { issue });
+    dispatcher.consume_action();
+
+    dispatcher.dispatch(IssueAction::AppendJournalKey {
+        issue_id: id,
+        key: JournalKey::Local(crate::vos::LocalJournalId::new(1)),
+    });
+    dispatcher.consume_action();
+
+    assert_eq!(
+        dispatcher.store().get_issue(id).unwrap().0.journal_keys,
+        vec![
+            JournalKey::Remote(JournalId::new(2)),
+            JournalKey::Local(crate::vos::LocalJournalId::new(1)),
+        ]
+    );
+    assert_eq!(
+        dispatcher.store().get_issue_state(id),
+        Some(&IssueState::Synced)
+    );
+}
+
+#[test]
+fn append_journal_key_rejects_a_duplicate_key_without_partial_update() {
+    let id = IssueId::new(99);
+    let mut issue = sample_issue_aggregate(99, "subject", 1.into(), None, None, None, 0);
+    issue.journal_keys = vec![JournalKey::Remote(JournalId::new(1))];
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Sync { issue });
+    dispatcher.consume_action();
+
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| {
+            dispatcher.dispatch(IssueAction::AppendJournalKey {
+                issue_id: id,
+                key: JournalKey::Remote(JournalId::new(1)),
+            });
+            dispatcher.consume_action();
+        }))
+        .is_err()
+    );
+
+    assert_eq!(
+        dispatcher.store().get_issue(id).unwrap().0.journal_keys,
+        vec![JournalKey::Remote(JournalId::new(1))]
+    );
+}
+
+#[test]
+fn append_journal_key_rejects_a_second_local_key_without_partial_update() {
+    let id = IssueId::new(99);
+    let mut issue = sample_issue_aggregate(99, "subject", 1.into(), None, None, None, 0);
+    issue.journal_keys = vec![
+        JournalKey::Remote(JournalId::new(1)),
+        JournalKey::Local(crate::vos::LocalJournalId::new(1)),
+    ];
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::Sync { issue });
+    dispatcher.consume_action();
+
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| {
+            dispatcher.dispatch(IssueAction::AppendJournalKey {
+                issue_id: id,
+                key: JournalKey::Local(crate::vos::LocalJournalId::new(2)),
+            });
+            dispatcher.consume_action();
+        }))
+        .is_err()
+    );
+
+    assert_eq!(
+        dispatcher.store().get_issue(id).unwrap().0.journal_keys,
+        vec![
+            JournalKey::Remote(JournalId::new(1)),
+            JournalKey::Local(crate::vos::LocalJournalId::new(1)),
+        ]
+    );
+}
+
+#[test]
+#[should_panic(expected = "cannot append a journal key to a missing issue")]
+fn append_journal_key_rejects_a_missing_issue() {
+    let mut dispatcher = Dispatcher::new();
+    dispatcher.dispatch(IssueAction::AppendJournalKey {
         issue_id: IssueId::new(99),
         key: JournalKey::Remote(JournalId::new(1)),
     });

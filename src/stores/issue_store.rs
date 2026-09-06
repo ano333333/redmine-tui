@@ -35,6 +35,10 @@ pub enum IssueAction {
         issue_id: IssueId,
         key: JournalKey,
     },
+    AppendJournalKey {
+        issue_id: IssueId,
+        key: JournalKey,
+    },
     StartFetching {
         id: IssueId,
     },
@@ -149,6 +153,30 @@ impl IssueStore {
                     .expect("cannot remove a journal key from a missing issue")
                     .journal_keys
                     .retain(|candidate| *candidate != key);
+            }
+            IssueAction::AppendJournalKey { issue_id, key } => {
+                if self
+                    .issues
+                    .get(&issue_id)
+                    .is_some_and(|issue| issue.journal_keys.contains(&key))
+                {
+                    panic!("journal key {key:?} is already attached to issue {issue_id:?}");
+                }
+                if matches!(key, JournalKey::Local(_))
+                    && self.issues.get(&issue_id).is_some_and(|issue| {
+                        issue
+                            .journal_keys
+                            .iter()
+                            .any(|existing| matches!(existing, JournalKey::Local(_)))
+                    })
+                {
+                    panic!("issue {issue_id:?} already has a local journal key");
+                }
+                self.issues
+                    .get_mut(&issue_id)
+                    .expect("cannot append a journal key to a missing issue")
+                    .journal_keys
+                    .push(key);
             }
             IssueAction::StartFetching { id } => {
                 let can_start = match self.get_issue_state(id) {
