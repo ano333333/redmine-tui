@@ -4,10 +4,10 @@ mod fetch_issue;
 mod fetch_issue_with_conflicts;
 mod fetch_project_issues_page;
 mod load_initial_entities;
-mod save_remote_journal;
 mod sync_fetched_journals;
 mod sync_initial_issue_details;
 mod upload_issue;
+mod upload_remote_journal;
 
 pub use cancel_issue_upload::cancel_issue_upload;
 pub use continue_issue_upload::continue_issue_upload;
@@ -22,3 +22,5 @@ pub use sync_fetched_journals::sync_fetched_journals;
 #[allow(unused_imports)]
 pub use sync_initial_issue_details::initial_issue_details_actions;
 pub use upload_issue::upload_issue;
+#[allow(unused_imports)]
+pub use upload_remote_journal::upload_remote_journal;

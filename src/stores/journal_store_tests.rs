@@ -1405,7 +1405,7 @@ fn remove_synced_remote_rejects_dirty_other_owner_missing_and_local_entries() {
 }
 
 #[test]
-fn complete_remote_save_from_fetch_replaces_the_full_uploading_journal() {
+fn complete_remote_upload_from_fetch_replaces_the_full_uploading_journal() {
     let mut dispatcher = remote_edited_dispatcher();
     dispatcher.dispatch(JournalAction::StartUpload {
         key: JournalKey::Remote(JournalId::new(1)),
@@ -1418,7 +1418,7 @@ fn complete_remote_save_from_fetch_replaces_the_full_uploading_journal() {
     let expected_updated_on = fetched.updated_on + chrono::Duration::seconds(1);
     fetched.updated_on = expected_updated_on;
 
-    dispatcher.dispatch(JournalAction::CompleteRemoteSaveFromFetch {
+    dispatcher.dispatch(JournalAction::CompleteRemoteUploadFromFetch {
         journal: fetched,
         issue_id: IssueId::new(3),
     });
@@ -1445,7 +1445,7 @@ fn complete_remote_save_from_fetch_replaces_the_full_uploading_journal() {
 }
 
 #[test]
-fn complete_remote_save_from_fetch_rejects_invalid_entries_without_changes() {
+fn complete_remote_upload_from_fetch_rejects_invalid_entries_without_changes() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
     for uploading in [false, true] {
@@ -1456,7 +1456,7 @@ fn complete_remote_save_from_fetch_rejects_invalid_entries_without_changes() {
             });
             dispatcher.consume_action();
         }
-        dispatcher.dispatch(JournalAction::CompleteRemoteSaveFromFetch {
+        dispatcher.dispatch(JournalAction::CompleteRemoteUploadFromFetch {
             journal: parse_journal_yaml(JournalId::new(1)),
             issue_id: if uploading {
                 IssueId::new(4)
@@ -1481,7 +1481,7 @@ fn complete_remote_save_from_fetch_rejects_invalid_entries_without_changes() {
         issue_id: IssueId::new(3),
     });
     synced.consume_action();
-    synced.dispatch(JournalAction::CompleteRemoteSaveFromFetch {
+    synced.dispatch(JournalAction::CompleteRemoteUploadFromFetch {
         journal: parse_journal_yaml(JournalId::new(1)),
         issue_id: IssueId::new(3),
     });
@@ -1498,7 +1498,7 @@ fn complete_remote_save_from_fetch_rejects_invalid_entries_without_changes() {
     ));
 
     let (mut local, local_id) = local_only_dispatcher();
-    local.dispatch(JournalAction::CompleteRemoteSaveFromFetch {
+    local.dispatch(JournalAction::CompleteRemoteUploadFromFetch {
         journal: parse_journal_yaml(JournalId::new(1)),
         issue_id: IssueId::new(1),
     });
@@ -1511,7 +1511,7 @@ fn complete_remote_save_from_fetch_rejects_invalid_entries_without_changes() {
     );
 
     let mut missing = Dispatcher::new();
-    missing.dispatch(JournalAction::CompleteRemoteSaveFromFetch {
+    missing.dispatch(JournalAction::CompleteRemoteUploadFromFetch {
         journal: parse_journal_yaml(JournalId::new(1)),
         issue_id: IssueId::new(1),
     });

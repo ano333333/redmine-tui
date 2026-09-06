@@ -91,7 +91,7 @@ pub enum JournalAction {
         id: JournalId,
         notes: String,
     },
-    CompleteRemoteSaveFromFetch {
+    CompleteRemoteUploadFromFetch {
         journal: Journal,
         issue_id: IssueId,
     },
@@ -420,7 +420,7 @@ impl JournalStore {
                 *state = RemoteJournalState::Synced;
                 *notes_diff = None;
             }
-            JournalAction::CompleteRemoteSaveFromFetch { journal, issue_id } => {
+            JournalAction::CompleteRemoteUploadFromFetch { journal, issue_id } => {
                 let key = JournalKey::Remote(journal.id);
                 let Some(JournalEntry::Remote {
                     journal: stored,

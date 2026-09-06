@@ -70,11 +70,11 @@ pub trait RedmineClient {
         Output = Result<(IssueAggregate, Vec<Journal>), RedmineClientError>,
     > + Send;
     async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError>;
-    async fn update_journal_notes(
+    fn update_journal_notes(
         &self,
         id: JournalId,
         notes: &str,
-    ) -> Result<(), RedmineClientError>;
+    ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
     async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError>;
     async fn get_priorities(&self) -> Result<Vec<Priority>, RedmineClientError>;
     async fn get_projects(&self) -> Result<Vec<Project>, RedmineClientError>;
@@ -105,6 +105,10 @@ mod tests {
         assert_send(client.get_issue(IssueId::new(1)));
     }
 
+    fn assert_update_journal_future_is_send<C: RedmineClient>(client: &C) {
+        assert_send(client.update_journal_notes(JournalId::new(1), "notes"));
+    }
+
     #[test]
     fn project_issues_future_is_send() {
         let client =
@@ -118,5 +122,12 @@ mod tests {
         let client =
             crate::clients::redmine::DefaultRedmineClient::new("http://example.test", "token");
         assert_issue_future_is_send(&client);
+    }
+
+    #[test]
+    fn update_journal_future_is_send() {
+        let client =
+            crate::clients::redmine::DefaultRedmineClient::new("http://example.test", "token");
+        assert_update_journal_future_is_send(&client);
     }
 }
