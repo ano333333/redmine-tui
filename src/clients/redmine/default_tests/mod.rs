@@ -4,6 +4,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::clients::redmine::{RedmineClientError, RedmineHttpError};
 
+mod create_journal;
 mod error_mapping;
 mod get_categories;
 mod get_issue;

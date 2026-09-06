@@ -477,6 +477,13 @@ mod tests {
             self.puts.lock().unwrap().push((id, notes.to_string()));
             self.put_result.clone()
         }
+        async fn create_journal(
+            &self,
+            _: crate::vos::IssueId,
+            _: &str,
+        ) -> Result<(), RedmineClientError> {
+            unreachable!()
+        }
         async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {
             unreachable!()
         }

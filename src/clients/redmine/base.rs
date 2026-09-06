@@ -69,6 +69,11 @@ pub trait RedmineClient {
     ) -> impl std::future::Future<
         Output = Result<(IssueAggregate, Vec<Journal>), RedmineClientError>,
     > + Send;
+    fn create_journal(
+        &self,
+        issue_id: IssueId,
+        notes: &str,
+    ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
     async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError>;
     fn update_journal_notes(
         &self,

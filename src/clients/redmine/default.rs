@@ -161,6 +161,20 @@ impl RedmineClient for DefaultRedmineClient {
         Ok((issue, journals))
     }
 
+    async fn create_journal(
+        &self,
+        issue_id: IssueId,
+        notes: &str,
+    ) -> Result<(), RedmineClientError> {
+        self.put_empty(
+            &format!("/issues/{}.json", issue_id.get()),
+            &CreateJournalRequest {
+                issue: CreateJournal { notes },
+            },
+        )
+        .await
+    }
+
     async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError> {
         self.put_empty(
             &format!("/issues/{}.json", issue.issue.id.get()),
@@ -628,6 +642,16 @@ impl From<RedmineProjectIssue> for Issue {
 #[derive(Serialize)]
 struct UpdateIssueRequest {
     issue: UpdateIssue,
+}
+
+#[derive(Serialize)]
+struct CreateJournalRequest<'a> {
+    issue: CreateJournal<'a>,
+}
+
+#[derive(Serialize)]
+struct CreateJournal<'a> {
+    notes: &'a str,
 }
 
 #[derive(Serialize)]

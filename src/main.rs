@@ -899,6 +899,14 @@ mod tests {
             Ok(())
         }
 
+        async fn create_journal(
+            &self,
+            _: crate::vos::IssueId,
+            _: &str,
+        ) -> std::result::Result<(), RedmineClientError> {
+            unreachable!()
+        }
+
         async fn update_journal_notes(
             &self,
             _: crate::vos::JournalId,
@@ -997,6 +1005,14 @@ mod tests {
         async fn update_issue(
             &self,
             _: &IssueAggregate,
+        ) -> std::result::Result<(), RedmineClientError> {
+            Err(self.unauthorized())
+        }
+
+        async fn create_journal(
+            &self,
+            _: crate::vos::IssueId,
+            _: &str,
         ) -> std::result::Result<(), RedmineClientError> {
             Err(self.unauthorized())
         }
