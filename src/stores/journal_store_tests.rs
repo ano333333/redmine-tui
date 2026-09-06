@@ -28,6 +28,25 @@ fn remote_edited_dispatcher() -> Dispatcher {
     dispatcher
 }
 
+fn remote_conflicted_dispatcher() -> Dispatcher {
+    let mut dispatcher = remote_edited_dispatcher();
+    dispatcher.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(1.into()),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::UploadConflictsDetected {
+        conflict: RemoteJournalUploadConflict {
+            id: 1.into(),
+            issue_id: 3.into(),
+            before: "before".to_string(),
+            after: "edited notes".to_string(),
+            server: parse_journal_yaml(1.into()),
+        },
+    });
+    dispatcher.consume_action();
+    dispatcher
+}
+
 fn local_only_dispatcher() -> (Dispatcher, LocalJournalId) {
     let mut dispatcher = Dispatcher::new();
     let id = dispatcher.new_local_journal_id();
@@ -1772,6 +1791,130 @@ fn remote_upload_conflict_rejects_non_uploading_and_missing_entries() {
             .get_remote_journal_upload_conflict(9.into())
             .is_none()
     );
+}
+
+#[test]
+fn update_uploading_remote_notes_preserves_before_and_updates_after_and_entity() {
+    let mut dispatcher = remote_conflicted_dispatcher();
+    let Some(JournalEntry::Remote {
+        notes_diff: Some(original_diff),
+        ..
+    }) = dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(1.into()))
+    else {
+        panic!()
+    };
+    let expected_before = original_diff.before.clone();
+    dispatcher.dispatch(JournalAction::UpdateUploadingRemoteNotes {
+        id: 1.into(),
+        notes: "final notes".to_string(),
+    });
+    dispatcher.consume_action();
+
+    assert!(matches!(
+        dispatcher.store().get_journal_entry(JournalKey::Remote(1.into())),
+        Some(JournalEntry::Remote { journal, state: RemoteJournalState::Uploading, notes_diff: Some(diff), .. })
+            if journal.notes == "final notes" && diff.before == expected_before && diff.after == "final notes"
+    ));
+}
+
+#[test]
+fn clear_remote_upload_conflict_removes_only_matching_snapshot() {
+    let mut dispatcher = remote_conflicted_dispatcher();
+    dispatcher.dispatch(JournalAction::ClearRemoteUploadConflict {
+        id: 1.into(),
+        issue_id: 3.into(),
+    });
+    dispatcher.consume_action();
+
+    assert!(
+        dispatcher
+            .store()
+            .get_remote_journal_upload_conflict(1.into())
+            .is_none()
+    );
+    assert!(matches!(
+        dispatcher.store().get_journal_entry(JournalKey::Remote(1.into())),
+        Some(JournalEntry::Remote { journal, state: RemoteJournalState::Uploading, notes_diff: Some(diff), .. })
+            if journal.notes == "edited notes" && diff.after == "edited notes"
+    ));
+}
+
+#[test]
+fn cancel_upload_restores_edited_remote_and_preserves_diff_without_failure() {
+    let mut dispatcher = remote_conflicted_dispatcher();
+    let Some(JournalEntry::Remote {
+        notes_diff: Some(original_diff),
+        ..
+    }) = dispatcher
+        .store()
+        .get_journal_entry(JournalKey::Remote(1.into()))
+    else {
+        panic!()
+    };
+    let expected_diff = original_diff.clone();
+    dispatcher.dispatch(JournalAction::CancelUpload {
+        key: JournalKey::Remote(1.into()),
+    });
+    dispatcher.consume_action();
+
+    assert!(matches!(
+        dispatcher.store().get_journal_entry(JournalKey::Remote(1.into())),
+        Some(JournalEntry::Remote { state: RemoteJournalState::Edited, notes_diff: Some(diff), .. })
+            if diff == &expected_diff
+    ));
+    assert!(
+        dispatcher
+            .store()
+            .get_journal_upload_failure(JournalKey::Remote(1.into()))
+            .is_none()
+    );
+}
+
+#[test]
+fn retry_actions_reject_invalid_targets_before_mutation() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let mut dispatcher = remote_conflicted_dispatcher();
+    dispatcher.dispatch(JournalAction::ClearRemoteUploadConflict {
+        id: 1.into(),
+        issue_id: 4.into(),
+    });
+    assert!(catch_unwind(AssertUnwindSafe(|| dispatcher.consume_action())).is_err());
+    assert!(
+        dispatcher
+            .store()
+            .get_remote_journal_upload_conflict(1.into())
+            .is_some()
+    );
+
+    dispatcher.dispatch(JournalAction::CancelUpload {
+        key: JournalKey::Remote(99.into()),
+    });
+    assert!(catch_unwind(AssertUnwindSafe(|| dispatcher.consume_action())).is_err());
+    assert!(matches!(
+        dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Remote(1.into())),
+        Some(JournalEntry::Remote {
+            state: RemoteJournalState::Uploading,
+            notes_diff: Some(_),
+            ..
+        })
+    ));
+
+    let mut edited = remote_edited_dispatcher();
+    edited.dispatch(JournalAction::UpdateUploadingRemoteNotes {
+        id: 1.into(),
+        notes: "bad".to_string(),
+    });
+    assert!(catch_unwind(AssertUnwindSafe(|| edited.consume_action())).is_err());
+    assert!(matches!(
+        edited.store().get_journal_entry(JournalKey::Remote(1.into())),
+        Some(JournalEntry::Remote { journal, state: RemoteJournalState::Edited, notes_diff: Some(diff), .. })
+            if journal.notes == "edited notes" && diff.after == "edited notes"
+    ));
 }
 
 #[test]

@@ -98,6 +98,20 @@ pub enum JournalAction {
     StartUpload {
         key: JournalKey,
     },
+    /// Updates the retry value while preserving the original `diff.before`.
+    UpdateUploadingRemoteNotes {
+        id: JournalId,
+        notes: String,
+    },
+    /// Removes the matching conflict snapshot without changing its Journal entry.
+    ClearRemoteUploadConflict {
+        id: JournalId,
+        issue_id: IssueId,
+    },
+    /// Returns an uploading Remote Journal to `Edited` without changing its diff.
+    CancelUpload {
+        key: JournalKey,
+    },
     FailUpload {
         key: JournalKey,
         failure: JournalUploadFailure,
@@ -404,6 +418,55 @@ impl JournalStore {
                     },
                 }
                 self.upload_failures.remove(&key);
+            }
+            JournalAction::UpdateUploadingRemoteNotes { id, notes } => {
+                let Some(JournalEntry::Remote {
+                    journal,
+                    state,
+                    notes_diff: Some(diff),
+                    ..
+                }) = self.entries.get_mut(&JournalKey::Remote(id))
+                else {
+                    panic!("uploading remote journal does not exist");
+                };
+                if state != &RemoteJournalState::Uploading {
+                    panic!("remote journal is not uploading");
+                }
+                journal.notes = notes.clone();
+                diff.after = notes;
+            }
+            JournalAction::ClearRemoteUploadConflict { id, issue_id } => {
+                match self.entries.get(&JournalKey::Remote(id)) {
+                    Some(JournalEntry::Remote {
+                        issue_id: owner,
+                        state: RemoteJournalState::Uploading,
+                        ..
+                    }) if *owner == issue_id => {}
+                    Some(JournalEntry::Remote {
+                        issue_id: owner, ..
+                    }) if *owner != issue_id => {
+                        panic!("remote journal belongs to another issue")
+                    }
+                    Some(JournalEntry::Remote { .. }) => {
+                        panic!("remote journal is not uploading")
+                    }
+                    _ => panic!("remote journal does not exist"),
+                }
+                match self.upload_conflicts.get(&id) {
+                    Some(conflict) if conflict.issue_id == issue_id => {}
+                    Some(_) => panic!("remote journal conflict belongs to another issue"),
+                    None => panic!("remote journal upload conflict does not exist"),
+                }
+                self.upload_conflicts.remove(&id);
+            }
+            JournalAction::CancelUpload { key } => {
+                let Some(JournalEntry::Remote { state, .. }) = self.entries.get_mut(&key) else {
+                    panic!("remote journal does not exist");
+                };
+                if state != &RemoteJournalState::Uploading {
+                    panic!("remote journal is not uploading");
+                }
+                *state = RemoteJournalState::Edited;
             }
             JournalAction::FailUpload { key, failure } => {
                 let Some(entry) = self.entries.get_mut(&key) else {
