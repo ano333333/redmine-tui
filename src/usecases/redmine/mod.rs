@@ -1,5 +1,7 @@
 mod cancel_issue_upload;
+mod cancel_remote_journal_upload;
 mod continue_issue_upload;
+mod continue_remote_journal_upload;
 mod fetch_issue;
 mod fetch_issue_with_conflicts;
 mod fetch_project_issues_page;
@@ -10,7 +12,11 @@ mod upload_issue;
 mod upload_remote_journal;
 
 pub use cancel_issue_upload::cancel_issue_upload;
+pub use cancel_remote_journal_upload::cancel_remote_journal_upload;
 pub use continue_issue_upload::continue_issue_upload;
+pub use continue_remote_journal_upload::{
+    RemoteJournalUploadRetry, continue_remote_journal_upload,
+};
 pub use fetch_issue::fetch_issue;
 pub(crate) use fetch_issue_with_conflicts::apply_issue_property_diffs;
 pub use fetch_issue_with_conflicts::fetch_issue_with_conflicts;
