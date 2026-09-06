@@ -15,7 +15,8 @@ pub use cancel_issue_upload::cancel_issue_upload;
 pub use cancel_remote_journal_upload::cancel_remote_journal_upload;
 pub use continue_issue_upload::continue_issue_upload;
 pub use continue_remote_journal_upload::{
-    RemoteJournalUploadRetry, continue_remote_journal_upload,
+    RemoteJournalUploadRetry, RetryRemoteJournalUploadFuture, continue_remote_journal_upload,
+    retry_remote_journal_upload,
 };
 pub use fetch_issue::fetch_issue;
 pub(crate) use fetch_issue_with_conflicts::apply_issue_property_diffs;
