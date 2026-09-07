@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{
-    Action, Dispatcher, IssueAction, JournalAction, JournalEntry, JournalUploadFailure,
+    Action, Dispatcher, IssueAction, IssueState, JournalAction, JournalEntry, JournalUploadFailure,
     JournalUploadFailureStage, RemoteJournalState, RemoteJournalUploadConflict,
 };
 use crate::vos::{JournalId, JournalKey, JournalNotesDiff};
@@ -59,7 +59,8 @@ where
     let key = JournalKey::Remote(id);
     let (issue_id, diff) = {
         let dispatcher = dispatcher.borrow();
-        let (issue_id, state, diff) = match dispatcher.store().get_journal_entry(key) {
+        let store = dispatcher.store();
+        let (issue_id, state, diff) = match store.get_journal_entry(key) {
             Some(JournalEntry::Remote {
                 issue_id,
                 state,
@@ -74,6 +75,15 @@ where
         let diff = diff
             .clone()
             .expect("edited remote journal must have a notes diff");
+        let (_, issue_state) = store
+            .get_issue(issue_id)
+            .expect("issue of the remote journal does not exist");
+        if *issue_state == IssueState::Uploading {
+            panic!("issue is already uploading");
+        }
+        if store.has_uploading_journal(issue_id) {
+            panic!("another journal of the issue is already uploading");
+        }
         (issue_id, diff)
     };
     dispatcher
@@ -154,6 +164,7 @@ fn failed(id: JournalId, stage: JournalUploadFailureStage, message: String) -> V
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::rc::Rc;
     use std::sync::{Arc, Mutex};
 
@@ -461,6 +472,67 @@ mod tests {
         );
         assert_eq!(conflict.server.user, "user1");
         assert!(!conflict.server.details.is_empty());
+        assert!(client.put_requests().is_empty());
+    }
+
+    #[test]
+    fn panics_before_http_when_the_issue_is_uploading() {
+        let dispatcher = edited_dispatcher();
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateDescription {
+                id: 42.into(),
+                body: "edited".to_string(),
+            });
+        dispatcher.borrow_mut().consume_action();
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::StartUpload { id: 42.into() });
+        dispatcher.borrow_mut().consume_action();
+        let client = Arc::new(StubClient::succeeds(issue(42), vec![]));
+
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                upload_remote_journal(dispatcher.clone(), client.clone(), 1.into())
+            }))
+            .is_err()
+        );
+        assert!(client.get_requests().is_empty());
+        assert!(client.put_requests().is_empty());
+    }
+
+    #[test]
+    fn panics_before_http_when_another_journal_of_the_issue_is_uploading() {
+        let dispatcher = edited_dispatcher();
+        dispatcher
+            .borrow_mut()
+            .dispatch(JournalAction::RegisterRemote {
+                journal: journal(2, "other"),
+                issue_id: 42.into(),
+            });
+        dispatcher.borrow_mut().consume_action();
+        dispatcher
+            .borrow_mut()
+            .dispatch(JournalAction::EditRemoteNotes {
+                id: 2.into(),
+                notes: "other-edited".to_string(),
+            });
+        dispatcher.borrow_mut().consume_action();
+        dispatcher
+            .borrow_mut()
+            .dispatch(JournalAction::StartUpload {
+                key: JournalKey::Remote(2.into()),
+            });
+        dispatcher.borrow_mut().consume_action();
+        let client = Arc::new(StubClient::succeeds(issue(42), vec![]));
+
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                upload_remote_journal(dispatcher.clone(), client.clone(), 1.into())
+            }))
+            .is_err()
+        );
+        assert!(client.get_requests().is_empty());
         assert!(client.put_requests().is_empty());
     }
 

@@ -211,6 +211,9 @@ fn handle_app_effect(
         }
         AppEffect::StartIssueUpload(id) => {
             let mut d = dispatcher.borrow_mut();
+            if d.store().has_uploading_journal(id) {
+                panic!("a journal of the issue is already uploading");
+            }
             d.dispatch(IssueAction::StartUpload { id });
             let (_, state) = d
                 .store()
@@ -430,6 +433,8 @@ fn dispatch_fixture_issues_and_journals(d: &mut Dispatcher) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::{sync::Mutex, time::Duration};
 
     use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
@@ -438,7 +443,7 @@ mod tests {
         ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
     };
     use crate::libs::yaml::parse_journal_yaml;
-    use crate::stores::ProjectIssuesAction;
+    use crate::stores::{JournalAction, ProjectIssuesAction};
     use crate::test_support::sample_issue_aggregate;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId, JournalId, JournalKey};
@@ -626,6 +631,59 @@ mod tests {
                 .borrow()
                 .store()
                 .has_journal_entry_for_issue(42.into())
+        );
+    }
+
+    #[test]
+    fn start_issue_upload_panics_without_dispatch_or_worker_when_a_journal_is_uploading() {
+        let runtime = init_tokio_runtime().unwrap();
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        let mut aggregate =
+            sample_issue_aggregate(42, "subject", IssueStatusId::new(1), None, None, None, 0);
+        aggregate.journal_keys = vec![JournalKey::Remote(JournalId::new(1))];
+        let mut d = dispatcher.borrow_mut();
+        d.dispatch(IssueAction::Sync { issue: aggregate });
+        d.consume_action();
+        d.dispatch(JournalAction::RegisterRemote {
+            journal: parse_journal_yaml(JournalId::new(1)),
+            issue_id: 42.into(),
+        });
+        d.consume_action();
+        d.dispatch(JournalAction::EditRemoteNotes {
+            id: 1.into(),
+            notes: "edited".to_string(),
+        });
+        d.consume_action();
+        d.dispatch(JournalAction::StartUpload {
+            key: JournalKey::Remote(JournalId::new(1)),
+        });
+        d.consume_action();
+        drop(d);
+
+        let client = Arc::new(DefaultRedmineClient::new("http://127.0.0.1:8080", "token"));
+        let (sender, _receiver) = mpsc::channel::<Action>();
+        let mut terminal =
+            Terminal::new(ratatui::backend::CrosstermBackend::new(io::stdout())).unwrap();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(42.into()));
+
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                handle_app_effect(
+                    AppEffect::StartIssueUpload(42.into()),
+                    &mut terminal,
+                    &mut app,
+                    dispatcher.clone(),
+                    &runtime,
+                    sender,
+                    client,
+                )
+            }))
+            .is_err()
+        );
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+        assert_eq!(
+            dispatcher.borrow().store().get_issue_state(42),
+            Some(&IssueState::Synced)
         );
     }
 
