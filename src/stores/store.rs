@@ -102,6 +102,17 @@ impl Store {
             Action::Issue(action) => self.issue_store.consume_action(action),
             Action::ProjectIssues(action) => self.project_issues_store.consume_action(action),
             Action::Journal(action) => {
+                if let JournalAction::RemoveUploadingLocal { id, issue_id } = &action {
+                    let key = JournalKey::Local(*id);
+                    if self
+                        .issue_store
+                        .get_issues()
+                        .get(issue_id)
+                        .is_some_and(|issue| issue.journal_keys.contains(&key))
+                    {
+                        panic!("issue still references the local journal key");
+                    }
+                }
                 if let JournalAction::CreateLocal { id, .. } = &action {
                     let id = *id;
                     if !self.issued_local_journal_ids.contains(&id) {

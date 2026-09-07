@@ -129,6 +129,15 @@ pub enum JournalAction {
         id: JournalId,
         issue_id: IssueId,
     },
+    /// Removes an `Uploading` Local Journal after its server fetch settled.
+    ///
+    /// The entry must exist, be owned by the specified Issue, and be in the
+    /// `Uploading` state. Missing entries, owner mismatches, and non-Uploading
+    /// states panic without changing the entry.
+    RemoveUploadingLocal {
+        id: LocalJournalId,
+        issue_id: IssueId,
+    },
     /// Retains the before, after, and full server snapshot for conflict resolution.
     ///
     /// This action does not persist anything to the server. The target Remote
@@ -553,6 +562,20 @@ impl JournalStore {
                 }
                 if state != &RemoteJournalState::Uploading {
                     panic!("remote journal is not uploading");
+                }
+                self.entries.remove(&key);
+                self.upload_failures.remove(&key);
+            }
+            JournalAction::RemoveUploadingLocal { id, issue_id } => {
+                let key = JournalKey::Local(id);
+                let Some(JournalEntry::Local { journal, state }) = self.entries.get(&key) else {
+                    panic!("local journal does not exist");
+                };
+                if journal.issue_id != issue_id {
+                    panic!("local journal belongs to another issue");
+                }
+                if state != &LocalJournalState::Uploading {
+                    panic!("local journal is not uploading");
                 }
                 self.entries.remove(&key);
                 self.upload_failures.remove(&key);

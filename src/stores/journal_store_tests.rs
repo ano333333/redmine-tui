@@ -2105,3 +2105,191 @@ fn remove_uploading_remote_rejects_invalid_entries_without_changes() {
     });
     assert!(catch_unwind(AssertUnwindSafe(|| missing.consume_action())).is_err());
 }
+
+#[test]
+fn remove_uploading_local_removes_only_the_local_entry_after_key_removal() {
+    let mut dispatcher = Dispatcher::new();
+    let local_id = dispatcher.new_local_journal_id();
+    dispatcher.dispatch(JournalAction::RegisterRemote {
+        journal: parse_journal_yaml(JournalId::new(1)),
+        issue_id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::CreateLocal {
+        id: local_id,
+        issue_id: IssueId::new(3),
+        notes: "local".to_string(),
+    });
+    dispatcher.consume_action();
+    let other_id = dispatcher.new_local_journal_id();
+    dispatcher.dispatch(JournalAction::CreateLocal {
+        id: other_id,
+        issue_id: IssueId::new(4),
+        notes: "other local".to_string(),
+    });
+    dispatcher.consume_action();
+    let mut issue = sample_issue_aggregate(3, "issue", IssueStatusId::new(1), None, None, None, 0);
+    issue.journal_keys = vec![
+        JournalKey::Remote(JournalId::new(1)),
+        JournalKey::Local(local_id),
+    ];
+    dispatcher.dispatch(IssueAction::Sync { issue });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Local(local_id),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::SyncFetchedRemote {
+        journal: parse_journal_yaml(JournalId::new(2)),
+        issue_id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(IssueAction::ReplaceJournalKeys {
+        id: IssueId::new(3),
+        journal_keys: vec![
+            JournalKey::Remote(JournalId::new(1)),
+            JournalKey::Remote(JournalId::new(2)),
+        ],
+    });
+    dispatcher.consume_action();
+
+    dispatcher.dispatch(JournalAction::RemoveUploadingLocal {
+        id: local_id,
+        issue_id: IssueId::new(3),
+    });
+    dispatcher.consume_action();
+
+    assert!(
+        dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Local(local_id))
+            .is_none()
+    );
+    assert!(
+        dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(1)))
+            .is_some()
+    );
+    assert!(
+        dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Remote(JournalId::new(2)))
+            .is_some()
+    );
+    assert!(
+        dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Local(other_id))
+            .is_some()
+    );
+    assert_eq!(
+        dispatcher.store().get_issue(3).unwrap().0.journal_keys,
+        vec![
+            JournalKey::Remote(JournalId::new(1)),
+            JournalKey::Remote(JournalId::new(2))
+        ]
+    );
+}
+
+#[test]
+fn remove_uploading_local_rejects_invalid_entries_without_changes() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let mut missing = Dispatcher::new();
+    missing.dispatch(JournalAction::RemoveUploadingLocal {
+        id: LocalJournalId::new(1),
+        issue_id: IssueId::new(1),
+    });
+    let result = catch_unwind(AssertUnwindSafe(|| missing.consume_action()));
+    assert_eq!(
+        panic_message(result.unwrap_err()),
+        "local journal does not exist"
+    );
+
+    let (mut other_owner, local_id) = local_only_dispatcher();
+    other_owner.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Local(local_id),
+    });
+    other_owner.consume_action();
+    other_owner.dispatch(JournalAction::RemoveUploadingLocal {
+        id: local_id,
+        issue_id: IssueId::new(4),
+    });
+    let result = catch_unwind(AssertUnwindSafe(|| other_owner.consume_action()));
+    assert_eq!(
+        panic_message(result.unwrap_err()),
+        "local journal belongs to another issue"
+    );
+    assert!(matches!(
+        other_owner
+            .store()
+            .get_journal_entry(JournalKey::Local(local_id)),
+        Some(JournalEntry::Local {
+            state: LocalJournalState::Uploading,
+            ..
+        })
+    ));
+
+    let (mut local_only, local_id) = local_only_dispatcher();
+    local_only.dispatch(JournalAction::RemoveUploadingLocal {
+        id: local_id,
+        issue_id: IssueId::new(1),
+    });
+    let result = catch_unwind(AssertUnwindSafe(|| local_only.consume_action()));
+    assert_eq!(
+        panic_message(result.unwrap_err()),
+        "local journal is not uploading"
+    );
+    assert!(matches!(
+        local_only
+            .store()
+            .get_journal_entry(JournalKey::Local(local_id)),
+        Some(JournalEntry::Local {
+            state: LocalJournalState::LocalOnly,
+            ..
+        })
+    ));
+
+    let mut dispatcher = Dispatcher::new();
+    let local_id = dispatcher.new_local_journal_id();
+    dispatcher.dispatch(JournalAction::CreateLocal {
+        id: local_id,
+        issue_id: IssueId::new(3),
+        notes: "local".to_string(),
+    });
+    dispatcher.consume_action();
+    let mut issue = sample_issue_aggregate(3, "issue", IssueStatusId::new(1), None, None, None, 0);
+    issue.journal_keys = vec![
+        JournalKey::Remote(JournalId::new(1)),
+        JournalKey::Local(local_id),
+    ];
+    dispatcher.dispatch(IssueAction::Sync { issue });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Local(local_id),
+    });
+    dispatcher.consume_action();
+    dispatcher.dispatch(JournalAction::RemoveUploadingLocal {
+        id: local_id,
+        issue_id: IssueId::new(3),
+    });
+    let result = catch_unwind(AssertUnwindSafe(|| dispatcher.consume_action()));
+    assert_eq!(
+        panic_message(result.unwrap_err()),
+        "issue still references the local journal key"
+    );
+    assert!(
+        dispatcher
+            .store()
+            .get_journal_entry(JournalKey::Local(local_id))
+            .is_some()
+    );
+    assert_eq!(
+        dispatcher.store().get_issue(3).unwrap().0.journal_keys,
+        vec![
+            JournalKey::Remote(JournalId::new(1)),
+            JournalKey::Local(local_id)
+        ]
+    );
+}
