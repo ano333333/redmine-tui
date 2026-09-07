@@ -20,7 +20,7 @@ use crate::components::issue_select_popup::component::{
 use crate::stores::{Dispatcher, IssueAction, JournalAction, Store};
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, ProjectId,
+    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, JournalKey, ProjectId,
     TargetVersionId, TimeEntityActivityId, UserId,
 };
 
@@ -58,7 +58,7 @@ pub enum AppEffect {
 
 enum PendingEditorContext {
     IssueBody { id: IssueId },
-    Journal { id: JournalId },
+    Journal { key: JournalKey },
 }
 
 enum PopupComponent<'a> {
@@ -461,9 +461,9 @@ impl<'a> AppComponent<'a> {
                     self.pending_effect = Some(AppEffect::StartIssueUpload(issue_id));
                 }
                 Some(IssueEventProcessResult::Detail(
-                    IssueDetailEventProcessResult::EditJournalRequested { id, notes },
+                    IssueDetailEventProcessResult::EditJournalRequested { key, notes },
                 )) => {
-                    self.pending_editor_context = Some(PendingEditorContext::Journal { id });
+                    self.pending_editor_context = Some(PendingEditorContext::Journal { key });
                     self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
                         initial_text: notes,
                     }));
@@ -618,14 +618,21 @@ impl<'a> AppComponent<'a> {
                         body: response.edited_text,
                     });
             }
-            Some(PendingEditorContext::Journal { id }) => {
-                self.dispatcher
-                    .borrow_mut()
-                    .dispatch(JournalAction::EditRemoteNotes {
-                        id,
-                        notes: response.edited_text,
-                    });
-            }
+            Some(PendingEditorContext::Journal { key }) => match key {
+                JournalKey::Remote(id) => {
+                    self.dispatcher
+                        .borrow_mut()
+                        .dispatch(JournalAction::EditRemoteNotes {
+                            id,
+                            notes: response.edited_text,
+                        });
+                }
+                // Task 27aのremote-only表示ではLocal keyは到達しない。
+                // Local編集Actionへの接続はTask 28で追加し、このarmを置き換える
+                JournalKey::Local(_) => {
+                    panic!("Local Journalの編集は未接続(Task 28まで実装しない)");
+                }
+            },
             None => {}
         }
     }

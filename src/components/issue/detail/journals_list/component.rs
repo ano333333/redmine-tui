@@ -3,7 +3,7 @@ use ratatui::layout::Position;
 
 use crate::entities::Journal;
 use crate::stores::Store;
-use crate::vos::JournalId;
+use crate::vos::JournalKey;
 
 use super::journals_list_item::EventProcessResult as ChildEventProcessResult;
 use super::journals_list_item::FocusEvent as ChildFocusEvent;
@@ -20,11 +20,11 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromBelow,
     CursorLeavedFromAbove,
-    EditRequested { id: JournalId, notes: String },
+    EditRequested { key: JournalKey, notes: String },
 }
 
 pub struct JournalsListComponent {
-    focused_id: Option<u16>,
+    focused_key: Option<JournalKey>,
     items: Vec<JournalsListItemComponent>,
     width: u16,
 }
@@ -32,18 +32,18 @@ pub struct JournalsListComponent {
 impl JournalsListComponent {
     pub fn new() -> Self {
         Self {
-            focused_id: None,
+            focused_key: None,
             items: vec![],
             width: 0,
         }
     }
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        let focused_id = self.focused_id?;
+        let focused_key = self.focused_key?;
         let result = self
             .items
             .iter_mut()
-            .find(|component| component.id == focused_id)?
+            .find(|component| component.key == focused_key)?
             .process_event(event)?;
 
         match result {
@@ -51,12 +51,10 @@ impl JournalsListComponent {
                 let focused_index = self
                     .items
                     .iter()
-                    .enumerate()
-                    .find(|(_, journal)| journal.id == focused_id)?
-                    .0;
+                    .position(|journal| journal.key == focused_key)?;
                 if focused_index + 1 < self.items.len() {
                     self.items[focused_index].focus_event(ChildFocusEvent::Unfocused);
-                    self.focused_id = Some(self.items[focused_index + 1].id);
+                    self.focused_key = Some(self.items[focused_index + 1].key);
                     self.items[focused_index + 1]
                         .focus_event(ChildFocusEvent::CursorEnteredFromAbove { x });
                     None
@@ -68,12 +66,10 @@ impl JournalsListComponent {
                 let focused_index = self
                     .items
                     .iter()
-                    .enumerate()
-                    .find(|(_, journal)| journal.id == focused_id)?
-                    .0;
+                    .position(|journal| journal.key == focused_key)?;
                 if focused_index > 0 {
                     self.items[focused_index].focus_event(ChildFocusEvent::Unfocused);
-                    self.focused_id = Some(self.items[focused_index - 1].id);
+                    self.focused_key = Some(self.items[focused_index - 1].key);
                     self.items[focused_index - 1]
                         .focus_event(ChildFocusEvent::CursorEnteredFromBelow { x });
                     None
@@ -81,18 +77,18 @@ impl JournalsListComponent {
                     Some(EventProcessResult::CursorLeavedFromAbove)
                 }
             }
-            ChildEventProcessResult::EditRequested { id, notes } => {
-                Some(EventProcessResult::EditRequested { id, notes })
+            ChildEventProcessResult::EditRequested { key, notes } => {
+                Some(EventProcessResult::EditRequested { key, notes })
             }
         }
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
-        if let Some(old_id) = self.focused_id
+        if let Some(old_key) = self.focused_key
             && let Some(component) = self
                 .items
                 .iter_mut()
-                .find(|component| component.id == old_id)
+                .find(|component| component.key == old_key)
         {
             component.focus_event(ChildFocusEvent::Unfocused);
         }
@@ -112,91 +108,105 @@ impl JournalsListComponent {
                 let Some(new_index) = new_index else {
                     return;
                 };
-                self.focused_id = Some(self.items[new_index].id);
+                self.focused_key = Some(self.items[new_index].key);
                 self.items[new_index].focus_event(ChildFocusEvent::Focused {
                     position: Position::new(position.x, position.y - line_count_sum),
                 });
             }
             FocusEvent::Unfocused => {
-                self.focused_id = None;
+                self.focused_key = None;
             }
             FocusEvent::CursorEnteredFromAbove { x } => {
                 // FIXME: journalsが1個もない場合の処理
                 // 「フォーカスが当たらず下に通り抜ける」
-                if let Some(focused_id) = self.focused_id
+                if let Some(focused_key) = self.focused_key
                     && let Some(component) = self
                         .items
                         .iter_mut()
-                        .find(|component| component.id == focused_id)
+                        .find(|component| component.key == focused_key)
                 {
                     component.focus_event(ChildFocusEvent::Unfocused);
                 }
                 let Some(component) = self.items.first_mut() else {
                     return;
                 };
-                self.focused_id = Some(component.id);
+                self.focused_key = Some(component.key);
                 component.focus_event(ChildFocusEvent::CursorEnteredFromAbove { x });
             }
             FocusEvent::CursorEnteredFromBelow { x } => {
                 // FIXME: journalsが1個もない場合の処理
                 // 「フォーカスが当たらず上に通り抜ける」
-                if let Some(focused_id) = self.focused_id
+                if let Some(focused_key) = self.focused_key
                     && let Some(component) = self
                         .items
                         .iter_mut()
-                        .find(|component| component.id == focused_id)
+                        .find(|component| component.key == focused_key)
                 {
                     component.focus_event(ChildFocusEvent::Unfocused);
                 }
                 let Some(component) = self.items.last_mut() else {
                     return;
                 };
-                self.focused_id = Some(component.id);
+                self.focused_key = Some(component.key);
                 component.focus_event(ChildFocusEvent::CursorEnteredFromBelow { x });
             }
         }
     }
 
-    pub fn update(&mut self, journals: Vec<&Journal>, width: u16) -> Option<EventProcessResult> {
+    pub fn update(
+        &mut self,
+        journals: &[(JournalKey, &Journal)],
+        width: u16,
+    ) -> Option<EventProcessResult> {
         self.width = width;
-        // 今フォーカスが当たっているJournalのself.journalsでのインデックス
-        // もしそのJournalが削除されていたら、同じ位置または末尾にあるJournalにフォーカスを当てる
-        let mut focused_index = None;
-        if let Some(focused_id) = self.focused_id {
-            focused_index = self
+        // 今フォーカスが当たっているJournalKeyとそのインデックスを保持する。
+        // もしそのJournalが削除されていたら、同じ位置(範囲外なら末尾)のJournalに
+        // フォーカスを当て、Journalが0件ならフォーカスを解除する
+        let focused_key = self.focused_key;
+        let old_focus_index = focused_key
+            .and_then(|key| self.items.iter().position(|component| component.key == key));
+
+        // keyが一致するitemはそのまま引き継ぎ、一致しない順に新しいitemを作る
+        let mut updated_items = Vec::with_capacity(journals.len());
+        for (key, journal) in journals {
+            match self
                 .items
                 .iter()
-                .enumerate()
-                .find(|(_, component)| component.id == focused_id)
-                .map(|(index, _)| index);
-        }
-        for (index, journal) in journals.iter().enumerate() {
-            // 新しいJournalが末尾以外に追加することはないと考え、
-            // journalがself.items[index]に来るまでself.itemsの要素を間引く
-            while index < self.items.len() && journal.id != self.items[index].id {
-                self.items.remove(index);
+                .position(|component| component.key == *key)
+            {
+                Some(index) => {
+                    let mut component = self.items.remove(index);
+                    component.update(journal, width);
+                    updated_items.push(component);
+                }
+                None => {
+                    let mut component = JournalsListItemComponent::new(*key, journal);
+                    component.update(journal, width);
+                    updated_items.push(component);
+                }
             }
-            if index >= self.items.len() {
-                self.items.push(JournalsListItemComponent::new(journal));
-            }
-            self.items[index].update(journal, width);
         }
+        self.items = updated_items;
 
-        if let Some(focused_id) = self.focused_id
-            && let Some(mut focused_index) = focused_index
-            && self.items[focused_index].id != focused_id
+        if let Some(focused_key) = focused_key
             && self
                 .items
                 .iter()
-                .find(|component| component.id == focused_id)
+                .find(|component| component.key == focused_key)
                 .is_none()
         {
-            if focused_index >= self.items.len() {
-                focused_index = self.items.len().saturating_sub(1);
+            match old_focus_index {
+                Some(index) if !self.items.is_empty() => {
+                    let index = index.min(self.items.len() - 1);
+                    self.items[index].focus_event(ChildFocusEvent::Focused {
+                        position: Position { x: 0, y: 0 },
+                    });
+                    self.focused_key = Some(self.items[index].key);
+                }
+                _ => {
+                    self.focused_key = None;
+                }
             }
-            self.items[focused_index].focus_event(ChildFocusEvent::Focused {
-                position: Position { x: 0, y: 0 },
-            });
         }
         None
     }
@@ -218,12 +228,12 @@ impl JournalsListComponent {
     }
 
     pub fn get_cursor_position(&self, width: u16) -> Position {
-        let Some(focused_id) = self.focused_id else {
+        let Some(focused_key) = self.focused_key else {
             return Position::new(0, 0);
         };
         let mut line_count = 0;
         for component in self.items.iter() {
-            if component.id == focused_id {
+            if component.key == focused_key {
                 let mut position = component.get_cursor_position();
                 position.y += line_count;
                 return position;
@@ -240,7 +250,7 @@ mod tests {
 
     use super::*;
     use crate::test_support::local_datetime;
-    use crate::vos::JournalId;
+    use crate::vos::{EntityIdValue, JournalId, JournalKey};
 
     const WIDE_WIDTH: u16 = 32;
 
@@ -258,21 +268,137 @@ mod tests {
         }
     }
 
+    fn remote_key(id: u16) -> JournalKey {
+        JournalKey::Remote(JournalId::new(id))
+    }
+
+    fn update_component(component: &mut JournalsListComponent, journals: &[&Journal]) {
+        let entries = journals
+            .iter()
+            .map(|journal| (remote_key(journal.id.get()), *journal))
+            .collect::<Vec<_>>();
+        component.update(&entries, WIDE_WIDTH);
+    }
+
+    /// 先頭itemから`j`をpresses回押してpresses個下のitemへフォーカスを移す
+    fn press_j(component: &mut JournalsListComponent, presses: usize) {
+        for _ in 0..presses {
+            assert!(
+                component
+                    .process_event(key_event(KeyCode::Char('j')))
+                    .is_none()
+            );
+        }
+    }
+
     #[test]
-    fn process_event_e_on_focused_item_returns_edit_requested() {
-        let journal = create_journal(1, "first paragraph");
+    fn process_event_e_on_focused_item_returns_edit_requested_with_journal_key() {
+        let journal = create_journal(7, "first paragraph");
         let mut component = JournalsListComponent::new();
-        component.update(vec![&journal], WIDE_WIDTH);
+        update_component(&mut component, &[&journal]);
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
 
         let result = component.process_event(key_event(KeyCode::Char('e')));
 
         match result {
-            Some(EventProcessResult::EditRequested { id, notes }) => {
-                assert_eq!(id, JournalId::new(1));
+            Some(EventProcessResult::EditRequested { key, notes }) => {
+                assert_eq!(key, JournalKey::Remote(JournalId::new(7)));
                 assert_eq!(notes, "first paragraph");
             }
             _ => panic!("expected edit request"),
         }
+    }
+
+    #[test]
+    fn update_keeps_focus_on_same_item_when_key_survives_reorder() {
+        let a = create_journal(1, "a notes");
+        let b = create_journal(2, "b notes");
+        let c = create_journal(3, "c notes");
+        let mut component = JournalsListComponent::new();
+        update_component(&mut component, &[&a, &b, &c]);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+        press_j(&mut component, 1);
+        assert_eq!(component.focused_key, Some(remote_key(2)));
+
+        update_component(&mut component, &[&b, &a, &c]);
+
+        assert_eq!(component.focused_key, Some(remote_key(2)));
+        // bはindex 0に移動したが同一itemへfocusが残る(Notes先頭の相対y=3)
+        assert_eq!(
+            component.get_cursor_position(WIDE_WIDTH),
+            Position::new(0, 3)
+        );
+    }
+
+    #[test]
+    fn update_moves_focus_to_same_index_when_focused_item_removed() {
+        let a = create_journal(1, "a notes");
+        let b = create_journal(2, "b notes");
+        let c = create_journal(3, "c notes");
+        let mut component = JournalsListComponent::new();
+        update_component(&mut component, &[&a, &b, &c]);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+        press_j(&mut component, 1);
+        assert_eq!(component.focused_key, Some(remote_key(2)));
+
+        update_component(&mut component, &[&a, &c]);
+
+        assert_eq!(component.focused_key, Some(remote_key(3)));
+        // fallback先(c, index 1)へFocused eventが適用される
+        // (前のitem 4行 + Notes先頭の相対y=3)
+        assert_eq!(
+            component.get_cursor_position(WIDE_WIDTH),
+            Position::new(0, 7)
+        );
+        // cが最終itemのNotes先頭にfocusしていることをイベントで確認する
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::CursorLeavedFromBelow)
+        ));
+    }
+
+    #[test]
+    fn update_moves_focus_to_last_item_when_old_index_out_of_range() {
+        let a = create_journal(1, "a notes");
+        let b = create_journal(2, "b notes");
+        let c = create_journal(3, "c notes");
+        let mut component = JournalsListComponent::new();
+        update_component(&mut component, &[&a, &b, &c]);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+        press_j(&mut component, 2);
+        assert_eq!(component.focused_key, Some(remote_key(3)));
+
+        update_component(&mut component, &[&a, &b]);
+
+        assert_eq!(component.focused_key, Some(remote_key(2)));
+        // 範囲外の旧indexは末尾(b, index 1)へfallbackする
+        assert_eq!(
+            component.get_cursor_position(WIDE_WIDTH),
+            Position::new(0, 7)
+        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::CursorLeavedFromBelow)
+        ));
+    }
+
+    #[test]
+    fn update_clears_focus_when_no_items_remain() {
+        let a = create_journal(1, "a notes");
+        let b = create_journal(2, "b notes");
+        let mut component = JournalsListComponent::new();
+        update_component(&mut component, &[&a, &b]);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+        press_j(&mut component, 1);
+        assert_eq!(component.focused_key, Some(remote_key(2)));
+
+        update_component(&mut component, &[]);
+
+        assert_eq!(component.focused_key, None);
+        assert!(component.items.is_empty());
+        assert_eq!(
+            component.get_cursor_position(WIDE_WIDTH),
+            Position::new(0, 0)
+        );
     }
 }

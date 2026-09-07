@@ -8,7 +8,7 @@ use ratatui::widgets::Widget;
 
 use crate::entities::Journal;
 use crate::stores::{Dispatcher, JournalEntry, Store};
-use crate::vos::{IssueId, JournalId, JournalKey};
+use crate::vos::{IssueId, JournalKey};
 
 use super::body::BodyComponent;
 use super::body::EventProcessResult as BodyEventProcessResult;
@@ -30,7 +30,7 @@ use super::{IssueDetailWidget, IssueDetailWidgetState};
 #[derive(Debug, PartialEq, Eq)]
 pub enum EventProcessResult {
     EditIssueBodyRequested { id: IssueId, body: String },
-    EditJournalRequested { id: JournalId, notes: String },
+    EditJournalRequested { key: JournalKey, notes: String },
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
@@ -47,6 +47,7 @@ mod tests {
     use super::*;
 
     use crate::stores::IssueAction;
+    use crate::vos::JournalId;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn key_event(code: KeyCode) -> Event {
@@ -112,8 +113,8 @@ mod tests {
         let result = component.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
 
         match result {
-            Some(EventProcessResult::EditJournalRequested { id, notes }) => {
-                assert_eq!(id, JournalId::new(1));
+            Some(EventProcessResult::EditJournalRequested { key, notes }) => {
+                assert_eq!(key, JournalKey::Remote(JournalId::new(1)));
                 assert_eq!(notes, "");
             }
             _ => panic!("expected edit journal request"),
@@ -291,8 +292,8 @@ impl IssueDetailComponent {
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::CursorEnteredFromBelow);
                     }
-                    Some(JournalsListEventProcessResult::EditRequested { id, notes }) => {
-                        return Some(EventProcessResult::EditJournalRequested { id, notes });
+                    Some(JournalsListEventProcessResult::EditRequested { key, notes }) => {
+                        return Some(EventProcessResult::EditJournalRequested { key, notes });
                     }
                     None => {}
                 }
@@ -311,17 +312,15 @@ impl IssueDetailComponent {
             let journals = issue
                 .journal_keys
                 .iter()
-                .filter_map(|key| match key {
-                    JournalKey::Remote(_) => store.get_journal_entry(*key),
-                    JournalKey::Local(_) => None,
+                .copied()
+                .filter(|key| matches!(key, JournalKey::Remote(_)))
+                .filter_map(|key| match store.get_journal_entry(key) {
+                    Some(JournalEntry::Remote { journal, .. }) => Some((key, journal)),
+                    _ => None,
                 })
-                .filter_map(|entry| match entry {
-                    JournalEntry::Remote { journal, .. } => Some(journal),
-                    JournalEntry::Local { .. } => None,
-                })
-                .collect::<Vec<&Journal>>();
+                .collect::<Vec<(JournalKey, &Journal)>>();
 
-            self.journals_list.update(journals, self.width);
+            self.journals_list.update(&journals, self.width);
         }
 
         self.widget_state.update(

@@ -3,7 +3,7 @@ use ratatui::layout::Position;
 
 use crate::entities::Journal;
 use crate::stores::Store;
-use crate::vos::{EntityIdValue, JournalDetail, JournalDetailAttr, JournalId};
+use crate::vos::{EntityIdValue, JournalDetail, JournalDetailAttr, JournalKey};
 
 use super::focus_state;
 pub use super::focus_state::FocusEvent;
@@ -138,11 +138,11 @@ fn format_bool(b: bool) -> String {
 pub enum EventProcessResult {
     CursorLeavedFromBelow { x: u16 },
     CursorLeavedFromAbove { x: u16 },
-    EditRequested { id: JournalId, notes: String },
+    EditRequested { key: JournalKey, notes: String },
 }
 
 pub struct JournalsListItemComponent {
-    pub id: u16,
+    pub key: JournalKey,
     journal: Journal,
     comment_line_count: u16,
     focus_state: FocusState,
@@ -150,9 +150,9 @@ pub struct JournalsListItemComponent {
 }
 
 impl JournalsListItemComponent {
-    pub fn new(journal: &Journal) -> Self {
+    pub fn new(key: JournalKey, journal: &Journal) -> Self {
         Self {
-            id: journal.id.get(),
+            key,
             journal: journal.clone(),
             comment_line_count: 0,
             focus_state: FocusState::new(),
@@ -171,7 +171,7 @@ impl JournalsListItemComponent {
                     EventProcessResult::CursorLeavedFromAbove { x }
                 }
                 focus_state::EventProcessResult::Edit => EventProcessResult::EditRequested {
-                    id: self.journal.id,
+                    key: self.key,
                     notes: self.journal.notes.clone(),
                 },
             })
@@ -217,7 +217,7 @@ mod tests {
         entities::Journal,
         stores::Store,
         test_support::{local_datetime, render_snapshot, sync_fixture_entities},
-        vos::{IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, UserId},
+        vos::{IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, JournalKey, UserId},
     };
 
     const WIDE_WIDTH: u16 = 32;
@@ -274,7 +274,7 @@ mod tests {
     }
 
     fn component_with_update(journal: &Journal, width: u16) -> JournalsListItemComponent {
-        let mut component = JournalsListItemComponent::new(journal);
+        let mut component = JournalsListItemComponent::new(JournalKey::Remote(journal.id), journal);
         component.update(journal, width);
         component
     }
@@ -293,7 +293,8 @@ mod tests {
     fn update_initial_state_is_unfocused_and_rendered() {
         let store = fixture_store();
         let journal = create_journal(1, details(), notes());
-        let mut component = JournalsListItemComponent::new(&journal);
+        let mut component =
+            JournalsListItemComponent::new(JournalKey::Remote(journal.id), &journal);
 
         component.update(&journal, WIDE_WIDTH);
 
@@ -328,7 +329,9 @@ mod tests {
     fn focus_event_updates_cursor_and_widget_focus() {
         let store = fixture_store();
         let journal = create_journal(1, details(), notes());
-        let mut component = component_with_update(&journal, WIDE_WIDTH);
+        let mut component =
+            JournalsListItemComponent::new(JournalKey::Remote(journal.id), &journal);
+        component.update(&journal, WIDE_WIDTH);
 
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 6 });
 
@@ -381,10 +384,10 @@ mod tests {
 
         match result {
             Some(EventProcessResult::EditRequested {
-                id,
+                key,
                 notes: edit_notes,
             }) => {
-                assert_eq!(id, JournalId::new(1));
+                assert_eq!(key, JournalKey::Remote(JournalId::new(1)));
                 assert_eq!(edit_notes, notes());
             }
             _ => panic!("expected edit request"),
