@@ -10,6 +10,7 @@ mod load_initial_entities;
 mod sync_fetched_journals;
 mod sync_initial_issue_details;
 mod upload_issue;
+mod upload_local_journal;
 mod upload_remote_journal;
 
 pub use cancel_issue_upload::cancel_issue_upload;
@@ -32,5 +33,7 @@ pub use sync_fetched_journals::sync_fetched_journals;
 #[allow(unused_imports)]
 pub use sync_initial_issue_details::initial_issue_details_actions;
 pub use upload_issue::upload_issue;
+#[allow(unused_imports)]
+pub use upload_local_journal::upload_local_journal;
 #[allow(unused_imports)]
 pub use upload_remote_journal::upload_remote_journal;
