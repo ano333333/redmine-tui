@@ -719,6 +719,51 @@ fn start_upload_is_a_no_op_for_synced_remote_and_uploading_entries() {
 }
 
 #[test]
+fn has_uploading_journal_is_true_for_an_uploading_remote_entry() {
+    let mut dispatcher = remote_edited_dispatcher();
+    dispatcher.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    dispatcher.consume_action();
+
+    assert!(dispatcher.store().has_uploading_journal(IssueId::new(3)));
+}
+
+#[test]
+fn has_uploading_journal_is_true_for_an_uploading_local_entry() {
+    let (mut dispatcher, id) = local_only_dispatcher();
+    dispatcher.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Local(id),
+    });
+    dispatcher.consume_action();
+
+    assert!(dispatcher.store().has_uploading_journal(IssueId::new(1)));
+}
+
+#[test]
+fn has_uploading_journal_is_false_for_empty_store_and_non_uploading_entries() {
+    let empty = Store::new();
+    assert!(!empty.has_uploading_journal(IssueId::new(1)));
+
+    let edited = remote_edited_dispatcher();
+    assert!(!edited.store().has_uploading_journal(IssueId::new(3)));
+
+    let (local, _id) = local_only_dispatcher();
+    assert!(!local.store().has_uploading_journal(IssueId::new(1)));
+}
+
+#[test]
+fn has_uploading_journal_is_false_when_only_another_issue_is_uploading() {
+    let mut dispatcher = remote_edited_dispatcher();
+    dispatcher.dispatch(JournalAction::StartUpload {
+        key: JournalKey::Remote(JournalId::new(1)),
+    });
+    dispatcher.consume_action();
+
+    assert!(!dispatcher.store().has_uploading_journal(IssueId::new(42)));
+}
+
+#[test]
 #[should_panic(expected = "journal does not exist")]
 fn start_upload_rejects_a_missing_key() {
     let mut dispatcher = Dispatcher::new();

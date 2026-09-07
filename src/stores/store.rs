@@ -245,6 +245,10 @@ impl Store {
         self.journal_store.has_entry_for_issue(issue_id)
     }
 
+    pub(crate) fn has_uploading_journal(&self, issue_id: impl Into<IssueId>) -> bool {
+        self.journal_store.has_uploading_journal(issue_id.into())
+    }
+
     pub fn get_users(&self) -> &HashMap<UserId, User> {
         &self.users
     }

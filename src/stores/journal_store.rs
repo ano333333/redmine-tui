@@ -257,6 +257,19 @@ impl JournalStore {
         })
     }
 
+    pub(super) fn has_uploading_journal(&self, issue_id: IssueId) -> bool {
+        self.entries.values().any(|entry| match entry {
+            JournalEntry::Remote {
+                issue_id: id,
+                state,
+                ..
+            } => *id == issue_id && *state == RemoteJournalState::Uploading,
+            JournalEntry::Local { journal, state } => {
+                journal.issue_id == issue_id && *state == LocalJournalState::Uploading
+            }
+        })
+    }
+
     pub(super) fn load_remote_fixture(&mut self, journal: Journal, issue_id: IssueId) {
         self.entries
             .entry(JournalKey::Remote(journal.id))
