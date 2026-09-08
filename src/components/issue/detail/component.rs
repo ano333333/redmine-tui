@@ -6,7 +6,6 @@ use ratatui::Frame;
 use ratatui::layout::{Offset, Position, Rect};
 use ratatui::widgets::Widget;
 
-use crate::entities::Journal;
 use crate::stores::{Dispatcher, JournalEntry, Store};
 use crate::vos::{IssueId, JournalKey};
 
@@ -21,7 +20,7 @@ use super::header::FocusEvent as HeaderFocusEvent;
 use super::header::HeaderComponent;
 use super::journals_list::EventProcessResult as JournalsListEventProcessResult;
 use super::journals_list::FocusEvent as JournalsListFocusEvent;
-use super::journals_list::JournalsListComponent;
+use super::journals_list::{JournalItemContent, JournalsListComponent};
 use super::property::EventProcessResult as PropertyEventProcessResult;
 use super::property::FocusEvent as PropertyFocusTransitionEvent;
 use super::property::PropertyComponent;
@@ -119,6 +118,46 @@ mod tests {
             }
             _ => panic!("expected edit journal request"),
         }
+    }
+
+    #[test]
+    fn process_event_e_on_local_journal_returns_edit_journal_requested_with_local_key() {
+        let dispatcher = dispatcher_with_issue_and_journals();
+        let local_id = {
+            let mut d = dispatcher.borrow_mut();
+            let local_id = d.new_local_journal_id();
+            d.dispatch(crate::stores::JournalAction::CreateLocal {
+                id: local_id,
+                issue_id: 3.into(),
+                notes: "local notes".to_string(),
+            });
+            d.consume_action();
+            d.dispatch(crate::stores::IssueAction::AppendJournalKey {
+                issue_id: 3.into(),
+                key: JournalKey::Local(local_id),
+            });
+            d.consume_action();
+            local_id
+        };
+
+        let mut component = IssueDetailComponent::new(3);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+
+        // 下方向へ移動しながらnotes位置でeを試し、末尾のLocal Journalに到達したことを確認する
+        for _ in 0..J_PRESSES_TO_FIRST_JOURNAL_NOTES + 100 {
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+            component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+            if let Some(EventProcessResult::EditJournalRequested { key, notes }) =
+                component.process_event(key_event(KeyCode::Char('e')), dispatcher.clone())
+            {
+                if matches!(key, JournalKey::Local(_)) {
+                    assert_eq!(key, JournalKey::Local(local_id));
+                    assert_eq!(notes, "local notes");
+                    return;
+                }
+            }
+        }
+        panic!("never reached local journal notes")
     }
 }
 
@@ -313,12 +352,26 @@ impl IssueDetailComponent {
                 .journal_keys
                 .iter()
                 .copied()
-                .filter(|key| matches!(key, JournalKey::Remote(_)))
-                .filter_map(|key| match store.get_journal_entry(key) {
-                    Some(JournalEntry::Remote { journal, .. }) => Some((key, journal)),
-                    _ => None,
+                .map(|key| {
+                    let entry = store
+                        .get_journal_entry(key)
+                        .expect("journal key must refer to an existing entry");
+                    (
+                        key,
+                        match (key, entry) {
+                            (JournalKey::Remote(_), JournalEntry::Remote { journal, .. }) => {
+                                JournalItemContent::Remote(journal)
+                            }
+                            (JournalKey::Local(_), JournalEntry::Local { journal, .. }) => {
+                                JournalItemContent::Local(journal)
+                            }
+                            _ => panic!(
+                                "journal key and entry kind must match (Store invariant violated)"
+                            ),
+                        },
+                    )
                 })
-                .collect::<Vec<(JournalKey, &Journal)>>();
+                .collect::<Vec<_>>();
 
             self.journals_list.update(&journals, self.width);
         }

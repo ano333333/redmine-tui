@@ -47,7 +47,9 @@ mod tests {
 
     use super::*;
     use crate::components::issue::detail::journals_list::journals_list_item::JournalItemWidgetState;
-    use crate::components::issue::detail::journals_list::journals_list_item::widget::ResolvedJournalDetail;
+    use crate::components::issue::detail::journals_list::journals_list_item::widget::{
+        JournalItemDisplay, ResolvedJournalDetail,
+    };
     use crate::{
         entities::Journal,
         test_support::{local_datetime, render_snapshot},
@@ -80,6 +82,17 @@ mod tests {
         }
     }
 
+    fn remote_display(
+        journal: &Journal,
+        details: Vec<ResolvedJournalDetail>,
+    ) -> JournalItemDisplay<'_> {
+        JournalItemDisplay::Remote {
+            user: &journal.user,
+            updated_on: &journal.updated_on,
+            details,
+        }
+    }
+
     #[test]
     fn snapshot_journals_list_mixed_entries() {
         let user = "alice".to_string();
@@ -87,18 +100,16 @@ mod tests {
         let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
 
         let mut state = JournalItemWidgetState::new();
-        state.update(24, &user, &updated_on, &notes);
+        state.update(24, &notes);
         let journal = create_journal(user, updated_on, &notes);
         let journals = vec![JournalItemWidget::new(
-            &journal,
-            vec![assigned_to_detail()],
+            remote_display(&journal, vec![assigned_to_detail()]),
             &state,
             true,
         )];
         let line_count = JournalsListWidget::new(journals).line_count(24);
         let journals = vec![JournalItemWidget::new(
-            &journal,
-            vec![assigned_to_detail()],
+            remote_display(&journal, vec![assigned_to_detail()]),
             &state,
             true,
         )];
@@ -118,11 +129,10 @@ mod tests {
         let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
 
         let mut state = JournalItemWidgetState::new();
-        state.update(24, &user, &updated_on, &notes);
+        state.update(24, &notes);
         let journal = create_journal(user, updated_on, &notes);
         let journals = vec![JournalItemWidget::new(
-            &journal,
-            vec![assigned_to_detail()],
+            remote_display(&journal, vec![assigned_to_detail()]),
             &state,
             true,
         )];
@@ -136,17 +146,43 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_journals_list_remote_unfocused_and_local_focused() {
+        let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
+        let remote_notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
+        let local_notes = "new local notes".to_string();
+
+        let mut remote_state = JournalItemWidgetState::new();
+        remote_state.update(24, &remote_notes);
+        let journal = create_journal("alice".to_string(), updated_on, &remote_notes);
+
+        let mut local_state = JournalItemWidgetState::new();
+        local_state.update(24, &local_notes);
+
+        let journals = vec![
+            JournalItemWidget::new(
+                remote_display(&journal, vec![assigned_to_detail()]),
+                &remote_state,
+                false,
+            ),
+            JournalItemWidget::new(JournalItemDisplay::Local, &local_state, true),
+        ];
+        let widget = JournalsListWidget::new(journals);
+        let line_count = widget.line_count(24);
+
+        render_snapshot("journals_list_remote_and_local", 24, line_count, widget);
+    }
+
+    #[test]
     fn line_count_journals_list_current_values() {
         let user = "alice".to_string();
         let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
         let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
 
         let mut state = JournalItemWidgetState::new();
-        state.update(24, &user, &updated_on, &notes);
+        state.update(24, &notes);
         let journal = create_journal(user, updated_on, &notes);
         let journals = vec![JournalItemWidget::new(
-            &journal,
-            vec![assigned_to_detail()],
+            remote_display(&journal, vec![assigned_to_detail()]),
             &state,
             false,
         )];
@@ -165,11 +201,10 @@ mod tests {
 
         let wide_short = {
             let mut state = JournalItemWidgetState::new();
-            state.update(32, &user, &updated_on, &short_notes);
+            state.update(32, &short_notes);
             let journal = create_journal(user.clone(), updated_on, &short_notes);
             let journals = vec![JournalItemWidget::new(
-                &journal,
-                vec![assigned_to_detail()],
+                remote_display(&journal, vec![assigned_to_detail()]),
                 &state,
                 false,
             )];
@@ -178,11 +213,10 @@ mod tests {
 
         let narrow_short = {
             let mut state = JournalItemWidgetState::new();
-            state.update(18, &user, &updated_on, &short_notes);
+            state.update(18, &short_notes);
             let journal = create_journal(user.clone(), updated_on, &short_notes);
             let journals = vec![JournalItemWidget::new(
-                &journal,
-                vec![assigned_to_detail()],
+                remote_display(&journal, vec![assigned_to_detail()]),
                 &state,
                 false,
             )];
@@ -191,11 +225,10 @@ mod tests {
 
         let narrow_long = {
             let mut state = JournalItemWidgetState::new();
-            state.update(18, &user, &updated_on, &long_notes);
+            state.update(18, &long_notes);
             let journal = create_journal(user.clone(), updated_on, &long_notes);
             let journals = vec![JournalItemWidget::new(
-                &journal,
-                vec![assigned_to_detail()],
+                remote_display(&journal, vec![assigned_to_detail()]),
                 &state,
                 false,
             )];
@@ -214,7 +247,7 @@ mod tests {
 
         let journal = create_journal(user, updated_on, "");
         let state = JournalItemWidgetState::new();
-        let widget = JournalItemWidget::new(&journal, details, &state, false);
+        let widget = JournalItemWidget::new(remote_display(&journal, details), &state, false);
         assert_eq!(widget.line_count(20), 6);
     }
 }

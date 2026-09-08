@@ -155,7 +155,7 @@ impl IssueComponent {
 mod tests {
     use super::{EventProcessResult, IssueComponent, IssueWidget};
     use crate::{
-        stores::{Dispatcher, IssueAction},
+        stores::{Dispatcher, IssueAction, JournalAction},
         test_support::render_snapshot,
     };
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -282,13 +282,22 @@ mod tests {
         let d = dispatcher();
         consume(&d, IssueAction::StartFetching { id: 3.into() });
         let (mut component, _) = component(&d, 3);
-        consume(
-            &d,
-            IssueAction::FetchSucceeded {
+        {
+            let mut dispatcher_ref = d.borrow_mut();
+            for journal_id in [1, 2, 3] {
+                dispatcher_ref.dispatch(JournalAction::RegisterRemote {
+                    journal: crate::libs::yaml::parse_journal_yaml(journal_id.into()),
+                    issue_id: 3.into(),
+                });
+            }
+            dispatcher_ref.dispatch(IssueAction::FetchSucceeded {
                 id: 3.into(),
                 issue: crate::libs::yaml::parse_issue_yaml(3),
-            },
-        );
+            });
+            while dispatcher_ref.consume_actinos_len() > 0 {
+                dispatcher_ref.consume_action();
+            }
+        }
         {
             let borrow = d.borrow();
             component.update(d.clone(), borrow.store(), (80, 24));

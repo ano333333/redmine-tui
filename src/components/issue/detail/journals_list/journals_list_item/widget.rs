@@ -9,8 +9,6 @@ use ratatui::style::Color;
 use ratatui::text::Text;
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
-use crate::entities::Journal;
-
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 const EMPTY_NOTES_PLACEHOLDER: &str = "(none)";
@@ -35,15 +33,13 @@ impl JournalItemWidgetState {
         }
     }
 
-    pub fn update(&mut self, width: u16, user: &str, updated_on: &DateTime<Local>, notes: &str) {
+    pub fn update(&mut self, width: u16, notes: &str) {
         let mut hasher = DefaultHasher::new();
-        user.hash(&mut hasher);
-        updated_on.hash(&mut hasher);
         notes.hash(&mut hasher);
         let hash = hasher.finish();
 
         if self.comment_buffer.area.width != width || self.hash != hash {
-            self.comment_buffer = render_comment_in_buffer(width, user, updated_on, notes);
+            self.comment_buffer = render_comment_in_buffer(width, notes);
             self.hash = hash;
         }
     }
@@ -53,18 +49,31 @@ impl JournalItemWidgetState {
     }
 }
 
+/// Journal itemの表示model。Remote/Localの区別を型で表し、Localには
+/// user・更新日時・detailsを持たせない。
+pub enum JournalItemDisplay<'a> {
+    Remote {
+        user: &'a str,
+        updated_on: &'a DateTime<Local>,
+        details: Vec<ResolvedJournalDetail>,
+    },
+    Local,
+}
+
 pub struct JournalItemWidget<'a> {
-    journal: &'a Journal,
-    details: Vec<ResolvedJournalDetail>,
+    display: JournalItemDisplay<'a>,
     comment_state: &'a JournalItemWidgetState,
     focused: bool,
 }
 
 impl<'a> Widget for JournalItemWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let property_height = self.details.len() as u16 + 3;
-        let property =
-            create_property_paragraph(&self.journal.user, &self.details, &self.journal.updated_on);
+        let property_height = match &self.display {
+            JournalItemDisplay::Remote { details, .. } => details.len() as u16 + 3,
+            // 0 detailsのRemoteと同じレイアウトで、Notesは3行目から始まる
+            JournalItemDisplay::Local => 3,
+        };
+        let property = create_property_paragraph(&self.display);
 
         let property_area = Rect::new(
             area.x,
@@ -111,43 +120,48 @@ impl<'a> Widget for JournalItemWidget<'a> {
 
 impl<'a> JournalItemWidget<'a> {
     pub fn new(
-        journal: &'a Journal,
-        details: Vec<ResolvedJournalDetail>,
+        display: JournalItemDisplay<'a>,
         comment_state: &'a JournalItemWidgetState,
         focused: bool,
     ) -> Self {
         Self {
-            journal,
-            details,
+            display,
             comment_state,
             focused,
         }
     }
 
     pub fn line_count(&self, _: u16) -> u16 {
-        1 + 1 + self.details.len() as u16 + 1 + self.comment_state.comment_line_count() + 1
+        let detail_count = match &self.display {
+            JournalItemDisplay::Remote { details, .. } => details.len() as u16,
+            JournalItemDisplay::Local => 0,
+        };
+        1 + 1 + detail_count + 1 + self.comment_state.comment_line_count() + 1
     }
 }
 
-fn create_property_paragraph(
-    user: &str,
-    details: &[ResolvedJournalDetail],
-    updated_on: &DateTime<Local>,
-) -> Paragraph<'static> {
-    let title = create_header(user, updated_on);
+fn create_property_paragraph(display: &JournalItemDisplay) -> Paragraph<'static> {
+    let title = match display {
+        JournalItemDisplay::Remote {
+            user, updated_on, ..
+        } => create_header(user, updated_on),
+        JournalItemDisplay::Local => Line::from("ローカルJournal"),
+    };
     let mut lines = vec![title, Line::from("")];
-    for detail in details {
-        let line = Line::from(vec![
-            Span::from("  ・ "),
-            Span::from(detail.field_label).bold(),
-            Span::from(" を "),
-            Span::from(detail.old_display.clone()).italic(),
-            Span::from(" から "),
-            Span::from(detail.new_display.clone()).italic(),
-            Span::from(" に変更"),
-        ])
-        .gray();
-        lines.push(line);
+    if let JournalItemDisplay::Remote { details, .. } = display {
+        for detail in details {
+            let line = Line::from(vec![
+                Span::from("  ・ "),
+                Span::from(detail.field_label).bold(),
+                Span::from(" を "),
+                Span::from(detail.old_display.clone()).italic(),
+                Span::from(" から "),
+                Span::from(detail.new_display.clone()).italic(),
+                Span::from(" に変更"),
+            ])
+            .gray();
+            lines.push(line);
+        }
     }
     lines.push(Line::from(""));
     Paragraph::new(Text::from(lines))
@@ -162,7 +176,7 @@ fn create_header(creator: &str, updated_at: &DateTime<Local>) -> Line<'static> {
     ])
 }
 
-fn render_comment_in_buffer(width: u16, _: &str, _: &DateTime<Local>, body: &str) -> Buffer {
+fn render_comment_in_buffer(width: u16, body: &str) -> Buffer {
     let body = if body.is_empty() {
         EMPTY_NOTES_PLACEHOLDER
     } else {
@@ -213,6 +227,17 @@ mod tests {
         }
     }
 
+    fn remote_display(
+        journal: &Journal,
+        details: Vec<ResolvedJournalDetail>,
+    ) -> JournalItemDisplay<'_> {
+        JournalItemDisplay::Remote {
+            user: &journal.user,
+            updated_on: &journal.updated_on,
+            details,
+        }
+    }
+
     #[test]
     fn line_count_includes_expected_blank_lines_and_wrapped_comment() {
         let creator = "alice".to_string();
@@ -225,10 +250,10 @@ mod tests {
         let width = 20;
 
         let mut state = JournalItemWidgetState::new();
-        state.update(width, &creator, &updated_at, &notes);
+        state.update(width, &notes);
 
         let journal = create_journal(creator, updated_at, &notes);
-        let widget = JournalItemWidget::new(&journal, properties, &state, false);
+        let widget = JournalItemWidget::new(remote_display(&journal, properties), &state, false);
 
         assert_eq!(widget.line_count(width), 10);
     }
@@ -242,13 +267,27 @@ mod tests {
         let width = 20;
 
         let mut state = JournalItemWidgetState::new();
-        state.update(width, &creator, &updated_at, &notes);
+        state.update(width, &notes);
 
         let journal = create_journal(creator, updated_at, &notes);
-        let widget = JournalItemWidget::new(&journal, properties, &state, false);
+        let widget = JournalItemWidget::new(remote_display(&journal, properties), &state, false);
 
         assert_eq!(state.comment_line_count(), 1);
         assert_eq!(widget.line_count(width), 6);
+    }
+
+    #[test]
+    fn line_count_for_local_journal_matches_zero_details_remote_layout() {
+        let notes = "short line\n\nwrapping words for the comment area".to_string();
+        let width = 20;
+
+        let mut state = JournalItemWidgetState::new();
+        state.update(width, &notes);
+
+        let widget = JournalItemWidget::new(JournalItemDisplay::Local, &state, false);
+
+        assert_eq!(state.comment_line_count(), 4);
+        assert_eq!(widget.line_count(width), 8);
     }
 
     #[test]
@@ -260,10 +299,10 @@ mod tests {
         let width = 24;
 
         let mut state = JournalItemWidgetState::new();
-        state.update(width, &user, &updated_on, &notes);
+        state.update(width, &notes);
 
         let journal = create_journal(user, updated_on, &notes);
-        let widget = JournalItemWidget::new(&journal, details, &state, true);
+        let widget = JournalItemWidget::new(remote_display(&journal, details), &state, true);
         let line_count = widget.line_count(width);
 
         render_snapshot("journal_item_expected_layout", width, line_count, widget);
@@ -278,10 +317,10 @@ mod tests {
         let width = 24;
 
         let mut state = JournalItemWidgetState::new();
-        state.update(width, &user, &updated_on, &notes);
+        state.update(width, &notes);
 
         let journal = create_journal(user, updated_on, &notes);
-        let widget = JournalItemWidget::new(&journal, details, &state, true);
+        let widget = JournalItemWidget::new(remote_display(&journal, details), &state, true);
 
         render_snapshot("journal_item_clipped_height", width, 5, widget);
     }
@@ -295,10 +334,10 @@ mod tests {
         let width = 24;
 
         let mut state = JournalItemWidgetState::new();
-        state.update(width, &user, &updated_on, &notes);
+        state.update(width, &notes);
 
         let journal = create_journal(user, updated_on, &notes);
-        let widget = JournalItemWidget::new(&journal, details, &state, true);
+        let widget = JournalItemWidget::new(remote_display(&journal, details), &state, true);
         let line_count = widget.line_count(width);
 
         render_snapshot(
@@ -307,5 +346,19 @@ mod tests {
             line_count,
             widget,
         );
+    }
+
+    #[test]
+    fn snapshot_local_journal_item_widget() {
+        let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
+        let width = 24;
+
+        let mut state = JournalItemWidgetState::new();
+        state.update(width, &notes);
+
+        let widget = JournalItemWidget::new(JournalItemDisplay::Local, &state, true);
+        let line_count = widget.line_count(width);
+
+        render_snapshot("journal_item_local_journal", width, line_count, widget);
     }
 }

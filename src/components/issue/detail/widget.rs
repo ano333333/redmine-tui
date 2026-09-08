@@ -204,7 +204,7 @@ mod tests {
             let journal_notes =
                 "Journal note first paragraph\n\nJournal note second paragraph".to_string();
             let mut journal_state = JournalItemWidgetState::new();
-            journal_state.update(width, &journal_user, &journal_updated_on, &journal_notes);
+            journal_state.update(width, &journal_notes);
             let journal = Journal {
                 id: JournalId::new(1),
                 user: journal_user,
@@ -304,8 +304,11 @@ mod tests {
                 new_display: "bob".to_string(),
             }];
             JournalsListWidget::new(vec![JournalItemWidget::new(
-                &self.journal,
-                details,
+                crate::components::issue::detail::journals_list::journals_list_item::widget::JournalItemDisplay::Remote {
+                    user: &self.journal.user,
+                    updated_on: &self.journal.updated_on,
+                    details,
+                },
                 &self.journal_state,
                 false,
             )])

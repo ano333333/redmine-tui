@@ -752,6 +752,9 @@ mod tests {
             let mut dispatcher_ref = dispatcher.borrow_mut();
             crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher_ref);
             dispatcher_ref.dispatch(IssueAction::Load { id: 3.into() });
+            dispatcher_ref.dispatch(Action::LoadJournal { id: 1.into() });
+            dispatcher_ref.dispatch(Action::LoadJournal { id: 2.into() });
+            dispatcher_ref.dispatch(Action::LoadJournal { id: 3.into() });
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }
@@ -802,10 +805,16 @@ mod tests {
 
     fn dispatcher_with_issue() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-        dispatcher
-            .borrow_mut()
-            .dispatch(IssueAction::Load { id: 3.into() });
-        dispatcher.borrow_mut().consume_action();
+        {
+            let mut dispatcher_ref = dispatcher.borrow_mut();
+            dispatcher_ref.dispatch(IssueAction::Load { id: 3.into() });
+            dispatcher_ref.dispatch(Action::LoadJournal { id: 1.into() });
+            dispatcher_ref.dispatch(Action::LoadJournal { id: 2.into() });
+            dispatcher_ref.dispatch(Action::LoadJournal { id: 3.into() });
+            while dispatcher_ref.consume_actinos_len() > 0 {
+                dispatcher_ref.consume_action();
+            }
+        }
         dispatcher
     }
 
@@ -822,6 +831,9 @@ mod tests {
             crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher_ref);
             dispatcher_ref.dispatch(IssueAction::Load { id: 1.into() });
             dispatcher_ref.dispatch(IssueAction::Load { id: 3.into() });
+            dispatcher_ref.dispatch(Action::LoadJournal { id: 1.into() });
+            dispatcher_ref.dispatch(Action::LoadJournal { id: 2.into() });
+            dispatcher_ref.dispatch(Action::LoadJournal { id: 3.into() });
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }

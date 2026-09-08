@@ -1,13 +1,12 @@
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::entities::Journal;
 use crate::stores::Store;
 use crate::vos::JournalKey;
 
 use super::journals_list_item::EventProcessResult as ChildEventProcessResult;
 use super::journals_list_item::FocusEvent as ChildFocusEvent;
-use super::journals_list_item::JournalsListItemComponent;
+use super::journals_list_item::{JournalItemContent, JournalsListItemComponent};
 use super::widget::JournalsListWidget;
 
 pub enum FocusEvent {
@@ -155,9 +154,28 @@ impl JournalsListComponent {
 
     pub fn update(
         &mut self,
-        journals: &[(JournalKey, &Journal)],
+        journals: &[(JournalKey, JournalItemContent)],
         width: u16,
     ) -> Option<EventProcessResult> {
+        // Storeの不変条件: Local Journalは0または1件、存在するなら末尾の
+        // journal_keysだけ。ここより前の並べ替えは行わず、違反はpanicする。
+        let local_indexes: Vec<usize> = journals
+            .iter()
+            .enumerate()
+            .filter_map(|(index, (_, content))| {
+                matches!(content, JournalItemContent::Local(_)).then_some(index)
+            })
+            .collect();
+        if local_indexes.len() > 1
+            || local_indexes
+                .iter()
+                .any(|&index| index != journals.len() - 1)
+        {
+            panic!(
+                "Local Journal must be at most one and only the last journal_keys entry (Store invariant violated)"
+            );
+        }
+
         self.width = width;
         // 今フォーカスが当たっているJournalKeyとそのインデックスを保持する。
         // もしそのJournalが削除されていたら、同じ位置(範囲外なら末尾)のJournalに
@@ -168,7 +186,7 @@ impl JournalsListComponent {
 
         // keyが一致するitemはそのまま引き継ぎ、一致しない順に新しいitemを作る
         let mut updated_items = Vec::with_capacity(journals.len());
-        for (key, journal) in journals {
+        for (key, content) in journals {
             match self
                 .items
                 .iter()
@@ -176,12 +194,12 @@ impl JournalsListComponent {
             {
                 Some(index) => {
                     let mut component = self.items.remove(index);
-                    component.update(journal, width);
+                    component.update(content, width);
                     updated_items.push(component);
                 }
                 None => {
-                    let mut component = JournalsListItemComponent::new(*key, journal);
-                    component.update(journal, width);
+                    let mut component = JournalsListItemComponent::new(*key, content);
+                    component.update(content, width);
                     updated_items.push(component);
                 }
             }
@@ -249,8 +267,9 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
+    use crate::entities::{Journal, LocalJournal};
     use crate::test_support::local_datetime;
-    use crate::vos::{EntityIdValue, JournalId, JournalKey};
+    use crate::vos::{EntityIdValue, JournalId, JournalKey, LocalJournalId};
 
     const WIDE_WIDTH: u16 = 32;
 
@@ -275,8 +294,39 @@ mod tests {
     fn update_component(component: &mut JournalsListComponent, journals: &[&Journal]) {
         let entries = journals
             .iter()
-            .map(|journal| (remote_key(journal.id.get()), *journal))
+            .map(|journal| {
+                (
+                    remote_key(journal.id.get()),
+                    JournalItemContent::Remote(*journal),
+                )
+            })
             .collect::<Vec<_>>();
+        component.update(&entries, WIDE_WIDTH);
+    }
+
+    fn create_local_journal(id: u64, notes: impl Into<String>) -> LocalJournal {
+        LocalJournal {
+            id: LocalJournalId::new(id),
+            issue_id: 3.into(),
+            notes: notes.into(),
+        }
+    }
+
+    fn update_with_remote_and_local(
+        component: &mut JournalsListComponent,
+        remote: &Journal,
+        local: &LocalJournal,
+    ) {
+        let entries = vec![
+            (
+                remote_key(remote.id.get()),
+                JournalItemContent::Remote(remote),
+            ),
+            (
+                JournalKey::Local(local.id),
+                JournalItemContent::Local(local),
+            ),
+        ];
         component.update(&entries, WIDE_WIDTH);
     }
 
@@ -400,5 +450,68 @@ mod tests {
             component.get_cursor_position(WIDE_WIDTH),
             Position::new(0, 0)
         );
+    }
+
+    #[test]
+    fn process_event_e_on_focused_local_returns_edit_requested_with_local_key_and_notes() {
+        let remote = create_journal(1, "remote notes");
+        let local = create_local_journal(1, "local notes");
+        let mut component = JournalsListComponent::new();
+        update_with_remote_and_local(&mut component, &remote, &local);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+        press_j(&mut component, 1);
+        assert_eq!(
+            component.focused_key,
+            Some(JournalKey::Local(LocalJournalId::new(1)))
+        );
+
+        let result = component.process_event(key_event(KeyCode::Char('e')));
+
+        match result {
+            Some(EventProcessResult::EditRequested { key, notes }) => {
+                assert_eq!(key, JournalKey::Local(LocalJournalId::new(1)));
+                assert_eq!(notes, "local notes");
+            }
+            _ => panic!("expected edit request"),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Local Journal must be")]
+    fn update_panics_when_local_is_not_at_tail() {
+        let a = create_journal(1, "a notes");
+        let b = create_journal(2, "b notes");
+        let local = create_local_journal(1, "local notes");
+        let mut component = JournalsListComponent::new();
+        let entries = vec![
+            (remote_key(1), JournalItemContent::Remote(&a)),
+            (
+                JournalKey::Local(local.id),
+                JournalItemContent::Local(&local),
+            ),
+            (remote_key(2), JournalItemContent::Remote(&b)),
+        ];
+
+        component.update(&entries, WIDE_WIDTH);
+    }
+
+    #[test]
+    #[should_panic(expected = "Local Journal must be")]
+    fn update_panics_when_multiple_locals_exist() {
+        let local_1 = create_local_journal(1, "local 1 notes");
+        let local_2 = create_local_journal(2, "local 2 notes");
+        let mut component = JournalsListComponent::new();
+        let entries = vec![
+            (
+                JournalKey::Local(local_1.id),
+                JournalItemContent::Local(&local_1),
+            ),
+            (
+                JournalKey::Local(local_2.id),
+                JournalItemContent::Local(&local_2),
+            ),
+        ];
+
+        component.update(&entries, WIDE_WIDTH);
     }
 }
