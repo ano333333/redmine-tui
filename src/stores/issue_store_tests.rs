@@ -1,5 +1,5 @@
 use super::{IssueAction, IssueState, Store};
-use crate::test_support::{local_datetime, sample_issue};
+use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
 use crate::vos::issue_property_diff::{IssueDueDateDiff, IssueStartDateDiff};
 use crate::vos::{CategoryId, IssueId, TargetVersionId};
@@ -189,7 +189,7 @@ fn issue_upload_conflicts_are_retained_while_uploading() {
         .into(),
     );
     store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
-    let server_issue = sample_issue(1, "server issue", 1.into(), None, None, None, 0);
+    let server_issue = sample_issue_aggregate(1, "server issue", 1.into(), None, None, None, 0);
     let conflicts = store.get_issue_property_diffs(IssueId::new(1)).to_vec();
 
     store.consume_action(
@@ -315,7 +315,7 @@ fn synced_issue_sync_issue_panics() {
 
     store.consume_action(
         IssueAction::Sync {
-            issue: sample_issue(1, "server issue", 1.into(), None, None, None, 0),
+            issue: sample_issue_aggregate(1, "server issue", 1.into(), None, None, None, 0),
         }
         .into(),
     );
@@ -366,7 +366,15 @@ fn sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
     let mut store = Store::new();
     store.consume_action(
         IssueAction::Sync {
-            issue: sample_issue(9, "server issue before edit", 1.into(), None, None, None, 0),
+            issue: sample_issue_aggregate(
+                9,
+                "server issue before edit",
+                1.into(),
+                None,
+                None,
+                None,
+                0,
+            ),
         }
         .into(),
     );
@@ -380,7 +388,7 @@ fn sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
 
     store.consume_action(
         IssueAction::Sync {
-            issue: sample_issue(
+            issue: sample_issue_aggregate(
                 9,
                 "server issue after upload",
                 1.into(),
@@ -405,7 +413,15 @@ fn upload_success_sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
     let mut store = Store::new();
     store.consume_action(
         IssueAction::Sync {
-            issue: sample_issue(9, "server issue before edit", 1.into(), None, None, None, 0),
+            issue: sample_issue_aggregate(
+                9,
+                "server issue before edit",
+                1.into(),
+                None,
+                None,
+                None,
+                0,
+            ),
         }
         .into(),
     );
@@ -420,7 +436,7 @@ fn upload_success_sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
 
     store.consume_action(
         IssueAction::Sync {
-            issue: sample_issue(
+            issue: sample_issue_aggregate(
                 9,
                 "server issue after upload",
                 1.into(),
@@ -520,7 +536,7 @@ fn loaded_issue_states_ignore_start_fetching_and_retain_local_data() {
 #[test]
 fn matching_fetch_success_registers_the_issue_as_synced() {
     let id = IssueId::new(99);
-    let issue = sample_issue(99, "fetched", 1.into(), None, None, None, 0);
+    let issue = sample_issue_aggregate(99, "fetched", 1.into(), None, None, None, 0);
     let mut store = Store::new();
     store.consume_action(IssueAction::StartFetching { id }.into());
 
@@ -536,7 +552,7 @@ fn matching_fetch_success_registers_the_issue_as_synced() {
 #[test]
 fn mismatched_fetch_success_is_ignored() {
     let requested_id = IssueId::new(99);
-    let response_issue = sample_issue(100, "wrong", 1.into(), None, None, None, 0);
+    let response_issue = sample_issue_aggregate(100, "wrong", 1.into(), None, None, None, 0);
     let mut store = Store::new();
     store.consume_action(IssueAction::StartFetching { id: requested_id }.into());
 
@@ -587,7 +603,7 @@ fn late_fetch_completions_outside_fetching_are_ignored() {
     store.consume_action(
         IssueAction::FetchSucceeded {
             id,
-            issue: sample_issue(99, "late", 1.into(), None, None, None, 0),
+            issue: sample_issue_aggregate(99, "late", 1.into(), None, None, None, 0),
         }
         .into(),
     );
@@ -613,7 +629,7 @@ fn late_fetch_success_and_failure_do_not_change_a_synced_issue() {
     store.consume_action(
         IssueAction::FetchSucceeded {
             id,
-            issue: sample_issue(1, "late", 1.into(), None, None, None, 0),
+            issue: sample_issue_aggregate(1, "late", 1.into(), None, None, None, 0),
         }
         .into(),
     );
@@ -646,7 +662,7 @@ fn late_fetch_success_and_failure_do_not_change_a_fetch_failure() {
     store.consume_action(
         IssueAction::FetchSucceeded {
             id,
-            issue: sample_issue(99, "late", 1.into(), None, None, None, 0),
+            issue: sample_issue_aggregate(99, "late", 1.into(), None, None, None, 0),
         }
         .into(),
     );
@@ -687,7 +703,7 @@ fn late_fetch_completions_do_not_overwrite_edited_or_uploading_issues() {
         store.consume_action(
             IssueAction::FetchSucceeded {
                 id,
-                issue: sample_issue(1, "late", 1.into(), None, None, None, 0),
+                issue: sample_issue_aggregate(1, "late", 1.into(), None, None, None, 0),
             }
             .into(),
         );
@@ -754,7 +770,7 @@ fn fetching_issue_sync_panics() {
 
     store.consume_action(
         IssueAction::Sync {
-            issue: sample_issue(99, "sync", 1.into(), None, None, None, 0),
+            issue: sample_issue_aggregate(99, "sync", 1.into(), None, None, None, 0),
         }
         .into(),
     );
@@ -776,7 +792,7 @@ fn fetch_failed_issue_sync_panics() {
 
     store.consume_action(
         IssueAction::Sync {
-            issue: sample_issue(99, "sync", 1.into(), None, None, None, 0),
+            issue: sample_issue_aggregate(99, "sync", 1.into(), None, None, None, 0),
         }
         .into(),
     );

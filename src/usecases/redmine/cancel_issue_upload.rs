@@ -10,7 +10,7 @@ pub fn cancel_issue_upload(dispatcher: &mut Dispatcher, id: IssueId) {
 #[cfg(test)]
 mod tests {
     use crate::stores::{Dispatcher, IssueAction, IssueState};
-    use crate::test_support::sample_issue;
+    use crate::test_support::sample_issue_aggregate;
     use crate::vos::IssueId;
 
     use super::cancel_issue_upload;
@@ -29,7 +29,7 @@ mod tests {
         dispatcher.dispatch(IssueAction::StartUpload { id });
         dispatcher.consume_action();
         dispatcher.dispatch(IssueAction::UploadConflictsDetected {
-            server_issue: sample_issue(1, "server issue", 1.into(), None, None, None, 0),
+            server_issue: sample_issue_aggregate(1, "server issue", 1.into(), None, None, None, 0),
             conflicts: dispatcher.store().get_issue_property_diffs(id).to_vec(),
         });
         dispatcher.consume_action();

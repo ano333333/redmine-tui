@@ -305,7 +305,7 @@ mod tests {
         Category, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
         TimeEntityActivity, Tracker, User,
     };
-    use crate::test_support::{local_datetime, sample_issue};
+    use crate::test_support::{local_datetime, sample_issue_aggregate};
     use crate::vos::issue_property_diff::{
         IssueDescriptionDiff, IssueDueDateDiff, IssueStatusIdDiff,
     };
@@ -427,7 +427,8 @@ mod tests {
     }
 
     fn issue(subject: &str, description: &str, status: u16) -> IssueAggregate {
-        let mut issue = sample_issue(1, subject, IssueStatusId::new(status), None, None, None, 0);
+        let mut issue =
+            sample_issue_aggregate(1, subject, IssueStatusId::new(status), None, None, None, 0);
         issue.description = description.to_string();
         issue
     }
