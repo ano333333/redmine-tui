@@ -1,7 +1,7 @@
 use crossterm::event::Event;
 use ratatui::layout::{Position, Rect, Size};
 
-use crate::entities::Issue;
+use crate::entities::IssueAggregate;
 use crate::vos::{EntityIdValue, IssuePropertyDiff};
 use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
 
@@ -16,7 +16,7 @@ pub enum EventProcessResult {
 }
 
 pub struct IssuePropertyConflictComponent {
-    server_issue: Issue,
+    server_issue: IssueAggregate,
     diffs: Vec<IssuePropertyDiff>,
     selected_choices: Vec<IssuePropertyConflictFocus>,
     focus_state: FocusState,
@@ -27,7 +27,7 @@ impl IssuePropertyConflictComponent {
     /// サーバーの現在値と競合解決対象の差分からComponentを作成する。
     ///
     /// 渡された差分は、サーバー現在値からローカル編集後値へ変更する候補として扱う。
-    pub fn new(server_issue: Issue, diffs: Vec<IssuePropertyDiff>) -> Self {
+    pub fn new(server_issue: IssueAggregate, diffs: Vec<IssuePropertyDiff>) -> Self {
         let selected_choices = vec![IssuePropertyConflictFocus::After; diffs.len()];
         Self {
             server_issue,
@@ -123,7 +123,7 @@ impl IssuePropertyConflictComponent {
 }
 
 fn row_from_diff(
-    server_issue: &Issue,
+    server_issue: &IssueAggregate,
     diff: &IssuePropertyDiff,
     focused_choice: IssuePropertyConflictFocus,
 ) -> IssuePropertyConflictRow {
@@ -153,7 +153,7 @@ struct DiffValueText {
     server: String,
 }
 
-fn diff_value_text(server_issue: &Issue, diff: &IssuePropertyDiff) -> DiffValueText {
+fn diff_value_text(server_issue: &IssueAggregate, diff: &IssuePropertyDiff) -> DiffValueText {
     match diff {
         IssuePropertyDiff::Subject(diff) => {
             diff_text(&diff.before, &diff.after, &server_issue.subject)
