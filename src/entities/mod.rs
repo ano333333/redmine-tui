@@ -12,8 +12,6 @@ pub mod user;
 
 pub use category::Category;
 pub use issue_aggregate::IssueAggregate;
-// TODO: 全Issue参照がIssueAggregateへ移行し次第、この互換aliasを削除する。
-pub type Issue = IssueAggregate;
 pub use issue_status::IssueStatus;
 pub use journal::Journal;
 pub use priority::Priority;
