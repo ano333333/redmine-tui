@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::entities::Issue;
+use crate::entities::IssueAggregate;
 use crate::libs::yaml::parse_issue_yaml;
 use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
@@ -24,14 +24,14 @@ pub enum IssueAction {
         id: IssueId,
     },
     Sync {
-        issue: Issue,
+        issue: IssueAggregate,
     },
     StartFetching {
         id: IssueId,
     },
     FetchSucceeded {
         id: IssueId,
-        issue: Issue,
+        issue: IssueAggregate,
     },
     FetchFailed {
         id: IssueId,
@@ -50,7 +50,7 @@ pub enum IssueAction {
         id: IssueId,
     },
     UploadConflictsDetected {
-        server_issue: Issue,
+        server_issue: IssueAggregate,
         conflicts: Vec<IssuePropertyDiff>,
     },
     UpdateDescription {
@@ -88,10 +88,10 @@ pub enum IssueAction {
 }
 
 pub(super) struct IssueStore {
-    issues: HashMap<IssueId, Issue>,
+    issues: HashMap<IssueId, IssueAggregate>,
     issue_states: HashMap<IssueId, IssueState>,
     issue_property_diffs: HashMap<IssueId, Vec<IssuePropertyDiff>>,
-    issue_upload_conflicts: HashMap<IssueId, (Issue, Vec<IssuePropertyDiff>)>,
+    issue_upload_conflicts: HashMap<IssueId, (IssueAggregate, Vec<IssuePropertyDiff>)>,
 }
 
 impl IssueStore {
@@ -328,14 +328,17 @@ impl IssueStore {
         }
     }
 
-    pub(super) fn get_issue(&self, issue_id: impl Into<IssueId>) -> Option<(&Issue, &IssueState)> {
+    pub(super) fn get_issue(
+        &self,
+        issue_id: impl Into<IssueId>,
+    ) -> Option<(&IssueAggregate, &IssueState)> {
         let issue_id = issue_id.into();
         self.issues
             .get(&issue_id)
             .zip(self.get_issue_state(issue_id))
     }
 
-    pub(super) fn get_issues(&self) -> &HashMap<IssueId, Issue> {
+    pub(super) fn get_issues(&self) -> &HashMap<IssueId, IssueAggregate> {
         &self.issues
     }
 
@@ -352,7 +355,7 @@ impl IssueStore {
     pub(super) fn get_issue_upload_conflict(
         &self,
         id: IssueId,
-    ) -> Option<(&Issue, &[IssuePropertyDiff])> {
+    ) -> Option<(&IssueAggregate, &[IssuePropertyDiff])> {
         self.issue_upload_conflicts
             .get(&id)
             .map(|(issue, conflicts)| (issue, conflicts.as_slice()))
