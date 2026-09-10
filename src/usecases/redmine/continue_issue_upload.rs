@@ -63,8 +63,6 @@ mod tests {
         let conflicts = original_diffs[..2].to_vec();
         let mut server_issue = dispatcher.store().get_issue(id).unwrap().0.clone();
         server_issue.issue.description = "server body".to_string();
-        // 移行中だけ残る直下descriptionと食い違っても、内包Issueの値で競合を継続する。
-        server_issue.description = "legacy server body".to_string();
         server_issue.issue.status_id = 9.into();
         dispatcher.dispatch(IssueAction::UploadConflictsDetected {
             server_issue,

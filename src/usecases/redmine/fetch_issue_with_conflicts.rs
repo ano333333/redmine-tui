@@ -307,7 +307,7 @@ mod tests {
     };
     use crate::test_support::{local_datetime, sample_issue_aggregate};
     use crate::vos::issue_property_diff::{
-        IssueDescriptionDiff, IssueDueDateDiff, IssueStatusIdDiff, IssueSubjectDiff,
+        IssueDescriptionDiff, IssueDueDateDiff, IssueStatusIdDiff,
     };
     use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId};
 
@@ -379,39 +379,6 @@ mod tests {
         assert!(after_conflicts.is_empty());
     }
 
-    #[tokio::test]
-    async fn description_conflicts_use_the_nested_issue_value() {
-        let mut server_issue = issue("subject", "legacy local", 1);
-        // 移行中だけ残る直下descriptionと食い違っても、内包Issueの値で競合判定する。
-        server_issue.issue.description = "server edit".to_string();
-        let client = StubClient::new(server_issue);
-        let diff = description_diff("original", "legacy local");
-
-        let (_, conflicts) = fetch_issue_with_conflicts(&client, 1.into(), &[diff.clone()])
-            .await
-            .unwrap();
-
-        assert_eq!(conflicts, vec![diff]);
-    }
-
-    #[tokio::test]
-    async fn status_conflicts_use_the_nested_issue_value() {
-        let mut server_issue = issue("subject", "description", 1);
-        // 移行中だけ残る直下status_idと食い違っても、内包Issueの値で競合判定する。
-        server_issue.issue.status_id = IssueStatusId::new(3);
-        let client = StubClient::new(server_issue);
-        let diff = IssuePropertyDiff::StatusId(IssueStatusIdDiff {
-            before: IssueStatusId::new(1),
-            after: IssueStatusId::new(2),
-        });
-
-        let (_, conflicts) = fetch_issue_with_conflicts(&client, 1.into(), &[diff.clone()])
-            .await
-            .unwrap();
-
-        assert_eq!(conflicts, vec![diff]);
-    }
-
     #[test]
     fn applies_local_after_values_over_different_server_values_in_order() {
         let mut server_issue = issue("server subject", "server edit", 3);
@@ -437,61 +404,6 @@ mod tests {
             server_issue.due_date,
             Some(local_datetime("2026-08-23T00:00:00+09:00"))
         );
-    }
-
-    #[test]
-    fn applies_subject_diff_to_nested_issue_without_synchronizing_legacy_subject() {
-        let mut server_issue = issue("server subject", "description", 1);
-        // 直下subjectは移行完了時に削除するため、差分適用時にも同期対象へ戻さない。
-        server_issue.subject = "legacy subject".to_string();
-
-        apply_issue_property_diffs(
-            &mut server_issue,
-            &[IssuePropertyDiff::Subject(IssueSubjectDiff {
-                before: "original subject".to_string(),
-                after: "local subject".to_string(),
-            })],
-        );
-
-        assert_eq!(server_issue.issue.subject, "local subject");
-        assert_eq!(server_issue.subject, "legacy subject");
-    }
-
-    #[test]
-    fn applies_description_diff_to_nested_issue_without_synchronizing_legacy_description() {
-        let mut server_issue = issue("subject", "legacy description", 1);
-        server_issue.issue.description = "server description".to_string();
-        // 移行中だけ残る直下descriptionは同期せず、内包Issueだけへ差分を適用する。
-        server_issue.description = "legacy description".to_string();
-
-        apply_issue_property_diffs(
-            &mut server_issue,
-            &[description_diff(
-                "original description",
-                "local description",
-            )],
-        );
-
-        assert_eq!(server_issue.issue.description, "local description");
-        assert_eq!(server_issue.description, "legacy description");
-    }
-
-    #[test]
-    fn applies_status_diff_to_nested_issue_without_synchronizing_legacy_status() {
-        let mut server_issue = issue("subject", "description", 1);
-        // 移行中だけ残る直下status_idは同期せず、内包Issueだけへ差分を適用する。
-        server_issue.issue.status_id = IssueStatusId::new(3);
-
-        apply_issue_property_diffs(
-            &mut server_issue,
-            &[IssuePropertyDiff::StatusId(IssueStatusIdDiff {
-                before: IssueStatusId::new(3),
-                after: IssueStatusId::new(2),
-            })],
-        );
-
-        assert_eq!(server_issue.issue.status_id, IssueStatusId::new(2));
-        assert_eq!(server_issue.status_id, IssueStatusId::new(1));
     }
 
     #[test]

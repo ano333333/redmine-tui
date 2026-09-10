@@ -388,8 +388,6 @@ mod tests {
         let mut server_issue =
             sample_issue_aggregate(1, "server subject", 9.into(), None, None, None, 0);
         server_issue.issue.description = "# server body".to_string();
-        // 移行中だけ残る直下descriptionと食い違っても、内包Issueの値を競合表示に使う。
-        server_issue.description = "legacy server body".to_string();
 
         let status = diff_value_text(
             &server_issue,

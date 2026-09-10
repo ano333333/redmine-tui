@@ -732,14 +732,10 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
         };
 
         Ok(Self {
-            id: issue.id,
-            subject: value.subject,
             author_id: UserId::new(value.author.id),
             created_on: parse_datetime(&value.created_on)?,
             updated_on: parse_datetime(&value.updated_on)?,
-            project_id: issue.project_id,
             tracker_id: TrackerId::new(value.tracker.id),
-            status_id: issue.status_id,
             priority_id: PriorityId::new(value.priority.id),
             assigned_to_id: value
                 .assigned_to
@@ -753,7 +749,6 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
             estimated_hours: value.estimated_hours.map(|hours| hours as u16),
             total_spent_hours: value.total_spent_hours,
             category_id: value.category.map(|category| CategoryId::new(category.id)),
-            description: issue.description.clone(),
             child_ids: value
                 .children
                 .into_iter()
