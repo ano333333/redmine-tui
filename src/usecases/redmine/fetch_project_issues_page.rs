@@ -61,7 +61,7 @@ mod tests {
 
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::entities::{
-        Category, Issue, IssueStatus, Priority, Project, ProjectIssuesPage, ProjectsIssue,
+        Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, ProjectsIssue,
         TargetVersion, TimeEntityActivity, Tracker, User,
     };
     use crate::stores::{Dispatcher, ProjectIssuesAction, ProjectIssuesRequestId};
@@ -329,10 +329,10 @@ mod tests {
         async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError> {
             unreachable!()
         }
-        async fn get_issue(&self, _: IssueId) -> Result<Issue, RedmineClientError> {
+        async fn get_issue(&self, _: IssueId) -> Result<IssueAggregate, RedmineClientError> {
             unreachable!()
         }
-        async fn update_issue(&self, _: &Issue) -> Result<(), RedmineClientError> {
+        async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {
             unreachable!()
         }
         async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
