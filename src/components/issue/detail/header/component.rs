@@ -31,7 +31,7 @@ impl HeaderComponent {
         if let Some((issue, issue_state)) = store.get_issue(self.id) {
             let widget = HeaderWidget::new(
                 self.id,
-                &issue.subject,
+                &issue.issue.subject,
                 self.focus_state.is_focused(),
                 Self::title_decorator(issue_state),
             );
@@ -47,7 +47,7 @@ impl HeaderComponent {
             .expect("HeaderComponent requires its issue to exist in Store");
         HeaderWidget::new(
             self.id,
-            &issue.subject,
+            &issue.issue.subject,
             self.focus_state.is_focused(),
             Self::title_decorator(issue_status),
         )

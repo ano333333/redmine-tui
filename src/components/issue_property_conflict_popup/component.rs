@@ -156,7 +156,7 @@ struct DiffValueText {
 fn diff_value_text(server_issue: &IssueAggregate, diff: &IssuePropertyDiff) -> DiffValueText {
     match diff {
         IssuePropertyDiff::Subject(diff) => {
-            diff_text(&diff.before, &diff.after, &server_issue.subject)
+            diff_text(&diff.before, &diff.after, &server_issue.issue.subject)
         }
         IssuePropertyDiff::AuthorId(diff) => {
             id_diff_text(diff.before, diff.after, server_issue.author_id)

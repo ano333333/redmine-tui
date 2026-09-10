@@ -21,8 +21,9 @@ fn update_issue_sends_redmine_put_request_to_nested_issue_id() {
         Some("2026-08-31T00:00:00+09:00"),
         30,
     );
-    // 移行中だけ残る直下IDと食い違っても、内包IssueのIDを送信先に使う。
+    // 移行中だけ残る直下フィールドと食い違っても、内包Issueの値を送信に使う。
     issue.id = IssueId::new(99);
+    issue.subject = "legacy subject".to_string();
     let expected_body = json!({
         "issue": {
             "subject": "Fix login",
