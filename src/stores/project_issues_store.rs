@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
-use crate::entities::{ProjectIssuesPage, ProjectsIssue};
+use crate::entities::{Issue, ProjectIssuesPage};
 use crate::vos::ProjectId;
 use uuid::Uuid;
 
@@ -26,7 +26,7 @@ pub enum ProjectIssuesPageState {
         request_id: ProjectIssuesRequestId,
     },
     Loaded {
-        issues: Vec<ProjectsIssue>,
+        issues: Vec<Issue>,
         total_count: usize,
         offset: usize,
         limit: usize,
@@ -118,11 +118,7 @@ impl ProjectIssuesStore {
         self.pages.get(&(project_id, page))
     }
 
-    pub(super) fn issues(
-        &self,
-        project_id: ProjectId,
-        page: NonZeroUsize,
-    ) -> Option<&[ProjectsIssue]> {
+    pub(super) fn issues(&self, project_id: ProjectId, page: NonZeroUsize) -> Option<&[Issue]> {
         match self.page_state(project_id, page) {
             Some(ProjectIssuesPageState::Loaded { issues, .. }) => Some(issues),
             _ => None,
