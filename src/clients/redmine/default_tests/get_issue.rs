@@ -47,7 +47,7 @@ fn get_issue_maps_success_response() {
     assert_eq!(issue.author_id.get(), 1000);
     assert_eq!(issue.issue.project_id.get(), 10);
     assert_eq!(issue.tracker_id.get(), 2);
-    assert_eq!(issue.status_id.get(), 1);
+    assert_eq!(issue.issue.status_id.get(), 1);
     assert_eq!(issue.priority_id.get(), 5);
     assert_eq!(issue.assigned_to_id.unwrap().get(), 1001);
     assert_eq!(issue.target_version_id.unwrap().get(), 7);

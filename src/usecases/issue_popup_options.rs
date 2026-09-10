@@ -388,6 +388,7 @@ mod tests {
                 .get_issue(3)
                 .unwrap()
                 .0
+                .issue
                 .status_id,
             IssueStatusId::new(2)
         );

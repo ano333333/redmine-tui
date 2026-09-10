@@ -222,8 +222,8 @@ impl IssueStore {
                 if self.can_update_issue(id)
                     && let Some(issue) = self.issues.get_mut(&id)
                 {
-                    let before = issue.status_id;
-                    issue.status_id = status_id;
+                    let before = issue.issue.status_id;
+                    issue.issue.status_id = status_id;
                     self.issue_property_diffs.entry(id).or_default().push(
                         IssuePropertyDiff::StatusId(IssueStatusIdDiff {
                             before,

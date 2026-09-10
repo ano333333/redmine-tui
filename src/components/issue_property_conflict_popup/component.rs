@@ -174,7 +174,7 @@ fn diff_value_text(server_issue: &IssueAggregate, diff: &IssuePropertyDiff) -> D
             id_diff_text(diff.before, diff.after, server_issue.tracker_id)
         }
         IssuePropertyDiff::StatusId(diff) => {
-            id_diff_text(diff.before, diff.after, server_issue.status_id)
+            id_diff_text(diff.before, diff.after, server_issue.issue.status_id)
         }
         IssuePropertyDiff::PriorityId(diff) => {
             id_diff_text(diff.before, diff.after, server_issue.priority_id)
