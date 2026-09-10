@@ -217,7 +217,7 @@ impl IssueSelectPopupComponent {
                         issue.project_id,
                         issue.id,
                         loaded.issue.subject.clone(),
-                        loaded.description.clone(),
+                        loaded.issue.description.clone(),
                     )
                 } else {
                     IssueSelectPopupIssue::new(
@@ -467,6 +467,9 @@ mod tests {
             sample_issue_aggregate(1, "loaded subject", 1.into(), None, None, None, 0);
         // 移行中だけ残る直下subjectと食い違っても、内包Issueのsubjectを表示する。
         loaded_issue.subject = "legacy subject".to_string();
+        loaded_issue.issue.description = "loaded body".to_string();
+        // descriptionも同様に、内包Issueの値を表示する。
+        loaded_issue.description = "legacy body".to_string();
         store.consume_action(
             IssueAction::Sync {
                 issue: loaded_issue,
@@ -493,7 +496,7 @@ mod tests {
         assert_eq!(widget.issues[0].subject, "loaded subject");
         assert_eq!(
             widget.issues[0].description,
-            store.get_issue(1).unwrap().0.description
+            store.get_issue(1).unwrap().0.issue.description
         );
         assert_eq!(widget.issues[1].subject, "unloaded subject");
         assert_eq!(widget.issues[1].description, "unloaded body");

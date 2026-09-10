@@ -667,7 +667,7 @@ impl From<&IssueAggregate> for UpdateIssue {
     fn from(issue: &IssueAggregate) -> Self {
         Self {
             subject: issue.issue.subject.clone(),
-            description: issue.description.clone(),
+            description: issue.issue.description.clone(),
             status_id: issue.status_id.get(),
             priority_id: issue.priority_id.get(),
             assigned_to_id: issue.assigned_to_id.map(|id| id.get()),

@@ -696,7 +696,7 @@ mod tests {
             0,
         );
         server_issue.updated_on = crate::test_support::local_datetime("2026-08-23T12:00:00+09:00");
-        server_issue.description = "original description".to_string();
+        server_issue.issue.description = "original description".to_string();
         let client = IssueUploadClient::new(server_issue.clone());
         let diffs = vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
             before: "original description".to_string(),
@@ -710,11 +710,11 @@ mod tests {
         };
         assert_eq!(issue.issue.subject, "server subject");
         assert_eq!(issue.updated_on, server_issue.updated_on);
-        assert_eq!(issue.description, "local description");
+        assert_eq!(issue.issue.description, "local description");
         let uploaded = client.uploaded.lock().unwrap();
         assert_eq!(uploaded.len(), 1);
         assert_eq!(uploaded[0].issue.subject, issue.issue.subject);
-        assert_eq!(uploaded[0].description, issue.description);
+        assert_eq!(uploaded[0].issue.description, issue.issue.description);
         assert_eq!(uploaded[0].updated_on, issue.updated_on);
     }
 
@@ -749,7 +749,7 @@ mod tests {
     async fn issue_upload_returns_conflict_action_when_property_conflicts() {
         let mut server_issue =
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
-        server_issue.description = "server description".to_string();
+        server_issue.issue.description = "server description".to_string();
         let client = IssueUploadClient::new(server_issue);
         let diffs = vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
             before: "original description".to_string(),
@@ -765,7 +765,7 @@ mod tests {
         else {
             panic!("expected UploadConflictsDetected");
         };
-        assert_eq!(server_issue.description, "server description");
+        assert_eq!(server_issue.issue.description, "server description");
         assert_eq!(conflicts, diffs);
         assert!(client.uploaded.lock().unwrap().is_empty());
     }

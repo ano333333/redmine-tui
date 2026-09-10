@@ -10,7 +10,7 @@ use crate::test_support::sample_issue_aggregate;
 use crate::vos::{IssueId, IssueStatusId};
 
 #[test]
-fn update_issue_sends_redmine_put_request_to_nested_issue_id() {
+fn update_issue_sends_redmine_put_request_from_nested_issue_fields() {
     let mock_server = block_on(MockServer::start());
     let mut issue = sample_issue_aggregate(
         42,
@@ -24,10 +24,12 @@ fn update_issue_sends_redmine_put_request_to_nested_issue_id() {
     // 移行中だけ残る直下フィールドと食い違っても、内包Issueの値を送信に使う。
     issue.id = IssueId::new(99);
     issue.subject = "legacy subject".to_string();
+    issue.issue.description = "nested body".to_string();
+    issue.description = "legacy body".to_string();
     let expected_body = json!({
         "issue": {
             "subject": "Fix login",
-            "description": "body",
+            "description": "nested body",
             "status_id": 3,
             "priority_id": 1,
             "assigned_to_id": 1001,
