@@ -5,8 +5,9 @@ use crate::vos::{
     TrackerId, UserId,
 };
 
+/// 詳細用のIssueエンティティ。
 #[derive(Debug, Clone)]
-pub struct Issue {
+pub struct IssueAggregate {
     pub id: IssueId,
     pub subject: String,
     pub author_id: UserId,

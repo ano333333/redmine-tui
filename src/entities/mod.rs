@@ -1,5 +1,5 @@
 pub mod category;
-pub mod issue;
+pub mod issue_aggregate;
 pub mod issue_status;
 pub mod journal;
 pub mod priority;
@@ -11,7 +11,9 @@ pub mod tracker;
 pub mod user;
 
 pub use category::Category;
-pub use issue::Issue;
+pub use issue_aggregate::IssueAggregate;
+// TODO: 全Issue参照がIssueAggregateへ移行し次第、この互換aliasを削除する。
+pub type Issue = IssueAggregate;
 pub use issue_status::IssueStatus;
 pub use journal::Journal;
 pub use priority::Priority;
@@ -21,3 +23,15 @@ pub use target_version::TargetVersion;
 pub use time_entity_activity::TimeEntityActivity;
 pub use tracker::Tracker;
 pub use user::User;
+
+#[cfg(test)]
+mod issue_aggregate_export_tests {
+    use super::IssueAggregate;
+
+    #[test]
+    // 意図的に最小。entitiesルートからIssueAggregateがexportされていることを確認するだけ。
+    fn exports_issue_aggregate() {
+        fn accepts_issue_aggregate(_: IssueAggregate) {}
+        let _ = accepts_issue_aggregate;
+    }
+}
