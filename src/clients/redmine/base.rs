@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::num::NonZeroUsize;
 
 use crate::entities::{
-    Category, Issue, IssueStatus, Priority, Project, ProjectIssuesPage, TargetVersion,
+    Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, TargetVersion,
     TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{IssueId, ProjectId};
@@ -66,8 +66,8 @@ pub trait RedmineClient {
     fn get_issue(
         &self,
         id: IssueId,
-    ) -> impl std::future::Future<Output = Result<Issue, RedmineClientError>> + Send;
-    async fn update_issue(&self, issue: &Issue) -> Result<(), RedmineClientError>;
+    ) -> impl std::future::Future<Output = Result<IssueAggregate, RedmineClientError>> + Send;
+    async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError>;
     async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError>;
     async fn get_priorities(&self) -> Result<Vec<Priority>, RedmineClientError>;
     async fn get_projects(&self) -> Result<Vec<Project>, RedmineClientError>;
