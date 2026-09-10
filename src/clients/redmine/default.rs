@@ -148,7 +148,7 @@ impl RedmineClient for DefaultRedmineClient {
 
     async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError> {
         self.put_empty(
-            &format!("/issues/{}.json", issue.id.get()),
+            &format!("/issues/{}.json", issue.issue.id.get()),
             &UpdateIssueRequest::from(issue),
         )
         .await

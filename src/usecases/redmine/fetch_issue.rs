@@ -35,13 +35,13 @@ where
 
     Some(Box::pin(async move {
         match client.get_issue(id).await {
-            Ok(issue) if issue.id == id => IssueAction::FetchSucceeded { id, issue },
+            Ok(issue) if issue.issue.id == id => IssueAction::FetchSucceeded { id, issue },
             Ok(issue) => IssueAction::FetchFailed {
                 id,
                 message: format!(
                     "requested issue {} but Redmine returned issue {}",
                     id.get(),
-                    issue.id.get()
+                    issue.issue.id.get()
                 ),
             },
             Err(error) => IssueAction::FetchFailed {
@@ -94,11 +94,30 @@ mod tests {
         match action {
             IssueAction::FetchSucceeded { id, issue } => {
                 assert_eq!(id, IssueId::new(42));
-                assert_eq!(issue.id, IssueId::new(42));
+                assert_eq!(issue.issue.id, IssueId::new(42));
             }
             _ => panic!("successful request must return FetchSucceeded"),
         }
         assert_eq!(client.requested_ids(), vec![IssueId::new(42)]);
+    }
+
+    #[tokio::test]
+    async fn matches_the_response_by_nested_issue_id() {
+        let dispatcher = dispatcher();
+        let mut response = issue(42);
+        // 移行中だけ残る直下IDと食い違っても、内包IssueのIDで応答を照合する。
+        response.id = IssueId::new(99);
+        let client = Arc::new(StubClient::succeeds(response));
+
+        let action = fetch_issue(dispatcher, client, IssueId::new(42))
+            .expect("unregistered issue should start fetching")
+            .await;
+
+        assert!(matches!(
+            action,
+            IssueAction::FetchSucceeded { id, issue }
+                if id == IssueId::new(42) && issue.issue.id == IssueId::new(42)
+        ));
     }
 
     #[tokio::test]
