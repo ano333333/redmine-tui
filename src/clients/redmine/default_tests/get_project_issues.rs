@@ -43,7 +43,7 @@ fn get_project_issues_requests_a_fixed_page_and_maps_its_metadata() {
             .unwrap();
 
     assert_eq!(result.issues.len(), 1);
-    assert_eq!(result.issues[0].issue_id.get(), 42);
+    assert_eq!(result.issues[0].id.get(), 42);
     assert_eq!(result.issues[0].project_id.get(), 10);
     assert_eq!(result.issues[0].subject, "Fix login");
     assert_eq!(result.issues[0].description, "Login fails");

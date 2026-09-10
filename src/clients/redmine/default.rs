@@ -626,7 +626,7 @@ struct RedmineProjectIssue {
 impl From<RedmineProjectIssue> for ProjectsIssue {
     fn from(value: RedmineProjectIssue) -> Self {
         Self {
-            issue_id: IssueId::new(value.id),
+            id: IssueId::new(value.id),
             project_id: ProjectId::new(value.project.id),
             subject: value.subject,
             description: value.description.unwrap_or_default(),

@@ -274,7 +274,7 @@ mod tests {
         ProjectIssuesPage {
             issues: (total_count > 0)
                 .then(|| ProjectsIssue {
-                    issue_id: IssueId::new(1),
+                    id: IssueId::new(1),
                     project_id: PROJECT_ID,
                     subject: "listed issue".to_string(),
                     description: "description".to_string(),
