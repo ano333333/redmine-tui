@@ -1,10 +1,10 @@
 use crate::clients::redmine::{RedmineClient, RedmineClientError};
-use crate::entities::Issue;
+use crate::entities::IssueAggregate;
 
 /// 競合がないことを確認済みの Issue を Redmine サーバーへアップロードする。
 pub async fn upload_issue(
     client: &impl RedmineClient,
-    issue: &Issue,
+    issue: &IssueAggregate,
 ) -> Result<(), RedmineClientError> {
     client.update_issue(issue).await
 }
@@ -15,8 +15,8 @@ mod tests {
 
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::entities::{
-        Category, Issue, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity,
-        Tracker, User,
+        Category, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
+        TimeEntityActivity, Tracker, User,
     };
     use crate::test_support::sample_issue;
     use crate::vos::{IssueId, IssueStatusId};
@@ -58,7 +58,7 @@ mod tests {
     }
 
     struct StubClient {
-        uploaded: Mutex<Vec<Issue>>,
+        uploaded: Mutex<Vec<IssueAggregate>>,
         error: Option<RedmineClientError>,
     }
 
@@ -79,7 +79,7 @@ mod tests {
     }
 
     impl RedmineClient for StubClient {
-        async fn update_issue(&self, issue: &Issue) -> Result<(), RedmineClientError> {
+        async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError> {
             if let Some(error) = &self.error {
                 return Err(error.clone());
             }
@@ -87,7 +87,7 @@ mod tests {
             Ok(())
         }
 
-        async fn get_issue(&self, _: IssueId) -> Result<Issue, RedmineClientError> {
+        async fn get_issue(&self, _: IssueId) -> Result<IssueAggregate, RedmineClientError> {
             unreachable!()
         }
 

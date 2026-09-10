@@ -102,8 +102,8 @@ mod tests {
     use super::load_initial_entities;
     use crate::clients::redmine::{DefaultRedmineClient, RedmineClient, RedmineClientError};
     use crate::entities::{
-        Category, Issue, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity,
-        Tracker, User,
+        Category, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
+        TimeEntityActivity, Tracker, User,
     };
     use crate::stores::Action;
     use crate::vos::{
@@ -266,11 +266,11 @@ mod tests {
             }])
         }
 
-        async fn get_issue(&self, id: IssueId) -> Result<Issue, RedmineClientError> {
+        async fn get_issue(&self, id: IssueId) -> Result<IssueAggregate, RedmineClientError> {
             panic!("initial entity load should not load issue {}", id.get());
         }
 
-        async fn update_issue(&self, _: &Issue) -> Result<(), RedmineClientError> {
+        async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {
             panic!("initial entity load should not update issue");
         }
 

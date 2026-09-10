@@ -60,8 +60,8 @@ mod tests {
 
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::entities::{
-        Category, Issue, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity,
-        Tracker, User,
+        Category, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
+        TimeEntityActivity, Tracker, User,
     };
     use crate::stores::{Dispatcher, IssueAction, IssueState};
     use crate::test_support::sample_issue;
@@ -225,17 +225,17 @@ mod tests {
         dispatcher
     }
 
-    fn issue(id: u16) -> Issue {
+    fn issue(id: u16) -> IssueAggregate {
         sample_issue(id, "subject", IssueStatusId::new(1), None, None, None, 0)
     }
 
     struct StubClient {
-        result: Result<Issue, RedmineClientError>,
+        result: Result<IssueAggregate, RedmineClientError>,
         requested_ids: Mutex<Vec<IssueId>>,
     }
 
     impl StubClient {
-        fn succeeds(issue: Issue) -> Self {
+        fn succeeds(issue: IssueAggregate) -> Self {
             Self {
                 result: Ok(issue),
                 requested_ids: Mutex::new(Vec::new()),
@@ -255,12 +255,12 @@ mod tests {
     }
 
     impl RedmineClient for StubClient {
-        async fn get_issue(&self, id: IssueId) -> Result<Issue, RedmineClientError> {
+        async fn get_issue(&self, id: IssueId) -> Result<IssueAggregate, RedmineClientError> {
             self.requested_ids.lock().unwrap().push(id);
             self.result.clone()
         }
 
-        async fn update_issue(&self, _: &Issue) -> Result<(), RedmineClientError> {
+        async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {
             unreachable!()
         }
 
