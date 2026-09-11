@@ -1,5 +1,6 @@
 mod issue_store;
 mod journal_state;
+mod journal_store;
 mod project_issues_store;
 mod store;
 
@@ -17,6 +18,8 @@ pub use store::{Action, Dispatcher, JournalState, Store};
 mod issue_store_tests;
 #[cfg(test)]
 mod journal_state_tests;
+#[cfg(test)]
+mod journal_store_tests;
 #[cfg(test)]
 mod project_issues_store_tests;
 
