@@ -212,10 +212,6 @@ pub fn parse_issue_yaml(id: u16) -> IssueAggregate {
         .into_iter()
         .map(IssueId::new)
         .collect();
-    let journal_ids = as_u16_array(&yaml, "journal_ids")
-        .iter()
-        .map(|id| JournalId::new(*id))
-        .collect();
     IssueAggregate {
         issue: Issue {
             id,
@@ -238,7 +234,6 @@ pub fn parse_issue_yaml(id: u16) -> IssueAggregate {
         total_spent_hours,
         category_id,
         child_ids,
-        journal_ids,
     }
 }
 

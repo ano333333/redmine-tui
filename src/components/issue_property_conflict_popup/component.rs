@@ -232,26 +232,6 @@ fn diff_value_text(server_issue: &IssueAggregate, diff: &IssuePropertyDiff) -> D
                 .collect::<Vec<_>>()
                 .join(", "),
         ),
-        IssuePropertyDiff::JournalIds(diff) => diff_text(
-            &diff
-                .before
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", "),
-            &diff
-                .after
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", "),
-            &server_issue
-                .journal_ids
-                .iter()
-                .map(|id| id.get().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-        ),
     }
 }
 
@@ -335,7 +315,6 @@ fn property_name(diff: &IssuePropertyDiff) -> &'static str {
         IssuePropertyDiff::CategoryId(_) => "カテゴリ",
         IssuePropertyDiff::Description(_) => "説明",
         IssuePropertyDiff::ChildIds(_) => "子チケット",
-        IssuePropertyDiff::JournalIds(_) => "履歴",
     }
 }
 

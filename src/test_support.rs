@@ -143,6 +143,5 @@ pub fn sample_issue_aggregate(
         total_spent_hours: Some(3.5),
         category_id: Some(CategoryId::new(1)),
         child_ids: vec![],
-        journal_ids: vec![],
     }
 }

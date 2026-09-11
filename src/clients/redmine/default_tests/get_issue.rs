@@ -60,7 +60,6 @@ fn get_issue_maps_success_response() {
         "Login fails with valid credentials"
     );
     assert_eq!(issue.child_ids[0].get(), 43);
-    assert_eq!(issue.journal_ids[0].get(), 500);
 }
 
 #[test]

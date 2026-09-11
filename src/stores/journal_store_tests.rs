@@ -439,7 +439,7 @@ fn get_remote_journal_panics_when_only_another_journal_of_the_issue_exists() {
 
 #[test]
 #[should_panic(expected = "sync fetched journals for issue 3 contain duplicate journal 10")]
-fn sync_fetched_panics_when_the_fetched_result_contains_duplicate_journal_ids() {
+fn sync_fetched_panics_when_the_fetched_result_contains_duplicate_journals() {
     let mut store = JournalStore::new();
 
     store.consume_action(JournalAction::SyncFetched {

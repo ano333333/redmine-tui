@@ -11,8 +11,8 @@ use crate::entities::{
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalId, PriorityId, ProjectId,
-    TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    CategoryId, EntityIdValue, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
+    TimeEntityActivityId, TrackerId, UserId,
 };
 
 // FIXME: ユーザーを全列挙しないことを前提としたStore管理
@@ -715,6 +715,7 @@ struct RedmineIssue {
     description: Option<String>,
     #[serde(default)]
     children: Vec<RedmineIdRef>,
+    // TODO: RedmineからJournalを取得する機能では、このレスポンス値からJournal一覧を構築する。
     #[serde(default)]
     journals: Vec<RedmineIdRef>,
 }
@@ -753,11 +754,6 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
                 .children
                 .into_iter()
                 .map(|child| IssueId::new(child.id))
-                .collect(),
-            journal_ids: value
-                .journals
-                .into_iter()
-                .map(|journal| JournalId::new(journal.id))
                 .collect(),
             issue,
         })

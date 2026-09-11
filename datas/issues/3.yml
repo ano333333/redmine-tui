@@ -15,10 +15,6 @@ category_id: 1
 child_ids:
   - 1
   - 2
-journal_ids:
-  - 1
-  - 2
-  - 3
 description: |-
   ### h3
 

@@ -52,10 +52,10 @@ impl JournalStore {
 
     // Storeへ到達したSyncFetchedのIDと所有関係の不整合は、取得失敗ではなくAction生成側の制御破綻として拒否する。
     fn assert_sync_fetched_is_valid(this: &JournalStore, issue_id: IssueId, journals: &[Journal]) {
-        let mut unique_journal_ids: HashSet<JournalId> = HashSet::with_capacity(journals.len());
+        let mut seen: HashSet<JournalId> = HashSet::with_capacity(journals.len());
         for journal in journals {
             let journal_id = journal.id;
-            if !unique_journal_ids.insert(journal_id) {
+            if !seen.insert(journal_id) {
                 panic!(
                     "sync fetched journals for issue {issue_id} contain duplicate journal {journal_id}"
                 );

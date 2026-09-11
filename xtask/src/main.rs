@@ -235,12 +235,12 @@ struct IssueRecord {
     category_id: Option<u16>,
     description: String,
     child_ids: Vec<u16>,
-    journal_ids: Vec<u16>,
 }
 
 #[derive(Debug)]
 struct JournalRecord {
     id: u16,
+    issue_id: u16,
     user: String,
     updated_on: String,
     notes: String,
@@ -572,27 +572,16 @@ impl SeedData {
             .iter()
             .map(|user| (user.name.as_str(), db_user_id(user.id)))
             .collect::<BTreeMap<_, _>>();
-        let issue_ids_by_journal_id = self
-            .issues
-            .iter()
-            .flat_map(|issue| {
-                issue
-                    .journal_ids
-                    .iter()
-                    .map(move |journal_id| (*journal_id, issue.id))
-            })
-            .collect::<BTreeMap<_, _>>();
 
         let journals = self
             .journals
             .values()
-            .filter_map(|journal| {
-                let issue_id = issue_ids_by_journal_id.get(&journal.id)?;
+            .map(|journal| {
                 let user_id = user_ids_by_name
                     .get(journal.user.as_str())
                     .copied()
                     .unwrap_or(1);
-                Some((journal, *issue_id, user_id))
+                (journal, journal.issue_id, user_id)
             })
             .collect::<Vec<_>>();
 
@@ -713,7 +702,6 @@ fn load_issues(dir: &Path) -> Result<Vec<IssueRecord>, String> {
                 category_id: as_u16_option(&yaml, "category_id")?,
                 description: as_string(&yaml, "description")?,
                 child_ids: as_u16_array(&yaml, "child_ids")?,
-                journal_ids: as_u16_array(&yaml, "journal_ids")?,
             })
         })
         .collect()
@@ -731,6 +719,7 @@ fn load_journals(dir: &Path) -> Result<BTreeMap<u16, JournalRecord>, String> {
                 id,
                 JournalRecord {
                     id,
+                    issue_id: as_u16(&yaml, "issue_id")?,
                     user: as_string(&yaml, "user")?,
                     updated_on: as_string(&yaml, "updated_on")?,
                     notes: as_string_option(&yaml, "notes")?.unwrap_or_default(),
