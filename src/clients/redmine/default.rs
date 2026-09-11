@@ -1,6 +1,5 @@
 use std::num::NonZeroUsize;
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -14,6 +13,9 @@ use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
     TimeEntityActivityId, TrackerId, UserId,
 };
+
+mod named_entity;
+mod value_conversion;
 
 // FIXME: ユーザーを全列挙しないことを前提としたStore管理
 const PAGE_LIMIT: usize = 100;
@@ -316,45 +318,6 @@ fn map_response_body_error(error: reqwest::Error) -> RedmineClientError {
     }
 }
 
-fn parse_datetime(value: &str) -> Result<DateTime<Local>, RedmineClientError> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|dt| dt.with_timezone(&Local))
-        .map_err(|error| RedmineClientError::Client {
-            reason: format!("failed to parse Redmine datetime '{value}': {error}"),
-        })
-}
-
-fn parse_optional_date(
-    value: Option<String>,
-) -> Result<Option<DateTime<Local>>, RedmineClientError> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-
-    if value.is_empty() {
-        return Ok(None);
-    }
-
-    let date = NaiveDate::parse_from_str(&value, "%Y-%m-%d").map_err(|error| {
-        RedmineClientError::Client {
-            reason: format!("failed to parse Redmine date '{value}': {error}"),
-        }
-    })?;
-    let datetime = date
-        .and_hms_opt(0, 0, 0)
-        .ok_or_else(|| RedmineClientError::Client {
-            reason: format!("failed to convert Redmine date '{value}' to datetime"),
-        })?;
-
-    Local
-        .from_local_datetime(&datetime)
-        .single()
-        .ok_or_else(|| RedmineClientError::Client {
-            reason: format!("failed to convert Redmine date '{value}' to local datetime"),
-        })
-        .map(Some)
-}
-
 #[derive(Debug, Clone, Copy, Deserialize)]
 struct PageInfo {
     #[serde(default)]
@@ -384,57 +347,6 @@ trait PaginatedResponse {
     type Item;
 
     fn into_parts(self) -> (Vec<Self::Item>, PageInfo);
-}
-
-#[derive(Deserialize)]
-struct NamedRedmineEntity {
-    id: u16,
-    name: String,
-}
-
-impl From<NamedRedmineEntity> for Category {
-    fn from(value: NamedRedmineEntity) -> Self {
-        Self {
-            id: CategoryId::new(value.id),
-            name: value.name,
-        }
-    }
-}
-
-impl From<NamedRedmineEntity> for Priority {
-    fn from(value: NamedRedmineEntity) -> Self {
-        Self {
-            id: PriorityId::new(value.id),
-            name: value.name,
-        }
-    }
-}
-
-impl From<NamedRedmineEntity> for Project {
-    fn from(value: NamedRedmineEntity) -> Self {
-        Self {
-            id: ProjectId::new(value.id),
-            name: value.name,
-        }
-    }
-}
-
-impl From<NamedRedmineEntity> for TargetVersion {
-    fn from(value: NamedRedmineEntity) -> Self {
-        Self {
-            id: TargetVersionId::new(value.id),
-            name: value.name,
-        }
-    }
-}
-
-impl From<NamedRedmineEntity> for Tracker {
-    fn from(value: NamedRedmineEntity) -> Self {
-        Self {
-            id: TrackerId::new(value.id),
-            name: value.name,
-        }
-    }
 }
 
 #[derive(Deserialize)]
@@ -528,7 +440,7 @@ impl PaginatedResponse for UsersResponse {
 
 #[derive(Deserialize)]
 struct ProjectsResponse {
-    projects: Vec<NamedRedmineEntity>,
+    projects: Vec<named_entity::NamedRedmineEntity>,
     #[serde(flatten)]
     page_info: PageInfo,
 }
@@ -546,7 +458,7 @@ impl PaginatedResponse for ProjectsResponse {
 
 #[derive(Deserialize)]
 struct IssueCategoriesResponse {
-    issue_categories: Vec<NamedRedmineEntity>,
+    issue_categories: Vec<named_entity::NamedRedmineEntity>,
     #[serde(flatten)]
     page_info: PageInfo,
 }
@@ -564,7 +476,7 @@ impl PaginatedResponse for IssueCategoriesResponse {
 
 #[derive(Deserialize)]
 struct VersionsResponse {
-    versions: Vec<NamedRedmineEntity>,
+    versions: Vec<named_entity::NamedRedmineEntity>,
     #[serde(flatten)]
     page_info: PageInfo,
 }
@@ -587,7 +499,7 @@ struct IssueStatusesResponse {
 
 #[derive(Deserialize)]
 struct PrioritiesResponse {
-    issue_priorities: Vec<NamedRedmineEntity>,
+    issue_priorities: Vec<named_entity::NamedRedmineEntity>,
 }
 
 #[derive(Deserialize)]
@@ -597,7 +509,7 @@ struct TimeEntryActivitiesResponse {
 
 #[derive(Deserialize)]
 struct TrackersResponse {
-    trackers: Vec<NamedRedmineEntity>,
+    trackers: Vec<named_entity::NamedRedmineEntity>,
 }
 
 #[derive(Deserialize)]
@@ -734,8 +646,8 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
 
         Ok(Self {
             author_id: UserId::new(value.author.id),
-            created_on: parse_datetime(&value.created_on)?,
-            updated_on: parse_datetime(&value.updated_on)?,
+            created_on: value_conversion::parse_datetime(&value.created_on)?,
+            updated_on: value_conversion::parse_datetime(&value.updated_on)?,
             tracker_id: TrackerId::new(value.tracker.id),
             priority_id: PriorityId::new(value.priority.id),
             assigned_to_id: value
@@ -744,8 +656,8 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
             target_version_id: value
                 .fixed_version
                 .map(|fixed_version| TargetVersionId::new(fixed_version.id)),
-            start_date: parse_optional_date(value.start_date)?,
-            due_date: parse_optional_date(value.due_date)?,
+            start_date: value_conversion::parse_optional_date(value.start_date)?,
+            due_date: value_conversion::parse_optional_date(value.due_date)?,
             done_ratio: value.done_ratio,
             estimated_hours: value.estimated_hours.map(|hours| hours as u16),
             total_spent_hours: value.total_spent_hours,
