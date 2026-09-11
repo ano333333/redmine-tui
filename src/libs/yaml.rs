@@ -89,6 +89,7 @@ pub fn parse_journal_yaml(id: JournalId) -> Journal {
         parsed_id,
         id
     );
+    let issue_id = IssueId::new(as_u16(&yaml, "issue_id"));
     let user = as_string(&yaml, "user");
     let updated_on = as_local_datetime(&yaml, "updated_on");
     let notes = yaml["notes"].as_str().unwrap_or_default().to_string();
@@ -101,6 +102,7 @@ pub fn parse_journal_yaml(id: JournalId) -> Journal {
 
     Journal {
         id,
+        issue_id,
         user,
         updated_on,
         details,
@@ -380,4 +382,82 @@ pub fn parse_time_entity_activities_yaml() -> HashMap<TimeEntityActivityId, Time
             (act.id, act)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_journal_yaml;
+    use crate::vos::{IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId};
+
+    #[test]
+    fn parse_journal_yaml_reads_all_fields_from_fixture() {
+        assert_journal_1();
+        assert_journal_2();
+        assert_journal_3();
+    }
+
+    fn assert_journal_1() {
+        let journal = parse_journal_yaml(JournalId::new(1));
+        assert_eq!(journal.id, JournalId::new(1));
+        assert_eq!(journal.issue_id, IssueId::new(3));
+        assert_eq!(journal.user, "user1");
+        assert_eq!(
+            journal.updated_on.format("%Y/%m/%d").to_string(),
+            "2026/02/10"
+        );
+        assert_eq!(journal.notes, "");
+        assert_eq!(journal.details.len(), 1);
+        match &journal.details[0] {
+            JournalDetail::Attr(JournalDetailAttr::StatusId { old, new }) => {
+                assert_eq!(*old, IssueStatusId::new(1));
+                assert_eq!(*new, IssueStatusId::new(2));
+            }
+            _ => panic!("journal 1 should have a status_id detail"),
+        }
+    }
+
+    fn assert_journal_2() {
+        let journal = parse_journal_yaml(JournalId::new(2));
+        assert_eq!(journal.id, JournalId::new(2));
+        assert_eq!(journal.issue_id, IssueId::new(3));
+        assert_eq!(journal.user, "user1");
+        assert_eq!(
+            journal.updated_on.format("%Y/%m/%d").to_string(),
+            "2026/02/16"
+        );
+        assert_eq!(journal.notes, "");
+        assert_eq!(journal.details.len(), 1);
+        match &journal.details[0] {
+            JournalDetail::Attr(JournalDetailAttr::DueDate { old, new }) => {
+                let old = old.as_ref().expect("due_date.old should be set");
+                let new = new.as_ref().expect("due_date.new should be set");
+                assert_eq!(old.format("%Y/%m/%d").to_string(), "2026/02/16");
+                assert_eq!(new.format("%Y/%m/%d").to_string(), "2026/02/17");
+            }
+            _ => panic!("journal 2 should have a due_date detail"),
+        }
+    }
+
+    fn assert_journal_3() {
+        let journal = parse_journal_yaml(JournalId::new(3));
+        assert_eq!(journal.id, JournalId::new(3));
+        assert_eq!(journal.issue_id, IssueId::new(3));
+        assert_eq!(journal.user, "user1");
+        assert_eq!(
+            journal.updated_on.format("%Y/%m/%d").to_string(),
+            "2026/02/16"
+        );
+        assert!(!journal.notes.is_empty());
+        assert!(journal.notes.starts_with("### h3"));
+        assert!(journal.notes.ends_with("> citation"));
+        assert!(journal.notes.contains("*italic text*"));
+        assert!(journal.notes.contains("**bold text**"));
+        assert!(journal.notes.contains("1. numbered list 1"));
+        assert!(journal.notes.contains("inner numbered list 1"));
+        assert!(journal.notes.contains("- itemized list 1"));
+        assert!(journal.notes.contains("~~canceled text~~"));
+        assert!(journal.notes.contains("`code`"));
+        assert!(journal.notes.contains("code block"));
+        assert!(journal.details.is_empty());
+    }
 }

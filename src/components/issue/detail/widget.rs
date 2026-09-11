@@ -169,7 +169,7 @@ mod tests {
     };
     use crate::entities::{IssueAggregate, IssueStatus, Journal};
     use crate::test_support::{local_datetime, render_snapshot, sample_issue_aggregate};
-    use crate::vos::JournalId;
+    use crate::vos::{IssueId, JournalId};
 
     const WIDTH: u16 = 40;
     const HEIGHT: u16 = 10;
@@ -207,6 +207,7 @@ mod tests {
             journal_state.update(width, &journal_user, &journal_updated_on, &journal_notes);
             let journal = Journal {
                 id: JournalId::new(1),
+                issue_id: IssueId::new(1),
                 user: journal_user,
                 updated_on: journal_updated_on,
                 details: vec![],

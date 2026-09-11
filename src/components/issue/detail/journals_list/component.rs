@@ -240,7 +240,7 @@ mod tests {
 
     use super::*;
     use crate::test_support::local_datetime;
-    use crate::vos::JournalId;
+    use crate::vos::{IssueId, JournalId};
 
     const WIDE_WIDTH: u16 = 32;
 
@@ -251,6 +251,7 @@ mod tests {
     fn create_journal(id: u16, notes: impl Into<String>) -> Journal {
         Journal {
             id: JournalId::new(id),
+            issue_id: IssueId::new(1),
             user: "alice".to_string(),
             updated_on: local_datetime("2026-01-15T00:00:00+09:00"),
             details: vec![],

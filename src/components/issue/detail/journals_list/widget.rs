@@ -51,12 +51,13 @@ mod tests {
     use crate::{
         entities::Journal,
         test_support::{local_datetime, render_snapshot},
-        vos::JournalId,
+        vos::{IssueId, JournalId},
     };
 
     fn create_journal(user: String, updated_on: DateTime<Local>, notes: &str) -> Journal {
         Journal {
             id: JournalId::new(1),
+            issue_id: IssueId::new(1),
             user,
             updated_on,
             details: vec![],

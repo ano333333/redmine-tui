@@ -217,7 +217,7 @@ mod tests {
         entities::Journal,
         stores::Store,
         test_support::{local_datetime, render_snapshot, sync_fixture_entities},
-        vos::{IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, UserId},
+        vos::{IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, UserId},
     };
 
     const WIDE_WIDTH: u16 = 32;
@@ -236,6 +236,7 @@ mod tests {
     fn create_journal(id: u16, details: Vec<JournalDetail>, notes: impl Into<String>) -> Journal {
         Journal {
             id: JournalId::new(id),
+            issue_id: IssueId::new(1),
             user: "alice".to_string(),
             updated_on: local_datetime("2026-01-15T00:00:00+09:00"),
             details,

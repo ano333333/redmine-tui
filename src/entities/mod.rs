@@ -14,7 +14,7 @@ pub use category::Category;
 pub use issue::{Issue, ProjectIssuesPage};
 pub use issue_aggregate::IssueAggregate;
 pub use issue_status::IssueStatus;
-pub use journal::Journal;
+pub use journal::{Journal, LocalJournal};
 pub use priority::Priority;
 pub use project::Project;
 pub use target_version::TargetVersion;
