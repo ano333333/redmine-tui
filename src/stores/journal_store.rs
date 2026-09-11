@@ -36,13 +36,6 @@ impl JournalStore {
     pub(super) fn consume_action(&mut self, action: JournalAction) {
         match action {
             JournalAction::SyncFetched { issue_id, journals } => {
-                let remote = journals
-                    .into_iter()
-                    .map(|journal| RemoteJournalEntry {
-                        journal,
-                        state: RemoteJournalState::Synced,
-                    })
-                    .collect();
                 let issue_journals =
                     self.by_issue
                         .entry(issue_id)
@@ -50,9 +43,38 @@ impl JournalStore {
                             remote: vec![],
                             local: None,
                         });
-                issue_journals.remote = remote;
+                let remote = std::mem::take(&mut issue_journals.remote);
+                issue_journals.remote = Self::merge_sync_fetched(remote, journals);
             }
         }
+    }
+
+    // 取得順を表示順として採用し、取得結果にないentryは現在の状態にかかわらず除外する。
+    // TODO: dirty mergeでは、取得結果にないEdited/Uploading entryを以前の相対順で残す。
+    fn merge_sync_fetched(
+        current: Vec<RemoteJournalEntry>,
+        fetched: Vec<Journal>,
+    ) -> Vec<RemoteJournalEntry> {
+        let mut by_id: HashMap<JournalId, RemoteJournalEntry> = HashMap::new();
+        for entry in current {
+            by_id.insert(entry.journal.id, entry);
+        }
+        let mut merged = Vec::with_capacity(fetched.len());
+        for journal in fetched {
+            if let Some(mut entry) = by_id.remove(&journal.id) {
+                // Edited/Uploadingが保持するローカルの作業内容を取得値で上書きしない。
+                if matches!(entry.state, RemoteJournalState::Synced) {
+                    entry.journal = journal;
+                }
+                merged.push(entry);
+            } else {
+                merged.push(RemoteJournalEntry {
+                    journal,
+                    state: RemoteJournalState::Synced,
+                });
+            }
+        }
+        merged
     }
 
     /// Journal IDだけでRemote Journalを検索する一時的な互換getter。

@@ -9,15 +9,22 @@ use crate::test_support::local_datetime;
 use crate::vos::{IssueId, JournalId};
 
 fn journal(issue_id: impl Into<IssueId>, journal_id: impl Into<JournalId>) -> Journal {
-    let issue_id = issue_id.into();
     let journal_id = journal_id.into();
+    journal_with_notes(issue_id, journal_id, &format!("remote notes {journal_id}"))
+}
+
+fn journal_with_notes(
+    issue_id: impl Into<IssueId>,
+    journal_id: impl Into<JournalId>,
+    notes: &str,
+) -> Journal {
     Journal {
-        id: journal_id,
-        issue_id,
+        id: journal_id.into(),
+        issue_id: issue_id.into(),
         user: "admin".to_string(),
         updated_on: local_datetime("2026-09-10T00:00:00+09:00"),
         details: vec![],
-        notes: format!("remote notes {journal_id}"),
+        notes: notes.to_string(),
     }
 }
 
@@ -147,6 +154,102 @@ fn sync_fetched_replaces_the_existing_remote_collection_of_the_issue() {
             .map(|entry| entry.journal.id)
             .collect::<Vec<_>>(),
         vec![JournalId::new(11)]
+    );
+    assert!(matches!(
+        store
+            .get_local_journal(IssueId::new(3))
+            .expect("local journal should be kept")
+            .state,
+        LocalJournalState::Uploading
+    ));
+}
+
+#[test]
+fn sync_fetched_keeps_the_fetched_order_as_the_display_order() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(3),
+            IssueJournals {
+                remote: vec![
+                    remote_entry(IssueId::new(3), JournalId::new(10)),
+                    remote_entry(IssueId::new(3), JournalId::new(11)),
+                ],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::SyncFetched {
+        issue_id: IssueId::new(3),
+        journals: vec![
+            journal(IssueId::new(3), JournalId::new(11)),
+            journal(IssueId::new(3), JournalId::new(10)),
+        ],
+    });
+
+    let journals = store.get_remote_journals(IssueId::new(3));
+    assert_eq!(
+        journals
+            .iter()
+            .map(|entry| entry.journal.id)
+            .collect::<Vec<_>>(),
+        vec![JournalId::new(11), JournalId::new(10)]
+    );
+}
+
+#[test]
+fn sync_fetched_replaces_an_existing_synced_journal_with_the_fetched_value() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(3),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(3), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::SyncFetched {
+        issue_id: IssueId::new(3),
+        journals: vec![journal_with_notes(
+            IssueId::new(3),
+            JournalId::new(10),
+            "updated notes",
+        )],
+    });
+
+    let entry = store.get_remote_journal(IssueId::new(3), JournalId::new(10));
+    assert_eq!(entry.journal.notes, "updated notes");
+    assert!(matches!(entry.state, RemoteJournalState::Synced));
+}
+
+#[test]
+fn sync_fetched_drops_synced_journals_missing_from_the_fetched_result() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(3),
+            IssueJournals {
+                remote: vec![
+                    remote_entry(IssueId::new(3), JournalId::new(10)),
+                    remote_entry(IssueId::new(3), JournalId::new(11)),
+                ],
+                local: Some(local_entry(IssueId::new(3))),
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::SyncFetched {
+        issue_id: IssueId::new(3),
+        journals: vec![journal(IssueId::new(3), JournalId::new(10))],
+    });
+
+    let journals = store.get_remote_journals(IssueId::new(3));
+    assert_eq!(
+        journals
+            .iter()
+            .map(|entry| entry.journal.id)
+            .collect::<Vec<_>>(),
+        vec![JournalId::new(10)]
     );
     assert!(matches!(
         store
