@@ -14,6 +14,7 @@ use crate::vos::{
     TimeEntityActivityId, TrackerId, UserId,
 };
 
+mod journal_conversion;
 mod named_entity;
 mod value_conversion;
 

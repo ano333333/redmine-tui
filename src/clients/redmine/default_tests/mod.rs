@@ -13,6 +13,7 @@ mod get_static_lists;
 mod get_target_versions;
 mod get_users;
 mod integration_support;
+mod journal_conversion;
 mod update_issue;
 mod value_conversion;
 
