@@ -88,9 +88,16 @@ mod tests {
             let mut d = dispatcher.borrow_mut();
             crate::test_support::dispatch_fixture_entity_actions(&mut d);
             d.dispatch(IssueAction::Load { id: 3.into() });
-            d.dispatch(crate::stores::Action::LoadJournal { id: 1.into() });
-            d.dispatch(crate::stores::Action::LoadJournal { id: 2.into() });
-            d.dispatch(crate::stores::Action::LoadJournal { id: 3.into() });
+            d.dispatch(crate::stores::Action::Journal(
+                crate::stores::JournalAction::SyncFetched {
+                    issue_id: 3.into(),
+                    journals: vec![
+                        crate::libs::yaml::parse_journal_yaml(1.into()),
+                        crate::libs::yaml::parse_journal_yaml(2.into()),
+                        crate::libs::yaml::parse_journal_yaml(3.into()),
+                    ],
+                },
+            ));
             while d.consume_actinos_len() > 0 {
                 d.consume_action();
             }
@@ -311,10 +318,7 @@ impl IssueDetailComponent {
             let journals = issue
                 .journal_ids
                 .iter()
-                .map(|id| store.get_journal(*id))
-                .filter(|journal_state| journal_state.is_some())
-                .map(|journal_state| journal_state.unwrap())
-                .map(|(journal, _)| journal)
+                .filter_map(|id| store.get_journal(*id))
                 .collect::<Vec<&Journal>>();
 
             self.journals_list.update(journals, self.width);

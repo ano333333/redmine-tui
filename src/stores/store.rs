@@ -3,6 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroUsize;
 
 use super::issue_store::{IssueAction, IssueState, IssueStore};
+use super::journal_store::{JournalAction, JournalStore};
 use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
@@ -10,7 +11,6 @@ use crate::entities::{
     Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
     TimeEntityActivity, Tracker, User,
 };
-use crate::libs::yaml::parse_journal_yaml;
 use crate::vos::{
     CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, PriorityId, ProjectId,
     TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
@@ -44,15 +44,10 @@ impl Dispatcher {
     }
 }
 
-pub enum JournalState {
-    Synced,
-    Updated,
-}
-
 pub struct Store {
     issue_store: IssueStore,
     project_issues_store: ProjectIssuesStore,
-    journals: HashMap<JournalId, (Journal, JournalState)>,
+    journal_store: JournalStore,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
     priorities: HashMap<PriorityId, Priority>,
@@ -68,7 +63,7 @@ impl Store {
         Self {
             issue_store: IssueStore::new(),
             project_issues_store: ProjectIssuesStore::new(),
-            journals: HashMap::new(),
+            journal_store: JournalStore::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
             priorities: HashMap::new(),
@@ -84,6 +79,7 @@ impl Store {
         match action {
             Action::Issue(action) => self.issue_store.consume_action(action),
             Action::ProjectIssues(action) => self.project_issues_store.consume_action(action),
+            Action::Journal(action) => self.journal_store.consume_action(action),
             Action::SyncUsers { users } => {
                 self.users = users.into_iter().map(|user| (user.id, user)).collect();
             }
@@ -131,17 +127,8 @@ impl Store {
                     .map(|activity| (activity.id, activity))
                     .collect();
             }
-            Action::LoadJournal { id } => {
-                self.journals
-                    .entry(id)
-                    .or_insert((parse_journal_yaml(id), JournalState::Synced));
-            }
-            Action::UpdateJournal { id, notes } => {
-                if let Some((journal, state)) = self.journals.get_mut(&id.into()) {
-                    journal.notes = notes;
-                    *state = JournalState::Updated;
-                }
-            }
+            // TODO: JournalStoreの正式な編集APIを接続するまで、既存UIからの編集は意図的に反映しない。
+            Action::UpdateJournal { .. } => {}
         }
     }
 
@@ -181,11 +168,11 @@ impl Store {
         self.issue_store.get_issue_property_diffs(issue_id)
     }
 
-    pub fn get_journal(
-        &self,
-        journal_id: impl Into<JournalId>,
-    ) -> Option<&(Journal, JournalState)> {
-        self.journals.get(&journal_id.into())
+    /// Journal IDだけでRemote Journalを検索する一時的な互換getter。
+    ///
+    /// Issue詳細UIがIssue IDによる検索へ移行するPhase 2 Step 2.7で削除する。
+    pub fn get_journal(&self, journal_id: impl Into<JournalId>) -> Option<&Journal> {
+        self.journal_store.get_journal_by_id(journal_id)
     }
 
     pub fn get_users(&self) -> &HashMap<UserId, User> {
@@ -290,9 +277,7 @@ pub enum Action {
     SyncTimeEntityActivities {
         time_entity_activities: Vec<TimeEntityActivity>,
     },
-    LoadJournal {
-        id: JournalId,
-    },
+    Journal(JournalAction),
     UpdateJournal {
         id: JournalId,
         notes: String,
@@ -311,9 +296,16 @@ impl From<ProjectIssuesAction> for Action {
     }
 }
 
+impl From<JournalAction> for Action {
+    fn from(action: JournalAction) -> Self {
+        Self::Journal(action)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::libs::yaml::parse_journal_yaml;
     use crate::test_support::sync_fixture_entities;
     use crate::vos::{
         CategoryId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId,
@@ -355,6 +347,25 @@ mod tests {
             .expect("category should be loaded");
         assert_eq!(category.name, "category1");
         assert_eq!(store.get_categories().len(), 1);
+    }
+
+    #[test]
+    fn update_journal_is_a_noop_for_now() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::Journal(JournalAction::SyncFetched {
+            issue_id: IssueId::new(3),
+            journals: vec![parse_journal_yaml(JournalId::new(1))],
+        }));
+        store.consume_action(Action::UpdateJournal {
+            id: JournalId::new(1),
+            notes: "updated notes".to_string(),
+        });
+
+        let notes = store
+            .get_journal(JournalId::new(1))
+            .map(|journal| journal.notes.clone());
+        assert_eq!(notes, Some(String::new()));
     }
 
     #[test]

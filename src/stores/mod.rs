@@ -9,10 +9,11 @@ pub use journal_state::{
     JournalUploadFailure, LocalJournalEntry, LocalJournalState, RemoteJournalEntry,
     RemoteJournalState, RemoteJournalUploadConflict,
 };
+pub use journal_store::JournalAction;
 pub use project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesRequestId,
 };
-pub use store::{Action, Dispatcher, JournalState, Store};
+pub use store::{Action, Dispatcher, Store};
 
 #[cfg(test)]
 mod issue_store_tests;
@@ -26,7 +27,7 @@ mod project_issues_store_tests;
 #[cfg(test)]
 mod tests {
     use super::{
-        Action, Dispatcher, IssueAction, IssueState, JournalState, ProjectIssuesRequestId, Store,
+        Action, Dispatcher, IssueAction, IssueState, JournalAction, ProjectIssuesRequestId, Store,
     };
 
     #[test]
@@ -36,7 +37,7 @@ mod tests {
         let _: Option<Action> = None;
         let _: Option<IssueAction> = None;
         let _: Option<IssueState> = None;
-        let _: Option<JournalState> = None;
+        let _: Option<JournalAction> = None;
         let _: Option<ProjectIssuesRequestId> = None;
     }
 }

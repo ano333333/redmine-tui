@@ -33,12 +33,13 @@ use self::{
         AppComponent,
         app::{AppEffect, EditorRequest, EditorResponse},
     },
-    stores::{Action, Dispatcher, IssueAction, IssueState},
+    libs::yaml::parse_journal_yaml,
+    stores::{Action, Dispatcher, IssueAction, IssueState, JournalAction},
     usecases::redmine::{
         apply_issue_property_diffs, fetch_issue, fetch_issue_with_conflicts,
         fetch_project_issues_page, load_initial_entities, upload_issue,
     },
-    vos::{IssueId, IssuePropertyDiff},
+    vos::{IssueId, IssuePropertyDiff, JournalId},
 };
 
 const TICK_RATE_MS: u64 = 250;
@@ -420,9 +421,14 @@ fn dispatch_fixture_issues_and_journals(d: &mut Dispatcher) {
     d.dispatch(IssueAction::Load { id: 1.into() });
     d.dispatch(IssueAction::Load { id: 2.into() });
     d.dispatch(IssueAction::Load { id: 3.into() });
-    d.dispatch(Action::LoadJournal { id: 1.into() });
-    d.dispatch(Action::LoadJournal { id: 2.into() });
-    d.dispatch(Action::LoadJournal { id: 3.into() });
+    d.dispatch(Action::Journal(JournalAction::SyncFetched {
+        issue_id: IssueId::new(3),
+        journals: vec![
+            parse_journal_yaml(JournalId::new(1)),
+            parse_journal_yaml(JournalId::new(2)),
+            parse_journal_yaml(JournalId::new(3)),
+        ],
+    }));
 }
 
 #[cfg(test)]

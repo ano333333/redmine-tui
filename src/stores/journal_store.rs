@@ -2,7 +2,8 @@
 
 use std::collections::HashMap;
 
-use super::journal_state::{LocalJournalEntry, RemoteJournalEntry};
+use super::journal_state::{LocalJournalEntry, RemoteJournalEntry, RemoteJournalState};
+use crate::entities::Journal;
 use crate::vos::{IssueId, JournalId};
 
 /// Issueごとに、順序付きのRemote Journalと0件または1件のLocal Journalを管理する。
@@ -15,12 +16,57 @@ pub(super) struct IssueJournals {
     pub(super) local: Option<LocalJournalEntry>,
 }
 
+/// JournalStoreの状態更新を表すAction。
+pub enum JournalAction {
+    /// 取得したRemote JournalをIssue単位で同期する。
+    SyncFetched {
+        issue_id: IssueId,
+        journals: Vec<Journal>,
+    },
+}
+
 impl JournalStore {
     /// Journalが未登録の空Storeを生成する。
     pub fn new() -> Self {
         Self {
             by_issue: HashMap::new(),
         }
+    }
+
+    pub(super) fn consume_action(&mut self, action: JournalAction) {
+        match action {
+            JournalAction::SyncFetched { issue_id, journals } => {
+                let remote = journals
+                    .into_iter()
+                    .map(|journal| RemoteJournalEntry {
+                        journal,
+                        state: RemoteJournalState::Synced,
+                    })
+                    .collect();
+                let issue_journals =
+                    self.by_issue
+                        .entry(issue_id)
+                        .or_insert_with(|| IssueJournals {
+                            remote: vec![],
+                            local: None,
+                        });
+                issue_journals.remote = remote;
+            }
+        }
+    }
+
+    /// Journal IDだけでRemote Journalを検索する一時的な互換getter。
+    ///
+    /// Issue詳細UIがIssue IDによる検索へ移行するPhase 2 Step 2.7で削除する。
+    pub(super) fn get_journal_by_id(&self, journal_id: impl Into<JournalId>) -> Option<&Journal> {
+        let journal_id = journal_id.into();
+        self.by_issue.values().find_map(|issue_journals| {
+            issue_journals
+                .remote
+                .iter()
+                .find(|entry| entry.journal.id == journal_id)
+                .map(|entry| &entry.journal)
+        })
     }
 
     /// IssueのRemote Journalを保持順に返す。
