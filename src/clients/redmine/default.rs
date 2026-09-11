@@ -15,6 +15,7 @@ use crate::vos::{
 };
 
 mod journal_conversion;
+mod journal_detail_conversion;
 mod named_entity;
 mod value_conversion;
 
