@@ -126,20 +126,6 @@ impl JournalStore {
         merged
     }
 
-    /// Journal IDだけでRemote Journalを検索する一時的な互換getter。
-    ///
-    /// Issue詳細UIがIssue IDによる検索へ移行するPhase 2 Step 2.7で削除する。
-    pub(super) fn get_journal_by_id(&self, journal_id: impl Into<JournalId>) -> Option<&Journal> {
-        let journal_id = journal_id.into();
-        self.by_issue.values().find_map(|issue_journals| {
-            issue_journals
-                .remote
-                .iter()
-                .find(|entry| entry.journal.id == journal_id)
-                .map(|entry| &entry.journal)
-        })
-    }
-
     /// IssueのRemote Journalを保持順に返す。
     ///
     /// Issueが未登録の場合は空のsliceを返す。

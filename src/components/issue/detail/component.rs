@@ -315,10 +315,11 @@ impl IssueDetailComponent {
             self.body.update(issue, self.width);
             self.children_list.update(store);
 
-            let journals = issue
-                .journal_ids
+            // TODO: Local Journalの作成・編集UIが実装されたら、store.get_local_journal(issue_id)の結果もこの一覧に含める
+            let journals = store
+                .get_remote_journals(self.id)
                 .iter()
-                .filter_map(|id| store.get_journal(*id))
+                .map(|entry| &entry.journal)
                 .collect::<Vec<&Journal>>();
 
             self.journals_list.update(journals, self.width);

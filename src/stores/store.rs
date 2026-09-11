@@ -3,12 +3,13 @@ use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroUsize;
 
 use super::issue_store::{IssueAction, IssueState, IssueStore};
+use super::journal_state::RemoteJournalEntry;
 use super::journal_store::{JournalAction, JournalStore};
 use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
+    Category, Issue, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
     TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
@@ -168,11 +169,24 @@ impl Store {
         self.issue_store.get_issue_property_diffs(issue_id)
     }
 
-    /// Journal IDだけでRemote Journalを検索する一時的な互換getter。
+    /// IssueのRemote Journalを保持順に返す。
     ///
-    /// Issue詳細UIがIssue IDによる検索へ移行するPhase 2 Step 2.7で削除する。
-    pub fn get_journal(&self, journal_id: impl Into<JournalId>) -> Option<&Journal> {
-        self.journal_store.get_journal_by_id(journal_id)
+    /// Issueが未登録の場合は空のsliceを返す。
+    pub fn get_remote_journals(&self, issue_id: impl Into<IssueId>) -> &[RemoteJournalEntry] {
+        self.journal_store.get_remote_journals(issue_id)
+    }
+
+    /// Issueに登録されているRemote Journalを返す。
+    ///
+    /// # Panics
+    ///
+    /// 指定したIssueに指定したRemote Journalが登録されていない場合にpanicする。
+    pub fn get_remote_journal(
+        &self,
+        issue_id: impl Into<IssueId>,
+        journal_id: impl Into<JournalId>,
+    ) -> &RemoteJournalEntry {
+        self.journal_store.get_remote_journal(issue_id, journal_id)
     }
 
     pub fn get_users(&self) -> &HashMap<UserId, User> {
@@ -363,9 +377,11 @@ mod tests {
         });
 
         let notes = store
-            .get_journal(JournalId::new(1))
-            .map(|journal| journal.notes.clone());
-        assert_eq!(notes, Some(String::new()));
+            .get_remote_journal(IssueId::new(3), JournalId::new(1))
+            .journal
+            .notes
+            .clone();
+        assert_eq!(notes, String::new());
     }
 
     #[test]

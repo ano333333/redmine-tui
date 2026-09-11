@@ -1161,7 +1161,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Step2.7でJournalStore経由の編集APIが揃うまで無効"]
+    #[ignore = "Remote Journalの編集を保存するAPIが実装されたら有効化する(現在は保存がno-opのためnotesが更新されない)"]
     fn e_key_on_journal_notes_opens_editor_and_updates_store_through_dispatcher() {
         let dispatcher = loaded_dispatcher_with_journals();
         let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
@@ -1183,9 +1183,11 @@ mod tests {
         let notes = dispatcher
             .borrow()
             .store()
-            .get_journal(1)
-            .map(|journal| journal.notes.clone());
-        assert_eq!(notes, Some("updated notes".to_string()));
+            .get_remote_journal(3, 1)
+            .journal
+            .notes
+            .clone();
+        assert_eq!(notes, "updated notes".to_string());
     }
 
     #[test]
@@ -1210,9 +1212,11 @@ mod tests {
         let notes = dispatcher
             .borrow()
             .store()
-            .get_journal(1)
-            .map(|journal| journal.notes.clone());
-        assert_eq!(notes, Some(String::new()));
+            .get_remote_journal(3, 1)
+            .journal
+            .notes
+            .clone();
+        assert_eq!(notes, String::new());
     }
 
     #[test]
