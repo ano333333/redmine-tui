@@ -1,6 +1,6 @@
 //! Remote JournalとLocal Journalを所有するIssue単位で保持するStore。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::journal_state::{LocalJournalEntry, RemoteJournalEntry, RemoteJournalState};
 use crate::entities::Journal;
@@ -36,6 +36,7 @@ impl JournalStore {
     pub(super) fn consume_action(&mut self, action: JournalAction) {
         match action {
             JournalAction::SyncFetched { issue_id, journals } => {
+                Self::assert_sync_fetched_is_valid(self, issue_id, &journals);
                 let issue_journals =
                     self.by_issue
                         .entry(issue_id)
@@ -49,20 +50,63 @@ impl JournalStore {
         }
     }
 
-    // 取得順を表示順として採用し、取得結果にないentryは現在の状態にかかわらず除外する。
-    // TODO: dirty mergeでは、取得結果にないEdited/Uploading entryを以前の相対順で残す。
+    // Storeへ到達したSyncFetchedのIDと所有関係の不整合は、取得失敗ではなくAction生成側の制御破綻として拒否する。
+    fn assert_sync_fetched_is_valid(this: &JournalStore, issue_id: IssueId, journals: &[Journal]) {
+        let mut unique_journal_ids: HashSet<JournalId> = HashSet::with_capacity(journals.len());
+        for journal in journals {
+            let journal_id = journal.id;
+            if !unique_journal_ids.insert(journal_id) {
+                panic!(
+                    "sync fetched journals for issue {issue_id} contain duplicate journal {journal_id}"
+                );
+            }
+            if journal.issue_id != issue_id {
+                panic!(
+                    "sync fetched journal {journal_id} of issue {issue_id} has issue {}",
+                    journal.issue_id
+                );
+            }
+        }
+        for journal in journals {
+            let registered_other_issue_id = this
+                .by_issue
+                .iter()
+                .find(|(other_issue_id, issue_journals)| {
+                    **other_issue_id != issue_id
+                        && issue_journals
+                            .remote
+                            .iter()
+                            .any(|entry| entry.journal.id == journal.id)
+                })
+                .map(|(other_issue_id, _)| *other_issue_id);
+            if let Some(other_issue_id) = registered_other_issue_id {
+                panic!(
+                    "remote journal {} is already registered for issue {other_issue_id}",
+                    journal.id
+                );
+            }
+        }
+    }
+
     fn merge_sync_fetched(
         current: Vec<RemoteJournalEntry>,
         fetched: Vec<Journal>,
     ) -> Vec<RemoteJournalEntry> {
-        let mut by_id: HashMap<JournalId, RemoteJournalEntry> = HashMap::new();
+        // 表示順は取得順を優先し、取得結果にないdirty entryは以前の相対順で末尾に残す。
+        let dirty_entry_order: Vec<JournalId> = current
+            .iter()
+            .filter(|entry| !matches!(entry.state, RemoteJournalState::Synced))
+            .map(|entry| entry.journal.id)
+            .collect();
+        let mut by_id: HashMap<JournalId, RemoteJournalEntry> =
+            HashMap::with_capacity(current.len());
         for entry in current {
             by_id.insert(entry.journal.id, entry);
         }
         let mut merged = Vec::with_capacity(fetched.len());
         for journal in fetched {
             if let Some(mut entry) = by_id.remove(&journal.id) {
-                // Edited/Uploadingが保持するローカルの作業内容を取得値で上書きしない。
+                // Edited/Uploadingの未保存の作業内容は、取得値で上書きしない意図的なmerge no-opとする。
                 if matches!(entry.state, RemoteJournalState::Synced) {
                     entry.journal = journal;
                 }
@@ -72,6 +116,11 @@ impl JournalStore {
                     journal,
                     state: RemoteJournalState::Synced,
                 });
+            }
+        }
+        for journal_id in dirty_entry_order {
+            if let Some(kept_dirty_entry) = by_id.remove(&journal_id) {
+                merged.push(kept_dirty_entry);
             }
         }
         merged

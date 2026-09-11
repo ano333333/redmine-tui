@@ -6,7 +6,7 @@ use crate::stores::journal_state::{
     LocalJournalEntry, LocalJournalState, RemoteJournalEntry, RemoteJournalState,
 };
 use crate::test_support::local_datetime;
-use crate::vos::{IssueId, JournalId};
+use crate::vos::{IssueId, JournalId, JournalNotesDiff};
 
 fn journal(issue_id: impl Into<IssueId>, journal_id: impl Into<JournalId>) -> Journal {
     let journal_id = journal_id.into();
@@ -35,6 +35,40 @@ fn remote_entry(
     RemoteJournalEntry {
         journal: journal(issue_id, journal_id),
         state: RemoteJournalState::Synced,
+    }
+}
+
+fn edited_remote_entry(
+    issue_id: impl Into<IssueId>,
+    journal_id: impl Into<JournalId>,
+) -> RemoteJournalEntry {
+    let journal_id = journal_id.into();
+    RemoteJournalEntry {
+        journal: journal(issue_id, journal_id),
+        state: RemoteJournalState::Edited {
+            diff: JournalNotesDiff {
+                before: format!("remote notes {journal_id}"),
+                after: "edited notes".to_string(),
+            },
+            failure: None,
+        },
+    }
+}
+
+fn uploading_remote_entry(
+    issue_id: impl Into<IssueId>,
+    journal_id: impl Into<JournalId>,
+) -> RemoteJournalEntry {
+    let journal_id = journal_id.into();
+    RemoteJournalEntry {
+        journal: journal(issue_id, journal_id),
+        state: RemoteJournalState::Uploading {
+            diff: JournalNotesDiff {
+                before: format!("remote notes {journal_id}"),
+                after: "uploading notes".to_string(),
+            },
+            conflict: None,
+        },
     }
 }
 
@@ -261,6 +295,109 @@ fn sync_fetched_drops_synced_journals_missing_from_the_fetched_result() {
 }
 
 #[test]
+fn sync_fetched_appends_dirty_journals_missing_from_the_fetched_result_in_their_previous_relative_order()
+ {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(3),
+            IssueJournals {
+                remote: vec![
+                    remote_entry(IssueId::new(3), JournalId::new(10)),
+                    edited_remote_entry(IssueId::new(3), JournalId::new(11)),
+                    uploading_remote_entry(IssueId::new(3), JournalId::new(12)),
+                    remote_entry(IssueId::new(3), JournalId::new(13)),
+                    edited_remote_entry(IssueId::new(3), JournalId::new(14)),
+                ],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::SyncFetched {
+        issue_id: IssueId::new(3),
+        journals: vec![
+            journal(IssueId::new(3), JournalId::new(10)),
+            journal(IssueId::new(3), JournalId::new(15)),
+        ],
+    });
+
+    let journals = store.get_remote_journals(IssueId::new(3));
+    assert_eq!(
+        journals
+            .iter()
+            .map(|entry| entry.journal.id)
+            .collect::<Vec<_>>(),
+        vec![
+            JournalId::new(10),
+            JournalId::new(15),
+            JournalId::new(11),
+            JournalId::new(12),
+            JournalId::new(14),
+        ]
+    );
+
+    let kept_edited = store.get_remote_journal(IssueId::new(3), JournalId::new(11));
+    assert!(matches!(
+        kept_edited.state,
+        RemoteJournalState::Edited { .. }
+    ));
+    assert_eq!(kept_edited.journal.notes, "remote notes 11");
+
+    let kept_uploading = store.get_remote_journal(IssueId::new(3), JournalId::new(12));
+    assert!(matches!(
+        kept_uploading.state,
+        RemoteJournalState::Uploading { .. }
+    ));
+    assert_eq!(kept_uploading.journal.notes, "remote notes 12");
+}
+
+#[test]
+fn sync_fetched_keeps_a_dirty_journal_present_in_the_fetched_result_in_the_fetched_position() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(3),
+            IssueJournals {
+                remote: vec![
+                    edited_remote_entry(IssueId::new(3), JournalId::new(10)),
+                    remote_entry(IssueId::new(3), JournalId::new(11)),
+                ],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::SyncFetched {
+        issue_id: IssueId::new(3),
+        journals: vec![
+            journal_with_notes(IssueId::new(3), JournalId::new(11), "updated notes"),
+            journal(IssueId::new(3), JournalId::new(10)),
+        ],
+    });
+
+    let journals = store.get_remote_journals(IssueId::new(3));
+    assert_eq!(
+        journals
+            .iter()
+            .map(|entry| entry.journal.id)
+            .collect::<Vec<_>>(),
+        vec![JournalId::new(11), JournalId::new(10)]
+    );
+    assert!(matches!(
+        store
+            .get_remote_journal(IssueId::new(3), JournalId::new(10))
+            .state,
+        RemoteJournalState::Edited { .. }
+    ));
+    assert_eq!(
+        store
+            .get_remote_journal(IssueId::new(3), JournalId::new(11))
+            .journal
+            .notes,
+        "updated notes"
+    );
+}
+
+#[test]
 fn has_remote_journal_is_false_for_another_issue_or_journal_id() {
     let store = JournalStore {
         by_issue: HashMap::from([(
@@ -298,4 +435,48 @@ fn get_remote_journal_panics_when_only_another_journal_of_the_issue_exists() {
     };
 
     store.get_remote_journal(1, 11);
+}
+
+#[test]
+#[should_panic(expected = "sync fetched journals for issue 3 contain duplicate journal 10")]
+fn sync_fetched_panics_when_the_fetched_result_contains_duplicate_journal_ids() {
+    let mut store = JournalStore::new();
+
+    store.consume_action(JournalAction::SyncFetched {
+        issue_id: IssueId::new(3),
+        journals: vec![
+            journal(IssueId::new(3), JournalId::new(10)),
+            journal(IssueId::new(3), JournalId::new(10)),
+        ],
+    });
+}
+
+#[test]
+#[should_panic(expected = "sync fetched journal 10 of issue 3 has issue 4")]
+fn sync_fetched_panics_when_a_fetched_journal_belongs_to_another_issue() {
+    let mut store = JournalStore::new();
+
+    store.consume_action(JournalAction::SyncFetched {
+        issue_id: IssueId::new(3),
+        journals: vec![journal(IssueId::new(4), JournalId::new(10))],
+    });
+}
+
+#[test]
+#[should_panic(expected = "remote journal 10 is already registered for issue 1")]
+fn sync_fetched_panics_when_a_fetched_journal_id_is_registered_for_another_issue() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: Some(local_entry(IssueId::new(1))),
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::SyncFetched {
+        issue_id: IssueId::new(3),
+        journals: vec![journal(IssueId::new(3), JournalId::new(10))],
+    });
 }
