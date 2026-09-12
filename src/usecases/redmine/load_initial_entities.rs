@@ -100,6 +100,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::load_initial_entities;
+    use crate::clients::redmine::base::FetchedIssue;
     use crate::clients::redmine::{DefaultRedmineClient, RedmineClient, RedmineClientError};
     use crate::entities::{
         Category, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
@@ -266,7 +267,7 @@ mod tests {
             }])
         }
 
-        async fn get_issue(&self, id: IssueId) -> Result<IssueAggregate, RedmineClientError> {
+        async fn get_issue(&self, id: IssueId) -> Result<FetchedIssue, RedmineClientError> {
             panic!("initial entity load should not load issue {}", id.get());
         }
 

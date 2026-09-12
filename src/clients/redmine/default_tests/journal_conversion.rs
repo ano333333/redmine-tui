@@ -12,6 +12,7 @@ fn sample_journal() -> RedmineJournal {
         },
         updated_on: "2026-01-02T03:04:05+00:00".to_string(),
         notes: "This is a journal".to_string(),
+        details: Vec::new(),
     }
 }
 

@@ -59,6 +59,7 @@ mod tests {
     use std::rc::Rc;
     use std::sync::{Arc, Mutex};
 
+    use crate::clients::redmine::base::FetchedIssue;
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::entities::{
         Category, Issue, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage,
@@ -329,7 +330,7 @@ mod tests {
         async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError> {
             unreachable!()
         }
-        async fn get_issue(&self, _: IssueId) -> Result<IssueAggregate, RedmineClientError> {
+        async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
             unreachable!()
         }
         async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {

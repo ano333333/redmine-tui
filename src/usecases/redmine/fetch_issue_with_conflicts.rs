@@ -36,7 +36,8 @@ pub async fn fetch_issue_with_conflicts(
     id: IssueId,
     diffs: &[IssuePropertyDiff],
 ) -> Result<(IssueAggregate, Vec<IssuePropertyDiff>), RedmineClientError> {
-    let issue = client.get_issue(id).await?;
+    let fetched = client.get_issue(id).await?;
+    let issue = fetched.aggregate;
     let conflicts = fold_property_diffs(diffs)
         .into_iter()
         .filter(|diff| conflicts_with_issue(&issue, diff))
@@ -280,6 +281,7 @@ fn conflicts_with_issue(issue: &IssueAggregate, diff: &IssuePropertyDiff) -> boo
 mod tests {
     use std::sync::Mutex;
 
+    use crate::clients::redmine::base::FetchedIssue;
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::entities::{
         Category, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
@@ -432,9 +434,12 @@ mod tests {
     }
 
     impl RedmineClient for StubClient {
-        async fn get_issue(&self, id: IssueId) -> Result<IssueAggregate, RedmineClientError> {
+        async fn get_issue(&self, id: IssueId) -> Result<FetchedIssue, RedmineClientError> {
             self.requested_ids.lock().unwrap().push(id);
-            Ok(self.issue.clone())
+            Ok(FetchedIssue {
+                aggregate: self.issue.clone(),
+                journals: vec![],
+            })
         }
 
         async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {

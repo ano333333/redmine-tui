@@ -13,6 +13,7 @@ pub async fn upload_issue(
 mod tests {
     use std::sync::Mutex;
 
+    use crate::clients::redmine::base::FetchedIssue;
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::entities::{
         Category, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
@@ -88,7 +89,7 @@ mod tests {
             Ok(())
         }
 
-        async fn get_issue(&self, _: IssueId) -> Result<IssueAggregate, RedmineClientError> {
+        async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
             unreachable!()
         }
 

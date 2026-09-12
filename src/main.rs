@@ -436,6 +436,7 @@ mod tests {
     use super::*;
     use std::{sync::Mutex, time::Duration};
 
+    use crate::clients::redmine::base::FetchedIssue;
     use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
     use crate::entities::{
         Category, Issue, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage,
@@ -822,11 +823,14 @@ mod tests {
         async fn get_issue(
             &self,
             _: IssueId,
-        ) -> std::result::Result<IssueAggregate, RedmineClientError> {
+        ) -> std::result::Result<FetchedIssue, RedmineClientError> {
             if self.get_error {
                 return Err(Self::network_error());
             }
-            Ok(self.issue.clone().expect("test issue must exist"))
+            Ok(FetchedIssue {
+                aggregate: self.issue.clone().expect("test issue must exist"),
+                journals: vec![],
+            })
         }
 
         async fn update_issue(
@@ -922,7 +926,7 @@ mod tests {
         async fn get_issue(
             &self,
             _: IssueId,
-        ) -> std::result::Result<IssueAggregate, RedmineClientError> {
+        ) -> std::result::Result<FetchedIssue, RedmineClientError> {
             Err(self.unauthorized())
         }
 
