@@ -101,6 +101,8 @@ fn main() -> ExitCode {
             eprintln!("worker task panicked: {message}");
             return ExitCode::FAILURE;
         }
+        // 時間依存のStore更新はmain loopのtickごとに同じ現在時刻を入口へ渡す。
+        dispatcher.borrow_mut().update_store(chrono::Local::now());
         let size = terminal.size().expect("failed to get terminal size");
         update(
             dispatcher.clone(),
@@ -504,7 +506,7 @@ mod tests {
         Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project,
         ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
     };
-    use crate::stores::ProjectIssuesAction;
+    use crate::stores::{NoticeAction, NoticeId, ProjectIssuesAction};
     use crate::test_support::sample_issue_aggregate;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId};
@@ -948,6 +950,47 @@ mod tests {
             message.contains("usecase precondition violated"),
             "got: {message}"
         );
+    }
+
+    #[test]
+    fn update_store_removes_expired_notices() {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        let created_at = crate::test_support::local_datetime("2026-02-16T10:00:00+09:00");
+        for _ in 0..2 {
+            dispatcher.borrow_mut().dispatch(NoticeAction::Push {
+                id: NoticeId::new(),
+                message: "failed".to_string(),
+                created_at,
+            });
+        }
+        while dispatcher.borrow().consume_actinos_len() > 0 {
+            dispatcher.borrow_mut().consume_action();
+        }
+        assert_eq!(dispatcher.borrow().store().get_notices().len(), 2);
+
+        dispatcher
+            .borrow_mut()
+            .update_store(created_at + chrono::Duration::seconds(5));
+
+        assert!(dispatcher.borrow().store().get_notices().is_empty());
+    }
+
+    #[test]
+    fn update_store_keeps_notices_within_the_visible_duration() {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        let created_at = crate::test_support::local_datetime("2026-02-16T10:00:00+09:00");
+        dispatcher.borrow_mut().dispatch(NoticeAction::Push {
+            id: NoticeId::new(),
+            message: "fresh".to_string(),
+            created_at,
+        });
+        dispatcher.borrow_mut().consume_action();
+
+        dispatcher
+            .borrow_mut()
+            .update_store(created_at + chrono::Duration::seconds(1));
+
+        assert_eq!(dispatcher.borrow().store().get_notices().len(), 1);
     }
 
     struct IssueUploadClient {

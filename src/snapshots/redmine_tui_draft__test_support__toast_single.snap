@@ -1,0 +1,17 @@
+---
+source: src/test_support.rs
+expression: describe_buffer(terminal.backend().buffer())
+---
+area=Rect { x: 0, y: 0, width: 60, height: 12 }
+00: "                                                            "
+01: "                                       ┌──────────────────┐ " | 39:"┌" fg=Reset bg=Reset mod=NONE, 40:"─" fg=Reset bg=Reset mod=NONE, 41:"─" fg=Reset bg=Reset mod=NONE, 42:"─" fg=Reset bg=Reset mod=NONE, 43:"─" fg=Reset bg=Reset mod=NONE, 44:"─" fg=Reset bg=Reset mod=NONE, 45:"─" fg=Reset bg=Reset mod=NONE, 46:"─" fg=Reset bg=Reset mod=NONE, 47:"─" fg=Reset bg=Reset mod=NONE, 48:"─" fg=Reset bg=Reset mod=NONE, 49:"─" fg=Reset bg=Reset mod=NONE, 50:"─" fg=Reset bg=Reset mod=NONE, 51:"─" fg=Reset bg=Reset mod=NONE, 52:"─" fg=Reset bg=Reset mod=NONE, 53:"─" fg=Reset bg=Reset mod=NONE, 54:"─" fg=Reset bg=Reset mod=NONE, 55:"─" fg=Reset bg=Reset mod=NONE, 56:"─" fg=Reset bg=Reset mod=NONE, 57:"─" fg=Reset bg=Reset mod=NONE, 58:"┐" fg=Reset bg=Reset mod=NONE
+02: "                                       │Issueの 保 存 に 失 敗  │ " | 39:"│" fg=Reset bg=Reset mod=NONE, 40:"I" fg=Reset bg=Reset mod=NONE, 41:"s" fg=Reset bg=Reset mod=NONE, 42:"s" fg=Reset bg=Reset mod=NONE, 43:"u" fg=Reset bg=Reset mod=NONE, 44:"e" fg=Reset bg=Reset mod=NONE, 45:"の" fg=Reset bg=Reset mod=NONE, 47:"保" fg=Reset bg=Reset mod=NONE, 49:"存" fg=Reset bg=Reset mod=NONE, 51:"に" fg=Reset bg=Reset mod=NONE, 53:"失" fg=Reset bg=Reset mod=NONE, 55:"敗" fg=Reset bg=Reset mod=NONE, 58:"│" fg=Reset bg=Reset mod=NONE
+03: "                                       │し ま し た :         │ " | 39:"│" fg=Reset bg=Reset mod=NONE, 40:"し" fg=Reset bg=Reset mod=NONE, 42:"ま" fg=Reset bg=Reset mod=NONE, 44:"し" fg=Reset bg=Reset mod=NONE, 46:"た" fg=Reset bg=Reset mod=NONE, 48:":" fg=Reset bg=Reset mod=NONE, 58:"│" fg=Reset bg=Reset mod=NONE
+04: "                                       │接 続 が 切 れ ま し た   │ " | 39:"│" fg=Reset bg=Reset mod=NONE, 40:"接" fg=Reset bg=Reset mod=NONE, 42:"続" fg=Reset bg=Reset mod=NONE, 44:"が" fg=Reset bg=Reset mod=NONE, 46:"切" fg=Reset bg=Reset mod=NONE, 48:"れ" fg=Reset bg=Reset mod=NONE, 50:"ま" fg=Reset bg=Reset mod=NONE, 52:"し" fg=Reset bg=Reset mod=NONE, 54:"た" fg=Reset bg=Reset mod=NONE, 58:"│" fg=Reset bg=Reset mod=NONE
+05: "                                       └──────────────────┘ " | 39:"└" fg=Reset bg=Reset mod=NONE, 40:"─" fg=Reset bg=Reset mod=NONE, 41:"─" fg=Reset bg=Reset mod=NONE, 42:"─" fg=Reset bg=Reset mod=NONE, 43:"─" fg=Reset bg=Reset mod=NONE, 44:"─" fg=Reset bg=Reset mod=NONE, 45:"─" fg=Reset bg=Reset mod=NONE, 46:"─" fg=Reset bg=Reset mod=NONE, 47:"─" fg=Reset bg=Reset mod=NONE, 48:"─" fg=Reset bg=Reset mod=NONE, 49:"─" fg=Reset bg=Reset mod=NONE, 50:"─" fg=Reset bg=Reset mod=NONE, 51:"─" fg=Reset bg=Reset mod=NONE, 52:"─" fg=Reset bg=Reset mod=NONE, 53:"─" fg=Reset bg=Reset mod=NONE, 54:"─" fg=Reset bg=Reset mod=NONE, 55:"─" fg=Reset bg=Reset mod=NONE, 56:"─" fg=Reset bg=Reset mod=NONE, 57:"─" fg=Reset bg=Reset mod=NONE, 58:"┘" fg=Reset bg=Reset mod=NONE
+06: "                                                            "
+07: "                                                            "
+08: "                                                            "
+09: "                                                            "
+10: "                                                            "
+11: "                                                            "

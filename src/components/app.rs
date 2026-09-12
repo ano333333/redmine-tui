@@ -29,6 +29,7 @@ use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
 use crate::vos::{
     EntityIdValue, IssueId, IssuePropertyDiff, JournalId, ProjectId, TimeEntityActivityId,
 };
+use crate::widgets::ToastWidget;
 
 use super::date_picker_popup::component::{
     DatePickerPopupComponent, EventProcessResult as DatePickerPopupEventProcessResult,
@@ -499,6 +500,8 @@ impl<'a> AppComponent<'a> {
             issue_component.render(store, frame, area);
         }
         self.render_popup_component(frame, area, store);
+        // popupより後に描画して最前面へ重ねる。toastはfocusを持たずcursor位置も変えない。
+        frame.render_widget(create_toast_widget(store), area);
         if let Some(cursor_position) = self.cursor_position(store, area) {
             frame.set_cursor_position(cursor_position);
         }
@@ -622,13 +625,25 @@ impl<'a> AppComponent<'a> {
     }
 }
 
+fn create_toast_widget(store: &Store) -> ToastWidget {
+    ToastWidget::new(
+        store
+            .get_notices()
+            .iter()
+            .map(|notice| notice.message.clone())
+            .collect(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use crate::entities::{Issue, ProjectIssuesPage};
     use crate::libs::yaml::parse_journal_yaml;
-    use crate::stores::{JournalAction, ProjectIssuesAction, RemoteJournalState};
+    use crate::stores::{
+        JournalAction, NoticeAction, NoticeId, ProjectIssuesAction, RemoteJournalState,
+    };
     use crate::vos::IssuePropertyDiff;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -639,6 +654,32 @@ mod tests {
         width: 80,
         height: 24,
     };
+
+    #[test]
+    fn toast_widget_reflects_store_notices() {
+        let mut store = Store::new();
+        store.consume_action(Action::Notice(NoticeAction::Push {
+            id: NoticeId::new(),
+            message: "Issueの保存に失敗しました: 接続が切れました".to_string(),
+            created_at: crate::test_support::local_datetime("2026-02-16T10:00:00+09:00"),
+        }));
+
+        let widget = create_toast_widget(&store);
+
+        assert_eq!(
+            widget.messages,
+            vec!["Issueの保存に失敗しました: 接続が切れました".to_string()]
+        );
+    }
+
+    #[test]
+    fn toast_widget_is_empty_when_store_has_no_notices() {
+        let store = Store::new();
+
+        let widget = create_toast_widget(&store);
+
+        assert!(widget.messages.is_empty());
+    }
 
     fn key_event(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))

@@ -5,6 +5,7 @@ use std::num::NonZeroUsize;
 use super::issue_store::{IssueAction, IssueState, IssueStore};
 use super::journal_state::RemoteJournalEntry;
 use super::journal_store::{JournalAction, JournalStore};
+use super::notice_store::{Notice, NoticeAction, NoticeStore};
 use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
@@ -38,6 +39,10 @@ impl Dispatcher {
     pub fn consume_actinos_len(&self) -> usize {
         self.actions.len()
     }
+    /// 時間経過に依存する全Storeの状態を、呼び出し側が取得した同一時刻で更新する。
+    pub fn update_store(&mut self, now: chrono::DateTime<chrono::Local>) {
+        self.store.update(now);
+    }
     pub fn consume_action(&mut self) {
         if let Some(action) = self.actions.pop_front() {
             self.store.consume_action(action);
@@ -49,6 +54,7 @@ pub struct Store {
     issue_store: IssueStore,
     project_issues_store: ProjectIssuesStore,
     journal_store: JournalStore,
+    notice_store: NoticeStore,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
     priorities: HashMap<PriorityId, Priority>,
@@ -65,6 +71,7 @@ impl Store {
             issue_store: IssueStore::new(),
             project_issues_store: ProjectIssuesStore::new(),
             journal_store: JournalStore::new(),
+            notice_store: NoticeStore::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
             priorities: HashMap::new(),
@@ -81,6 +88,7 @@ impl Store {
             Action::Issue(action) => self.issue_store.consume_action(action),
             Action::ProjectIssues(action) => self.project_issues_store.consume_action(action),
             Action::Journal(action) => self.journal_store.consume_action(action),
+            Action::Notice(action) => self.notice_store.consume_action(action),
             // main loop が直接処理する終了通知であり、Store の状態には反映しない。
             Action::WorkerPanicked { .. } => {}
             Action::SyncUsers { users } => {
@@ -262,6 +270,18 @@ impl Store {
     ) -> Option<(&IssueAggregate, &[IssuePropertyDiff])> {
         self.issue_store.get_issue_upload_conflict(id)
     }
+
+    /// 表示中のnoticeを追加順で返す。
+    pub fn get_notices(&self) -> &[Notice] {
+        self.notice_store.notices()
+    }
+
+    /// 時間経過に依存する内部状態を更新する。
+    ///
+    /// `now`ちょうどに表示期限を迎えたnoticeも破棄する。
+    pub fn update(&mut self, now: chrono::DateTime<chrono::Local>) {
+        self.notice_store.update(now);
+    }
 }
 
 pub enum Action {
@@ -292,6 +312,7 @@ pub enum Action {
         time_entity_activities: Vec<TimeEntityActivity>,
     },
     Journal(JournalAction),
+    Notice(NoticeAction),
     /// worker task の panic を main loop へ伝え、プロセスを異常終了させる。
     WorkerPanicked {
         message: String,
@@ -313,6 +334,12 @@ impl From<ProjectIssuesAction> for Action {
 impl From<JournalAction> for Action {
     fn from(action: JournalAction) -> Self {
         Self::Journal(action)
+    }
+}
+
+impl From<NoticeAction> for Action {
+    fn from(action: NoticeAction) -> Self {
+        Self::Notice(action)
     }
 }
 

@@ -1,0 +1,13 @@
+---
+source: src/test_support.rs
+expression: describe_buffer(terminal.backend().buffer())
+---
+area=Rect { x: 0, y: 0, width: 10, height: 8 }
+00: "          "
+01: "          "
+02: "          "
+03: "          "
+04: "          "
+05: "          "
+06: "          "
+07: "          "

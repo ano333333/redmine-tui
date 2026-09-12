@@ -1,6 +1,7 @@
 mod issue_store;
 mod journal_state;
 mod journal_store;
+mod notice_store;
 mod project_issues_store;
 mod store;
 
@@ -14,6 +15,8 @@ pub use project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesRequestId,
 };
 pub use store::{Action, Dispatcher, Store};
+// Journal保存などの失敗発生源が接続されるまで、Notice系の公開APIは主にテストから利用される。
+pub use notice_store::{Notice, NoticeAction, NoticeId};
 
 #[cfg(test)]
 mod issue_store_tests;
@@ -22,12 +25,15 @@ mod journal_state_tests;
 #[cfg(test)]
 mod journal_store_tests;
 #[cfg(test)]
+mod notice_store_tests;
+#[cfg(test)]
 mod project_issues_store_tests;
 
 #[cfg(test)]
 mod tests {
     use super::{
-        Action, Dispatcher, IssueAction, IssueState, JournalAction, ProjectIssuesRequestId, Store,
+        Action, Dispatcher, IssueAction, IssueState, JournalAction, NoticeId,
+        ProjectIssuesRequestId, Store,
     };
 
     #[test]
@@ -39,5 +45,6 @@ mod tests {
         let _: Option<IssueState> = None;
         let _: Option<JournalAction> = None;
         let _: Option<ProjectIssuesRequestId> = None;
+        let _: Option<NoticeId> = None;
     }
 }
