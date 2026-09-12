@@ -128,8 +128,6 @@ impl Store {
                     .map(|activity| (activity.id, activity))
                     .collect();
             }
-            // TODO: JournalStoreの正式な編集APIを接続するまで、既存UIからの編集は意図的に反映しない。
-            Action::UpdateJournal { .. } => {}
         }
     }
 
@@ -292,10 +290,6 @@ pub enum Action {
         time_entity_activities: Vec<TimeEntityActivity>,
     },
     Journal(JournalAction),
-    UpdateJournal {
-        id: JournalId,
-        notes: String,
-    },
 }
 
 impl From<IssueAction> for Action {
@@ -319,7 +313,6 @@ impl From<JournalAction> for Action {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::libs::yaml::parse_journal_yaml;
     use crate::test_support::sync_fixture_entities;
     use crate::vos::{
         CategoryId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId,
@@ -361,27 +354,6 @@ mod tests {
             .expect("category should be loaded");
         assert_eq!(category.name, "category1");
         assert_eq!(store.get_categories().len(), 1);
-    }
-
-    #[test]
-    fn update_journal_is_a_noop_for_now() {
-        let mut store = Store::new();
-
-        store.consume_action(Action::Journal(JournalAction::SyncFetched {
-            issue_id: IssueId::new(3),
-            journals: vec![parse_journal_yaml(JournalId::new(1))],
-        }));
-        store.consume_action(Action::UpdateJournal {
-            id: JournalId::new(1),
-            notes: "updated notes".to_string(),
-        });
-
-        let notes = store
-            .get_remote_journal(IssueId::new(3), JournalId::new(1))
-            .journal
-            .notes
-            .clone();
-        assert_eq!(notes, String::new());
     }
 
     #[test]

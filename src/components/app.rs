@@ -17,7 +17,7 @@ use crate::components::issue_select_popup::component::EventProcessResult as Issu
 use crate::components::issue_select_popup::component::{
     Effect as IssueSelectPopupEffect, IssueSelectPopupComponent,
 };
-use crate::stores::{Action, Dispatcher, IssueAction, Store};
+use crate::stores::{Action, Dispatcher, IssueAction, JournalAction, Store};
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
     build_done_ratio_options, build_issue_status_options, build_target_version_options,
@@ -63,8 +63,13 @@ pub enum AppEffect {
 }
 
 enum PendingEditorContext {
-    IssueBody { id: IssueId },
-    Journal { id: JournalId },
+    IssueBody {
+        id: IssueId,
+    },
+    Journal {
+        issue_id: IssueId,
+        journal_id: JournalId,
+    },
 }
 
 enum PopupComponent<'a> {
@@ -336,9 +341,16 @@ impl<'a> AppComponent<'a> {
                 self.pending_effect = Some(AppEffect::StartIssueUpload(issue_id));
             }
             Some(IssueEventProcessResult::Detail(
-                IssueDetailEventProcessResult::EditJournalRequested { id, notes },
+                IssueDetailEventProcessResult::EditJournalRequested {
+                    issue_id,
+                    id,
+                    notes,
+                },
             )) => {
-                self.pending_editor_context = Some(PendingEditorContext::Journal { id });
+                self.pending_editor_context = Some(PendingEditorContext::Journal {
+                    issue_id,
+                    journal_id: id,
+                });
                 self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
                     initial_text: notes,
                 }));
@@ -506,13 +518,17 @@ impl<'a> AppComponent<'a> {
                         body: response.edited_text,
                     });
             }
-            Some(PendingEditorContext::Journal { id }) => {
-                self.dispatcher
-                    .borrow_mut()
-                    .dispatch(Action::UpdateJournal {
-                        id,
+            Some(PendingEditorContext::Journal {
+                issue_id,
+                journal_id,
+            }) => {
+                self.dispatcher.borrow_mut().dispatch(Action::Journal(
+                    JournalAction::EditRemoteNotes {
+                        issue_id,
+                        journal_id,
                         notes: response.edited_text,
-                    });
+                    },
+                ));
             }
             None => {}
         }
@@ -612,7 +628,7 @@ mod tests {
 
     use crate::entities::{Issue, ProjectIssuesPage};
     use crate::libs::yaml::parse_journal_yaml;
-    use crate::stores::{JournalAction, ProjectIssuesAction};
+    use crate::stores::{JournalAction, ProjectIssuesAction, RemoteJournalState};
     use crate::vos::IssuePropertyDiff;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -1161,7 +1177,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Remote Journalの編集を保存するAPIが実装されたら有効化する(現在は保存がno-opのためnotesが更新されない)"]
     fn e_key_on_journal_notes_opens_editor_and_updates_store_through_dispatcher() {
         let dispatcher = loaded_dispatcher_with_journals();
         let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
@@ -1180,43 +1195,14 @@ mod tests {
         });
         dispatcher.borrow_mut().consume_action();
 
-        let notes = dispatcher
-            .borrow()
-            .store()
-            .get_remote_journal(3, 1)
-            .journal
-            .notes
-            .clone();
-        assert_eq!(notes, "updated notes".to_string());
-    }
-
-    #[test]
-    fn e_key_on_journal_notes_opens_editor_but_saving_is_a_noop_for_now() {
-        let dispatcher = loaded_dispatcher_with_journals();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        focus_first_journal_notes(&mut app, dispatcher.clone());
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
-
-        let Some(AppEffect::OpenEditor(request)) = app.take_effect() else {
-            panic!("Journal本文編集時はエディタ起動effectが必要です");
+        let dispatcher_ref = dispatcher.borrow();
+        let entry = dispatcher_ref.store().get_remote_journal(3, 1);
+        let RemoteJournalState::Edited { diff, failure } = &entry.state else {
+            panic!("expected edited state");
         };
-        assert_eq!(request.initial_text, "");
-
-        app.handle_editor_response(EditorResponse {
-            edited_text: "updated notes".to_string(),
-        });
-        dispatcher.borrow_mut().consume_action();
-
-        let notes = dispatcher
-            .borrow()
-            .store()
-            .get_remote_journal(3, 1)
-            .journal
-            .notes
-            .clone();
-        assert_eq!(notes, String::new());
+        assert_eq!(diff.before, "");
+        assert_eq!(diff.after, "updated notes");
+        assert!(failure.is_none());
     }
 
     #[test]

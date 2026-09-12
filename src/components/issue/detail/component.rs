@@ -28,8 +28,15 @@ use super::{IssueDetailWidget, IssueDetailWidgetState};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EventProcessResult {
-    EditIssueBodyRequested { id: IssueId, body: String },
-    EditJournalRequested { id: JournalId, notes: String },
+    EditIssueBodyRequested {
+        id: IssueId,
+        body: String,
+    },
+    EditJournalRequested {
+        issue_id: IssueId,
+        id: JournalId,
+        notes: String,
+    },
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
@@ -118,7 +125,12 @@ mod tests {
         let result = component.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
 
         match result {
-            Some(EventProcessResult::EditJournalRequested { id, notes }) => {
+            Some(EventProcessResult::EditJournalRequested {
+                issue_id,
+                id,
+                notes,
+            }) => {
+                assert_eq!(issue_id, IssueId::new(3));
                 assert_eq!(id, JournalId::new(1));
                 assert_eq!(notes, "");
             }
@@ -298,7 +310,11 @@ impl IssueDetailComponent {
                             .focus_event(ChildrenListFocusEvent::CursorEnteredFromBelow);
                     }
                     Some(JournalsListEventProcessResult::EditRequested { id, notes }) => {
-                        return Some(EventProcessResult::EditJournalRequested { id, notes });
+                        return Some(EventProcessResult::EditJournalRequested {
+                            issue_id: self.id,
+                            id,
+                            notes,
+                        });
                     }
                     None => {}
                 }
