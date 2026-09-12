@@ -1,14 +1,14 @@
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::entities::Journal;
-use crate::stores::Store;
-use crate::vos::{EntityIdValue, JournalDetail, JournalDetailAttr, JournalId};
+use crate::stores::{RemoteJournalEntry, RemoteJournalState, Store};
+use crate::vos::{EntityIdValue, IssueId, JournalDetail, JournalDetailAttr, JournalId};
 
 use super::focus_state;
 pub use super::focus_state::FocusEvent;
 use super::focus_state::FocusState;
-use super::widget::ResolvedJournalDetail;
+use super::widget::RemoteJournalItemView;
+use super::widget::{ResolvedJournalDetail, display_notes, state_marker};
 use super::{JournalItemWidget, JournalItemWidgetState};
 
 const NONE_DISPLAY: &str = "(なし)";
@@ -143,17 +143,21 @@ pub enum EventProcessResult {
 
 pub struct JournalsListItemComponent {
     pub id: u16,
-    journal: Journal,
+    issue_id: IssueId,
+    notes: String,
+    detail_count: usize,
     comment_line_count: u16,
     focus_state: FocusState,
     widget_state: JournalItemWidgetState,
 }
 
 impl JournalsListItemComponent {
-    pub fn new(journal: &Journal) -> Self {
+    pub fn new(issue_id: IssueId, journal_id: JournalId) -> Self {
         Self {
-            id: journal.id.get(),
-            journal: journal.clone(),
+            id: journal_id.get(),
+            issue_id,
+            notes: String::new(),
+            detail_count: 0,
             comment_line_count: 0,
             focus_state: FocusState::new(),
             widget_state: JournalItemWidgetState::new(),
@@ -171,8 +175,8 @@ impl JournalsListItemComponent {
                     EventProcessResult::CursorLeavedFromAbove { x }
                 }
                 focus_state::EventProcessResult::Edit => EventProcessResult::EditRequested {
-                    id: self.journal.id,
-                    notes: self.journal.notes.clone(),
+                    id: JournalId::new(self.id),
+                    notes: self.notes.clone(),
                 },
             })
     }
@@ -181,26 +185,36 @@ impl JournalsListItemComponent {
         self.focus_state.focus_event(event);
     }
 
-    pub fn update(&mut self, journal: &Journal, width: u16) {
-        self.journal = journal.clone();
+    pub fn update(&mut self, entry: &RemoteJournalEntry, width: u16) {
+        let journal = &entry.journal;
+        let notes = display_notes(&journal.notes, &entry.state).to_owned();
+        self.notes = notes;
+        self.detail_count = journal.details.len();
         self.widget_state
-            .update(width, &journal.user, &journal.updated_on, &journal.notes);
+            .update(width, &journal.user, &journal.updated_on, &self.notes);
         self.comment_line_count = self.widget_state.comment_line_count();
         self.focus_state
-            .update(width, self.journal.details.len(), self.comment_line_count);
+            .update(width, self.detail_count, self.comment_line_count);
     }
 
-    pub fn create_widget<'a>(&'a self, store: &Store) -> JournalItemWidget<'a> {
+    pub fn create_widget<'a>(&'a self, store: &'a Store) -> JournalItemWidget<'a> {
+        let entry = store.get_remote_journal(self.issue_id, JournalId::new(self.id));
+        let view = RemoteJournalItemView {
+            user: &entry.journal.user,
+            updated_on: &entry.journal.updated_on,
+            notes: &self.notes,
+            state_marker: state_marker(&entry.state),
+        };
         JournalItemWidget::new(
-            &self.journal,
-            resolve_journal_details(&self.journal.details, store),
+            view,
+            resolve_journal_details(&entry.journal.details, store),
             &self.widget_state,
             self.focus_state.is_focused(),
         )
     }
 
     pub fn line_count(&self, _: u16) -> u16 {
-        1 + 1 + self.journal.details.len() as u16 + 1 + self.comment_line_count
+        1 + 1 + self.detail_count as u16 + 1 + self.comment_line_count
     }
 
     pub fn get_cursor_position(&self) -> Position {
@@ -215,7 +229,7 @@ mod tests {
     use super::*;
     use crate::{
         entities::Journal,
-        stores::Store,
+        stores::{Action, JournalAction, RemoteJournalEntry, Store},
         test_support::{local_datetime, render_snapshot, sync_fixture_entities},
         vos::{IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, UserId},
     };
@@ -274,9 +288,22 @@ mod tests {
         "updated notes with enough text to wrap onto a different set of rendered lines"
     }
 
-    fn component_with_update(journal: &Journal, width: u16) -> JournalsListItemComponent {
-        let mut component = JournalsListItemComponent::new(journal);
-        component.update(journal, width);
+    fn register_journal<'s>(store: &'s mut Store, journal: &Journal) -> &'s RemoteJournalEntry {
+        store.consume_action(Action::Journal(JournalAction::SyncFetched {
+            issue_id: journal.issue_id,
+            journals: vec![journal.clone()],
+        }));
+        store.get_remote_journal(journal.issue_id, journal.id)
+    }
+
+    fn component_with_update(
+        store: &mut Store,
+        journal: &Journal,
+        width: u16,
+    ) -> JournalsListItemComponent {
+        let mut component = JournalsListItemComponent::new(journal.issue_id, journal.id);
+        let entry = register_journal(store, journal);
+        component.update(entry, width);
         component
     }
 
@@ -292,11 +319,11 @@ mod tests {
 
     #[test]
     fn update_initial_state_is_unfocused_and_rendered() {
-        let store = fixture_store();
+        let mut store = fixture_store();
         let journal = create_journal(1, details(), notes());
-        let mut component = JournalsListItemComponent::new(&journal);
+        let mut component = JournalsListItemComponent::new(journal.issue_id, journal.id);
 
-        component.update(&journal, WIDE_WIDTH);
+        component.update(register_journal(&mut store, &journal), WIDE_WIDTH);
 
         assert_layout_contract(&component, WIDE_WIDTH, 9, Position::new(0, 0));
         render_snapshot(
@@ -308,13 +335,37 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_state_marker_edited_after_edit_remote_notes() {
+        let mut store = fixture_store();
+        let journal = create_journal(1, one_detail(), notes());
+        let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
+        store.consume_action(Action::Journal(JournalAction::EditRemoteNotes {
+            issue_id: journal.issue_id,
+            journal_id: journal.id,
+            notes: "edited notes for the marker snapshot".to_string(),
+        }));
+
+        component.update(
+            store.get_remote_journal(journal.issue_id, journal.id),
+            WIDE_WIDTH,
+        );
+
+        render_snapshot(
+            "journals_list_item_component_state_marker_edited",
+            WIDE_WIDTH,
+            component.line_count(WIDE_WIDTH),
+            component.create_widget(&store),
+        );
+    }
+
+    #[test]
     fn update_changed_notes_updates_line_count_and_widget() {
-        let store = fixture_store();
+        let mut store = fixture_store();
         let initial_journal = create_journal(1, one_detail(), notes());
-        let mut component = component_with_update(&initial_journal, WIDE_WIDTH);
+        let mut component = component_with_update(&mut store, &initial_journal, WIDE_WIDTH);
         let updated_journal = create_journal(1, one_detail(), updated_notes());
 
-        component.update(&updated_journal, WIDE_WIDTH);
+        component.update(register_journal(&mut store, &updated_journal), WIDE_WIDTH);
 
         assert_layout_contract(&component, WIDE_WIDTH, 7, Position::new(0, 0));
         render_snapshot(
@@ -327,9 +378,9 @@ mod tests {
 
     #[test]
     fn focus_event_updates_cursor_and_widget_focus() {
-        let store = fixture_store();
+        let mut store = fixture_store();
         let journal = create_journal(1, details(), notes());
-        let mut component = component_with_update(&journal, WIDE_WIDTH);
+        let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
 
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 6 });
 
@@ -344,9 +395,9 @@ mod tests {
 
     #[test]
     fn unfocused_removes_widget_focus() {
-        let store = fixture_store();
+        let mut store = fixture_store();
         let journal = create_journal(1, details(), notes());
-        let mut component = component_with_update(&journal, WIDE_WIDTH);
+        let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 6 });
 
         component.focus_event(FocusEvent::Unfocused);
@@ -362,8 +413,9 @@ mod tests {
 
     #[test]
     fn process_event_delegates_to_focus_state() {
+        let mut store = fixture_store();
         let journal = create_journal(1, details(), notes());
-        let mut component = component_with_update(&journal, WIDE_WIDTH);
+        let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
 
         let result = component.process_event(key_event(KeyCode::Char('j')));
@@ -374,8 +426,9 @@ mod tests {
 
     #[test]
     fn process_event_e_on_notes_position_returns_edit_requested_with_current_notes() {
+        let mut store = fixture_store();
         let journal = create_journal(1, one_detail(), notes());
-        let mut component = component_with_update(&journal, WIDE_WIDTH);
+        let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
         component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
 
         let result = component.process_event(key_event(KeyCode::Char('e')));
@@ -394,27 +447,32 @@ mod tests {
 
     #[test]
     fn update_passes_latest_width_and_comment_line_count_to_focus_state() {
+        let mut store = fixture_store();
         let journal = create_journal(1, one_detail(), notes());
-        let mut component = component_with_update(&journal, WIDE_WIDTH);
+        let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
         component.focus_event(FocusEvent::Focused {
             position: Position::new(31, 6),
         });
 
-        component.update(&journal, NARROW_WIDTH);
+        component.update(
+            store.get_remote_journal(journal.issue_id, journal.id),
+            NARROW_WIDTH,
+        );
 
         assert_layout_contract(&component, NARROW_WIDTH, 9, Position::new(17, 6));
     }
 
     #[test]
     fn update_passes_latest_property_count_to_focus_state() {
+        let mut store = fixture_store();
         let initial_journal = create_journal(1, details(), notes());
-        let mut component = component_with_update(&initial_journal, WIDE_WIDTH);
+        let mut component = component_with_update(&mut store, &initial_journal, WIDE_WIDTH);
         component.focus_event(FocusEvent::Focused {
             position: Position::new(0, 3),
         });
         let updated_journal = create_journal(1, one_detail(), notes());
 
-        component.update(&updated_journal, WIDE_WIDTH);
+        component.update(register_journal(&mut store, &updated_journal), WIDE_WIDTH);
 
         assert_layout_contract(&component, WIDE_WIDTH, 8, Position::new(0, 2));
     }

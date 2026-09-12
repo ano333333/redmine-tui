@@ -47,12 +47,27 @@ mod tests {
 
     use super::*;
     use crate::components::issue::detail::journals_list::journals_list_item::JournalItemWidgetState;
-    use crate::components::issue::detail::journals_list::journals_list_item::widget::ResolvedJournalDetail;
+    use crate::components::issue::detail::journals_list::journals_list_item::widget::{
+        RemoteJournalItemView, ResolvedJournalDetail,
+    };
     use crate::{
         entities::Journal,
         test_support::{local_datetime, render_snapshot},
         vos::{IssueId, JournalId},
     };
+
+    fn view_of<'j>(
+        journal: &'j Journal,
+        notes: &'j str,
+        state_marker: &'static str,
+    ) -> RemoteJournalItemView<'j> {
+        RemoteJournalItemView {
+            user: &journal.user,
+            updated_on: &journal.updated_on,
+            notes,
+            state_marker,
+        }
+    }
 
     fn create_journal(user: String, updated_on: DateTime<Local>, notes: &str) -> Journal {
         Journal {
@@ -90,15 +105,17 @@ mod tests {
         let mut state = JournalItemWidgetState::new();
         state.update(24, &user, &updated_on, &notes);
         let journal = create_journal(user, updated_on, &notes);
+        let view = view_of(&journal, &notes, "");
         let journals = vec![JournalItemWidget::new(
-            &journal,
+            view,
             vec![assigned_to_detail()],
             &state,
             true,
         )];
         let line_count = JournalsListWidget::new(journals).line_count(24);
+        let view = view_of(&journal, &notes, "");
         let journals = vec![JournalItemWidget::new(
-            &journal,
+            view,
             vec![assigned_to_detail()],
             &state,
             true,
@@ -121,8 +138,9 @@ mod tests {
         let mut state = JournalItemWidgetState::new();
         state.update(24, &user, &updated_on, &notes);
         let journal = create_journal(user, updated_on, &notes);
+        let view = view_of(&journal, &notes, "");
         let journals = vec![JournalItemWidget::new(
-            &journal,
+            view,
             vec![assigned_to_detail()],
             &state,
             true,
@@ -145,8 +163,9 @@ mod tests {
         let mut state = JournalItemWidgetState::new();
         state.update(24, &user, &updated_on, &notes);
         let journal = create_journal(user, updated_on, &notes);
+        let view = view_of(&journal, &notes, "");
         let journals = vec![JournalItemWidget::new(
-            &journal,
+            view,
             vec![assigned_to_detail()],
             &state,
             false,
@@ -168,8 +187,9 @@ mod tests {
             let mut state = JournalItemWidgetState::new();
             state.update(32, &user, &updated_on, &short_notes);
             let journal = create_journal(user.clone(), updated_on, &short_notes);
+            let view = view_of(&journal, &short_notes, "");
             let journals = vec![JournalItemWidget::new(
-                &journal,
+                view,
                 vec![assigned_to_detail()],
                 &state,
                 false,
@@ -181,8 +201,9 @@ mod tests {
             let mut state = JournalItemWidgetState::new();
             state.update(18, &user, &updated_on, &short_notes);
             let journal = create_journal(user.clone(), updated_on, &short_notes);
+            let view = view_of(&journal, &short_notes, "");
             let journals = vec![JournalItemWidget::new(
-                &journal,
+                view,
                 vec![assigned_to_detail()],
                 &state,
                 false,
@@ -194,8 +215,9 @@ mod tests {
             let mut state = JournalItemWidgetState::new();
             state.update(18, &user, &updated_on, &long_notes);
             let journal = create_journal(user.clone(), updated_on, &long_notes);
+            let view = view_of(&journal, &long_notes, "");
             let journals = vec![JournalItemWidget::new(
-                &journal,
+                view,
                 vec![assigned_to_detail()],
                 &state,
                 false,
@@ -215,7 +237,8 @@ mod tests {
 
         let journal = create_journal(user, updated_on, "");
         let state = JournalItemWidgetState::new();
-        let widget = JournalItemWidget::new(&journal, details, &state, false);
+        let view = view_of(&journal, &journal.notes, "");
+        let widget = JournalItemWidget::new(view, details, &state, false);
         assert_eq!(widget.line_count(20), 6);
     }
 }

@@ -9,7 +9,7 @@ use ratatui::style::Color;
 use ratatui::text::Text;
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
-use crate::entities::Journal;
+use crate::stores::RemoteJournalState;
 
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
@@ -20,6 +20,33 @@ pub struct ResolvedJournalDetail {
     pub field_label: &'static str,
     pub old_display: String,
     pub new_display: String,
+}
+
+/// Remote Journalの永続entityとローカルの編集状態を描画用に統合した参照。
+pub struct RemoteJournalItemView<'a> {
+    pub user: &'a str,
+    pub updated_on: &'a chrono::DateTime<chrono::Local>,
+    /// 編集開始時にも使う表示中のnotes。本文の描画自体は事前計算済みのbufferが担う。
+    pub notes: &'a str,
+    pub state_marker: &'static str,
+}
+
+/// 同期済みの場合は空文字列、未保存の状態ではヘッダーへ付加するラベルを返す。
+pub fn state_marker(state: &RemoteJournalState) -> &'static str {
+    match state {
+        RemoteJournalState::Synced => "",
+        RemoteJournalState::Edited { .. } => "(edited)",
+        RemoteJournalState::Uploading { .. } => "(uploading)",
+    }
+}
+
+/// 同期済みなら取得時のnotes、編集済みまたはupload中なら未保存の編集結果を返す。
+pub fn display_notes<'a>(journal_notes: &'a str, state: &'a RemoteJournalState) -> &'a str {
+    match state {
+        RemoteJournalState::Synced => journal_notes,
+        RemoteJournalState::Edited { diff, .. } => &diff.after,
+        RemoteJournalState::Uploading { diff, .. } => &diff.after,
+    }
 }
 
 pub struct JournalItemWidgetState {
@@ -54,7 +81,7 @@ impl JournalItemWidgetState {
 }
 
 pub struct JournalItemWidget<'a> {
-    journal: &'a Journal,
+    view: RemoteJournalItemView<'a>,
     details: Vec<ResolvedJournalDetail>,
     comment_state: &'a JournalItemWidgetState,
     focused: bool,
@@ -63,8 +90,12 @@ pub struct JournalItemWidget<'a> {
 impl<'a> Widget for JournalItemWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let property_height = self.details.len() as u16 + 3;
-        let property =
-            create_property_paragraph(&self.journal.user, &self.details, &self.journal.updated_on);
+        let property = create_property_paragraph(
+            self.view.user,
+            &self.details,
+            self.view.updated_on,
+            self.view.state_marker,
+        );
 
         let property_area = Rect::new(
             area.x,
@@ -111,13 +142,13 @@ impl<'a> Widget for JournalItemWidget<'a> {
 
 impl<'a> JournalItemWidget<'a> {
     pub fn new(
-        journal: &'a Journal,
+        view: RemoteJournalItemView<'a>,
         details: Vec<ResolvedJournalDetail>,
         comment_state: &'a JournalItemWidgetState,
         focused: bool,
     ) -> Self {
         Self {
-            journal,
+            view,
             details,
             comment_state,
             focused,
@@ -133,8 +164,9 @@ fn create_property_paragraph(
     user: &str,
     details: &[ResolvedJournalDetail],
     updated_on: &DateTime<Local>,
+    state_marker: &str,
 ) -> Paragraph<'static> {
-    let title = create_header(user, updated_on);
+    let title = create_header(user, updated_on, state_marker);
     let mut lines = vec![title, Line::from("")];
     for detail in details {
         let line = Line::from(vec![
@@ -153,13 +185,18 @@ fn create_property_paragraph(
     Paragraph::new(Text::from(lines))
 }
 
-fn create_header(creator: &str, updated_at: &DateTime<Local>) -> Line<'static> {
-    Line::from(vec![
+fn create_header(creator: &str, updated_at: &DateTime<Local>, state_marker: &str) -> Line<'static> {
+    let mut spans = vec![
         Span::from(creator.to_owned()).blue(),
         Span::from("が"),
         Span::from(updated_at.format("%Y/%m/%d").to_string()).blue(),
         Span::from("に更新"),
-    ])
+    ];
+    if !state_marker.is_empty() {
+        // 取得済みのメタデータと区別できるよう、ローカルで遷移する未保存状態を警告色にする。
+        spans.push(Span::from(format!(" {}", state_marker)).yellow());
+    }
+    Line::from(spans)
 }
 
 fn render_comment_in_buffer(width: u16, _: &str, _: &DateTime<Local>, body: &str) -> Buffer {
@@ -198,6 +235,19 @@ mod tests {
         }
     }
 
+    fn view_of<'v>(
+        journal: &'v Journal,
+        notes: &'v str,
+        state_marker: &'static str,
+    ) -> RemoteJournalItemView<'v> {
+        RemoteJournalItemView {
+            user: &journal.user,
+            updated_on: &journal.updated_on,
+            notes,
+            state_marker,
+        }
+    }
+
     fn assigned_to_detail(old: Option<&str>, new: Option<&str>) -> ResolvedJournalDetail {
         ResolvedJournalDetail {
             field_label: "担当者",
@@ -229,7 +279,8 @@ mod tests {
         state.update(width, &creator, &updated_at, &notes);
 
         let journal = create_journal(creator, updated_at, &notes);
-        let widget = JournalItemWidget::new(&journal, properties, &state, false);
+        let view = view_of(&journal, &notes, "");
+        let widget = JournalItemWidget::new(view, properties, &state, false);
 
         assert_eq!(widget.line_count(width), 10);
     }
@@ -246,7 +297,8 @@ mod tests {
         state.update(width, &creator, &updated_at, &notes);
 
         let journal = create_journal(creator, updated_at, &notes);
-        let widget = JournalItemWidget::new(&journal, properties, &state, false);
+        let view = view_of(&journal, &notes, "");
+        let widget = JournalItemWidget::new(view, properties, &state, false);
 
         assert_eq!(state.comment_line_count(), 1);
         assert_eq!(widget.line_count(width), 6);
@@ -264,7 +316,8 @@ mod tests {
         state.update(width, &user, &updated_on, &notes);
 
         let journal = create_journal(user, updated_on, &notes);
-        let widget = JournalItemWidget::new(&journal, details, &state, true);
+        let view = view_of(&journal, &notes, "");
+        let widget = JournalItemWidget::new(view, details, &state, true);
         let line_count = widget.line_count(width);
 
         render_snapshot("journal_item_expected_layout", width, line_count, widget);
@@ -282,9 +335,34 @@ mod tests {
         state.update(width, &user, &updated_on, &notes);
 
         let journal = create_journal(user, updated_on, &notes);
-        let widget = JournalItemWidget::new(&journal, details, &state, true);
+        let view = view_of(&journal, &notes, "");
+        let widget = JournalItemWidget::new(view, details, &state, true);
 
         render_snapshot("journal_item_clipped_height", width, 5, widget);
+    }
+
+    #[test]
+    fn snapshot_state_marker_uploading() {
+        let user = "alice".to_string();
+        let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
+        let details = vec![assigned_to_detail(None, Some("bob"))];
+        let notes = "uploading notes for the state marker snapshot".to_string();
+        let width = 24;
+
+        let mut state = JournalItemWidgetState::new();
+        state.update(width, &user, &updated_on, &notes);
+
+        let journal = create_journal(user, updated_on, &notes);
+        let view = view_of(&journal, &notes, "(uploading)");
+        let widget = JournalItemWidget::new(view, details, &state, true);
+        let line_count = widget.line_count(width);
+
+        render_snapshot(
+            "journal_item_state_marker_uploading",
+            width,
+            line_count,
+            widget,
+        );
     }
 
     #[test]
@@ -299,7 +377,8 @@ mod tests {
         state.update(width, &user, &updated_on, &notes);
 
         let journal = create_journal(user, updated_on, &notes);
-        let widget = JournalItemWidget::new(&journal, details, &state, true);
+        let view = view_of(&journal, &notes, "");
+        let widget = JournalItemWidget::new(view, details, &state, true);
         let line_count = widget.line_count(width);
 
         render_snapshot(

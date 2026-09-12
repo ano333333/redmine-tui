@@ -163,7 +163,9 @@ mod tests {
     use super::*;
     use crate::components::issue::detail::body::widget::BodyWidgetState;
     use crate::components::issue::detail::children_list::widget::ChildIssueRow;
-    use crate::components::issue::detail::journals_list::journals_list_item::widget::ResolvedJournalDetail;
+    use crate::components::issue::detail::journals_list::journals_list_item::widget::{
+        RemoteJournalItemView, ResolvedJournalDetail,
+    };
     use crate::components::issue::detail::journals_list::journals_list_item::{
         JournalItemWidget, JournalItemWidgetState,
     };
@@ -304,8 +306,14 @@ mod tests {
                 old_display: "(なし)".to_string(),
                 new_display: "bob".to_string(),
             }];
+            let view = RemoteJournalItemView {
+                user: &self.journal.user,
+                updated_on: &self.journal.updated_on,
+                notes: &self.journal.notes,
+                state_marker: "",
+            };
             JournalsListWidget::new(vec![JournalItemWidget::new(
-                &self.journal,
+                view,
                 details,
                 &self.journal_state,
                 false,

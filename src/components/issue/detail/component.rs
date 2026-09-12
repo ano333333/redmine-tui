@@ -6,7 +6,6 @@ use ratatui::Frame;
 use ratatui::layout::{Offset, Position, Rect};
 use ratatui::widgets::Widget;
 
-use crate::entities::Journal;
 use crate::stores::{Dispatcher, Store};
 use crate::vos::{IssueId, JournalId};
 
@@ -161,7 +160,7 @@ impl IssueDetailComponent {
             property: PropertyComponent::new(issue_id),
             body: BodyComponent::new(issue_id),
             children_list: ChildrenListComponent::new(issue_id),
-            journals_list: JournalsListComponent::new(),
+            journals_list: JournalsListComponent::new(issue_id),
             widget_state: IssueDetailWidgetState::new(),
             // 初期化の直後のupdateに初期化を遅延する
             width: 0,
@@ -316,13 +315,8 @@ impl IssueDetailComponent {
             self.children_list.update(store);
 
             // TODO: Local Journalの作成・編集UIが実装されたら、store.get_local_journal(issue_id)の結果もこの一覧に含める
-            let journals = store
-                .get_remote_journals(self.id)
-                .iter()
-                .map(|entry| &entry.journal)
-                .collect::<Vec<&Journal>>();
-
-            self.journals_list.update(journals, self.width);
+            let entries = store.get_remote_journals(self.id);
+            self.journals_list.update(entries, self.width);
         }
 
         self.widget_state.update(

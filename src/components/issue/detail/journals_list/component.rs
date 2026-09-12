@@ -1,9 +1,8 @@
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::entities::Journal;
-use crate::stores::Store;
-use crate::vos::JournalId;
+use crate::stores::{RemoteJournalEntry, Store};
+use crate::vos::{EntityIdValue, IssueId, JournalId};
 
 use super::journals_list_item::EventProcessResult as ChildEventProcessResult;
 use super::journals_list_item::FocusEvent as ChildFocusEvent;
@@ -24,14 +23,16 @@ pub enum EventProcessResult {
 }
 
 pub struct JournalsListComponent {
+    issue_id: IssueId,
     focused_id: Option<u16>,
     items: Vec<JournalsListItemComponent>,
     width: u16,
 }
 
 impl JournalsListComponent {
-    pub fn new() -> Self {
+    pub fn new(issue_id: IssueId) -> Self {
         Self {
+            issue_id,
             focused_id: None,
             items: vec![],
             width: 0,
@@ -157,7 +158,11 @@ impl JournalsListComponent {
         }
     }
 
-    pub fn update(&mut self, journals: Vec<&Journal>, width: u16) -> Option<EventProcessResult> {
+    pub fn update(
+        &mut self,
+        entries: &[RemoteJournalEntry],
+        width: u16,
+    ) -> Option<EventProcessResult> {
         self.width = width;
         // 今フォーカスが当たっているJournalのself.journalsでのインデックス
         // もしそのJournalが削除されていたら、同じ位置または末尾にあるJournalにフォーカスを当てる
@@ -170,16 +175,18 @@ impl JournalsListComponent {
                 .find(|(_, component)| component.id == focused_id)
                 .map(|(index, _)| index);
         }
-        for (index, journal) in journals.iter().enumerate() {
+        for (index, entry) in entries.iter().enumerate() {
+            let journal_id = entry.journal.id;
             // 新しいJournalが末尾以外に追加することはないと考え、
             // journalがself.items[index]に来るまでself.itemsの要素を間引く
-            while index < self.items.len() && journal.id != self.items[index].id {
+            while index < self.items.len() && journal_id.get() != self.items[index].id {
                 self.items.remove(index);
             }
             if index >= self.items.len() {
-                self.items.push(JournalsListItemComponent::new(journal));
+                self.items
+                    .push(JournalsListItemComponent::new(self.issue_id, journal_id));
             }
-            self.items[index].update(journal, width);
+            self.items[index].update(entry, width);
         }
 
         if let Some(focused_id) = self.focused_id
@@ -201,7 +208,7 @@ impl JournalsListComponent {
         None
     }
 
-    pub fn create_widget<'a>(&'a self, store: &Store) -> JournalsListWidget<'a> {
+    pub fn create_widget<'a>(&'a self, store: &'a Store) -> JournalsListWidget<'a> {
         JournalsListWidget::new(
             self.items
                 .iter()
@@ -239,6 +246,8 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
+    use crate::entities::Journal;
+    use crate::stores::{Action, JournalAction, RemoteJournalEntry, Store};
     use crate::test_support::local_datetime;
     use crate::vos::{IssueId, JournalId};
 
@@ -259,11 +268,21 @@ mod tests {
         }
     }
 
+    fn register_journal<'s>(store: &'s mut Store, journal: &Journal) -> &'s RemoteJournalEntry {
+        store.consume_action(Action::Journal(JournalAction::SyncFetched {
+            issue_id: journal.issue_id,
+            journals: vec![journal.clone()],
+        }));
+        store.get_remote_journal(journal.issue_id, journal.id)
+    }
+
     #[test]
     fn process_event_e_on_focused_item_returns_edit_requested() {
+        let mut store = Store::new();
         let journal = create_journal(1, "first paragraph");
-        let mut component = JournalsListComponent::new();
-        component.update(vec![&journal], WIDE_WIDTH);
+        register_journal(&mut store, &journal);
+        let mut component = JournalsListComponent::new(journal.issue_id);
+        component.update(store.get_remote_journals(journal.issue_id), WIDE_WIDTH);
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
 
         let result = component.process_event(key_event(KeyCode::Char('e')));
