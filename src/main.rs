@@ -19,13 +19,17 @@ use ratatui::{DefaultTerminal, Frame, layout::Rect};
 use std::{
     cell::RefCell,
     env, fs,
+    future::Future,
     io::Result,
     process::{Command, ExitCode},
     rc::Rc,
-    sync::{Arc, mpsc},
+    sync::{Arc, atomic, mpsc},
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime};
+use tokio::{
+    runtime::{Builder as TokioRuntimeBuilder, Runtime},
+    task::JoinError,
+};
 
 use self::{
     clients::redmine::{DefaultRedmineClient, RedmineClient},
@@ -43,6 +47,7 @@ use self::{
 };
 
 const TICK_RATE_MS: u64 = 250;
+static PANIC_HOOK_INSTALLED: atomic::AtomicBool = atomic::AtomicBool::new(false);
 const REDMINE_API_KEY_ENV: &str = "REDMINE_API_KEY";
 const REDMINE_URL_ENV: &str = "REDMINE_URL";
 const REDMINE_PORT_ENV: &str = "REDMINE_PORT";
@@ -82,6 +87,7 @@ fn main() -> ExitCode {
     }
     trace_dbg!("start");
     let (worker_action_tx, worker_action_rx) = mpsc::channel::<Action>();
+    install_panic_hook();
     let mut terminal = ratatui::init();
     let mut app_component = AppComponent::new(dispatcher.clone(), None);
     app_component.update(
@@ -91,7 +97,10 @@ fn main() -> ExitCode {
     );
     let tick_rate = std::time::Duration::from_millis(TICK_RATE_MS);
     loop {
-        move_worker_action(&worker_action_rx, dispatcher.clone());
+        if let Some(message) = move_worker_action(&worker_action_rx, dispatcher.clone()) {
+            eprintln!("worker task panicked: {message}");
+            return ExitCode::FAILURE;
+        }
         let size = terminal.size().expect("failed to get terminal size");
         update(
             dispatcher.clone(),
@@ -155,10 +164,76 @@ fn init_tokio_runtime() -> Result<Runtime> {
     TokioRuntimeBuilder::new_multi_thread().enable_all().build()
 }
 
-fn move_worker_action(tx: &mpsc::Receiver<Action>, dispatcher: Rc<RefCell<Dispatcher>>) {
-    while let Ok(action) = tx.try_recv() {
-        dispatcher.borrow_mut().dispatch(action);
+/// panic 時にも端末を raw mode のまま残さず、既定の hook による報告は維持する。
+fn install_panic_hook() {
+    // hook を重ねると、以前の custom hook を default_hook として再度呼び出してしまう。
+    if PANIC_HOOK_INSTALLED.swap(true, atomic::Ordering::SeqCst) {
+        return;
     }
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        ratatui::restore();
+        default_hook(info);
+    }));
+}
+
+fn move_worker_action(
+    tx: &mpsc::Receiver<Action>,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+) -> Option<String> {
+    let mut worker_panic_message = None;
+    while let Ok(action) = tx.try_recv() {
+        if let Action::WorkerPanicked { message } = action {
+            worker_panic_message = Some(message);
+        } else {
+            dispatcher.borrow_mut().dispatch(action);
+        }
+    }
+    worker_panic_message
+}
+
+/// 非同期処理の完了 Action を生成順に main loop へ送り、panic は終了通知へ変換する。
+/// task の cancellation はアプリの異常を意味しないため通知しない。
+fn spawn_action_task<F>(runtime: &Runtime, sender: mpsc::Sender<Action>, future: F)
+where
+    F: Future<Output = Vec<Action>> + Send + 'static,
+{
+    let handle = runtime.spawn(future);
+    runtime.spawn(async move {
+        match handle.await {
+            Ok(actions) => {
+                for action in actions {
+                    sender
+                        .send(action)
+                        .expect("Failed to send Action with mpsc::channel");
+                }
+            }
+            Err(error) if error.is_panic() => {
+                sender
+                    .send(Action::WorkerPanicked {
+                        message: join_error_panic_message(error),
+                    })
+                    .expect("Failed to send Action with mpsc::channel");
+            }
+            Err(_) => {}
+        }
+    });
+}
+
+/// panic payload が通常使われる文字列型でなければ、型を外部へ露出せず共通文言を返す。
+fn join_error_panic_message(error: JoinError) -> String {
+    let Some(payload) = error.try_into_panic().ok() else {
+        return "worker task panicked".to_string();
+    };
+    payload.downcast_ref::<&str>().map_or_else(
+        || {
+            payload
+                .downcast_ref::<String>()
+                .cloned()
+                .unwrap_or_else(|| "worker task panicked".to_string())
+        },
+        |message| message.to_string(),
+    )
 }
 
 fn update(dispatcher: Rc<RefCell<Dispatcher>>, app_component: &mut AppComponent, area: Rect) {
@@ -221,19 +296,13 @@ fn handle_app_effect(
                 panic!("uploading issue is not edited");
             }
             let diffs = d.store().get_issue_property_diffs(id).to_vec();
-            runtime.spawn(async move {
-                let action = issue_upload_action(client.as_ref(), id, &diffs).await;
-                sender
-                    .send(action)
-                    .expect("Failed to send Action with mpsc::channel");
+            spawn_action_task(runtime, sender, async move {
+                vec![issue_upload_action(client.as_ref(), id, &diffs).await]
             });
         }
         AppEffect::ContinueIssueUpload { id, diffs } => {
-            runtime.spawn(async move {
-                let action = issue_upload_action(client.as_ref(), id, &diffs).await;
-                sender
-                    .send(action)
-                    .expect("Failed to send Action with mpsc::channel");
+            spawn_action_task(runtime, sender, async move {
+                vec![issue_upload_action(client.as_ref(), id, &diffs).await]
             });
         }
     }
@@ -251,11 +320,7 @@ fn start_project_issues_page_fetch<C>(
     C: RedmineClient + Send + Sync + 'static,
 {
     let future = fetch_project_issues_page(dispatcher, client, project_id, page);
-    runtime.spawn(async move {
-        sender
-            .send(future.await.into())
-            .expect("Failed to send Action with mpsc::channel");
-    });
+    spawn_action_task(runtime, sender, async move { vec![future.await.into()] });
 }
 
 fn start_issue_fetch<C>(
@@ -271,14 +336,8 @@ fn start_issue_fetch<C>(
         return;
     };
 
-    runtime.spawn(async move {
-        // Issueが取得済みになる前にJournalを同期するため、usecaseが定めた順序を維持する。
-        for action in future.await {
-            sender
-                .send(action)
-                .expect("Failed to send Action with mpsc::channel");
-        }
-    });
+    // Issueが取得済みになる前にJournalを同期するため、usecaseが定めた順序を維持する。
+    spawn_action_task(runtime, sender, future);
 }
 
 async fn issue_upload_action(
@@ -831,6 +890,64 @@ mod tests {
         assert_eq!(server_issue.issue.description, "server description");
         assert_eq!(conflicts, diffs);
         assert!(client.uploaded.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn spawn_action_task_reports_a_panic_as_worker_panicked() {
+        let runtime = init_tokio_runtime().unwrap();
+        let (sender, receiver) = mpsc::channel::<Action>();
+
+        spawn_action_task(&runtime, sender, async { panic!("worker panic marker") });
+
+        let action = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .expect("worker panic should be reported through the channel");
+        let Action::WorkerPanicked { message } = action else {
+            panic!("expected WorkerPanicked action")
+        };
+        assert!(message.contains("worker panic marker"));
+    }
+
+    #[test]
+    fn spawn_action_task_sends_the_action_when_the_task_succeeds() {
+        let runtime = init_tokio_runtime().unwrap();
+        let (sender, receiver) = mpsc::channel::<Action>();
+
+        spawn_action_task(&runtime, sender, async {
+            vec![IssueAction::FailUpload { id: 7.into() }.into()]
+        });
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .expect("action should be sent through the channel");
+        assert!(matches!(
+            received,
+            Action::Issue(IssueAction::FailUpload { id }) if id == IssueId::new(7)
+        ));
+    }
+
+    #[test]
+    fn spawn_action_task_reports_an_assert_inside_an_async_usecase() {
+        async fn inner_usecase(precondition_met: bool) -> Vec<Action> {
+            tokio::task::yield_now().await;
+            assert!(precondition_met, "usecase precondition violated");
+            Vec::new()
+        }
+        let runtime = init_tokio_runtime().unwrap();
+        let (sender, receiver) = mpsc::channel::<Action>();
+
+        spawn_action_task(&runtime, sender, async { inner_usecase(false).await });
+
+        let action = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .expect("assert inside an async usecase should be reported");
+        let Action::WorkerPanicked { message } = action else {
+            panic!("expected WorkerPanicked action")
+        };
+        assert!(
+            message.contains("usecase precondition violated"),
+            "got: {message}"
+        );
     }
 
     struct IssueUploadClient {
