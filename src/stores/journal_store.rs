@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::journal_state::{LocalJournalEntry, RemoteJournalEntry, RemoteJournalState};
 use crate::entities::Journal;
-use crate::vos::{IssueId, JournalId};
+use crate::vos::{IssueId, JournalId, JournalNotesDiff};
 
 /// Issueごとに、順序付きのRemote Journalと0件または1件のLocal Journalを管理する。
 pub struct JournalStore {
@@ -22,6 +22,14 @@ pub enum JournalAction {
     SyncFetched {
         issue_id: IssueId,
         journals: Vec<Journal>,
+    },
+    /// Remote Journalのnotes編集結果を状態へ反映する。
+    ///
+    /// 対象が未登録の場合、またはupload中の場合はpanicする。
+    EditRemoteNotes {
+        issue_id: IssueId,
+        journal_id: JournalId,
+        notes: String,
     },
 }
 
@@ -46,6 +54,48 @@ impl JournalStore {
                         });
                 let remote = std::mem::take(&mut issue_journals.remote);
                 issue_journals.remote = Self::merge_sync_fetched(remote, journals);
+            }
+            JournalAction::EditRemoteNotes {
+                issue_id,
+                journal_id,
+                notes,
+            } => {
+                let entry = self
+                    .by_issue
+                    .get_mut(&issue_id)
+                    .and_then(|issue_journals| {
+                        issue_journals
+                            .remote
+                            .iter_mut()
+                            .find(|entry| entry.journal.id == journal_id)
+                    })
+                    .unwrap_or_else(|| {
+                        panic!("remote journal {journal_id} is not registered for issue {issue_id}")
+                    });
+                match &mut entry.state {
+                    RemoteJournalState::Uploading { .. } => {
+                        panic!("cannot edit remote journal {journal_id} while it is uploading");
+                    }
+                    RemoteJournalState::Synced => {
+                        entry.state =
+                            Self::edited_or_synced_state(entry.journal.notes.clone(), notes);
+                    }
+                    RemoteJournalState::Edited { diff, .. } => {
+                        // 最初の取得値を比較基準に維持し、再編集前のupload失敗は新しい編集結果へ引き継がない。
+                        entry.state = Self::edited_or_synced_state(diff.before.clone(), notes);
+                    }
+                }
+            }
+        }
+    }
+
+    fn edited_or_synced_state(before: String, after: String) -> RemoteJournalState {
+        if before == after {
+            RemoteJournalState::Synced
+        } else {
+            RemoteJournalState::Edited {
+                diff: JournalNotesDiff { before, after },
+                failure: None,
             }
         }
     }

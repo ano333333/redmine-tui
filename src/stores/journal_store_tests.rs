@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use super::journal_store::{IssueJournals, JournalAction, JournalStore};
 use crate::entities::{Journal, LocalJournal};
 use crate::stores::journal_state::{
-    LocalJournalEntry, LocalJournalState, RemoteJournalEntry, RemoteJournalState,
+    JournalUploadFailure, LocalJournalEntry, LocalJournalState, RemoteJournalEntry,
+    RemoteJournalState,
 };
 use crate::test_support::local_datetime;
 use crate::vos::{IssueId, JournalId, JournalNotesDiff};
@@ -435,6 +436,178 @@ fn get_remote_journal_panics_when_only_another_journal_of_the_issue_exists() {
     };
 
     store.get_remote_journal(1, 11);
+}
+
+#[test]
+fn edit_remote_notes_moves_a_synced_journal_to_edited_with_the_notes_as_before() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::EditRemoteNotes {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+        notes: "edited notes".to_string(),
+    });
+
+    let entry = store.get_remote_journal(IssueId::new(1), JournalId::new(10));
+    let RemoteJournalState::Edited { diff, failure } = &entry.state else {
+        panic!("expected edited state");
+    };
+    assert_eq!(diff.before, "remote notes 10");
+    assert_eq!(diff.after, "edited notes");
+    assert!(failure.is_none());
+}
+
+#[test]
+fn edit_remote_notes_keeps_the_first_before_and_updates_the_after_on_repeated_edits() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![edited_remote_entry_with_failure(
+                    issue_id,
+                    JournalId::new(10),
+                    "first before",
+                    "first after",
+                )],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::EditRemoteNotes {
+        issue_id,
+        journal_id: JournalId::new(10),
+        notes: "second after".to_string(),
+    });
+
+    let entry = store.get_remote_journal(issue_id, JournalId::new(10));
+    let RemoteJournalState::Edited { diff, failure } = &entry.state else {
+        panic!("expected edited state");
+    };
+    assert_eq!(diff.before, "first before");
+    assert_eq!(diff.after, "second after");
+    assert!(failure.is_none());
+}
+
+#[test]
+fn edit_remote_notes_returns_to_synced_when_the_notes_match_the_before_value() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![edited_remote_entry_with_failure(
+                    issue_id,
+                    JournalId::new(10),
+                    "first before",
+                    "first after",
+                )],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::EditRemoteNotes {
+        issue_id,
+        journal_id: JournalId::new(10),
+        notes: "first before".to_string(),
+    });
+
+    let entry = store.get_remote_journal(issue_id, JournalId::new(10));
+    assert!(matches!(entry.state, RemoteJournalState::Synced));
+}
+
+#[test]
+fn edit_remote_notes_from_synced_with_identical_notes_keeps_the_journal_synced() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![remote_entry(issue_id, JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::EditRemoteNotes {
+        issue_id,
+        journal_id: JournalId::new(10),
+        notes: "remote notes 10".to_string(),
+    });
+
+    let entry = store.get_remote_journal(issue_id, JournalId::new(10));
+    assert!(matches!(entry.state, RemoteJournalState::Synced));
+}
+
+#[test]
+#[should_panic(expected = "cannot edit remote journal 10 while it is uploading")]
+fn edit_remote_notes_panics_while_the_journal_is_uploading() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![uploading_remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::EditRemoteNotes {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+        notes: "edited notes".to_string(),
+    });
+}
+
+#[test]
+#[should_panic(expected = "remote journal 11 is not registered for issue 1")]
+fn edit_remote_notes_panics_when_the_journal_is_not_registered_for_the_issue() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::EditRemoteNotes {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(11),
+        notes: "edited notes".to_string(),
+    });
+}
+
+fn edited_remote_entry_with_failure(
+    issue_id: impl Into<IssueId>,
+    journal_id: impl Into<JournalId>,
+    before: &str,
+    after: &str,
+) -> RemoteJournalEntry {
+    let journal_id = journal_id.into();
+    RemoteJournalEntry {
+        journal: journal(issue_id, journal_id),
+        state: RemoteJournalState::Edited {
+            diff: JournalNotesDiff {
+                before: before.to_string(),
+                after: after.to_string(),
+            },
+            failure: Some(JournalUploadFailure {
+                message: "upload failed".to_string(),
+            }),
+        },
+    }
 }
 
 #[test]
