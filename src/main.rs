@@ -272,9 +272,12 @@ fn start_issue_fetch<C>(
     };
 
     runtime.spawn(async move {
-        sender
-            .send(future.await.into())
-            .expect("Failed to send Action with mpsc::channel");
+        // Issueが取得済みになる前にJournalを同期するため、usecaseが定めた順序を維持する。
+        for action in future.await {
+            sender
+                .send(action)
+                .expect("Failed to send Action with mpsc::channel");
+        }
     });
 }
 
@@ -439,14 +442,14 @@ mod tests {
     use crate::clients::redmine::base::FetchedIssue;
     use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
     use crate::entities::{
-        Category, Issue, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage,
-        TargetVersion, TimeEntityActivity, Tracker, User,
+        Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project,
+        ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
     };
     use crate::stores::ProjectIssuesAction;
     use crate::test_support::sample_issue_aggregate;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId};
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{Terminal, backend::TestBackend, widgets::Widget};
 
     #[test]
     fn area_from_terminal_size_uses_the_latest_dimensions() {
@@ -568,6 +571,14 @@ mod tests {
         assert!(app.take_effect().is_none());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         assert_eq!(dispatcher.borrow().store().get_issue_state(42), None);
+        let first_completion = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("first fetch completion should be sent by the runtime task");
+        assert!(matches!(
+            first_completion,
+            Action::Journal(JournalAction::SyncFetched { issue_id, journals })
+                if issue_id == IssueId::new(42) && journals.is_empty()
+        ));
         let completion = receiver
             .recv_timeout(Duration::from_secs(1))
             .expect("fetch completion should be sent by the runtime task");
@@ -581,6 +592,51 @@ mod tests {
             1,
             "the spawned future must not dispatch or consume actions itself"
         );
+    }
+
+    #[test]
+    fn issue_detail_shows_journals_from_the_first_frame_after_ordered_fetch_actions() {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        {
+            let mut d = dispatcher.borrow_mut();
+            crate::test_support::dispatch_fixture_entity_actions(&mut d);
+            d.dispatch(IssueAction::StartFetching { id: 42.into() });
+            d.dispatch(Action::Journal(JournalAction::SyncFetched {
+                issue_id: 42.into(),
+                journals: vec![sample_journal(42)],
+            }));
+            d.dispatch(IssueAction::FetchSucceeded {
+                id: 42.into(),
+                issue: sample_issue_aggregate(
+                    42,
+                    "subject",
+                    IssueStatusId::new(1),
+                    None,
+                    None,
+                    None,
+                    0,
+                ),
+            });
+            while d.consume_actinos_len() > 0 {
+                d.consume_action();
+            }
+        }
+
+        let mut component = crate::components::issue::IssueDetailComponent::new(42);
+        let frame_area = Rect::new(0, 0, 80, 100);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 100));
+        let d = dispatcher.borrow();
+        let store = d.store();
+        let widget = component.create_widget(store);
+        let mut buffer = ratatui::buffer::Buffer::empty(frame_area);
+        widget.render(frame_area, &mut buffer);
+        let rendered = buffer
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+
+        assert!(rendered.contains("first journal notes marker"));
     }
 
     #[test]
@@ -893,6 +949,17 @@ mod tests {
 
         async fn get_users(&self) -> std::result::Result<Vec<User>, RedmineClientError> {
             unreachable!()
+        }
+    }
+
+    fn sample_journal(issue_id: u16) -> Journal {
+        Journal {
+            id: JournalId::new(1),
+            issue_id: IssueId::new(issue_id),
+            user: "alice".to_string(),
+            updated_on: crate::test_support::local_datetime("2026-01-15T00:00:00+09:00"),
+            details: vec![],
+            notes: "first journal notes marker".to_string(),
         }
     }
 
