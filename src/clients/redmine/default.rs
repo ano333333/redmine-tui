@@ -11,8 +11,8 @@ use crate::entities::{
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
-    TimeEntityActivityId, TrackerId, UserId,
+    CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalId, PriorityId, ProjectId,
+    TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
 mod journal_conversion;
@@ -166,6 +166,22 @@ impl RedmineClient for DefaultRedmineClient {
         self.put_empty(
             &format!("/issues/{}.json", issue.issue.id.get()),
             &UpdateIssueRequest::from(issue),
+        )
+        .await
+    }
+
+    async fn update_journal_notes(
+        &self,
+        journal_id: JournalId,
+        notes: &str,
+    ) -> Result<(), RedmineClientError> {
+        self.put_empty(
+            &format!("/journals/{}.json", journal_id.get()),
+            &UpdateJournalRequest {
+                journal: UpdateJournal {
+                    notes: notes.to_string(),
+                },
+            },
         )
         .await
     }
@@ -559,6 +575,16 @@ impl From<RedmineProjectIssue> for Issue {
             status_id: IssueStatusId::new(value.status.id),
         }
     }
+}
+
+#[derive(Serialize)]
+struct UpdateJournalRequest {
+    journal: UpdateJournal,
+}
+
+#[derive(Serialize)]
+struct UpdateJournal {
+    notes: String,
 }
 
 #[derive(Serialize)]

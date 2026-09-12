@@ -89,6 +89,14 @@ mod tests {
             Ok(())
         }
 
+        async fn update_journal_notes(
+            &self,
+            _: crate::vos::JournalId,
+            _: &str,
+        ) -> Result<(), RedmineClientError> {
+            unreachable!()
+        }
+
         async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
             unreachable!()
         }

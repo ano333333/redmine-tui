@@ -16,6 +16,7 @@ mod integration_support;
 mod journal_conversion;
 mod journal_detail_conversion;
 mod update_issue;
+mod update_journal_notes;
 mod value_conversion;
 
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
