@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroUsize;
 
 use super::issue_store::{IssueAction, IssueState, IssueStore};
-use super::journal_state::RemoteJournalEntry;
+use super::journal_state::{RemoteJournalEntry, RemoteJournalUploadConflict};
 use super::journal_store::{JournalAction, JournalStore};
 use super::notice_store::{Notice, NoticeAction, NoticeStore};
 use super::project_issues_store::{
@@ -14,8 +14,8 @@ use crate::entities::{
     TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
-    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, PriorityId, ProjectId,
-    TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, JournalNotesDiff, PriorityId,
+    ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
 pub struct Dispatcher {
@@ -195,6 +195,18 @@ impl Store {
         journal_id: impl Into<JournalId>,
     ) -> &RemoteJournalEntry {
         self.journal_store.get_remote_journal(issue_id, journal_id)
+    }
+
+    /// 競合解決に必要なRemote Journalの編集差分とサーバー値を返す。
+    ///
+    /// 対象が未登録の場合、または競合中でない場合は`None`を返す。
+    pub fn get_remote_journal_upload_conflict(
+        &self,
+        issue_id: impl Into<IssueId>,
+        journal_id: impl Into<JournalId>,
+    ) -> Option<(&JournalNotesDiff, &RemoteJournalUploadConflict)> {
+        self.journal_store
+            .get_remote_journal_upload_conflict(issue_id, journal_id)
     }
 
     pub fn get_users(&self) -> &HashMap<UserId, User> {

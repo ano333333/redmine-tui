@@ -145,10 +145,10 @@ where
                 },
             }
         }
-        RemoteJournalUploadResolution::Conflict => JournalAction::FailRemoteUpload {
+        RemoteJournalUploadResolution::Conflict => JournalAction::DetectRemoteUploadConflict {
             issue_id,
             journal_id,
-            message: "remote journal conflict resolution is not implemented yet".to_string(),
+            server_notes: server_notes.to_string(),
         },
     }
 }
@@ -687,7 +687,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_conflicting_server_notes_returns_the_not_implemented_action() {
+    async fn a_conflicting_server_notes_returns_detect_remote_upload_conflict_and_retains_the_diff()
+    {
         let mut dispatcher = Dispatcher::new();
         edited_issue_and_journal(&mut dispatcher);
         let dispatcher = Rc::new(RefCell::new(dispatcher));
@@ -698,13 +699,16 @@ mod tests {
         dispatcher.borrow_mut().consume_action();
 
         match &action {
-            JournalAction::FailRemoteUpload { message, .. } => {
-                assert_eq!(
-                    message,
-                    "remote journal conflict resolution is not implemented yet"
-                );
+            JournalAction::DetectRemoteUploadConflict {
+                issue_id,
+                journal_id,
+                server_notes,
+            } => {
+                assert_eq!(*issue_id, ISSUE_ID);
+                assert_eq!(*journal_id, JOURNAL_ID);
+                assert_eq!(server_notes, "conflicting notes");
             }
-            _ => panic!("expected fail remote upload action"),
+            _ => panic!("expected detect remote upload conflict action"),
         }
 
         dispatcher.borrow_mut().dispatch(action);
@@ -712,8 +716,14 @@ mod tests {
 
         let dispatcher = dispatcher.borrow();
         let entry = dispatcher.store().get_remote_journal(ISSUE_ID, JOURNAL_ID);
-        let RemoteJournalState::Edited { .. } = &entry.state else {
-            panic!("expected edited state");
+        let RemoteJournalState::Uploading { diff, conflict } = &entry.state else {
+            panic!("expected uploading state");
         };
+        assert_eq!(diff.before, "remote notes");
+        assert_eq!(diff.after, "edited notes");
+        let Some(conflict) = conflict else {
+            panic!("expected conflict to be retained")
+        };
+        assert_eq!(conflict.server_notes, "conflicting notes");
     }
 }

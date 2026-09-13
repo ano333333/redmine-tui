@@ -4,7 +4,7 @@ use super::journal_store::{IssueJournals, JournalAction, JournalStore};
 use crate::entities::{Journal, LocalJournal};
 use crate::stores::journal_state::{
     JournalUploadFailure, LocalJournalEntry, LocalJournalState, RemoteJournalEntry,
-    RemoteJournalState,
+    RemoteJournalState, RemoteJournalUploadConflict,
 };
 use crate::test_support::local_datetime;
 use crate::vos::{IssueId, JournalId, JournalNotesDiff};
@@ -69,6 +69,25 @@ fn uploading_remote_entry(
                 after: "uploading notes".to_string(),
             },
             conflict: None,
+        },
+    }
+}
+
+fn uploading_remote_entry_with_conflict(
+    issue_id: impl Into<IssueId>,
+    journal_id: impl Into<JournalId>,
+) -> RemoteJournalEntry {
+    let journal_id = journal_id.into();
+    RemoteJournalEntry {
+        journal: journal(issue_id, journal_id),
+        state: RemoteJournalState::Uploading {
+            diff: JournalNotesDiff {
+                before: format!("remote notes {journal_id}"),
+                after: "uploading notes".to_string(),
+            },
+            conflict: Some(RemoteJournalUploadConflict {
+                server_notes: "conflicting notes".to_string(),
+            }),
         },
     }
 }
@@ -412,6 +431,88 @@ fn has_remote_journal_is_false_for_another_issue_or_journal_id() {
 
     assert!(!store.has_remote_journal(IssueId::new(2), JournalId::new(10)));
     assert!(!store.has_remote_journal(IssueId::new(1), JournalId::new(11)));
+}
+
+#[test]
+fn get_remote_journal_upload_conflict_returns_the_diff_and_conflict_when_uploading_with_a_conflict()
+{
+    let store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![uploading_remote_entry_with_conflict(
+                    IssueId::new(1),
+                    JournalId::new(10),
+                )],
+                local: None,
+            },
+        )]),
+    };
+
+    let Some((diff, conflict)) =
+        store.get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(10))
+    else {
+        panic!("expected conflict")
+    };
+    assert_eq!(diff.before, "remote notes 10");
+    assert_eq!(diff.after, "uploading notes");
+    assert_eq!(conflict.server_notes, "conflicting notes");
+}
+
+#[test]
+fn get_remote_journal_upload_conflict_is_none_when_uploading_without_a_conflict() {
+    let store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![uploading_remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    assert!(
+        store
+            .get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(10))
+            .is_none()
+    );
+}
+
+#[test]
+fn get_remote_journal_upload_conflict_is_none_when_not_uploading_or_unregistered() {
+    let store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![
+                    remote_entry(IssueId::new(1), JournalId::new(10)),
+                    edited_remote_entry(IssueId::new(1), JournalId::new(11)),
+                ],
+                local: None,
+            },
+        )]),
+    };
+
+    assert!(
+        store
+            .get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(10))
+            .is_none()
+    );
+    assert!(
+        store
+            .get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(11))
+            .is_none()
+    );
+    assert!(
+        store
+            .get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(12))
+            .is_none()
+    );
+    assert!(
+        store
+            .get_remote_journal_upload_conflict(IssueId::new(2), JournalId::new(10))
+            .is_none()
+    );
 }
 
 #[test]
@@ -793,6 +894,205 @@ fn fail_remote_upload_panics_when_the_journal_is_not_registered_for_the_issue() 
         issue_id: IssueId::new(1),
         journal_id: JournalId::new(11),
         message: "network error: offline".to_string(),
+    });
+}
+
+#[test]
+fn detect_remote_upload_conflict_retains_the_conflict_and_keeps_the_diff() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![uploading_remote_entry(issue_id, JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::DetectRemoteUploadConflict {
+        issue_id,
+        journal_id: JournalId::new(10),
+        server_notes: "conflicting notes".to_string(),
+    });
+
+    let entry = store.get_remote_journal(issue_id, JournalId::new(10));
+    let RemoteJournalState::Uploading { diff, conflict } = &entry.state else {
+        panic!("expected uploading state");
+    };
+    assert_eq!(diff.before, "remote notes 10");
+    assert_eq!(diff.after, "uploading notes");
+    let Some(conflict) = conflict else {
+        panic!("expected conflict")
+    };
+    assert_eq!(conflict.server_notes, "conflicting notes");
+}
+
+#[test]
+#[should_panic(expected = "cannot detect remote journal 10 upload conflict while it is synced")]
+fn detect_remote_upload_conflict_panics_when_the_journal_is_synced() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::DetectRemoteUploadConflict {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+        server_notes: "conflicting notes".to_string(),
+    });
+}
+
+#[test]
+#[should_panic(expected = "cannot detect remote journal 10 upload conflict while it is edited")]
+fn detect_remote_upload_conflict_panics_when_the_journal_is_edited() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![edited_remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::DetectRemoteUploadConflict {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+        server_notes: "conflicting notes".to_string(),
+    });
+}
+
+#[test]
+#[should_panic(expected = "remote journal 11 is not registered for issue 1")]
+fn detect_remote_upload_conflict_panics_when_the_journal_is_not_registered_for_the_issue() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::DetectRemoteUploadConflict {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(11),
+        server_notes: "conflicting notes".to_string(),
+    });
+}
+
+#[test]
+fn cancel_remote_upload_conflict_returns_to_edited_with_the_diff_and_drops_the_conflict() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![uploading_remote_entry_with_conflict(
+                    issue_id,
+                    JournalId::new(10),
+                )],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::CancelRemoteUploadConflict {
+        issue_id,
+        journal_id: JournalId::new(10),
+    });
+
+    let entry = store.get_remote_journal(issue_id, JournalId::new(10));
+    let RemoteJournalState::Edited { diff, failure } = &entry.state else {
+        panic!("expected edited state");
+    };
+    assert_eq!(diff.before, "remote notes 10");
+    assert_eq!(diff.after, "uploading notes");
+    assert!(failure.is_none());
+}
+
+#[test]
+#[should_panic(
+    expected = "cannot cancel remote journal 10 upload conflict while it is uploading without a conflict"
+)]
+fn cancel_remote_upload_conflict_panics_when_uploading_without_a_conflict() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![uploading_remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::CancelRemoteUploadConflict {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+    });
+}
+
+#[test]
+#[should_panic(expected = "cannot cancel remote journal 10 upload conflict while it is synced")]
+fn cancel_remote_upload_conflict_panics_when_the_journal_is_synced() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::CancelRemoteUploadConflict {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+    });
+}
+
+#[test]
+#[should_panic(expected = "cannot cancel remote journal 10 upload conflict while it is edited")]
+fn cancel_remote_upload_conflict_panics_when_the_journal_is_edited() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![edited_remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::CancelRemoteUploadConflict {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+    });
+}
+
+#[test]
+#[should_panic(expected = "remote journal 11 is not registered for issue 1")]
+fn cancel_remote_upload_conflict_panics_when_the_journal_is_not_registered_for_the_issue() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::CancelRemoteUploadConflict {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(11),
     });
 }
 

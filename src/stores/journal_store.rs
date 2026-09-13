@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::journal_state::{
     JournalUploadFailure, LocalJournalEntry, RemoteJournalEntry, RemoteJournalState,
+    RemoteJournalUploadConflict,
 };
 use crate::entities::Journal;
 use crate::vos::{IssueId, JournalId, JournalNotesDiff};
@@ -56,6 +57,22 @@ pub enum JournalAction {
         issue_id: IssueId,
         journal_id: JournalId,
         message: String,
+    },
+    /// upload中の編集差分を維持したまま、三者比較で取得したサーバー値を競合情報として保持する。
+    ///
+    /// すでに競合情報がある場合は、より新しく取得したサーバー値で置き換える。
+    /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
+    DetectRemoteUploadConflict {
+        issue_id: IssueId,
+        journal_id: JournalId,
+        server_notes: String,
+    },
+    /// 競合情報を破棄し、編集差分を維持した再試行可能なEditedへ戻す。
+    ///
+    /// 対象が未登録の場合、Uploading以外の状態の場合、または競合情報がない場合はpanicする。
+    CancelRemoteUploadConflict {
+        issue_id: IssueId,
+        journal_id: JournalId,
     },
     /// Remote Journalのupload中、保存前の再取得で消失が確定した対象を正常な同期結果として削除する。
     ///
@@ -170,6 +187,57 @@ impl JournalStore {
                     }
                     RemoteJournalState::Edited { .. } => {
                         panic!("cannot fail remote journal {journal_id} upload while it is edited");
+                    }
+                }
+            }
+            JournalAction::DetectRemoteUploadConflict {
+                issue_id,
+                journal_id,
+                server_notes,
+            } => {
+                let entry = self.entry_mut(issue_id, journal_id);
+                match &mut entry.state {
+                    RemoteJournalState::Uploading { conflict, .. } => {
+                        *conflict = Some(RemoteJournalUploadConflict { server_notes });
+                    }
+                    RemoteJournalState::Synced => {
+                        panic!(
+                            "cannot detect remote journal {journal_id} upload conflict while it is synced"
+                        );
+                    }
+                    RemoteJournalState::Edited { .. } => {
+                        panic!(
+                            "cannot detect remote journal {journal_id} upload conflict while it is edited"
+                        );
+                    }
+                }
+            }
+            JournalAction::CancelRemoteUploadConflict {
+                issue_id,
+                journal_id,
+            } => {
+                let entry = self.entry_mut(issue_id, journal_id);
+                match &mut entry.state {
+                    RemoteJournalState::Uploading { diff, conflict } => {
+                        if conflict.is_none() {
+                            panic!(
+                                "cannot cancel remote journal {journal_id} upload conflict while it is uploading without a conflict"
+                            );
+                        }
+                        entry.state = RemoteJournalState::Edited {
+                            diff: diff.clone(),
+                            failure: None,
+                        };
+                    }
+                    RemoteJournalState::Synced => {
+                        panic!(
+                            "cannot cancel remote journal {journal_id} upload conflict while it is synced"
+                        );
+                    }
+                    RemoteJournalState::Edited { .. } => {
+                        panic!(
+                            "cannot cancel remote journal {journal_id} upload conflict while it is edited"
+                        );
                     }
                 }
             }
@@ -339,6 +407,28 @@ impl JournalStore {
         self.get_remote_journals(issue_id)
             .iter()
             .any(|entry| entry.journal.id == journal_id)
+    }
+
+    /// 競合解決に必要な編集差分と、保存前確認で取得したサーバー値を返す。
+    ///
+    /// 対象が未登録の場合、または競合中でない場合は`None`を返す。
+    pub fn get_remote_journal_upload_conflict(
+        &self,
+        issue_id: impl Into<IssueId>,
+        journal_id: impl Into<JournalId>,
+    ) -> Option<(&JournalNotesDiff, &RemoteJournalUploadConflict)> {
+        let issue_id = issue_id.into();
+        let journal_id = journal_id.into();
+        self.get_remote_journals(issue_id)
+            .iter()
+            .find(|entry| entry.journal.id == journal_id)
+            .and_then(|entry| match &entry.state {
+                RemoteJournalState::Uploading {
+                    diff,
+                    conflict: Some(conflict),
+                } => Some((diff, conflict)),
+                _ => None,
+            })
     }
 
     /// Issueが持つ唯一のLocal Journalを返す。
