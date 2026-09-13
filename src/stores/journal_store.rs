@@ -2,7 +2,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::journal_state::{LocalJournalEntry, RemoteJournalEntry, RemoteJournalState};
+use super::journal_state::{
+    JournalUploadFailure, LocalJournalEntry, RemoteJournalEntry, RemoteJournalState,
+};
 use crate::entities::Journal;
 use crate::vos::{IssueId, JournalId, JournalNotesDiff};
 
@@ -35,6 +37,21 @@ pub enum JournalAction {
     ///
     /// 対象が未登録の場合、またはEdited以外の状態の場合はpanicする。
     StartRemoteUpload {
+        issue_id: IssueId,
+        journal_id: JournalId,
+    },
+    /// upload失敗後も編集差分を維持し、再試行可能なEditedへ戻す。
+    ///
+    /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
+    FailRemoteUpload {
+        issue_id: IssueId,
+        journal_id: JournalId,
+        message: String,
+    },
+    /// Remote Journalのupload中、保存前の再取得で消失が確定した対象を正常な同期結果として削除する。
+    ///
+    /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
+    RemoveMissingRemoteJournal {
         issue_id: IssueId,
         journal_id: JournalId,
     },
@@ -102,6 +119,48 @@ impl JournalStore {
                         };
                     }
                 }
+            }
+            JournalAction::FailRemoteUpload {
+                issue_id,
+                journal_id,
+                message,
+            } => {
+                let entry = self.entry_mut(issue_id, journal_id);
+                match &mut entry.state {
+                    RemoteJournalState::Uploading { diff, .. } => {
+                        entry.state = RemoteJournalState::Edited {
+                            diff: diff.clone(),
+                            failure: Some(JournalUploadFailure { message }),
+                        };
+                    }
+                    RemoteJournalState::Synced => {
+                        panic!("cannot fail remote journal {journal_id} upload while it is synced");
+                    }
+                    RemoteJournalState::Edited { .. } => {
+                        panic!("cannot fail remote journal {journal_id} upload while it is edited");
+                    }
+                }
+            }
+            JournalAction::RemoveMissingRemoteJournal {
+                issue_id,
+                journal_id,
+            } => {
+                let entry = self.entry_mut(issue_id, journal_id);
+                match &entry.state {
+                    RemoteJournalState::Uploading { .. } => {}
+                    RemoteJournalState::Synced => {
+                        panic!("cannot remove remote journal {journal_id} while it is synced");
+                    }
+                    RemoteJournalState::Edited { .. } => {
+                        panic!("cannot remove remote journal {journal_id} while it is edited");
+                    }
+                }
+                let issue_journals = self.by_issue.get_mut(&issue_id).unwrap_or_else(|| {
+                    panic!("remote journal {journal_id} is not registered for issue {issue_id}")
+                });
+                issue_journals
+                    .remote
+                    .retain(|entry| entry.journal.id != journal_id);
             }
         }
     }

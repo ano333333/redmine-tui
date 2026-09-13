@@ -705,6 +705,185 @@ fn edit_remote_notes_panics_when_the_journal_is_not_registered_for_the_issue() {
     });
 }
 
+#[test]
+fn fail_remote_upload_moves_an_uploading_journal_to_edited_with_the_failure_message() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![uploading_remote_entry(issue_id, JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::FailRemoteUpload {
+        issue_id,
+        journal_id: JournalId::new(10),
+        message: "network error: offline".to_string(),
+    });
+
+    let entry = store.get_remote_journal(issue_id, JournalId::new(10));
+    let RemoteJournalState::Edited { diff, failure } = &entry.state else {
+        panic!("expected edited state");
+    };
+    assert_eq!(diff.before, "remote notes 10");
+    assert_eq!(diff.after, "uploading notes");
+    let Some(failure) = failure else {
+        panic!("expected failure")
+    };
+    assert_eq!(failure.message.as_str(), "network error: offline");
+}
+
+#[test]
+#[should_panic(expected = "cannot fail remote journal 10 upload while it is synced")]
+fn fail_remote_upload_panics_when_the_journal_is_synced() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::FailRemoteUpload {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+        message: "network error: offline".to_string(),
+    });
+}
+
+#[test]
+#[should_panic(expected = "cannot fail remote journal 10 upload while it is edited")]
+fn fail_remote_upload_panics_when_the_journal_is_edited() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![edited_remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::FailRemoteUpload {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+        message: "network error: offline".to_string(),
+    });
+}
+
+#[test]
+#[should_panic(expected = "remote journal 11 is not registered for issue 1")]
+fn fail_remote_upload_panics_when_the_journal_is_not_registered_for_the_issue() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::FailRemoteUpload {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(11),
+        message: "network error: offline".to_string(),
+    });
+}
+
+#[test]
+fn remove_missing_remote_journal_removes_an_uploading_entry_and_keeps_the_rest() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![
+                    uploading_remote_entry(issue_id, JournalId::new(10)),
+                    remote_entry(issue_id, JournalId::new(11)),
+                ],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::RemoveMissingRemoteJournal {
+        issue_id,
+        journal_id: JournalId::new(10),
+    });
+
+    let journals = store.get_remote_journals(issue_id);
+    assert_eq!(
+        journals
+            .iter()
+            .map(|entry| entry.journal.id)
+            .collect::<Vec<_>>(),
+        vec![JournalId::new(11)]
+    );
+}
+
+#[test]
+#[should_panic(expected = "cannot remove remote journal 10 while it is synced")]
+fn remove_missing_remote_journal_panics_when_the_journal_is_synced() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::RemoveMissingRemoteJournal {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+    });
+}
+
+#[test]
+#[should_panic(expected = "cannot remove remote journal 10 while it is edited")]
+fn remove_missing_remote_journal_panics_when_the_journal_is_edited() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![edited_remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::RemoveMissingRemoteJournal {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+    });
+}
+
+#[test]
+#[should_panic(expected = "remote journal 11 is not registered for issue 1")]
+fn remove_missing_remote_journal_panics_when_the_journal_is_not_registered_for_the_issue() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::RemoveMissingRemoteJournal {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(11),
+    });
+}
+
 fn edited_remote_entry_with_failure(
     issue_id: impl Into<IssueId>,
     journal_id: impl Into<JournalId>,
