@@ -7,6 +7,10 @@ use crate::clients::redmine::RedmineClient;
 use crate::stores::{Dispatcher, IssueState, JournalAction, RemoteJournalState};
 use crate::vos::{EntityIdValue, IssueId, JournalId, JournalNotesDiff};
 
+use super::resolve_remote_journal_upload::{
+    RemoteJournalUploadResolution, resolve_remote_journal_upload,
+};
+
 /// Remote Journal uploadの完了Actionを生成するFuture。
 pub type StartRemoteJournalUploadFuture =
     Pin<Box<dyn Future<Output = JournalAction> + Send + 'static>>;
@@ -97,25 +101,55 @@ where
             ),
         };
     }
-    if !fetched
+    let Some(server_journal) = fetched
         .journals
         .iter()
-        .any(|journal| journal.id == journal_id)
-    {
+        .find(|journal| journal.id == journal_id)
+    else {
         return JournalAction::RemoveMissingRemoteJournal {
             issue_id,
             journal_id,
         };
-    }
-    complete_remote_upload(issue_id, journal_id)
+    };
+    complete_remote_upload(client, issue_id, journal_id, &diff, &server_journal.notes).await
 }
 
-fn complete_remote_upload(issue_id: IssueId, journal_id: JournalId) -> JournalAction {
-    // TODO: 取得したJournalとの三者比較と必要なPUTに応じた完了Actionを返す。
-    JournalAction::FailRemoteUpload {
-        issue_id,
-        journal_id,
-        message: "remote journal upload is not implemented yet".to_string(),
+async fn complete_remote_upload<C>(
+    client: &C,
+    issue_id: IssueId,
+    journal_id: JournalId,
+    diff: &JournalNotesDiff,
+    server_notes: &str,
+) -> JournalAction
+where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    match resolve_remote_journal_upload(&diff.before, &diff.after, server_notes) {
+        // 同じ編集内容が既にサーバーへ反映されていれば、重複PUTせず正常完了として収束させる。
+        RemoteJournalUploadResolution::AlreadyApplied => JournalAction::CompleteRemoteUpload {
+            issue_id,
+            journal_id,
+            notes: server_notes.to_string(),
+        },
+        RemoteJournalUploadResolution::Upload => {
+            match client.update_journal_notes(journal_id, &diff.after).await {
+                Ok(()) => JournalAction::CompleteRemoteUpload {
+                    issue_id,
+                    journal_id,
+                    notes: diff.after.clone(),
+                },
+                Err(error) => JournalAction::FailRemoteUpload {
+                    issue_id,
+                    journal_id,
+                    message: error.to_string(),
+                },
+            }
+        }
+        RemoteJournalUploadResolution::Conflict => JournalAction::FailRemoteUpload {
+            issue_id,
+            journal_id,
+            message: "remote journal conflict resolution is not implemented yet".to_string(),
+        },
     }
 }
 
@@ -153,6 +187,12 @@ mod tests {
         }
     }
 
+    fn journal_with_notes(notes: &str) -> crate::entities::Journal {
+        let mut journal = journal();
+        journal.notes = notes.to_string();
+        journal
+    }
+
     fn edited_issue_and_journal(dispatcher: &mut Dispatcher) {
         let mut issue =
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
@@ -176,9 +216,11 @@ mod tests {
     fn stub_client() -> Arc<StubClient> {
         Arc::new(StubClient {
             requested: Mutex::new(false),
+            requested_notes: Mutex::new(None),
             get_result: Err(RedmineClientError::Network {
                 reason: "offline".to_string(),
             }),
+            update_result: Ok(()),
             journals: vec![],
         })
     }
@@ -186,6 +228,7 @@ mod tests {
     fn stub_client_with_issue(issue_id: u16, journals: Vec<Journal>) -> Arc<StubClient> {
         Arc::new(StubClient {
             requested: Mutex::new(false),
+            requested_notes: Mutex::new(None),
             get_result: Ok(sample_issue_aggregate(
                 issue_id,
                 "subject",
@@ -195,24 +238,53 @@ mod tests {
                 None,
                 0,
             )),
+            update_result: Ok(()),
+            journals,
+        })
+    }
+
+    fn stub_client_with_issue_and_failed_put(
+        issue_id: u16,
+        journals: Vec<Journal>,
+    ) -> Arc<StubClient> {
+        Arc::new(StubClient {
+            requested: Mutex::new(false),
+            requested_notes: Mutex::new(None),
+            get_result: Ok(sample_issue_aggregate(
+                issue_id,
+                "subject",
+                IssueStatusId::new(1),
+                None,
+                None,
+                None,
+                0,
+            )),
+            update_result: Err(RedmineClientError::Network {
+                reason: "put failed".to_string(),
+            }),
             journals,
         })
     }
 
     struct StubClient {
         requested: Mutex<bool>,
+        requested_notes: Mutex<Option<String>>,
         get_result: Result<IssueAggregate, RedmineClientError>,
+        update_result: Result<(), RedmineClientError>,
         journals: Vec<Journal>,
     }
 
     impl RedmineClient for StubClient {
-        async fn update_journal_notes(
+        fn update_journal_notes(
             &self,
             _: crate::vos::JournalId,
-            _: &str,
-        ) -> Result<(), RedmineClientError> {
-            *self.requested.lock().unwrap() = true;
-            Ok(())
+            notes: &str,
+        ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send {
+            Box::pin(async move {
+                *self.requested.lock().unwrap() = true;
+                *self.requested_notes.lock().unwrap() = Some(notes.to_string());
+                self.update_result.clone()
+            })
         }
 
         async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
@@ -500,11 +572,126 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_journal_present_in_the_get_result_returns_the_not_implemented_action() {
+    async fn a_journal_unchanged_on_the_server_is_put_and_completes_with_the_edited_notes() {
         let mut dispatcher = Dispatcher::new();
         edited_issue_and_journal(&mut dispatcher);
         let dispatcher = Rc::new(RefCell::new(dispatcher));
         let client = stub_client_with_issue(1, vec![journal()]);
+
+        let action =
+            start_remote_journal_upload(dispatcher.clone(), client.clone(), ISSUE_ID, JOURNAL_ID)
+                .await;
+        dispatcher.borrow_mut().consume_action();
+
+        assert_eq!(
+            client.requested_notes.lock().unwrap().as_deref(),
+            Some("edited notes")
+        );
+        match &action {
+            JournalAction::CompleteRemoteUpload {
+                issue_id,
+                journal_id,
+                notes,
+            } => {
+                assert_eq!(*issue_id, ISSUE_ID);
+                assert_eq!(*journal_id, JOURNAL_ID);
+                assert_eq!(notes, "edited notes");
+            }
+            _ => panic!("expected complete remote upload action"),
+        }
+
+        dispatcher.borrow_mut().dispatch(action);
+        dispatcher.borrow_mut().consume_action();
+
+        let dispatcher = dispatcher.borrow();
+        let entry = dispatcher.store().get_remote_journal(ISSUE_ID, JOURNAL_ID);
+        assert!(matches!(entry.state, RemoteJournalState::Synced));
+        assert_eq!(entry.journal.notes, "edited notes");
+        assert_eq!(
+            entry.journal.updated_on,
+            local_datetime("2026-09-10T00:00:00+09:00")
+        );
+    }
+
+    #[tokio::test]
+    async fn server_equal_to_the_edited_notes_completes_without_a_put() {
+        let mut dispatcher = Dispatcher::new();
+        edited_issue_and_journal(&mut dispatcher);
+        let dispatcher = Rc::new(RefCell::new(dispatcher));
+        let client = stub_client_with_issue(1, vec![journal_with_notes("edited notes")]);
+
+        let action =
+            start_remote_journal_upload(dispatcher.clone(), client.clone(), ISSUE_ID, JOURNAL_ID)
+                .await;
+        dispatcher.borrow_mut().consume_action();
+
+        assert!(!*client.requested.lock().unwrap());
+        match &action {
+            JournalAction::CompleteRemoteUpload { notes, .. } => {
+                assert_eq!(notes, "edited notes");
+            }
+            _ => panic!("expected complete remote upload action"),
+        }
+
+        dispatcher.borrow_mut().dispatch(action);
+        dispatcher.borrow_mut().consume_action();
+
+        let dispatcher = dispatcher.borrow();
+        let entry = dispatcher.store().get_remote_journal(ISSUE_ID, JOURNAL_ID);
+        assert!(matches!(entry.state, RemoteJournalState::Synced));
+        assert_eq!(entry.journal.notes, "edited notes");
+        assert_eq!(
+            entry.journal.updated_on,
+            local_datetime("2026-09-10T00:00:00+09:00")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_put_returns_fail_remote_upload_and_restores_the_edited_state() {
+        let mut dispatcher = Dispatcher::new();
+        edited_issue_and_journal(&mut dispatcher);
+        let dispatcher = Rc::new(RefCell::new(dispatcher));
+        let client = stub_client_with_issue_and_failed_put(1, vec![journal()]);
+
+        let action =
+            start_remote_journal_upload(dispatcher.clone(), client, ISSUE_ID, JOURNAL_ID).await;
+        dispatcher.borrow_mut().consume_action();
+
+        match &action {
+            JournalAction::FailRemoteUpload {
+                issue_id,
+                journal_id,
+                message,
+            } => {
+                assert_eq!(*issue_id, ISSUE_ID);
+                assert_eq!(*journal_id, JOURNAL_ID);
+                assert_eq!(message, "network error: put failed");
+            }
+            _ => panic!("expected fail remote upload action"),
+        }
+
+        dispatcher.borrow_mut().dispatch(action);
+        dispatcher.borrow_mut().consume_action();
+
+        let dispatcher = dispatcher.borrow();
+        let entry = dispatcher.store().get_remote_journal(ISSUE_ID, JOURNAL_ID);
+        let RemoteJournalState::Edited { diff, failure } = &entry.state else {
+            panic!("expected edited state");
+        };
+        assert_eq!(diff.before, "remote notes");
+        assert_eq!(diff.after, "edited notes");
+        let Some(failure) = failure else {
+            panic!("expected failure")
+        };
+        assert_eq!(failure.message.as_str(), "network error: put failed");
+    }
+
+    #[tokio::test]
+    async fn a_conflicting_server_notes_returns_the_not_implemented_action() {
+        let mut dispatcher = Dispatcher::new();
+        edited_issue_and_journal(&mut dispatcher);
+        let dispatcher = Rc::new(RefCell::new(dispatcher));
+        let client = stub_client_with_issue(1, vec![journal_with_notes("conflicting notes")]);
 
         let action =
             start_remote_journal_upload(dispatcher.clone(), client, ISSUE_ID, JOURNAL_ID).await;
@@ -512,7 +699,10 @@ mod tests {
 
         match &action {
             JournalAction::FailRemoteUpload { message, .. } => {
-                assert_eq!(message, "remote journal upload is not implemented yet");
+                assert_eq!(
+                    message,
+                    "remote journal conflict resolution is not implemented yet"
+                );
             }
             _ => panic!("expected fail remote upload action"),
         }

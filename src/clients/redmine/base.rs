@@ -78,11 +78,11 @@ pub trait RedmineClient {
     ) -> impl std::future::Future<Output = Result<FetchedIssue, RedmineClientError>> + Send;
     async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError>;
     /// Redmine上の既存Journalのnotes全体を指定値で置き換える。
-    async fn update_journal_notes(
+    fn update_journal_notes(
         &self,
         journal_id: JournalId,
         notes: &str,
-    ) -> Result<(), RedmineClientError>;
+    ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
     async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError>;
     async fn get_priorities(&self) -> Result<Vec<Priority>, RedmineClientError>;
     async fn get_projects(&self) -> Result<Vec<Project>, RedmineClientError>;

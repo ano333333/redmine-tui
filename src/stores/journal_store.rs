@@ -40,6 +40,15 @@ pub enum JournalAction {
         issue_id: IssueId,
         journal_id: JournalId,
     },
+    /// upload完了時のnotesを同期基準にしてSyncedへ遷移する。
+    ///
+    /// PUTレスポンスでは更新日時を取得できないため、`updated_on`は既存値を維持する。
+    /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
+    CompleteRemoteUpload {
+        issue_id: IssueId,
+        journal_id: JournalId,
+        notes: String,
+    },
     /// upload失敗後も編集差分を維持し、再試行可能なEditedへ戻す。
     ///
     /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
@@ -117,6 +126,29 @@ impl JournalStore {
                             diff,
                             conflict: None,
                         };
+                    }
+                }
+            }
+            JournalAction::CompleteRemoteUpload {
+                issue_id,
+                journal_id,
+                notes,
+            } => {
+                let entry = self.entry_mut(issue_id, journal_id);
+                match &mut entry.state {
+                    RemoteJournalState::Uploading { .. } => {
+                        entry.journal.notes = notes;
+                        entry.state = RemoteJournalState::Synced;
+                    }
+                    RemoteJournalState::Synced => {
+                        panic!(
+                            "cannot complete remote journal {journal_id} upload while it is synced"
+                        );
+                    }
+                    RemoteJournalState::Edited { .. } => {
+                        panic!(
+                            "cannot complete remote journal {journal_id} upload while it is edited"
+                        );
                     }
                 }
             }
