@@ -31,6 +31,13 @@ pub enum JournalAction {
         journal_id: JournalId,
         notes: String,
     },
+    /// Remote Journalのuploadを開始し、以前の失敗情報を破棄する。
+    ///
+    /// 対象が未登録の場合、またはEdited以外の状態の場合はpanicする。
+    StartRemoteUpload {
+        issue_id: IssueId,
+        journal_id: JournalId,
+    },
 }
 
 impl JournalStore {
@@ -60,18 +67,7 @@ impl JournalStore {
                 journal_id,
                 notes,
             } => {
-                let entry = self
-                    .by_issue
-                    .get_mut(&issue_id)
-                    .and_then(|issue_journals| {
-                        issue_journals
-                            .remote
-                            .iter_mut()
-                            .find(|entry| entry.journal.id == journal_id)
-                    })
-                    .unwrap_or_else(|| {
-                        panic!("remote journal {journal_id} is not registered for issue {issue_id}")
-                    });
+                let entry = self.entry_mut(issue_id, journal_id);
                 match &mut entry.state {
                     RemoteJournalState::Uploading { .. } => {
                         panic!("cannot edit remote journal {journal_id} while it is uploading");
@@ -86,7 +82,42 @@ impl JournalStore {
                     }
                 }
             }
+            JournalAction::StartRemoteUpload {
+                issue_id,
+                journal_id,
+            } => {
+                let entry = self.entry_mut(issue_id, journal_id);
+                match &mut entry.state {
+                    RemoteJournalState::Synced => {
+                        panic!("cannot start remote journal upload while it is synced");
+                    }
+                    RemoteJournalState::Uploading { .. } => {
+                        panic!("cannot start remote journal upload while it is uploading");
+                    }
+                    RemoteJournalState::Edited { diff, .. } => {
+                        let diff = diff.clone();
+                        entry.state = RemoteJournalState::Uploading {
+                            diff,
+                            conflict: None,
+                        };
+                    }
+                }
+            }
         }
+    }
+
+    fn entry_mut(&mut self, issue_id: IssueId, journal_id: JournalId) -> &mut RemoteJournalEntry {
+        self.by_issue
+            .get_mut(&issue_id)
+            .and_then(|issue_journals| {
+                issue_journals
+                    .remote
+                    .iter_mut()
+                    .find(|entry| entry.journal.id == journal_id)
+            })
+            .unwrap_or_else(|| {
+                panic!("remote journal {journal_id} is not registered for issue {issue_id}")
+            })
     }
 
     fn edited_or_synced_state(before: String, after: String) -> RemoteJournalState {

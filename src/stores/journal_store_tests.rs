@@ -570,6 +570,122 @@ fn edit_remote_notes_panics_while_the_journal_is_uploading() {
 }
 
 #[test]
+fn start_remote_upload_moves_an_edited_journal_to_uploading_without_changing_the_diff() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![edited_remote_entry(issue_id, JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::StartRemoteUpload {
+        issue_id,
+        journal_id: JournalId::new(10),
+    });
+
+    let entry = store.get_remote_journal(issue_id, JournalId::new(10));
+    let RemoteJournalState::Uploading { diff, conflict } = &entry.state else {
+        panic!("expected uploading state");
+    };
+    assert_eq!(diff.before, "remote notes 10");
+    assert_eq!(diff.after, "edited notes");
+    assert!(conflict.is_none());
+}
+
+#[test]
+fn start_remote_upload_drops_a_kept_upload_failure_and_keeps_the_diff() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![edited_remote_entry_with_failure(
+                    issue_id,
+                    JournalId::new(10),
+                    "first before",
+                    "first after",
+                )],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::StartRemoteUpload {
+        issue_id,
+        journal_id: JournalId::new(10),
+    });
+
+    let entry = store.get_remote_journal(issue_id, JournalId::new(10));
+    let RemoteJournalState::Uploading { diff, conflict } = &entry.state else {
+        panic!("expected uploading state");
+    };
+    assert_eq!(diff.before, "first before");
+    assert_eq!(diff.after, "first after");
+    assert!(conflict.is_none());
+}
+
+#[test]
+#[should_panic(expected = "cannot start remote journal upload while it is synced")]
+fn start_remote_upload_panics_when_the_journal_is_synced() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::StartRemoteUpload {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+    });
+}
+
+#[test]
+#[should_panic(expected = "cannot start remote journal upload while it is uploading")]
+fn start_remote_upload_panics_when_the_journal_is_already_uploading() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![uploading_remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::StartRemoteUpload {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+    });
+}
+
+#[test]
+#[should_panic(expected = "remote journal 11 is not registered for issue 1")]
+fn start_remote_upload_panics_when_the_journal_is_not_registered_for_the_issue() {
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            IssueId::new(1),
+            IssueJournals {
+                remote: vec![remote_entry(IssueId::new(1), JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::StartRemoteUpload {
+        issue_id: IssueId::new(1),
+        journal_id: JournalId::new(11),
+    });
+}
+
+#[test]
 #[should_panic(expected = "remote journal 11 is not registered for issue 1")]
 fn edit_remote_notes_panics_when_the_journal_is_not_registered_for_the_issue() {
     let mut store = JournalStore {

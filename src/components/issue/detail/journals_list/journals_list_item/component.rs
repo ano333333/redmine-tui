@@ -145,6 +145,7 @@ pub struct JournalsListItemComponent {
     pub id: u16,
     issue_id: IssueId,
     notes: String,
+    state: RemoteJournalState,
     detail_count: usize,
     comment_line_count: u16,
     focus_state: FocusState,
@@ -157,11 +158,20 @@ impl JournalsListItemComponent {
             id: journal_id.get(),
             issue_id,
             notes: String::new(),
+            state: RemoteJournalState::Synced,
             detail_count: 0,
             comment_line_count: 0,
             focus_state: FocusState::new(),
             widget_state: JournalItemWidgetState::new(),
         }
+    }
+
+    /// 保存対象がない状態、または保存処理中の重複入力として保存キーを消費するかを返す。
+    fn save_key_is_no_op(&self) -> bool {
+        matches!(
+            self.state,
+            RemoteJournalState::Synced | RemoteJournalState::Uploading { .. }
+        )
     }
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
@@ -189,6 +199,7 @@ impl JournalsListItemComponent {
         let journal = &entry.journal;
         let notes = display_notes(&journal.notes, &entry.state).to_owned();
         self.notes = notes;
+        self.state = entry.state.clone();
         self.detail_count = journal.details.len();
         self.widget_state
             .update(width, &journal.user, &journal.updated_on, &self.notes);
