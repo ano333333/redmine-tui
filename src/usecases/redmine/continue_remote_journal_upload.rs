@@ -4,16 +4,17 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::clients::redmine::RedmineClient;
-use crate::stores::{Dispatcher, JournalAction, RemoteJournalState};
+use crate::stores::{Action, Dispatcher, JournalAction, RemoteJournalState};
 use crate::vos::{EntityIdValue, IssueId, JournalId};
 
 use super::resolve_remote_journal_upload::{
     RemoteJournalUploadResolution, resolve_remote_journal_upload,
 };
+use super::start_remote_journal_upload::remote_journal_upload_failure_actions;
 
 /// 競合解決後のRemote Journal upload継続の完了Actionを生成するFuture。
 pub type ContinueRemoteJournalUploadFuture =
-    Pin<Box<dyn Future<Output = JournalAction> + Send + 'static>>;
+    Pin<Box<dyn Future<Output = Vec<Action>> + Send + 'static>>;
 
 /// 競合解決後のRemote Journal uploadを継続する。
 ///
@@ -63,40 +64,39 @@ async fn continue_remote_journal_upload_inner<C>(
     journal_id: JournalId,
     conflict_server_notes: &str,
     resolved_notes: &str,
-) -> JournalAction
+) -> Vec<Action>
 where
     C: RedmineClient + Send + Sync + 'static,
 {
     let fetched = match client.get_issue(issue_id).await {
         Err(error) => {
-            return JournalAction::FailRemoteUpload {
-                issue_id,
-                journal_id,
-                message: error.to_string(),
-            };
+            return remote_journal_upload_failure_actions(issue_id, journal_id, error.to_string());
         }
         Ok(fetched) => fetched,
     };
     if fetched.aggregate.issue.id != issue_id {
-        return JournalAction::FailRemoteUpload {
+        return remote_journal_upload_failure_actions(
             issue_id,
             journal_id,
-            message: format!(
+            format!(
                 "requested issue {} but Redmine returned issue {}",
                 issue_id.get(),
                 fetched.aggregate.issue.id.get()
             ),
-        };
+        );
     }
     let Some(server_journal) = fetched
         .journals
         .iter()
         .find(|journal| journal.id == journal_id)
     else {
-        return JournalAction::RemoveMissingRemoteJournal {
-            issue_id,
-            journal_id,
-        };
+        return vec![
+            JournalAction::RemoveMissingRemoteJournal {
+                issue_id,
+                journal_id,
+            }
+            .into(),
+        ];
     };
 
     // 前回の競合検出時点からのサーバー更新も検出するため、その時点の値を比較の基準にする。
@@ -106,33 +106,40 @@ where
         &server_journal.notes,
     ) {
         // 解決値がすでにサーバーへ反映済みなら、重複PUTせず正常完了として収束させる。
-        RemoteJournalUploadResolution::AlreadyApplied => JournalAction::CompleteRemoteUpload {
-            issue_id,
-            journal_id,
-            notes: resolved_notes.to_string(),
-        },
+        RemoteJournalUploadResolution::AlreadyApplied => vec![
+            JournalAction::CompleteRemoteUpload {
+                issue_id,
+                journal_id,
+                notes: resolved_notes.to_string(),
+            }
+            .into(),
+        ],
         RemoteJournalUploadResolution::Upload => {
             match client
                 .update_journal_notes(journal_id, resolved_notes)
                 .await
             {
-                Ok(()) => JournalAction::CompleteRemoteUpload {
-                    issue_id,
-                    journal_id,
-                    notes: resolved_notes.to_string(),
-                },
-                Err(error) => JournalAction::FailRemoteUpload {
-                    issue_id,
-                    journal_id,
-                    message: error.to_string(),
-                },
+                Ok(()) => vec![
+                    JournalAction::CompleteRemoteUpload {
+                        issue_id,
+                        journal_id,
+                        notes: resolved_notes.to_string(),
+                    }
+                    .into(),
+                ],
+                Err(error) => {
+                    remote_journal_upload_failure_actions(issue_id, journal_id, error.to_string())
+                }
             }
         }
-        RemoteJournalUploadResolution::Conflict => JournalAction::DetectRemoteUploadConflict {
-            issue_id,
-            journal_id,
-            server_notes: server_journal.notes.clone(),
-        },
+        RemoteJournalUploadResolution::Conflict => vec![
+            JournalAction::DetectRemoteUploadConflict {
+                issue_id,
+                journal_id,
+                server_notes: server_journal.notes.clone(),
+            }
+            .into(),
+        ],
     }
 }
 
@@ -148,7 +155,9 @@ mod tests {
         Category, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
         TimeEntityActivity, Tracker, User,
     };
-    use crate::stores::{Action, Dispatcher, IssueAction, JournalAction, RemoteJournalState};
+    use crate::stores::{
+        Action, Dispatcher, IssueAction, JournalAction, NoticeAction, RemoteJournalState,
+    };
     use crate::test_support::sample_issue_aggregate;
     use crate::vos::{IssueId, IssueStatusId, JournalId};
 
@@ -438,7 +447,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(dispatcher));
         let client = stub_client();
 
-        let action = continue_remote_journal_upload(
+        let actions = continue_remote_journal_upload(
             dispatcher.clone(),
             client,
             ISSUE_ID,
@@ -448,20 +457,33 @@ mod tests {
         .await;
         dispatcher.borrow_mut().consume_action();
 
-        match &action {
-            JournalAction::FailRemoteUpload {
+        assert_eq!(actions.len(), 2);
+        match &actions[1] {
+            Action::Journal(JournalAction::FailRemoteUpload {
                 issue_id,
                 journal_id,
                 message,
-            } => {
+            }) => {
                 assert_eq!(*issue_id, ISSUE_ID);
                 assert_eq!(*journal_id, JOURNAL_ID);
                 assert_eq!(message, "network error: offline");
             }
             _ => panic!("expected fail remote upload action"),
         }
+        match &actions[0] {
+            Action::Notice(NoticeAction::Push { message, .. }) => {
+                assert_eq!(
+                    message,
+                    "Remote Journalの保存に失敗しました: network error: offline"
+                );
+            }
+            _ => panic!("expected fail remote upload notice"),
+        }
 
-        dispatcher.borrow_mut().dispatch(action);
+        for action in actions {
+            dispatcher.borrow_mut().dispatch(action);
+        }
+        dispatcher.borrow_mut().consume_action();
         dispatcher.borrow_mut().consume_action();
 
         let dispatcher = dispatcher.borrow();
@@ -487,7 +509,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(dispatcher));
         let client = stub_client_with_issue(99, vec![journal()]);
 
-        let action = continue_remote_journal_upload(
+        let actions = continue_remote_journal_upload(
             dispatcher.clone(),
             client,
             ISSUE_ID,
@@ -497,20 +519,29 @@ mod tests {
         .await;
         dispatcher.borrow_mut().consume_action();
 
-        match &action {
-            JournalAction::FailRemoteUpload {
+        assert_eq!(actions.len(), 2);
+        match &actions[1] {
+            Action::Journal(JournalAction::FailRemoteUpload {
                 issue_id,
                 journal_id,
                 message,
-            } => {
+            }) => {
                 assert_eq!(*issue_id, ISSUE_ID);
                 assert_eq!(*journal_id, JOURNAL_ID);
                 assert_eq!(message, "requested issue 1 but Redmine returned issue 99");
             }
             _ => panic!("expected fail remote upload action"),
         }
+        assert!(matches!(
+            &actions[0],
+            Action::Notice(NoticeAction::Push { message, .. }) if message
+                == "Remote Journalの保存に失敗しました: requested issue 1 but Redmine returned issue 99"
+        ));
 
-        dispatcher.borrow_mut().dispatch(action);
+        for action in actions {
+            dispatcher.borrow_mut().dispatch(action);
+        }
+        dispatcher.borrow_mut().consume_action();
         dispatcher.borrow_mut().consume_action();
 
         let dispatcher = dispatcher.borrow();
@@ -526,7 +557,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(dispatcher));
         let client = stub_client_with_issue(1, vec![]);
 
-        let action = continue_remote_journal_upload(
+        let actions = continue_remote_journal_upload(
             dispatcher.clone(),
             client,
             ISSUE_ID,
@@ -536,18 +567,21 @@ mod tests {
         .await;
         dispatcher.borrow_mut().consume_action();
 
-        match &action {
-            JournalAction::RemoveMissingRemoteJournal {
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            Action::Journal(JournalAction::RemoveMissingRemoteJournal {
                 issue_id,
                 journal_id,
-            } => {
+            }) => {
                 assert_eq!(*issue_id, ISSUE_ID);
                 assert_eq!(*journal_id, JOURNAL_ID);
             }
             _ => panic!("expected remove missing remote journal action"),
         }
 
-        dispatcher.borrow_mut().dispatch(action);
+        for action in actions {
+            dispatcher.borrow_mut().dispatch(action);
+        }
         dispatcher.borrow_mut().consume_action();
 
         assert!(
@@ -567,7 +601,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(dispatcher));
         let client = stub_client_with_issue(1, vec![journal_with_notes("resolved notes")]);
 
-        let action = continue_remote_journal_upload(
+        let actions = continue_remote_journal_upload(
             dispatcher.clone(),
             client.clone(),
             ISSUE_ID,
@@ -578,12 +612,13 @@ mod tests {
         dispatcher.borrow_mut().consume_action();
 
         assert!(!*client.requested.lock().unwrap());
-        match &action {
-            JournalAction::CompleteRemoteUpload {
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            Action::Journal(JournalAction::CompleteRemoteUpload {
                 issue_id,
                 journal_id,
                 notes,
-            } => {
+            }) => {
                 assert_eq!(*issue_id, ISSUE_ID);
                 assert_eq!(*journal_id, JOURNAL_ID);
                 assert_eq!(notes, "resolved notes");
@@ -591,7 +626,9 @@ mod tests {
             _ => panic!("expected complete remote upload action"),
         }
 
-        dispatcher.borrow_mut().dispatch(action);
+        for action in actions {
+            dispatcher.borrow_mut().dispatch(action);
+        }
         dispatcher.borrow_mut().consume_action();
 
         let dispatcher = dispatcher.borrow();
@@ -608,7 +645,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(dispatcher));
         let client = stub_client_with_issue(1, vec![journal_with_notes(CONFLICT_SERVER)]);
 
-        let action = continue_remote_journal_upload(
+        let actions = continue_remote_journal_upload(
             dispatcher.clone(),
             client.clone(),
             ISSUE_ID,
@@ -622,12 +659,13 @@ mod tests {
             client.requested_notes.lock().unwrap().as_deref(),
             Some("resolved notes")
         );
-        match &action {
-            JournalAction::CompleteRemoteUpload {
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            Action::Journal(JournalAction::CompleteRemoteUpload {
                 issue_id,
                 journal_id,
                 notes,
-            } => {
+            }) => {
                 assert_eq!(*issue_id, ISSUE_ID);
                 assert_eq!(*journal_id, JOURNAL_ID);
                 assert_eq!(notes, "resolved notes");
@@ -635,7 +673,9 @@ mod tests {
             _ => panic!("expected complete remote upload action"),
         }
 
-        dispatcher.borrow_mut().dispatch(action);
+        for action in actions {
+            dispatcher.borrow_mut().dispatch(action);
+        }
         dispatcher.borrow_mut().consume_action();
 
         let dispatcher = dispatcher.borrow();
@@ -652,7 +692,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(dispatcher));
         let client = stub_client_with_failed_put(1, vec![journal_with_notes(CONFLICT_SERVER)]);
 
-        let action = continue_remote_journal_upload(
+        let actions = continue_remote_journal_upload(
             dispatcher.clone(),
             client,
             ISSUE_ID,
@@ -662,20 +702,29 @@ mod tests {
         .await;
         dispatcher.borrow_mut().consume_action();
 
-        match &action {
-            JournalAction::FailRemoteUpload {
+        assert_eq!(actions.len(), 2);
+        match &actions[1] {
+            Action::Journal(JournalAction::FailRemoteUpload {
                 issue_id,
                 journal_id,
                 message,
-            } => {
+            }) => {
                 assert_eq!(*issue_id, ISSUE_ID);
                 assert_eq!(*journal_id, JOURNAL_ID);
                 assert_eq!(message, "network error: put failed");
             }
             _ => panic!("expected fail remote upload action"),
         }
+        assert!(matches!(
+            &actions[0],
+            Action::Notice(NoticeAction::Push { message, .. }) if message
+                == "Remote Journalの保存に失敗しました: network error: put failed"
+        ));
 
-        dispatcher.borrow_mut().dispatch(action);
+        for action in actions {
+            dispatcher.borrow_mut().dispatch(action);
+        }
+        dispatcher.borrow_mut().consume_action();
         dispatcher.borrow_mut().consume_action();
 
         let dispatcher = dispatcher.borrow();
@@ -701,7 +750,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(dispatcher));
         let client = stub_client_with_issue(1, vec![journal_with_notes("newly changed notes")]);
 
-        let action = continue_remote_journal_upload(
+        let actions = continue_remote_journal_upload(
             dispatcher.clone(),
             client,
             ISSUE_ID,
@@ -711,12 +760,13 @@ mod tests {
         .await;
         dispatcher.borrow_mut().consume_action();
 
-        match &action {
-            JournalAction::DetectRemoteUploadConflict {
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            Action::Journal(JournalAction::DetectRemoteUploadConflict {
                 issue_id,
                 journal_id,
                 server_notes,
-            } => {
+            }) => {
                 assert_eq!(*issue_id, ISSUE_ID);
                 assert_eq!(*journal_id, JOURNAL_ID);
                 assert_eq!(server_notes, "newly changed notes");
@@ -724,7 +774,9 @@ mod tests {
             _ => panic!("expected detect remote upload conflict action"),
         }
 
-        dispatcher.borrow_mut().dispatch(action);
+        for action in actions {
+            dispatcher.borrow_mut().dispatch(action);
+        }
         dispatcher.borrow_mut().consume_action();
 
         let dispatcher = dispatcher.borrow();

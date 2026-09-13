@@ -1,6 +1,6 @@
 use std::cmp::min;
 
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::layout::Position;
 
 pub enum FocusEvent {
@@ -14,6 +14,7 @@ pub enum EventProcessResult {
     CursorLeavedFromBelow { x: u16 },
     CursorLeavedFromAbove { x: u16 },
     Edit,
+    SaveRequested,
 }
 
 enum FocusedPosition {
@@ -27,12 +28,14 @@ enum Action {
     MoveLeft,
     MoveRight,
     Edit,
+    Save,
 }
 
 pub struct FocusState {
     width: u16,
     property_count: usize,
     comment_line_count: u16,
+    save_key_is_no_op: bool,
     focused_position: Option<FocusedPosition>,
 }
 
@@ -42,14 +45,22 @@ impl FocusState {
             width: 0,
             property_count: 0,
             comment_line_count: 0,
+            save_key_is_no_op: true,
             focused_position: None,
         }
     }
 
-    pub fn update(&mut self, width: u16, property_count: usize, comment_line_count: u16) {
+    pub fn update(
+        &mut self,
+        width: u16,
+        property_count: usize,
+        comment_line_count: u16,
+        save_key_is_no_op: bool,
+    ) {
         self.width = width;
         self.property_count = property_count;
         self.comment_line_count = comment_line_count;
+        self.save_key_is_no_op = save_key_is_no_op;
 
         match &mut self.focused_position {
             None => {}
@@ -91,6 +102,9 @@ impl FocusState {
                 if matches!(self.focused_position, Some(FocusedPosition::Notes(_))) =>
             {
                 Some(Action::Edit)
+            }
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(Action::Save)
             }
             _ => None,
         }
@@ -150,6 +164,12 @@ impl FocusState {
                 if matches!(focused_position, FocusedPosition::Notes(_)) {
                     return Some(EventProcessResult::Edit);
                 }
+            }
+            Action::Save => {
+                if self.save_key_is_no_op {
+                    return None;
+                }
+                return Some(EventProcessResult::SaveRequested);
             }
         }
         None
@@ -229,8 +249,22 @@ mod tests {
 
     fn state(width: u16, property_count: usize, comment_line_count: u16) -> FocusState {
         let mut state = FocusState::new();
-        state.update(width, property_count, comment_line_count);
+        state.update(width, property_count, comment_line_count, true);
         state
+    }
+
+    fn state_with_saving_allowed(
+        width: u16,
+        property_count: usize,
+        comment_line_count: u16,
+    ) -> FocusState {
+        let mut state = FocusState::new();
+        state.update(width, property_count, comment_line_count, false);
+        state
+    }
+
+    fn ctrl_s_event() -> Event {
+        Event::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL))
     }
 
     fn assert_leave_from_below(result: Option<EventProcessResult>, expected_x: u16) {
@@ -262,7 +296,7 @@ mod tests {
             position: Position::new(31, 6),
         });
 
-        state.update(NARROW_WIDTH, 1, NARROW_NOTE_LINE_COUNT);
+        state.update(NARROW_WIDTH, 1, NARROW_NOTE_LINE_COUNT, true);
 
         assert_eq!(state.get_cursor_position(), Position::new(17, 6));
     }
@@ -274,7 +308,7 @@ mod tests {
             position: Position::new(0, 3),
         });
 
-        state.update(WIDE_WIDTH, 1, NOTE_LINE_COUNT);
+        state.update(WIDE_WIDTH, 1, NOTE_LINE_COUNT, true);
 
         assert_eq!(state.get_cursor_position(), Position::new(0, 2));
     }
@@ -284,7 +318,7 @@ mod tests {
         let mut state = state(WIDE_WIDTH, 2, NOTE_LINE_COUNT);
         state.focus_event(FocusEvent::CursorEnteredFromBelow { x: 6 });
 
-        state.update(WIDE_WIDTH, 2, PLACEHOLDER_LINE_COUNT);
+        state.update(WIDE_WIDTH, 2, PLACEHOLDER_LINE_COUNT, true);
 
         assert_eq!(state.get_cursor_position(), Position::new(6, 5));
     }
@@ -559,6 +593,45 @@ mod tests {
 
         assert!(matches!(result, Some(EventProcessResult::Edit)));
         assert_eq!(state.get_cursor_position(), Position::new(6, 4));
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_no_op_state_consumes_the_key() {
+        let mut state = state(WIDE_WIDTH, 1, NOTE_LINE_COUNT);
+        state.focus_event(FocusEvent::CursorEnteredFromBelow { x: 6 });
+
+        let result = state.process_event(ctrl_s_event());
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_saving_allowed_state_returns_save_requested() {
+        let mut state = state_with_saving_allowed(WIDE_WIDTH, 1, NOTE_LINE_COUNT);
+        state.focus_event(FocusEvent::CursorEnteredFromBelow { x: 6 });
+
+        let result = state.process_event(ctrl_s_event());
+
+        assert!(matches!(result, Some(EventProcessResult::SaveRequested)));
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_detail_position_returns_save_requested_when_saving_allowed() {
+        let mut state = state_with_saving_allowed(WIDE_WIDTH, 2, NOTE_LINE_COUNT);
+        state.focus_event(FocusEvent::CursorEnteredFromAbove { x: 6 });
+
+        let result = state.process_event(ctrl_s_event());
+
+        assert!(matches!(result, Some(EventProcessResult::SaveRequested)));
+    }
+
+    #[test]
+    fn process_event_ctrl_s_when_unfocused_does_nothing() {
+        let mut state = state_with_saving_allowed(WIDE_WIDTH, 2, NOTE_LINE_COUNT);
+
+        let result = state.process_event(ctrl_s_event());
+
+        assert!(result.is_none());
     }
 
     #[test]

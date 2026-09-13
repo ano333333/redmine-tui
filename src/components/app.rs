@@ -17,7 +17,7 @@ use crate::components::issue_select_popup::component::EventProcessResult as Issu
 use crate::components::issue_select_popup::component::{
     Effect as IssueSelectPopupEffect, IssueSelectPopupComponent,
 };
-use crate::stores::{Action, Dispatcher, IssueAction, JournalAction, Store};
+use crate::stores::{Action, Dispatcher, IssueAction, JournalAction, RemoteJournalState, Store};
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
     build_done_ratio_options, build_issue_status_options, build_target_version_options,
@@ -60,6 +60,10 @@ pub enum AppEffect {
     ContinueIssueUpload {
         id: IssueId,
         diffs: Vec<IssuePropertyDiff>,
+    },
+    StartRemoteJournalUpload {
+        issue_id: IssueId,
+        journal_id: JournalId,
     },
 }
 
@@ -340,6 +344,23 @@ impl<'a> AppComponent<'a> {
                 IssueDetailEventProcessResult::StartIssueUpload,
             )) => {
                 self.pending_effect = Some(AppEffect::StartIssueUpload(issue_id));
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::SaveRequested { issue_id, id },
+            )) => {
+                let is_edited = {
+                    let dispatcher = dispatcher.borrow();
+                    matches!(
+                        dispatcher.store().get_remote_journal(issue_id, id).state,
+                        RemoteJournalState::Edited { .. }
+                    )
+                };
+                if is_edited {
+                    self.pending_effect = Some(AppEffect::StartRemoteJournalUpload {
+                        issue_id,
+                        journal_id: id,
+                    });
+                }
             }
             Some(IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::EditJournalRequested {
@@ -683,6 +704,21 @@ mod tests {
 
     fn key_event(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn ctrl_s_event() -> Event {
+        Event::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL))
+    }
+
+    fn edit_first_journal(dispatcher: &Rc<RefCell<Dispatcher>>) {
+        dispatcher
+            .borrow_mut()
+            .dispatch(JournalAction::EditRemoteNotes {
+                issue_id: IssueId::new(3),
+                journal_id: JournalId::new(1),
+                notes: "edited notes".to_string(),
+            });
+        dispatcher.borrow_mut().consume_action();
     }
 
     fn loaded_dispatcher() -> Rc<RefCell<Dispatcher>> {
@@ -1244,6 +1280,54 @@ mod tests {
         assert_eq!(diff.before, "");
         assert_eq!(diff.after, "updated notes");
         assert!(failure.is_none());
+    }
+
+    #[test]
+    fn ctrl_s_on_edited_journal_notes_installs_start_remote_journal_upload_effect() {
+        let dispatcher = loaded_dispatcher_with_journals();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        edit_first_journal(&dispatcher);
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        focus_first_journal_notes(&mut app, dispatcher.clone());
+        app.process_event(ctrl_s_event(), dispatcher.clone());
+
+        let Some(AppEffect::StartRemoteJournalUpload {
+            issue_id,
+            journal_id,
+        }) = app.take_effect()
+        else {
+            panic!("expected start remote journal upload effect");
+        };
+        assert_eq!(issue_id, IssueId::new(3));
+        assert_eq!(journal_id, JournalId::new(1));
+    }
+
+    #[test]
+    fn ctrl_s_on_synced_journal_notes_installs_no_effect() {
+        let dispatcher = loaded_dispatcher_with_journals();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        focus_first_journal_notes(&mut app, dispatcher.clone());
+        app.process_event(ctrl_s_event(), dispatcher.clone());
+
+        assert!(app.take_effect().is_none());
+    }
+
+    #[test]
+    fn ctrl_s_outside_journals_list_installs_start_issue_upload() {
+        let dispatcher = loaded_dispatcher_with_journals();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        app.process_event(ctrl_s_event(), dispatcher.clone());
+
+        let Some(AppEffect::StartIssueUpload(id)) = app.take_effect() else {
+            panic!("expected start issue upload effect");
+        };
+        assert_eq!(id, IssueId::new(3));
     }
 
     #[test]

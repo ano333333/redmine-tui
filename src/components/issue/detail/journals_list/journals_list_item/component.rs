@@ -139,6 +139,7 @@ pub enum EventProcessResult {
     CursorLeavedFromBelow { x: u16 },
     CursorLeavedFromAbove { x: u16 },
     EditRequested { id: JournalId, notes: String },
+    SaveRequested { id: JournalId },
 }
 
 pub struct JournalsListItemComponent {
@@ -188,6 +189,11 @@ impl JournalsListItemComponent {
                     id: JournalId::new(self.id),
                     notes: self.notes.clone(),
                 },
+                focus_state::EventProcessResult::SaveRequested => {
+                    EventProcessResult::SaveRequested {
+                        id: JournalId::new(self.id),
+                    }
+                }
             })
     }
 
@@ -204,8 +210,12 @@ impl JournalsListItemComponent {
         self.widget_state
             .update(width, &journal.user, &journal.updated_on, &self.notes);
         self.comment_line_count = self.widget_state.comment_line_count();
-        self.focus_state
-            .update(width, self.detail_count, self.comment_line_count);
+        self.focus_state.update(
+            width,
+            self.detail_count,
+            self.comment_line_count,
+            self.save_key_is_no_op(),
+        );
     }
 
     pub fn create_widget<'a>(&'a self, store: &'a Store) -> JournalItemWidget<'a> {
@@ -250,6 +260,36 @@ mod tests {
 
     fn key_event(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn ctrl_s_event() -> Event {
+        Event::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL))
+    }
+
+    fn make_edited(store: &mut Store, journal: &Journal) -> RemoteJournalEntry {
+        store.consume_action(Action::Journal(JournalAction::EditRemoteNotes {
+            issue_id: journal.issue_id,
+            journal_id: journal.id,
+            notes: "edited notes".to_string(),
+        }));
+        store
+            .get_remote_journal(journal.issue_id, journal.id)
+            .clone()
+    }
+
+    fn make_uploading(store: &mut Store, journal: &Journal) -> RemoteJournalEntry {
+        store.consume_action(Action::Journal(JournalAction::EditRemoteNotes {
+            issue_id: journal.issue_id,
+            journal_id: journal.id,
+            notes: "edited notes".to_string(),
+        }));
+        store.consume_action(Action::Journal(JournalAction::StartRemoteUpload {
+            issue_id: journal.issue_id,
+            journal_id: journal.id,
+        }));
+        store
+            .get_remote_journal(journal.issue_id, journal.id)
+            .clone()
     }
 
     fn fixture_store() -> Store {
@@ -471,6 +511,49 @@ mod tests {
         );
 
         assert_layout_contract(&component, NARROW_WIDTH, 9, Position::new(17, 6));
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_edited_returns_save_requested() {
+        let mut store = fixture_store();
+        let journal = create_journal(1, one_detail(), notes());
+        let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
+        component.update(&make_edited(&mut store, &journal), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
+
+        let result = component.process_event(ctrl_s_event());
+
+        match result {
+            Some(EventProcessResult::SaveRequested { id }) => {
+                assert_eq!(id, JournalId::new(1));
+            }
+            _ => panic!("expected save request"),
+        }
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_synced_is_a_no_op() {
+        let mut store = fixture_store();
+        let journal = create_journal(1, one_detail(), notes());
+        let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
+
+        let result = component.process_event(ctrl_s_event());
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_uploading_is_a_no_op() {
+        let mut store = fixture_store();
+        let journal = create_journal(1, one_detail(), notes());
+        let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
+        component.update(&make_uploading(&mut store, &journal), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
+
+        let result = component.process_event(ctrl_s_event());
+
+        assert!(result.is_none());
     }
 
     #[test]

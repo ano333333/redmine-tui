@@ -20,6 +20,7 @@ pub enum EventProcessResult {
     CursorLeavedFromBelow,
     CursorLeavedFromAbove,
     EditRequested { id: JournalId, notes: String },
+    SaveRequested { id: JournalId },
 }
 
 pub struct JournalsListComponent {
@@ -84,6 +85,9 @@ impl JournalsListComponent {
             }
             ChildEventProcessResult::EditRequested { id, notes } => {
                 Some(EventProcessResult::EditRequested { id, notes })
+            }
+            ChildEventProcessResult::SaveRequested { id } => {
+                Some(EventProcessResult::SaveRequested { id })
             }
         }
     }
@@ -243,6 +247,7 @@ impl JournalsListComponent {
 
 #[cfg(test)]
 mod tests {
+    use crate::stores::RemoteJournalState;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
@@ -255,6 +260,14 @@ mod tests {
 
     fn key_event(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn ctrl_s_event() -> Event {
+        Event::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL))
+    }
+
+    fn entry_state(store: &Store) -> &RemoteJournalState {
+        &store.get_remote_journal(1, 1).state
     }
 
     fn create_journal(id: u16, notes: impl Into<String>) -> Journal {
@@ -294,5 +307,57 @@ mod tests {
             }
             _ => panic!("expected edit request"),
         }
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_edited_focused_item_returns_save_requested() {
+        let mut store = Store::new();
+        let journal = create_journal(1, "first paragraph");
+        register_journal(&mut store, &journal);
+        let mut component = JournalsListComponent::new(journal.issue_id);
+        component.update(store.get_remote_journals(journal.issue_id), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+        store.consume_action(Action::Journal(JournalAction::EditRemoteNotes {
+            issue_id: journal.issue_id,
+            journal_id: journal.id,
+            notes: "edited notes".to_string(),
+        }));
+        component.update(store.get_remote_journals(journal.issue_id), WIDE_WIDTH);
+
+        let result = component.process_event(ctrl_s_event());
+
+        match result {
+            Some(EventProcessResult::SaveRequested { id }) => {
+                assert_eq!(id, JournalId::new(1));
+            }
+            _ => panic!("expected save request"),
+        }
+        assert!(matches!(
+            entry_state(&store),
+            RemoteJournalState::Edited { .. }
+        ));
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_synced_focused_item_is_a_no_op() {
+        let mut store = Store::new();
+        let journal = create_journal(1, "first paragraph");
+        register_journal(&mut store, &journal);
+        let mut component = JournalsListComponent::new(journal.issue_id);
+        component.update(store.get_remote_journals(journal.issue_id), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+
+        let result = component.process_event(ctrl_s_event());
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_unfocused_list_is_a_no_op() {
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+
+        let result = component.process_event(ctrl_s_event());
+
+        assert!(result.is_none());
     }
 }

@@ -46,6 +46,10 @@ pub enum EventProcessResult {
     OpenSpentTimeInputPopup,
     OpenCategoryPopup,
     StartIssueUpload,
+    SaveRequested {
+        issue_id: IssueId,
+        id: JournalId,
+    },
 }
 
 #[cfg(test)]
@@ -57,6 +61,23 @@ mod tests {
 
     fn key_event(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn ctrl_s_event() -> Event {
+        Event::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL))
+    }
+
+    fn edit_first_journal(dispatcher: &Rc<RefCell<Dispatcher>>) {
+        dispatcher
+            .borrow_mut()
+            .dispatch(crate::stores::Action::Journal(
+                crate::stores::JournalAction::EditRemoteNotes {
+                    issue_id: IssueId::new(3),
+                    journal_id: JournalId::new(1),
+                    notes: "edited notes".to_string(),
+                },
+            ));
+        dispatcher.borrow_mut().consume_action();
     }
 
     fn dispatcher() -> Rc<RefCell<Dispatcher>> {
@@ -109,6 +130,56 @@ mod tests {
             }
         }
         dispatcher
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_edited_journals_list_notes_returns_save_requested() {
+        let dispatcher = dispatcher_with_issue_and_journals();
+        let mut component = IssueDetailComponent::new(3);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        edit_first_journal(&dispatcher);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+
+        for _ in 0..J_PRESSES_TO_FIRST_JOURNAL_NOTES {
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+            component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        }
+
+        let result = component.process_event(ctrl_s_event(), dispatcher.clone());
+
+        match result {
+            Some(EventProcessResult::SaveRequested { issue_id, id }) => {
+                assert_eq!(issue_id, IssueId::new(3));
+                assert_eq!(id, JournalId::new(1));
+            }
+            _ => panic!("expected save request"),
+        }
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_synced_journals_list_notes_returns_nothing() {
+        let dispatcher = dispatcher_with_issue_and_journals();
+        let mut component = IssueDetailComponent::new(3);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+
+        for _ in 0..J_PRESSES_TO_FIRST_JOURNAL_NOTES {
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+            component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        }
+
+        let result = component.process_event(ctrl_s_event(), dispatcher.clone());
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_header_returns_start_issue_upload() {
+        let dispatcher = dispatcher_with_issue_and_journals();
+        let mut component = IssueDetailComponent::new(3);
+
+        let result = component.process_event(ctrl_s_event(), dispatcher.clone());
+
+        assert!(matches!(result, Some(EventProcessResult::StartIssueUpload)));
     }
 
     #[test]
@@ -192,6 +263,18 @@ impl IssueDetailComponent {
         if let Event::Key(key) = &event {
             match key.code {
                 KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    if self.focused_component == FocusedComponent::JournalsList {
+                        let result = self.journals_list.process_event(event.clone());
+                        return match result {
+                            Some(JournalsListEventProcessResult::SaveRequested { id }) => {
+                                Some(EventProcessResult::SaveRequested {
+                                    issue_id: self.id,
+                                    id,
+                                })
+                            }
+                            _ => None,
+                        };
+                    }
                     return Some(EventProcessResult::StartIssueUpload);
                 }
                 _ => {}
@@ -314,6 +397,12 @@ impl IssueDetailComponent {
                             issue_id: self.id,
                             id,
                             notes,
+                        });
+                    }
+                    Some(JournalsListEventProcessResult::SaveRequested { id }) => {
+                        return Some(EventProcessResult::SaveRequested {
+                            issue_id: self.id,
+                            id,
                         });
                     }
                     None => {}

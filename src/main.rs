@@ -40,8 +40,9 @@ use self::{
     libs::yaml::parse_journal_yaml,
     stores::{Action, Dispatcher, IssueAction, IssueState, JournalAction},
     usecases::redmine::{
-        apply_issue_property_diffs, fetch_issue, fetch_issue_with_conflicts,
-        fetch_project_issues_page, load_initial_entities, upload_issue,
+        apply_issue_property_diffs, continue_remote_journal_upload, fetch_issue,
+        fetch_issue_with_conflicts, fetch_project_issues_page, load_initial_entities,
+        start_remote_journal_upload, upload_issue,
     },
     vos::{IssueId, IssuePropertyDiff, JournalId},
 };
@@ -307,8 +308,47 @@ fn handle_app_effect(
                 vec![issue_upload_action(client.as_ref(), id, &diffs).await]
             });
         }
+        AppEffect::StartRemoteJournalUpload {
+            issue_id,
+            journal_id,
+        } => {
+            start_remote_journal_upload_action(
+                dispatcher, runtime, sender, client, issue_id, journal_id,
+            );
+        }
     }
     Ok(())
+}
+
+fn start_remote_journal_upload_action<C>(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    runtime: &Runtime,
+    sender: mpsc::Sender<Action>,
+    client: Arc<C>,
+    issue_id: IssueId,
+    journal_id: JournalId,
+) where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    let future = start_remote_journal_upload(dispatcher, client, issue_id, journal_id);
+    spawn_action_task(runtime, sender, future);
+}
+
+#[allow(dead_code)]
+fn continue_remote_journal_upload_action<C>(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    runtime: &Runtime,
+    sender: mpsc::Sender<Action>,
+    client: Arc<C>,
+    issue_id: IssueId,
+    journal_id: JournalId,
+    resolved_notes: String,
+) where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    let future =
+        continue_remote_journal_upload(dispatcher, client, issue_id, journal_id, resolved_notes);
+    spawn_action_task(runtime, sender, future);
 }
 
 fn start_project_issues_page_fetch<C>(
@@ -995,17 +1035,27 @@ mod tests {
 
     struct IssueUploadClient {
         issue: Option<IssueAggregate>,
+        journals: Vec<Journal>,
         get_error: bool,
         update_error: bool,
+        update_journal_result: std::result::Result<(), RedmineClientError>,
+        uploaded_journal_notes: Mutex<Vec<String>>,
         uploaded: Mutex<Vec<IssueAggregate>>,
     }
 
     impl IssueUploadClient {
         fn new(issue: IssueAggregate) -> Self {
+            Self::with_journals(issue, Vec::new())
+        }
+
+        fn with_journals(issue: IssueAggregate, journals: Vec<Journal>) -> Self {
             Self {
                 issue: Some(issue),
+                journals,
                 get_error: false,
                 update_error: false,
+                update_journal_result: Ok(()),
+                uploaded_journal_notes: Mutex::new(Vec::new()),
                 uploaded: Mutex::new(Vec::new()),
             }
         }
@@ -1013,8 +1063,11 @@ mod tests {
         fn failing_get() -> Self {
             Self {
                 issue: None,
+                journals: Vec::new(),
                 get_error: true,
                 update_error: false,
+                update_journal_result: Ok(()),
+                uploaded_journal_notes: Mutex::new(Vec::new()),
                 uploaded: Mutex::new(Vec::new()),
             }
         }
@@ -1022,8 +1075,11 @@ mod tests {
         fn failing_update(issue: IssueAggregate) -> Self {
             Self {
                 issue: Some(issue),
+                journals: Vec::new(),
                 get_error: false,
                 update_error: true,
+                update_journal_result: Ok(()),
+                uploaded_journal_notes: Mutex::new(Vec::new()),
                 uploaded: Mutex::new(Vec::new()),
             }
         }
@@ -1045,7 +1101,7 @@ mod tests {
             }
             Ok(FetchedIssue {
                 aggregate: self.issue.clone().expect("test issue must exist"),
-                journals: vec![],
+                journals: self.journals.clone(),
             })
         }
 
@@ -1063,9 +1119,13 @@ mod tests {
         async fn update_journal_notes(
             &self,
             _: crate::vos::JournalId,
-            _: &str,
+            notes: &str,
         ) -> std::result::Result<(), RedmineClientError> {
-            unreachable!()
+            self.uploaded_journal_notes
+                .lock()
+                .unwrap()
+                .push(notes.to_string());
+            self.update_journal_result.clone()
         }
 
         async fn get_categories(&self) -> std::result::Result<Vec<Category>, RedmineClientError> {
@@ -1136,6 +1196,188 @@ mod tests {
             Ok(_) => panic!("redmine connection config read succeeded"),
             Err(error) => error,
         }
+    }
+
+    fn start_edited_journal_upload(dispatcher: &mut Dispatcher, issue_id: u16, notes: &str) {
+        let mut issue = sample_issue_aggregate(
+            issue_id,
+            "subject",
+            IssueStatusId::new(1),
+            None,
+            None,
+            None,
+            0,
+        );
+        issue.issue.description = "issue body".to_string();
+        dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
+        dispatcher.consume_action();
+        let mut journal = sample_journal(issue_id);
+        journal.notes = notes.to_string();
+        dispatcher.dispatch(Action::Journal(JournalAction::SyncFetched {
+            issue_id: IssueId::new(issue_id),
+            journals: vec![journal],
+        }));
+        dispatcher.consume_action();
+        dispatcher.dispatch(Action::Journal(JournalAction::EditRemoteNotes {
+            issue_id: IssueId::new(issue_id),
+            journal_id: JournalId::new(1),
+            notes: "edited notes".to_string(),
+        }));
+        dispatcher.consume_action();
+    }
+
+    #[test]
+    fn move_worker_action_dispatches_worker_actions_without_extra_notice() {
+        let mut dispatcher = Dispatcher::new();
+        start_edited_journal_upload(&mut dispatcher, 3, "first journal notes marker");
+        dispatcher.dispatch(Action::Journal(JournalAction::StartRemoteUpload {
+            issue_id: IssueId::new(3),
+            journal_id: JournalId::new(1),
+        }));
+        dispatcher.consume_action();
+        let dispatcher = Rc::new(RefCell::new(dispatcher));
+        let (sender, receiver) = mpsc::channel::<Action>();
+        sender
+            .send(Action::Journal(JournalAction::FailRemoteUpload {
+                issue_id: IssueId::new(3),
+                journal_id: JournalId::new(1),
+                message: "network error: offline".to_string(),
+            }))
+            .unwrap();
+
+        let panic_message = move_worker_action(&receiver, dispatcher.clone());
+
+        assert!(panic_message.is_none());
+        while dispatcher.borrow().consume_actinos_len() > 0 {
+            dispatcher.borrow_mut().consume_action();
+        }
+        let dispatcher = dispatcher.borrow();
+        let store = dispatcher.store();
+        assert!(store.get_notices().is_empty());
+        match &store
+            .get_remote_journal(IssueId::new(3), JournalId::new(1))
+            .state
+        {
+            crate::stores::RemoteJournalState::Edited { failure, .. } => {
+                assert_eq!(
+                    failure.as_ref().unwrap().message.as_str(),
+                    "network error: offline"
+                );
+            }
+            other => panic!("expected edited state, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn move_worker_action_dispatches_no_notice_for_complete_remote_upload() {
+        let mut dispatcher = Dispatcher::new();
+        start_edited_journal_upload(&mut dispatcher, 3, "first journal notes marker");
+        dispatcher.dispatch(Action::Journal(JournalAction::StartRemoteUpload {
+            issue_id: IssueId::new(3),
+            journal_id: JournalId::new(1),
+        }));
+        dispatcher.consume_action();
+        let dispatcher = Rc::new(RefCell::new(dispatcher));
+        let (sender, receiver) = mpsc::channel::<Action>();
+        sender
+            .send(Action::Journal(JournalAction::CompleteRemoteUpload {
+                issue_id: IssueId::new(3),
+                journal_id: JournalId::new(1),
+                notes: "edited notes".to_string(),
+            }))
+            .unwrap();
+
+        let panic_message = move_worker_action(&receiver, dispatcher.clone());
+
+        assert!(panic_message.is_none());
+        while dispatcher.borrow().consume_actinos_len() > 0 {
+            dispatcher.borrow_mut().consume_action();
+        }
+        assert!(dispatcher.borrow().store().get_notices().is_empty());
+        assert!(matches!(
+            dispatcher
+                .borrow()
+                .store()
+                .get_remote_journal(IssueId::new(3), JournalId::new(1))
+                .state,
+            crate::stores::RemoteJournalState::Synced
+        ));
+    }
+
+    #[test]
+    fn start_remote_journal_upload_action_routes_the_upload_completion_to_worker_channel() {
+        let runtime = init_tokio_runtime().unwrap();
+        let mut dispatcher = Dispatcher::new();
+        start_edited_journal_upload(&mut dispatcher, 3, "first journal notes marker");
+        let dispatcher = Rc::new(RefCell::new(dispatcher));
+        let client = Arc::new(IssueUploadClient::with_journals(
+            sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
+            vec![sample_journal(3)],
+        ));
+        let (sender, receiver) = mpsc::channel::<Action>();
+
+        start_remote_journal_upload_action(
+            dispatcher.clone(),
+            &runtime,
+            sender,
+            client.clone(),
+            IssueId::new(3),
+            JournalId::new(1),
+        );
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        let completion = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .expect("upload completion should be sent by the runtime task");
+        assert!(matches!(
+            completion,
+            Action::Journal(JournalAction::CompleteRemoteUpload { issue_id, journal_id, .. })
+                if issue_id == IssueId::new(3) && journal_id == JournalId::new(1)
+        ));
+        assert_eq!(
+            *client.uploaded_journal_notes.lock().unwrap(),
+            vec!["edited notes".to_string()]
+        );
+    }
+
+    #[test]
+    fn start_remote_journal_upload_action_routes_the_failure_completion_to_worker_channel() {
+        let runtime = init_tokio_runtime().unwrap();
+        let mut dispatcher = Dispatcher::new();
+        start_edited_journal_upload(&mut dispatcher, 3, "first journal notes marker");
+        let dispatcher = Rc::new(RefCell::new(dispatcher));
+        let mut client = IssueUploadClient::with_journals(
+            sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
+            vec![sample_journal(3)],
+        );
+        client.update_journal_result = Err(IssueUploadClient::network_error());
+        let client = Arc::new(client);
+        let (sender, receiver) = mpsc::channel::<Action>();
+
+        start_remote_journal_upload_action(
+            dispatcher.clone(),
+            &runtime,
+            sender,
+            client.clone(),
+            IssueId::new(3),
+            JournalId::new(1),
+        );
+
+        let notice = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .expect("failure notice should be sent by the runtime task");
+        assert!(matches!(
+            notice,
+            Action::Notice(crate::stores::NoticeAction::Push { .. })
+        ));
+        let completion = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .expect("upload failure should be sent by the runtime task");
+        assert!(matches!(
+            completion,
+            Action::Journal(JournalAction::FailRemoteUpload { issue_id, journal_id, .. })
+                if issue_id == IssueId::new(3) && journal_id == JournalId::new(1)
+        ));
     }
 
     struct FailingClient;
