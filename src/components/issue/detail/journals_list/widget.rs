@@ -2,24 +2,37 @@ use ratatui::buffer::Buffer;
 use std::cmp::min;
 
 use ratatui::layout::Rect;
-use ratatui::widgets::Widget;
+use ratatui::style::{Color, Style};
+use ratatui::text::Line;
+use ratatui::widgets::{Block, Borders, Paragraph, Widget};
 
 use super::journals_list_item::JournalItemWidget;
 
 pub struct JournalsListWidget<'a> {
     widgets: Vec<JournalItemWidget<'a>>,
+    create_button_focused: bool,
+    create_button_enabled: bool,
 }
 
 impl<'a> JournalsListWidget<'a> {
-    pub fn new(widgets: Vec<JournalItemWidget<'a>>) -> Self {
-        Self { widgets }
+    pub fn new(
+        widgets: Vec<JournalItemWidget<'a>>,
+        create_button_focused: bool,
+        create_button_enabled: bool,
+    ) -> Self {
+        Self {
+            widgets,
+            create_button_focused,
+            create_button_enabled,
+        }
     }
 
     pub fn line_count(&self, width: u16) -> u16 {
         self.widgets
             .iter()
             .map(|widget| widget.line_count(width))
-            .sum()
+            .sum::<u16>()
+            + 3
     }
 }
 
@@ -37,6 +50,28 @@ impl Widget for JournalsListWidget<'_> {
             let row = Rect::new(area.x, y, area.width, height);
             widget.render(row, buf);
             y += height;
+        }
+
+        if y < end_y {
+            let height = min(3, end_y - y);
+            let area = Rect::new(area.x, y, area.width, height);
+            let border_style = if self.create_button_focused {
+                Style::default().fg(Color::LightGreen)
+            } else {
+                Style::default()
+            };
+            let text_style = if self.create_button_enabled {
+                Style::default()
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            Paragraph::new(Line::styled("新規作成", text_style))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(border_style),
+                )
+                .render(area, buf);
         }
     }
 }
@@ -112,7 +147,7 @@ mod tests {
             &state,
             true,
         )];
-        let line_count = JournalsListWidget::new(journals).line_count(24);
+        let line_count = JournalsListWidget::new(journals, false, true).line_count(24);
         let view = view_of(&journal, &notes, "");
         let journals = vec![JournalItemWidget::new(
             view,
@@ -125,7 +160,7 @@ mod tests {
             "journals_list_mixed_entries",
             24,
             line_count,
-            JournalsListWidget::new(journals),
+            JournalsListWidget::new(journals, false, true),
         );
     }
 
@@ -150,7 +185,7 @@ mod tests {
             "journals_list_clipped_height",
             24,
             5,
-            JournalsListWidget::new(journals),
+            JournalsListWidget::new(journals, false, true),
         );
     }
 
@@ -170,8 +205,8 @@ mod tests {
             &state,
             false,
         )];
-        let widget = JournalsListWidget::new(journals);
-        assert_eq!(widget.line_count(24), 9);
+        let widget = JournalsListWidget::new(journals, false, true);
+        assert_eq!(widget.line_count(24), 12);
     }
 
     #[test]
@@ -194,7 +229,7 @@ mod tests {
                 &state,
                 false,
             )];
-            JournalsListWidget::new(journals).line_count(32)
+            JournalsListWidget::new(journals, false, true).line_count(32)
         };
 
         let narrow_short = {
@@ -208,7 +243,7 @@ mod tests {
                 &state,
                 false,
             )];
-            JournalsListWidget::new(journals).line_count(18)
+            JournalsListWidget::new(journals, false, true).line_count(18)
         };
 
         let narrow_long = {
@@ -222,7 +257,7 @@ mod tests {
                 &state,
                 false,
             )];
-            JournalsListWidget::new(journals).line_count(18)
+            JournalsListWidget::new(journals, false, true).line_count(18)
         };
 
         assert!(wide_short < narrow_short);

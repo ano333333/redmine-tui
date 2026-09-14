@@ -312,12 +312,16 @@ mod tests {
                 notes: &self.journal.notes,
                 state_marker: "",
             };
-            JournalsListWidget::new(vec![JournalItemWidget::new(
-                view,
-                details,
-                &self.journal_state,
+            JournalsListWidget::new(
+                vec![JournalItemWidget::new(
+                    view,
+                    details,
+                    &self.journal_state,
+                    false,
+                )],
                 false,
-            )])
+                true,
+            )
         }
 
         fn header_height(&self, width: u16) -> u16 {

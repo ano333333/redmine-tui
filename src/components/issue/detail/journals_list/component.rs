@@ -36,6 +36,7 @@ pub enum EventProcessResult {
 pub struct JournalsListComponent {
     issue_id: IssueId,
     focused_item: Option<JournalItemIdentity>,
+    create_button_focused: bool,
     items: Vec<JournalsListItemComponent>,
     local_item: Option<LocalJournalItemComponent>,
     width: u16,
@@ -46,6 +47,7 @@ impl JournalsListComponent {
         Self {
             issue_id,
             focused_item: None,
+            create_button_focused: false,
             items: vec![],
             local_item: None,
             width: 0,
@@ -53,6 +55,27 @@ impl JournalsListComponent {
     }
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
+        if self.create_button_focused {
+            return match event {
+                Event::Key(key) if key.code == crossterm::event::KeyCode::Char('k') => {
+                    let Some(item) = self
+                        .item_count()
+                        .checked_sub(1)
+                        .and_then(|index| self.item_identity_at(index))
+                    else {
+                        return Some(EventProcessResult::CursorLeavedFromAbove);
+                    };
+                    self.create_button_focused = false;
+                    self.focused_item = Some(item);
+                    self.focus_item(item, ChildFocusEvent::CursorEnteredFromBelow { x: 0 });
+                    None
+                }
+                Event::Key(key) if key.code == crossterm::event::KeyCode::Char('j') => {
+                    Some(EventProcessResult::CursorLeavedFromBelow)
+                }
+                _ => None,
+            };
+        }
         let focused_item = self.focused_item?;
         let result = match focused_item {
             JournalItemIdentity::Remote(id) => self
@@ -79,7 +102,10 @@ impl JournalsListComponent {
                     self.focus_item(next_item, ChildFocusEvent::CursorEnteredFromAbove { x });
                     None
                 } else {
-                    Some(EventProcessResult::CursorLeavedFromBelow)
+                    self.unfocus_item(focused_item);
+                    self.focused_item = None;
+                    self.create_button_focused = true;
+                    None
                 }
             }
             ChildEventProcessResult::CursorLeavedFromAbove { x } => {
@@ -107,6 +133,8 @@ impl JournalsListComponent {
         if let Some(old_item) = self.focused_item {
             self.unfocus_item(old_item);
         }
+        self.focused_item = None;
+        self.create_button_focused = false;
 
         match event {
             FocusEvent::Focused { position } => {
@@ -121,6 +149,7 @@ impl JournalsListComponent {
                     line_count_sum += line_count;
                 }
                 let Some(new_item) = new_item else {
+                    self.create_button_focused = true;
                     return;
                 };
                 self.focused_item = Some(new_item);
@@ -135,26 +164,17 @@ impl JournalsListComponent {
                 self.focused_item = None;
             }
             FocusEvent::CursorEnteredFromAbove { x } => {
-                // FIXME: journalsが1個もない場合の処理
-                // 「フォーカスが当たらず下に通り抜ける」
                 let Some(item) = self.item_identity_at(0) else {
+                    self.create_button_focused = true;
                     return;
                 };
                 self.focused_item = Some(item);
                 self.focus_item(item, ChildFocusEvent::CursorEnteredFromAbove { x });
             }
             FocusEvent::CursorEnteredFromBelow { x } => {
-                // FIXME: journalsが1個もない場合の処理
-                // 「フォーカスが当たらず上に通り抜ける」
-                let Some(item) = self
-                    .item_count()
-                    .checked_sub(1)
-                    .and_then(|index| self.item_identity_at(index))
-                else {
-                    return;
-                };
-                self.focused_item = Some(item);
-                self.focus_item(item, ChildFocusEvent::CursorEnteredFromBelow { x });
+                self.create_button_focused = true;
+                // 作成buttonのcursor位置は固定なので、遷移元の横位置は引き継がない。
+                let _ = x;
             }
         }
     }
@@ -205,6 +225,8 @@ impl JournalsListComponent {
                         position: Position { x: 0, y: 0 },
                     },
                 );
+            } else {
+                self.create_button_focused = true;
             }
         }
         None
@@ -222,7 +244,11 @@ impl JournalsListComponent {
                 local_item.create_widget(self.focused_item == Some(JournalItemIdentity::Local)),
             );
         }
-        JournalsListWidget::new(widgets)
+        JournalsListWidget::new(
+            widgets,
+            self.create_button_focused,
+            self.local_item.is_none(),
+        )
     }
 
     pub fn line_count(&self, width: u16) -> u16 {
@@ -234,10 +260,14 @@ impl JournalsListComponent {
                 .local_item
                 .as_ref()
                 .map_or(0, |item| item.line_count(width))
+            + 3
     }
 
     pub fn get_cursor_position(&self, width: u16) -> Position {
         let Some(focused_item) = self.focused_item else {
+            if self.create_button_focused {
+                return Position::new(1, self.line_count(width).saturating_sub(2));
+            }
             return Position::new(0, 0);
         };
         let mut line_count = 0;
@@ -463,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_moves_from_last_remote_item_to_local_item_and_leaves_below() {
+    fn process_event_moves_from_last_remote_item_through_local_item_and_button() {
         let mut store = Store::new();
         let journal = create_journal(1, "remote notes");
         register_journal(&mut store, &journal);
@@ -489,12 +519,18 @@ mod tests {
 
         assert!(matches!(
             component.process_event(key_event(KeyCode::Char('j'))),
+            None
+        ));
+        assert!(component.create_button_focused);
+
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('j'))),
             Some(EventProcessResult::CursorLeavedFromBelow)
         ));
     }
 
     #[test]
-    fn process_event_moves_from_local_item_to_last_remote_item() {
+    fn process_event_moves_from_button_through_local_item_to_last_remote_item() {
         let mut store = Store::new();
         let journal = create_journal(1, "remote notes");
         register_journal(&mut store, &journal);
@@ -512,14 +548,58 @@ mod tests {
                 .process_event(key_event(KeyCode::Char('k')))
                 .is_none()
         );
+        assert_eq!(component.focused_item, Some(JournalItemIdentity::Local));
+
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('k')))
+                .is_none()
+        );
         assert_eq!(
             component.focused_item,
             Some(JournalItemIdentity::Remote(journal.id))
         );
         assert_eq!(
             component.get_cursor_position(WIDE_WIDTH),
-            Position::new(4, 3)
+            Position::new(0, 3)
         );
+    }
+
+    #[test]
+    fn empty_list_focuses_create_button_from_above_and_below() {
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], None, WIDE_WIDTH);
+
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 5 });
+        assert!(component.create_button_focused);
+        assert_eq!(
+            component.get_cursor_position(WIDE_WIDTH),
+            Position::new(1, 1)
+        );
+
+        component.focus_event(FocusEvent::Unfocused);
+        component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 5 });
+        assert!(component.create_button_focused);
+        assert_eq!(
+            component.get_cursor_position(WIDE_WIDTH),
+            Position::new(1, 1)
+        );
+    }
+
+    #[test]
+    fn empty_list_button_leaves_above_and_below() {
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], None, WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('k'))),
+            Some(EventProcessResult::CursorLeavedFromAbove)
+        ));
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::CursorLeavedFromBelow)
+        ));
     }
 
     #[test]
@@ -591,6 +671,7 @@ mod tests {
             WIDE_WIDTH,
         );
         component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
+        component.process_event(key_event(KeyCode::Char('k')));
 
         component.update(
             store.get_remote_journals(journal.issue_id),
@@ -653,6 +734,59 @@ mod tests {
             WIDE_WIDTH,
             line_count,
             widget,
+        );
+    }
+
+    #[test]
+    fn snapshot_empty_list_with_focused_create_button() {
+        let store = Store::new();
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], None, WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+
+        render_snapshot(
+            "journals_list_empty_with_focused_create_button",
+            WIDE_WIDTH,
+            component.line_count(WIDE_WIDTH),
+            component.create_widget(&store),
+        );
+    }
+
+    #[test]
+    fn snapshot_local_item_disables_focused_create_button() {
+        let store = Store::new();
+        let local_entry = local_entry("local notes");
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], Some(&local_entry), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
+
+        render_snapshot(
+            "journals_list_local_item_disables_focused_create_button",
+            WIDE_WIDTH,
+            component.line_count(WIDE_WIDTH),
+            component.create_widget(&store),
+        );
+    }
+
+    #[test]
+    fn snapshot_list_clips_create_button() {
+        let mut store = Store::new();
+        let journal = create_journal(1, "remote notes");
+        register_journal(&mut store, &journal);
+        let mut component = JournalsListComponent::new(journal.issue_id);
+        component.update(
+            store.get_remote_journals(journal.issue_id),
+            None,
+            WIDE_WIDTH,
+        );
+        component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
+        let height = component.line_count(WIDE_WIDTH) - 1;
+
+        render_snapshot(
+            "journals_list_clipped_create_button",
+            WIDE_WIDTH,
+            height,
+            component.create_widget(&store),
         );
     }
 }
