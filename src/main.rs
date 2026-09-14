@@ -42,7 +42,7 @@ use self::{
     usecases::redmine::{
         apply_issue_property_diffs, continue_remote_journal_upload, fetch_issue,
         fetch_issue_with_conflicts, fetch_project_issues_page, load_initial_entities,
-        start_remote_journal_upload, upload_issue,
+        start_local_journal_upload, start_remote_journal_upload, upload_issue,
     },
     vos::{IssueId, IssuePropertyDiff, JournalId},
 };
@@ -316,6 +316,9 @@ fn handle_app_effect(
                 dispatcher, runtime, sender, client, issue_id, journal_id,
             );
         }
+        AppEffect::StartLocalJournalUpload { issue_id } => {
+            start_local_journal_upload_action(dispatcher, runtime, sender, client, issue_id);
+        }
         AppEffect::ContinueRemoteJournalUpload {
             issue_id,
             journal_id,
@@ -346,6 +349,19 @@ fn start_remote_journal_upload_action<C>(
     C: RedmineClient + Send + Sync + 'static,
 {
     let future = start_remote_journal_upload(dispatcher, client, issue_id, journal_id);
+    spawn_action_task(runtime, sender, future);
+}
+
+fn start_local_journal_upload_action<C>(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    runtime: &Runtime,
+    sender: mpsc::Sender<Action>,
+    client: Arc<C>,
+    issue_id: IssueId,
+) where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    let future = start_local_journal_upload(dispatcher, client, issue_id);
     spawn_action_task(runtime, sender, future);
 }
 
@@ -1053,7 +1069,9 @@ mod tests {
         get_error: bool,
         update_error: bool,
         update_journal_result: std::result::Result<(), RedmineClientError>,
+        update_issue_notes_result: std::result::Result<(), RedmineClientError>,
         uploaded_journal_notes: Mutex<Vec<String>>,
+        uploaded_issue_notes: Mutex<Vec<String>>,
         uploaded: Mutex<Vec<IssueAggregate>>,
     }
 
@@ -1069,7 +1087,9 @@ mod tests {
                 get_error: false,
                 update_error: false,
                 update_journal_result: Ok(()),
+                update_issue_notes_result: Ok(()),
                 uploaded_journal_notes: Mutex::new(Vec::new()),
+                uploaded_issue_notes: Mutex::new(Vec::new()),
                 uploaded: Mutex::new(Vec::new()),
             }
         }
@@ -1081,7 +1101,9 @@ mod tests {
                 get_error: true,
                 update_error: false,
                 update_journal_result: Ok(()),
+                update_issue_notes_result: Ok(()),
                 uploaded_journal_notes: Mutex::new(Vec::new()),
+                uploaded_issue_notes: Mutex::new(Vec::new()),
                 uploaded: Mutex::new(Vec::new()),
             }
         }
@@ -1093,7 +1115,9 @@ mod tests {
                 get_error: false,
                 update_error: true,
                 update_journal_result: Ok(()),
+                update_issue_notes_result: Ok(()),
                 uploaded_journal_notes: Mutex::new(Vec::new()),
+                uploaded_issue_notes: Mutex::new(Vec::new()),
                 uploaded: Mutex::new(Vec::new()),
             }
         }
@@ -1145,9 +1169,13 @@ mod tests {
         async fn update_issue_notes(
             &self,
             _: crate::vos::IssueId,
-            _: &str,
+            notes: &str,
         ) -> std::result::Result<(), RedmineClientError> {
-            unreachable!()
+            self.uploaded_issue_notes
+                .lock()
+                .unwrap()
+                .push(notes.to_string());
+            self.update_issue_notes_result.clone()
         }
 
         async fn get_categories(&self) -> std::result::Result<Vec<Category>, RedmineClientError> {
@@ -1399,6 +1427,111 @@ mod tests {
             completion,
             Action::Journal(JournalAction::FailRemoteUpload { issue_id, journal_id, .. })
                 if issue_id == IssueId::new(3) && journal_id == JournalId::new(1)
+        ));
+    }
+
+    fn start_local_journal(dispatcher: &mut Dispatcher, issue_id: u16, notes: &str) {
+        let issue = sample_issue_aggregate(
+            issue_id,
+            "subject",
+            IssueStatusId::new(1),
+            None,
+            None,
+            None,
+            0,
+        );
+        dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
+        dispatcher.consume_action();
+        dispatcher.dispatch(Action::Journal(JournalAction::CreateLocal {
+            issue_id: IssueId::new(issue_id),
+        }));
+        dispatcher.consume_action();
+        dispatcher.dispatch(Action::Journal(JournalAction::EditLocalNotes {
+            issue_id: IssueId::new(issue_id),
+            notes: notes.to_string(),
+        }));
+        dispatcher.consume_action();
+    }
+
+    #[test]
+    fn start_local_journal_upload_action_routes_the_upload_completion_to_worker_channel() {
+        let runtime = init_tokio_runtime().unwrap();
+        let mut dispatcher = Dispatcher::new();
+        start_local_journal(&mut dispatcher, 3, "local notes");
+        let dispatcher = Rc::new(RefCell::new(dispatcher));
+        let client = Arc::new(IssueUploadClient::with_journals(
+            sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
+            vec![sample_journal(3)],
+        ));
+        let (sender, receiver) = mpsc::channel::<Action>();
+
+        start_local_journal_upload_action(
+            dispatcher.clone(),
+            &runtime,
+            sender,
+            client.clone(),
+            IssueId::new(3),
+        );
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        let completion = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .expect("upload completion should be sent by the runtime task");
+        let Action::Journal(JournalAction::CompleteLocalUploadWithFetched { issue_id, journals }) =
+            completion
+        else {
+            panic!("expected complete local upload action");
+        };
+        assert_eq!(issue_id, IssueId::new(3));
+        assert_eq!(
+            journals
+                .iter()
+                .map(|journal| journal.id)
+                .collect::<Vec<_>>(),
+            vec![JournalId::new(1)]
+        );
+        assert_eq!(
+            *client.uploaded_issue_notes.lock().unwrap(),
+            vec!["local notes".to_string()]
+        );
+    }
+
+    #[test]
+    fn start_local_journal_upload_action_routes_the_failure_completion_to_worker_channel() {
+        let runtime = init_tokio_runtime().unwrap();
+        let mut dispatcher = Dispatcher::new();
+        start_local_journal(&mut dispatcher, 3, "local notes");
+        let dispatcher = Rc::new(RefCell::new(dispatcher));
+        let mut client = IssueUploadClient::with_journals(
+            sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
+            vec![sample_journal(3)],
+        );
+        client.update_issue_notes_result = Err(IssueUploadClient::network_error());
+        let client = Arc::new(client);
+        let (sender, receiver) = mpsc::channel::<Action>();
+
+        start_local_journal_upload_action(
+            dispatcher.clone(),
+            &runtime,
+            sender,
+            client.clone(),
+            IssueId::new(3),
+        );
+
+        let notice = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .expect("failure notice should be sent by the runtime task");
+        assert!(matches!(
+            notice,
+            Action::Notice(crate::stores::NoticeAction::Push { .. })
+        ));
+        let completion = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .expect("upload failure should be sent by the runtime task");
+        assert!(matches!(
+            completion,
+            Action::Journal(JournalAction::FailLocalUpload { issue_id, .. })
+                if issue_id == IssueId::new(3)
         ));
     }
 

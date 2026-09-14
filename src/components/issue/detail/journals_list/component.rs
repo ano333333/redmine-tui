@@ -32,6 +32,7 @@ pub enum EventProcessResult {
     EditRequested { id: JournalId, notes: String },
     EditLocalJournalRequested { notes: String },
     CreateLocalJournalRequested,
+    SaveLocalJournalRequested,
     SaveRequested { id: JournalId },
 }
 
@@ -101,8 +102,9 @@ impl JournalsListComponent {
                 LocalEventProcessResult::EditRequested { notes } => {
                     return Some(EventProcessResult::EditLocalJournalRequested { notes });
                 }
-                // Local upload effectが公開経路へ接続されるまで、保存要求はここで消費する。
-                LocalEventProcessResult::SaveRequested => return None,
+                LocalEventProcessResult::SaveRequested => {
+                    return Some(EventProcessResult::SaveLocalJournalRequested);
+                }
             },
         };
 
@@ -708,6 +710,144 @@ mod tests {
             line_count,
             widget,
         );
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_local_only_item_returns_save_local_journal_requested() {
+        let local_entry = local_entry("local notes");
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], Some(&local_entry), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+
+        let result = component.process_event(ctrl_s_event());
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::SaveLocalJournalRequested)
+        ));
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_uploading_local_item_is_a_no_op() {
+        let local_entry = LocalJournalEntry {
+            journal: LocalJournal {
+                issue_id: IssueId::new(1),
+                notes: "local notes".to_string(),
+            },
+            state: LocalJournalState::Uploading,
+        };
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], Some(&local_entry), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+
+        assert!(component.process_event(ctrl_s_event()).is_none());
+    }
+
+    fn uploading_local_component(
+        store: &mut Store,
+        remote_journals: &[Journal],
+    ) -> JournalsListComponent {
+        let issue_id = IssueId::new(1);
+        if !remote_journals.is_empty() {
+            store.consume_action(Action::Journal(JournalAction::SyncFetched {
+                issue_id,
+                journals: remote_journals.to_vec(),
+            }));
+        }
+        store.consume_action(Action::Journal(JournalAction::CreateLocal { issue_id }));
+        store.consume_action(Action::Journal(JournalAction::EditLocalNotes {
+            issue_id,
+            notes: "local notes".to_string(),
+        }));
+        store.consume_action(Action::Journal(JournalAction::StartLocalUpload {
+            issue_id,
+        }));
+        let mut component = JournalsListComponent::new(issue_id);
+        component.update(
+            store.get_remote_journals(issue_id),
+            store.get_local_journal(issue_id),
+            WIDE_WIDTH,
+        );
+        component
+    }
+
+    fn complete_local_upload(store: &mut Store, journals: Vec<Journal>) {
+        store.consume_action(Action::Journal(
+            JournalAction::CompleteLocalUploadWithFetched {
+                issue_id: IssueId::new(1),
+                journals,
+            },
+        ));
+    }
+
+    #[test]
+    fn update_after_local_upload_completion_keeps_the_focus_index_when_more_items_follow() {
+        let mut store = Store::new();
+        let remotes = vec![create_journal(1, "first"), create_journal(2, "second")];
+        let mut component = uploading_local_component(&mut store, &remotes);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+        component.process_event(key_event(KeyCode::Char('j')));
+        assert_eq!(
+            component.focused_item,
+            Some(JournalItemIdentity::Remote(JournalId::new(2)))
+        );
+
+        let mut fetched = remotes.clone();
+        fetched.push(create_journal(3, "local notes"));
+        complete_local_upload(&mut store, fetched);
+        component.update(
+            store.get_remote_journals(IssueId::new(1)),
+            store.get_local_journal(IssueId::new(1)),
+            WIDE_WIDTH,
+        );
+
+        assert_eq!(
+            component.focused_item,
+            Some(JournalItemIdentity::Remote(JournalId::new(2)))
+        );
+        assert!(!component.create_button_focused);
+    }
+
+    #[test]
+    fn update_after_local_upload_completion_clamps_the_focus_index_to_the_last_item() {
+        let mut store = Store::new();
+        let remotes = vec![create_journal(1, "first")];
+        let mut component = uploading_local_component(&mut store, &remotes);
+        component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
+        component.process_event(key_event(KeyCode::Char('k')));
+        assert_eq!(component.focused_item, Some(JournalItemIdentity::Local));
+
+        complete_local_upload(&mut store, remotes.clone());
+        component.update(
+            store.get_remote_journals(IssueId::new(1)),
+            store.get_local_journal(IssueId::new(1)),
+            WIDE_WIDTH,
+        );
+
+        assert_eq!(
+            component.focused_item,
+            Some(JournalItemIdentity::Remote(JournalId::new(1)))
+        );
+        assert!(!component.create_button_focused);
+    }
+
+    #[test]
+    fn update_after_local_upload_completion_moves_focus_to_the_create_button_when_the_list_is_empty()
+     {
+        let mut store = Store::new();
+        let mut component = uploading_local_component(&mut store, &[]);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+        assert_eq!(component.focused_item, Some(JournalItemIdentity::Local));
+
+        complete_local_upload(&mut store, vec![]);
+        component.update(
+            store.get_remote_journals(IssueId::new(1)),
+            store.get_local_journal(IssueId::new(1)),
+            WIDE_WIDTH,
+        );
+
+        assert_eq!(component.focused_item, None);
+        assert!(component.create_button_focused);
     }
 
     #[test]

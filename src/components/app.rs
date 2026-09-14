@@ -73,6 +73,9 @@ pub enum AppEffect {
         journal_id: JournalId,
         resolved_notes: String,
     },
+    StartLocalJournalUpload {
+        issue_id: IssueId,
+    },
 }
 
 enum PendingEditorContext {
@@ -401,6 +404,12 @@ impl<'a> AppComponent<'a> {
                         journal_id: id,
                     });
                 }
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::SaveLocalJournalRequested { issue_id },
+            )) => {
+                // Local Journal側が保存可能な状態でだけ要求を返すため、ここでは状態を再検査しない。
+                self.pending_effect = Some(AppEffect::StartLocalJournalUpload { issue_id });
             }
             Some(IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::EditJournalRequested {
@@ -1478,6 +1487,67 @@ mod tests {
             .get_local_journal(3)
             .expect("local journal should remain in Store");
         assert_eq!(entry.journal.notes, "updated local notes");
+    }
+
+    #[test]
+    fn ctrl_s_on_local_only_journal_notes_installs_start_local_journal_upload_effect() {
+        let dispatcher = loaded_dispatcher();
+        dispatcher
+            .borrow_mut()
+            .dispatch(Action::Journal(JournalAction::CreateLocal {
+                issue_id: IssueId::new(3),
+            }));
+        dispatcher.borrow_mut().consume_action();
+        dispatcher
+            .borrow_mut()
+            .dispatch(Action::Journal(JournalAction::EditLocalNotes {
+                issue_id: IssueId::new(3),
+                notes: "local notes".to_string(),
+            }));
+        dispatcher.borrow_mut().consume_action();
+
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        for _ in 0..100 {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        }
+        app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
+        app.process_event(ctrl_s_event(), dispatcher.clone());
+
+        let Some(AppEffect::StartLocalJournalUpload { issue_id }) = app.take_effect() else {
+            panic!("expected start local journal upload effect");
+        };
+        assert_eq!(issue_id, IssueId::new(3));
+    }
+
+    #[test]
+    fn ctrl_s_on_uploading_local_journal_notes_installs_no_effect() {
+        let dispatcher = loaded_dispatcher();
+        for action in [
+            JournalAction::CreateLocal {
+                issue_id: IssueId::new(3),
+            },
+            JournalAction::EditLocalNotes {
+                issue_id: IssueId::new(3),
+                notes: "local notes".to_string(),
+            },
+            JournalAction::StartLocalUpload {
+                issue_id: IssueId::new(3),
+            },
+        ] {
+            dispatcher.borrow_mut().dispatch(Action::Journal(action));
+            dispatcher.borrow_mut().consume_action();
+        }
+
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        for _ in 0..100 {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        }
+        app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
+        app.process_event(ctrl_s_event(), dispatcher.clone());
+
+        assert!(app.take_effect().is_none());
     }
 
     #[test]

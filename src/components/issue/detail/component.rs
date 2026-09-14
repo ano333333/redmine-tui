@@ -44,6 +44,9 @@ pub enum EventProcessResult {
     CreateLocalJournalRequested {
         issue_id: IssueId,
     },
+    SaveLocalJournalRequested {
+        issue_id: IssueId,
+    },
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
@@ -164,6 +167,43 @@ mod tests {
     }
 
     #[test]
+    fn process_event_ctrl_s_on_local_journal_notes_returns_save_local_journal_requested() {
+        let dispatcher = dispatcher_with_issue_and_journals();
+        for action in [
+            crate::stores::JournalAction::CreateLocal {
+                issue_id: IssueId::new(3),
+            },
+            crate::stores::JournalAction::EditLocalNotes {
+                issue_id: IssueId::new(3),
+                notes: "local notes".to_string(),
+            },
+        ] {
+            dispatcher
+                .borrow_mut()
+                .dispatch(crate::stores::Action::Journal(action));
+            dispatcher.borrow_mut().consume_action();
+        }
+        let mut component = IssueDetailComponent::new(3);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+
+        for _ in 0..200 {
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+            component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        }
+        component.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+
+        let result = component.process_event(ctrl_s_event(), dispatcher.clone());
+
+        match result {
+            Some(EventProcessResult::SaveLocalJournalRequested { issue_id }) => {
+                assert_eq!(issue_id, IssueId::new(3));
+            }
+            _ => panic!("expected save local journal request"),
+        }
+    }
+
+    #[test]
     fn process_event_ctrl_s_on_synced_journals_list_notes_returns_nothing() {
         let dispatcher = dispatcher_with_issue_and_journals();
         let mut component = IssueDetailComponent::new(3);
@@ -277,6 +317,11 @@ impl IssueDetailComponent {
                                 Some(EventProcessResult::SaveRequested {
                                     issue_id: self.id,
                                     id,
+                                })
+                            }
+                            Some(JournalsListEventProcessResult::SaveLocalJournalRequested) => {
+                                Some(EventProcessResult::SaveLocalJournalRequested {
+                                    issue_id: self.id,
                                 })
                             }
                             _ => None,
@@ -421,6 +466,11 @@ impl IssueDetailComponent {
                         return Some(EventProcessResult::SaveRequested {
                             issue_id: self.id,
                             id,
+                        });
+                    }
+                    Some(JournalsListEventProcessResult::SaveLocalJournalRequested) => {
+                        return Some(EventProcessResult::SaveLocalJournalRequested {
+                            issue_id: self.id,
                         });
                     }
                     None => {}

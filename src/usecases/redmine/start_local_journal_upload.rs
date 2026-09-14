@@ -122,7 +122,13 @@ where
             ),
         );
     }
-    vec![]
+    vec![
+        JournalAction::CompleteLocalUploadWithFetched {
+            issue_id,
+            journals: fetched.journals,
+        }
+        .into(),
+    ]
 }
 
 #[cfg(test)]
@@ -402,13 +408,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn put_success_sends_the_local_notes_and_returns_no_completion_action_yet() {
+    async fn put_success_sends_the_local_notes() {
         let dispatcher = local_only_dispatcher();
         let client = Arc::new(StubClient::succeeds());
 
         let actions = start_local_journal_upload(dispatcher, client.clone(), ISSUE_ID).await;
 
-        assert!(actions.is_empty());
+        assert_eq!(actions.len(), 1);
         assert_eq!(
             *client.request.lock().unwrap(),
             Some((ISSUE_ID, "local notes".to_string()))
@@ -416,7 +422,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn put_success_fetches_the_issue_journals_and_returns_no_completion_action_yet() {
+    async fn put_success_fetches_the_issue_journals_and_returns_the_completion_action() {
         let dispatcher = local_only_dispatcher();
         let client = Arc::new(StubClient::succeeds_with_journals(vec![
             remote_journal(10, "remote"),
@@ -425,8 +431,50 @@ mod tests {
 
         let actions = start_local_journal_upload(dispatcher, client.clone(), ISSUE_ID).await;
 
-        assert!(actions.is_empty());
         assert_eq!(*client.get_requests.lock().unwrap(), vec![ISSUE_ID]);
+        assert_eq!(actions.len(), 1);
+        let Action::Journal(JournalAction::CompleteLocalUploadWithFetched { issue_id, journals }) =
+            &actions[0]
+        else {
+            panic!("expected complete local upload action");
+        };
+        assert_eq!(*issue_id, ISSUE_ID);
+        assert_eq!(
+            journals
+                .iter()
+                .map(|journal| journal.id)
+                .collect::<Vec<_>>(),
+            vec![JournalId::new(10), JournalId::new(11)]
+        );
+    }
+
+    #[tokio::test]
+    async fn the_completion_action_replaces_the_local_journal_with_the_fetched_remote_journals() {
+        let dispatcher = local_only_dispatcher();
+        let client = Arc::new(StubClient::succeeds_with_journals(vec![
+            remote_journal(10, "remote"),
+            remote_journal(11, "local notes"),
+        ]));
+
+        let actions =
+            start_local_journal_upload(dispatcher.clone(), client.clone(), ISSUE_ID).await;
+        dispatcher.borrow_mut().consume_action();
+        for action in actions {
+            dispatcher.borrow_mut().dispatch(action);
+        }
+        dispatcher.borrow_mut().consume_action();
+
+        let dispatcher = dispatcher.borrow();
+        let store = dispatcher.store();
+        assert!(store.get_local_journal(ISSUE_ID).is_none());
+        assert_eq!(
+            store
+                .get_remote_journals(ISSUE_ID)
+                .iter()
+                .map(|entry| entry.journal.id)
+                .collect::<Vec<_>>(),
+            vec![JournalId::new(10), JournalId::new(11)]
+        );
     }
 
     #[tokio::test]
