@@ -12,6 +12,7 @@ pub enum EventProcessResult {
     CursorLeavedFromBelow { x: u16 },
     CursorLeavedFromAbove { x: u16 },
     EditRequested { notes: String },
+    SaveRequested,
 }
 
 /// Local Journalの表示内容、本文の描画cache、focus状態を保持するcomponent。
@@ -44,7 +45,7 @@ impl LocalJournalItemComponent {
         self.comment_line_count = self.widget_state.comment_line_count();
         self.editable = matches!(entry.state, LocalJournalState::LocalOnly { .. });
         self.focus_state
-            .update(width, 0, self.comment_line_count, true);
+            .update(width, 0, self.comment_line_count, !self.editable);
     }
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
@@ -60,9 +61,12 @@ impl LocalJournalItemComponent {
                     notes: self.notes.clone(),
                 })
             }
+            focus_state::EventProcessResult::SaveRequested if self.editable => {
+                Some(EventProcessResult::SaveRequested)
+            }
             focus_state::EventProcessResult::Edit
             | focus_state::EventProcessResult::SaveRequested => {
-                // Uploading中の編集と、Local Journalでは未対応の保存操作は伝播させない。
+                // Uploading中の編集・保存操作は重複処理を避けるため伝播させない。
                 None
             }
         }
@@ -123,11 +127,25 @@ mod tests {
             Some(EventProcessResult::EditRequested { notes }) => assert_eq!(notes, "local notes"),
             _ => panic!("expected edit request"),
         }
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('s'), KeyModifiers::CONTROL))
-                .is_none()
-        );
+    }
+
+    #[test]
+    fn process_event_ctrl_s_on_focused_local_only_item_returns_save_requested() {
+        let entry = LocalJournalEntry {
+            journal: LocalJournal {
+                issue_id: IssueId::new(1),
+                notes: "local notes".to_string(),
+            },
+            state: LocalJournalState::LocalOnly { failure: None },
+        };
+        let mut component = LocalJournalItemComponent::new();
+        component.update(&entry, 32);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            Some(EventProcessResult::SaveRequested)
+        ));
     }
 
     #[test]
@@ -146,6 +164,11 @@ mod tests {
         assert!(
             component
                 .process_event(key_event(KeyCode::Char('e'), KeyModifiers::NONE))
+                .is_none()
+        );
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('s'), KeyModifiers::CONTROL))
                 .is_none()
         );
     }

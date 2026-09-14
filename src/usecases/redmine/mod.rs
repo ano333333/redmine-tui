@@ -6,6 +6,7 @@ mod fetch_issue_with_conflicts;
 mod fetch_project_issues_page;
 mod load_initial_entities;
 mod resolve_remote_journal_upload;
+mod start_local_journal_upload;
 mod start_remote_journal_upload;
 mod upload_issue;
 
@@ -22,5 +23,6 @@ pub use load_initial_entities::load_initial_entities;
 pub use resolve_remote_journal_upload::{
     RemoteJournalUploadResolution, resolve_remote_journal_upload,
 };
+pub use start_local_journal_upload::start_local_journal_upload;
 pub use start_remote_journal_upload::start_remote_journal_upload;
 pub use upload_issue::upload_issue;

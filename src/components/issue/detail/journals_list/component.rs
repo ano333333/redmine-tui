@@ -101,6 +101,8 @@ impl JournalsListComponent {
                 LocalEventProcessResult::EditRequested { notes } => {
                     return Some(EventProcessResult::EditLocalJournalRequested { notes });
                 }
+                // Local upload effectが公開経路へ接続されるまで、保存要求はここで消費する。
+                LocalEventProcessResult::SaveRequested => return None,
             },
         };
 

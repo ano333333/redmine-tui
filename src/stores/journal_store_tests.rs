@@ -610,6 +610,77 @@ fn edit_local_notes_panics_while_the_journal_is_uploading() {
 }
 
 #[test]
+fn start_local_upload_moves_a_local_only_journal_to_uploading() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore::new();
+    store.consume_action(JournalAction::CreateLocal { issue_id });
+
+    store.consume_action(JournalAction::StartLocalUpload { issue_id });
+
+    let entry = store.get_local_journal(issue_id).unwrap();
+    assert!(matches!(entry.state, LocalJournalState::Uploading));
+}
+
+#[test]
+#[should_panic(expected = "cannot start local journal upload for issue 1 while it is uploading")]
+fn start_local_upload_panics_when_the_journal_is_uploading() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![],
+                local: Some(local_entry(issue_id)),
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::StartLocalUpload { issue_id });
+}
+
+#[test]
+fn fail_local_upload_restores_local_only_with_failure_and_keeps_notes() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![],
+                local: Some(local_entry(issue_id)),
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::FailLocalUpload {
+        issue_id,
+        message: "network error: offline".to_string(),
+    });
+
+    let entry = store.get_local_journal(issue_id).unwrap();
+    assert_eq!(entry.journal.notes, "local notes");
+    let LocalJournalState::LocalOnly {
+        failure: Some(failure),
+    } = &entry.state
+    else {
+        panic!("expected failed local-only state");
+    };
+    assert_eq!(failure.message, "network error: offline");
+}
+
+#[test]
+#[should_panic(expected = "cannot fail local journal upload for issue 1 while it is local only")]
+fn fail_local_upload_panics_when_the_journal_is_local_only() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore::new();
+    store.consume_action(JournalAction::CreateLocal { issue_id });
+
+    store.consume_action(JournalAction::FailLocalUpload {
+        issue_id,
+        message: "failure".to_string(),
+    });
+}
+
+#[test]
 #[should_panic(expected = "remote journal 11 is not registered for issue 1")]
 fn get_remote_journal_panics_when_only_another_journal_of_the_issue_exists() {
     let store = JournalStore {

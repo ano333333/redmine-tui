@@ -34,6 +34,14 @@ pub enum JournalAction {
     ///
     /// 対象が未登録の場合、またはupload中の場合はpanicする。
     EditLocalNotes { issue_id: IssueId, notes: String },
+    /// Local Journalのuploadを開始し、以前の失敗情報を破棄する。
+    ///
+    /// 対象が未登録の場合、またはLocalOnly以外の状態の場合はpanicする。
+    StartLocalUpload { issue_id: IssueId },
+    /// upload失敗後もnotesを維持し、失敗情報を保持したLocalOnlyへ戻す。
+    ///
+    /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
+    FailLocalUpload { issue_id: IssueId, message: String },
     /// Remote Journalのnotes編集結果を状態へ反映する。
     ///
     /// 対象が未登録の場合、またはupload中の場合はpanicする。
@@ -148,6 +156,46 @@ impl JournalStore {
                     LocalJournalState::Uploading => {
                         panic!(
                             "cannot edit local journal for issue {issue_id} while it is uploading"
+                        );
+                    }
+                }
+            }
+            JournalAction::StartLocalUpload { issue_id } => {
+                let entry = self
+                    .by_issue
+                    .get_mut(&issue_id)
+                    .and_then(|issue_journals| issue_journals.local.as_mut())
+                    .unwrap_or_else(|| {
+                        panic!("local journal is not registered for issue {issue_id}")
+                    });
+                match entry.state {
+                    LocalJournalState::LocalOnly { .. } => {
+                        entry.state = LocalJournalState::Uploading;
+                    }
+                    LocalJournalState::Uploading => {
+                        panic!(
+                            "cannot start local journal upload for issue {issue_id} while it is uploading"
+                        );
+                    }
+                }
+            }
+            JournalAction::FailLocalUpload { issue_id, message } => {
+                let entry = self
+                    .by_issue
+                    .get_mut(&issue_id)
+                    .and_then(|issue_journals| issue_journals.local.as_mut())
+                    .unwrap_or_else(|| {
+                        panic!("local journal is not registered for issue {issue_id}")
+                    });
+                match entry.state {
+                    LocalJournalState::Uploading => {
+                        entry.state = LocalJournalState::LocalOnly {
+                            failure: Some(JournalUploadFailure { message }),
+                        };
+                    }
+                    LocalJournalState::LocalOnly { .. } => {
+                        panic!(
+                            "cannot fail local journal upload for issue {issue_id} while it is local only"
                         );
                     }
                 }
