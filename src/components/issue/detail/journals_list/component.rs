@@ -7,8 +7,17 @@ use crate::vos::{EntityIdValue, IssueId, JournalId};
 use super::journals_list_item::EventProcessResult as ChildEventProcessResult;
 use super::journals_list_item::FocusEvent as ChildFocusEvent;
 use super::journals_list_item::JournalsListItemComponent;
+use super::local_journal_item::EventProcessResult as LocalEventProcessResult;
 use super::local_journal_item::LocalJournalItemComponent;
 use super::widget::JournalsListWidget;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// RemoteとLocalを同じ一覧でfocusするための、component内だけで使うidentity。
+/// Local Journalにdomain IDを発行する代わりには使用しない。
+enum JournalItemIdentity {
+    Remote(JournalId),
+    Local,
+}
 
 pub enum FocusEvent {
     Focused { position: Position },
@@ -26,7 +35,7 @@ pub enum EventProcessResult {
 
 pub struct JournalsListComponent {
     issue_id: IssueId,
-    focused_id: Option<u16>,
+    focused_item: Option<JournalItemIdentity>,
     items: Vec<JournalsListItemComponent>,
     local_item: Option<LocalJournalItemComponent>,
     width: u16,
@@ -36,7 +45,7 @@ impl JournalsListComponent {
     pub fn new(issue_id: IssueId) -> Self {
         Self {
             issue_id,
-            focused_id: None,
+            focused_item: None,
             items: vec![],
             local_item: None,
             width: 0,
@@ -44,43 +53,42 @@ impl JournalsListComponent {
     }
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        let focused_id = self.focused_id?;
-        let result = self
-            .items
-            .iter_mut()
-            .find(|component| component.id == focused_id)?
-            .process_event(event)?;
+        let focused_item = self.focused_item?;
+        let result = match focused_item {
+            JournalItemIdentity::Remote(id) => self
+                .items
+                .iter_mut()
+                .find(|component| component.id == id.get())?
+                .process_event(event)?,
+            JournalItemIdentity::Local => match self.local_item.as_mut()?.process_event(event)? {
+                LocalEventProcessResult::CursorLeavedFromBelow { x } => {
+                    ChildEventProcessResult::CursorLeavedFromBelow { x }
+                }
+                LocalEventProcessResult::CursorLeavedFromAbove { x } => {
+                    ChildEventProcessResult::CursorLeavedFromAbove { x }
+                }
+            },
+        };
 
         match result {
             ChildEventProcessResult::CursorLeavedFromBelow { x } => {
-                let focused_index = self
-                    .items
-                    .iter()
-                    .enumerate()
-                    .find(|(_, journal)| journal.id == focused_id)?
-                    .0;
-                if focused_index + 1 < self.items.len() {
-                    self.items[focused_index].focus_event(ChildFocusEvent::Unfocused);
-                    self.focused_id = Some(self.items[focused_index + 1].id);
-                    self.items[focused_index + 1]
-                        .focus_event(ChildFocusEvent::CursorEnteredFromAbove { x });
+                let focused_index = self.item_index(focused_item)?;
+                if let Some(next_item) = self.item_identity_at(focused_index + 1) {
+                    self.unfocus_item(focused_item);
+                    self.focused_item = Some(next_item);
+                    self.focus_item(next_item, ChildFocusEvent::CursorEnteredFromAbove { x });
                     None
                 } else {
                     Some(EventProcessResult::CursorLeavedFromBelow)
                 }
             }
             ChildEventProcessResult::CursorLeavedFromAbove { x } => {
-                let focused_index = self
-                    .items
-                    .iter()
-                    .enumerate()
-                    .find(|(_, journal)| journal.id == focused_id)?
-                    .0;
+                let focused_index = self.item_index(focused_item)?;
                 if focused_index > 0 {
-                    self.items[focused_index].focus_event(ChildFocusEvent::Unfocused);
-                    self.focused_id = Some(self.items[focused_index - 1].id);
-                    self.items[focused_index - 1]
-                        .focus_event(ChildFocusEvent::CursorEnteredFromBelow { x });
+                    let previous_item = self.item_identity_at(focused_index - 1)?;
+                    self.unfocus_item(focused_item);
+                    self.focused_item = Some(previous_item);
+                    self.focus_item(previous_item, ChildFocusEvent::CursorEnteredFromBelow { x });
                     None
                 } else {
                     Some(EventProcessResult::CursorLeavedFromAbove)
@@ -96,71 +104,57 @@ impl JournalsListComponent {
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
-        if let Some(old_id) = self.focused_id
-            && let Some(component) = self
-                .items
-                .iter_mut()
-                .find(|component| component.id == old_id)
-        {
-            component.focus_event(ChildFocusEvent::Unfocused);
+        if let Some(old_item) = self.focused_item {
+            self.unfocus_item(old_item);
         }
 
         match event {
             FocusEvent::Focused { position } => {
                 let mut line_count_sum = 0;
-                let mut new_index = None;
-                for (index, component) in self.items.iter().enumerate() {
-                    let line_count = component.line_count(self.width);
+                let mut new_item = None;
+                for index in 0..self.item_count() {
+                    let line_count = self.item_line_count(index);
                     if line_count_sum + line_count > position.y {
-                        new_index = Some(index);
+                        new_item = self.item_identity_at(index);
                         break;
                     }
                     line_count_sum += line_count;
                 }
-                let Some(new_index) = new_index else {
+                let Some(new_item) = new_item else {
                     return;
                 };
-                self.focused_id = Some(self.items[new_index].id);
-                self.items[new_index].focus_event(ChildFocusEvent::Focused {
-                    position: Position::new(position.x, position.y - line_count_sum),
-                });
+                self.focused_item = Some(new_item);
+                self.focus_item(
+                    new_item,
+                    ChildFocusEvent::Focused {
+                        position: Position::new(position.x, position.y - line_count_sum),
+                    },
+                );
             }
             FocusEvent::Unfocused => {
-                self.focused_id = None;
+                self.focused_item = None;
             }
             FocusEvent::CursorEnteredFromAbove { x } => {
                 // FIXME: journalsが1個もない場合の処理
                 // 「フォーカスが当たらず下に通り抜ける」
-                if let Some(focused_id) = self.focused_id
-                    && let Some(component) = self
-                        .items
-                        .iter_mut()
-                        .find(|component| component.id == focused_id)
-                {
-                    component.focus_event(ChildFocusEvent::Unfocused);
-                }
-                let Some(component) = self.items.first_mut() else {
+                let Some(item) = self.item_identity_at(0) else {
                     return;
                 };
-                self.focused_id = Some(component.id);
-                component.focus_event(ChildFocusEvent::CursorEnteredFromAbove { x });
+                self.focused_item = Some(item);
+                self.focus_item(item, ChildFocusEvent::CursorEnteredFromAbove { x });
             }
             FocusEvent::CursorEnteredFromBelow { x } => {
                 // FIXME: journalsが1個もない場合の処理
                 // 「フォーカスが当たらず上に通り抜ける」
-                if let Some(focused_id) = self.focused_id
-                    && let Some(component) = self
-                        .items
-                        .iter_mut()
-                        .find(|component| component.id == focused_id)
-                {
-                    component.focus_event(ChildFocusEvent::Unfocused);
-                }
-                let Some(component) = self.items.last_mut() else {
+                let Some(item) = self
+                    .item_count()
+                    .checked_sub(1)
+                    .and_then(|index| self.item_identity_at(index))
+                else {
                     return;
                 };
-                self.focused_id = Some(component.id);
-                component.focus_event(ChildFocusEvent::CursorEnteredFromBelow { x });
+                self.focused_item = Some(item);
+                self.focus_item(item, ChildFocusEvent::CursorEnteredFromBelow { x });
             }
         }
     }
@@ -172,17 +166,8 @@ impl JournalsListComponent {
         width: u16,
     ) -> Option<EventProcessResult> {
         self.width = width;
-        // 今フォーカスが当たっているJournalのself.journalsでのインデックス
-        // もしそのJournalが削除されていたら、同じ位置または末尾にあるJournalにフォーカスを当てる
-        let mut focused_index = None;
-        if let Some(focused_id) = self.focused_id {
-            focused_index = self
-                .items
-                .iter()
-                .enumerate()
-                .find(|(_, component)| component.id == focused_id)
-                .map(|(index, _)| index);
-        }
+        // Store同期でfocus対象が消えた場合も、同じ表示位置または新しい末尾から操作を継続する。
+        let focused_index = self.focused_item.and_then(|item| self.item_index(item));
         for (index, entry) in entries.iter().enumerate() {
             let journal_id = entry.journal.id;
             // 新しいJournalが末尾以外に追加することはないと考え、
@@ -206,22 +191,21 @@ impl JournalsListComponent {
             component.update(entry, width);
             component
         });
-
-        if let Some(focused_id) = self.focused_id
-            && let Some(mut focused_index) = focused_index
-            && self.items[focused_index].id != focused_id
-            && self
-                .items
-                .iter()
-                .find(|component| component.id == focused_id)
-                .is_none()
+        if let Some(focused_item) = self.focused_item
+            && self.item_index(focused_item).is_none()
         {
-            if focused_index >= self.items.len() {
-                focused_index = self.items.len().saturating_sub(1);
-            }
-            self.items[focused_index].focus_event(ChildFocusEvent::Focused {
-                position: Position { x: 0, y: 0 },
+            self.unfocus_item(focused_item);
+            self.focused_item = focused_index.and_then(|index| {
+                self.item_identity_at(index.min(self.item_count().saturating_sub(1)))
             });
+            if let Some(new_item) = self.focused_item {
+                self.focus_item(
+                    new_item,
+                    ChildFocusEvent::Focused {
+                        position: Position { x: 0, y: 0 },
+                    },
+                );
+            }
         }
         None
     }
@@ -234,7 +218,9 @@ impl JournalsListComponent {
             .collect::<Vec<_>>();
         if let Some(local_item) = &self.local_item {
             // Local JournalはRemote Journalの時系列には属さないため、常にRemote一覧の末尾へ置く。
-            widgets.push(local_item.create_widget());
+            widgets.push(
+                local_item.create_widget(self.focused_item == Some(JournalItemIdentity::Local)),
+            );
         }
         JournalsListWidget::new(widgets)
     }
@@ -251,19 +237,82 @@ impl JournalsListComponent {
     }
 
     pub fn get_cursor_position(&self, width: u16) -> Position {
-        let Some(focused_id) = self.focused_id else {
+        let Some(focused_item) = self.focused_item else {
             return Position::new(0, 0);
         };
         let mut line_count = 0;
         for component in self.items.iter() {
-            if component.id == focused_id {
+            if focused_item == JournalItemIdentity::Remote(JournalId::new(component.id)) {
                 let mut position = component.get_cursor_position();
                 position.y += line_count;
                 return position;
             }
             line_count += component.line_count(width);
         }
+        if focused_item == JournalItemIdentity::Local && self.local_item.is_some() {
+            let mut position = self.local_item.as_ref().unwrap().get_cursor_position();
+            position.y += line_count;
+            return position;
+        }
         Position::new(0, 0)
+    }
+
+    fn item_count(&self) -> usize {
+        self.items.len() + usize::from(self.local_item.is_some())
+    }
+
+    fn item_identity_at(&self, index: usize) -> Option<JournalItemIdentity> {
+        self.items
+            .get(index)
+            .map(|component| JournalItemIdentity::Remote(JournalId::new(component.id)))
+            .or_else(|| {
+                (index == self.items.len() && self.local_item.is_some())
+                    .then_some(JournalItemIdentity::Local)
+            })
+    }
+
+    fn item_index(&self, item: JournalItemIdentity) -> Option<usize> {
+        match item {
+            JournalItemIdentity::Remote(id) => self
+                .items
+                .iter()
+                .position(|component| component.id == id.get()),
+            JournalItemIdentity::Local => self.local_item.as_ref().map(|_| self.items.len()),
+        }
+    }
+
+    fn item_line_count(&self, index: usize) -> u16 {
+        self.items.get(index).map_or_else(
+            || {
+                self.local_item
+                    .as_ref()
+                    .map_or(0, |item| item.line_count(self.width))
+            },
+            |item| item.line_count(self.width),
+        )
+    }
+
+    fn focus_item(&mut self, item: JournalItemIdentity, event: ChildFocusEvent) {
+        match item {
+            JournalItemIdentity::Remote(id) => {
+                if let Some(component) = self
+                    .items
+                    .iter_mut()
+                    .find(|component| component.id == id.get())
+                {
+                    component.focus_event(event);
+                }
+            }
+            JournalItemIdentity::Local => {
+                if let Some(component) = &mut self.local_item {
+                    component.focus_event(event);
+                }
+            }
+        }
+    }
+
+    fn unfocus_item(&mut self, item: JournalItemIdentity) {
+        self.focus_item(item, ChildFocusEvent::Unfocused);
     }
 }
 
@@ -313,6 +362,16 @@ mod tests {
             journals: vec![journal.clone()],
         }));
         store.get_remote_journal(journal.issue_id, journal.id)
+    }
+
+    fn local_entry(notes: impl Into<String>) -> LocalJournalEntry {
+        LocalJournalEntry {
+            journal: LocalJournal {
+                issue_id: IssueId::new(1),
+                notes: notes.into(),
+            },
+            state: LocalJournalState::LocalOnly { failure: None },
+        }
     }
 
     #[test]
@@ -401,6 +460,148 @@ mod tests {
         let result = component.process_event(ctrl_s_event());
 
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn process_event_moves_from_last_remote_item_to_local_item_and_leaves_below() {
+        let mut store = Store::new();
+        let journal = create_journal(1, "remote notes");
+        register_journal(&mut store, &journal);
+        let local_entry = local_entry("local notes");
+        let mut component = JournalsListComponent::new(journal.issue_id);
+        component.update(
+            store.get_remote_journals(journal.issue_id),
+            Some(&local_entry),
+            WIDE_WIDTH,
+        );
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 3 });
+
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('j')))
+                .is_none()
+        );
+        assert_eq!(component.focused_item, Some(JournalItemIdentity::Local));
+        assert_eq!(
+            component.get_cursor_position(WIDE_WIDTH),
+            Position::new(3, component.items[0].line_count(WIDE_WIDTH) + 3)
+        );
+
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::CursorLeavedFromBelow)
+        ));
+    }
+
+    #[test]
+    fn process_event_moves_from_local_item_to_last_remote_item() {
+        let mut store = Store::new();
+        let journal = create_journal(1, "remote notes");
+        register_journal(&mut store, &journal);
+        let local_entry = local_entry("local notes");
+        let mut component = JournalsListComponent::new(journal.issue_id);
+        component.update(
+            store.get_remote_journals(journal.issue_id),
+            Some(&local_entry),
+            WIDE_WIDTH,
+        );
+        component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 4 });
+
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('k')))
+                .is_none()
+        );
+        assert_eq!(
+            component.focused_item,
+            Some(JournalItemIdentity::Remote(journal.id))
+        );
+        assert_eq!(
+            component.get_cursor_position(WIDE_WIDTH),
+            Position::new(4, 3)
+        );
+    }
+
+    #[test]
+    fn focus_event_unfocused_releases_local_item_focus() {
+        let local_entry = local_entry("local notes");
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], Some(&local_entry), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 2 });
+
+        component.focus_event(FocusEvent::Unfocused);
+
+        assert_eq!(component.focused_item, None);
+        assert_eq!(
+            component.get_cursor_position(WIDE_WIDTH),
+            Position::new(0, 0)
+        );
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('j')))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn update_keeps_local_item_focus() {
+        let mut local_entry = local_entry("local notes");
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], Some(&local_entry), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 2 });
+        local_entry.journal.notes = "updated local notes".to_string();
+
+        component.update(&[], Some(&local_entry), WIDE_WIDTH);
+
+        assert_eq!(component.focused_item, Some(JournalItemIdentity::Local));
+        assert_eq!(
+            component.get_cursor_position(WIDE_WIDTH),
+            Position::new(2, 3)
+        );
+    }
+
+    #[test]
+    fn snapshot_focused_local_item() {
+        let store = Store::new();
+        let local_entry = local_entry("focused local notes");
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], Some(&local_entry), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+        let widget = component.create_widget(&store);
+        let line_count = widget.line_count(WIDE_WIDTH);
+
+        render_snapshot(
+            "journals_list_local_item_focused",
+            WIDE_WIDTH,
+            line_count,
+            widget,
+        );
+    }
+
+    #[test]
+    fn update_moves_focus_to_last_remote_item_when_local_item_disappears() {
+        let mut store = Store::new();
+        let journal = create_journal(1, "remote notes");
+        register_journal(&mut store, &journal);
+        let local_entry = local_entry("local notes");
+        let mut component = JournalsListComponent::new(journal.issue_id);
+        component.update(
+            store.get_remote_journals(journal.issue_id),
+            Some(&local_entry),
+            WIDE_WIDTH,
+        );
+        component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
+
+        component.update(
+            store.get_remote_journals(journal.issue_id),
+            None,
+            WIDE_WIDTH,
+        );
+
+        assert_eq!(
+            component.focused_item,
+            Some(JournalItemIdentity::Remote(journal.id))
+        );
     }
 
     #[test]
