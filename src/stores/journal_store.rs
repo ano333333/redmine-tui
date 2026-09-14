@@ -3,10 +3,10 @@
 use std::collections::{HashMap, HashSet};
 
 use super::journal_state::{
-    JournalUploadFailure, LocalJournalEntry, RemoteJournalEntry, RemoteJournalState,
-    RemoteJournalUploadConflict,
+    JournalUploadFailure, LocalJournalEntry, LocalJournalState, RemoteJournalEntry,
+    RemoteJournalState, RemoteJournalUploadConflict,
 };
-use crate::entities::Journal;
+use crate::entities::{Journal, LocalJournal};
 use crate::vos::{IssueId, JournalId, JournalNotesDiff};
 
 /// Issueごとに、順序付きのRemote Journalと0件または1件のLocal Journalを管理する。
@@ -26,6 +26,14 @@ pub enum JournalAction {
         issue_id: IssueId,
         journals: Vec<Journal>,
     },
+    /// 空のLocal Journalを未保存状態で作成する。
+    ///
+    /// 対象IssueにLocal Journalがすでに登録されている場合はpanicする。
+    CreateLocal { issue_id: IssueId },
+    /// Local Journalのnotesを置き換え、以前のupload失敗情報を破棄する。
+    ///
+    /// 対象が未登録の場合、またはupload中の場合はpanicする。
+    EditLocalNotes { issue_id: IssueId, notes: String },
     /// Remote Journalのnotes編集結果を状態へ反映する。
     ///
     /// 対象が未登録の場合、またはupload中の場合はpanicする。
@@ -104,6 +112,45 @@ impl JournalStore {
                         });
                 let remote = std::mem::take(&mut issue_journals.remote);
                 issue_journals.remote = Self::merge_sync_fetched(remote, journals);
+            }
+            JournalAction::CreateLocal { issue_id } => {
+                let issue_journals =
+                    self.by_issue
+                        .entry(issue_id)
+                        .or_insert_with(|| IssueJournals {
+                            remote: vec![],
+                            local: None,
+                        });
+                if issue_journals.local.is_some() {
+                    panic!("local journal is already registered for issue {issue_id}");
+                }
+                issue_journals.local = Some(LocalJournalEntry {
+                    journal: LocalJournal {
+                        issue_id,
+                        notes: String::new(),
+                    },
+                    state: LocalJournalState::LocalOnly { failure: None },
+                });
+            }
+            JournalAction::EditLocalNotes { issue_id, notes } => {
+                let entry = self
+                    .by_issue
+                    .get_mut(&issue_id)
+                    .and_then(|issue_journals| issue_journals.local.as_mut())
+                    .unwrap_or_else(|| {
+                        panic!("local journal is not registered for issue {issue_id}")
+                    });
+                match &mut entry.state {
+                    LocalJournalState::LocalOnly { failure } => {
+                        entry.journal.notes = notes;
+                        *failure = None;
+                    }
+                    LocalJournalState::Uploading => {
+                        panic!(
+                            "cannot edit local journal for issue {issue_id} while it is uploading"
+                        );
+                    }
+                }
             }
             JournalAction::EditRemoteNotes {
                 issue_id,

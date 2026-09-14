@@ -524,6 +524,92 @@ fn get_remote_journal_panics_when_the_journal_is_missing() {
 }
 
 #[test]
+fn create_local_registers_an_empty_local_only_journal() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore::new();
+
+    store.consume_action(JournalAction::CreateLocal { issue_id });
+
+    let entry = store
+        .get_local_journal(issue_id)
+        .expect("local journal should be registered");
+    assert_eq!(entry.journal.issue_id, issue_id);
+    assert!(entry.journal.notes.is_empty());
+    assert!(matches!(
+        entry.state,
+        LocalJournalState::LocalOnly { failure: None }
+    ));
+}
+
+#[test]
+fn edit_local_notes_updates_a_local_only_journal_and_drops_a_failure() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![],
+                local: Some(LocalJournalEntry {
+                    journal: LocalJournal {
+                        issue_id,
+                        notes: "previous notes".to_string(),
+                    },
+                    state: LocalJournalState::LocalOnly {
+                        failure: Some(JournalUploadFailure {
+                            message: "upload failed".to_string(),
+                        }),
+                    },
+                }),
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::EditLocalNotes {
+        issue_id,
+        notes: "edited notes".to_string(),
+    });
+
+    let entry = store
+        .get_local_journal(issue_id)
+        .expect("local journal should be registered");
+    assert_eq!(entry.journal.notes, "edited notes");
+    assert!(matches!(
+        entry.state,
+        LocalJournalState::LocalOnly { failure: None }
+    ));
+}
+
+#[test]
+#[should_panic(expected = "local journal is already registered for issue 1")]
+fn create_local_panics_when_the_issue_already_has_a_local_journal() {
+    let mut store = JournalStore::new();
+    let issue_id = IssueId::new(1);
+
+    store.consume_action(JournalAction::CreateLocal { issue_id });
+    store.consume_action(JournalAction::CreateLocal { issue_id });
+}
+
+#[test]
+#[should_panic(expected = "cannot edit local journal for issue 1 while it is uploading")]
+fn edit_local_notes_panics_while_the_journal_is_uploading() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![],
+                local: Some(local_entry(issue_id)),
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::EditLocalNotes {
+        issue_id,
+        notes: "edited notes".to_string(),
+    });
+}
+
+#[test]
 #[should_panic(expected = "remote journal 11 is not registered for issue 1")]
 fn get_remote_journal_panics_when_only_another_journal_of_the_issue_exists() {
     let store = JournalStore {
