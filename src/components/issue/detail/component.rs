@@ -419,9 +419,9 @@ impl IssueDetailComponent {
             self.body.update(issue, self.width);
             self.children_list.update(store);
 
-            // TODO: Local Journalの作成・編集UIが実装されたら、store.get_local_journal(issue_id)の結果もこの一覧に含める
             let entries = store.get_remote_journals(self.id);
-            self.journals_list.update(entries, self.width);
+            self.journals_list
+                .update(entries, store.get_local_journal(self.id), self.width);
         }
 
         self.widget_state.update(

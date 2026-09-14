@@ -1,12 +1,13 @@
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::stores::{RemoteJournalEntry, Store};
+use crate::stores::{LocalJournalEntry, RemoteJournalEntry, Store};
 use crate::vos::{EntityIdValue, IssueId, JournalId};
 
 use super::journals_list_item::EventProcessResult as ChildEventProcessResult;
 use super::journals_list_item::FocusEvent as ChildFocusEvent;
 use super::journals_list_item::JournalsListItemComponent;
+use super::local_journal_item::LocalJournalItemComponent;
 use super::widget::JournalsListWidget;
 
 pub enum FocusEvent {
@@ -27,6 +28,7 @@ pub struct JournalsListComponent {
     issue_id: IssueId,
     focused_id: Option<u16>,
     items: Vec<JournalsListItemComponent>,
+    local_item: Option<LocalJournalItemComponent>,
     width: u16,
 }
 
@@ -36,6 +38,7 @@ impl JournalsListComponent {
             issue_id,
             focused_id: None,
             items: vec![],
+            local_item: None,
             width: 0,
         }
     }
@@ -165,6 +168,7 @@ impl JournalsListComponent {
     pub fn update(
         &mut self,
         entries: &[RemoteJournalEntry],
+        local_entry: Option<&LocalJournalEntry>,
         width: u16,
     ) -> Option<EventProcessResult> {
         self.width = width;
@@ -193,6 +197,16 @@ impl JournalsListComponent {
             self.items[index].update(entry, width);
         }
 
+        self.items.truncate(entries.len());
+        self.local_item = local_entry.map(|entry| {
+            let mut component = self
+                .local_item
+                .take()
+                .unwrap_or_else(LocalJournalItemComponent::new);
+            component.update(entry, width);
+            component
+        });
+
         if let Some(focused_id) = self.focused_id
             && let Some(mut focused_index) = focused_index
             && self.items[focused_index].id != focused_id
@@ -213,19 +227,27 @@ impl JournalsListComponent {
     }
 
     pub fn create_widget<'a>(&'a self, store: &'a Store) -> JournalsListWidget<'a> {
-        JournalsListWidget::new(
-            self.items
-                .iter()
-                .map(|component| component.create_widget(store))
-                .collect(),
-        )
+        let mut widgets = self
+            .items
+            .iter()
+            .map(|component| component.create_widget(store))
+            .collect::<Vec<_>>();
+        if let Some(local_item) = &self.local_item {
+            // Local JournalはRemote Journalの時系列には属さないため、常にRemote一覧の末尾へ置く。
+            widgets.push(local_item.create_widget());
+        }
+        JournalsListWidget::new(widgets)
     }
 
     pub fn line_count(&self, width: u16) -> u16 {
         self.items
             .iter()
             .map(|component| component.line_count(width))
-            .sum()
+            .sum::<u16>()
+            + self
+                .local_item
+                .as_ref()
+                .map_or(0, |item| item.line_count(width))
     }
 
     pub fn get_cursor_position(&self, width: u16) -> Position {
@@ -252,8 +274,12 @@ mod tests {
 
     use super::*;
     use crate::entities::Journal;
-    use crate::stores::{Action, JournalAction, RemoteJournalEntry, Store};
+    use crate::entities::LocalJournal;
+    use crate::stores::{
+        Action, JournalAction, LocalJournalEntry, LocalJournalState, RemoteJournalEntry, Store,
+    };
     use crate::test_support::local_datetime;
+    use crate::test_support::render_snapshot;
     use crate::vos::{IssueId, JournalId};
 
     const WIDE_WIDTH: u16 = 32;
@@ -295,7 +321,11 @@ mod tests {
         let journal = create_journal(1, "first paragraph");
         register_journal(&mut store, &journal);
         let mut component = JournalsListComponent::new(journal.issue_id);
-        component.update(store.get_remote_journals(journal.issue_id), WIDE_WIDTH);
+        component.update(
+            store.get_remote_journals(journal.issue_id),
+            None,
+            WIDE_WIDTH,
+        );
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
 
         let result = component.process_event(key_event(KeyCode::Char('e')));
@@ -315,14 +345,22 @@ mod tests {
         let journal = create_journal(1, "first paragraph");
         register_journal(&mut store, &journal);
         let mut component = JournalsListComponent::new(journal.issue_id);
-        component.update(store.get_remote_journals(journal.issue_id), WIDE_WIDTH);
+        component.update(
+            store.get_remote_journals(journal.issue_id),
+            None,
+            WIDE_WIDTH,
+        );
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
         store.consume_action(Action::Journal(JournalAction::EditRemoteNotes {
             issue_id: journal.issue_id,
             journal_id: journal.id,
             notes: "edited notes".to_string(),
         }));
-        component.update(store.get_remote_journals(journal.issue_id), WIDE_WIDTH);
+        component.update(
+            store.get_remote_journals(journal.issue_id),
+            None,
+            WIDE_WIDTH,
+        );
 
         let result = component.process_event(ctrl_s_event());
 
@@ -344,7 +382,11 @@ mod tests {
         let journal = create_journal(1, "first paragraph");
         register_journal(&mut store, &journal);
         let mut component = JournalsListComponent::new(journal.issue_id);
-        component.update(store.get_remote_journals(journal.issue_id), WIDE_WIDTH);
+        component.update(
+            store.get_remote_journals(journal.issue_id),
+            None,
+            WIDE_WIDTH,
+        );
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
 
         let result = component.process_event(ctrl_s_event());
@@ -359,5 +401,57 @@ mod tests {
         let result = component.process_event(ctrl_s_event());
 
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn snapshot_local_only_item_is_after_remote_items() {
+        let mut store = Store::new();
+        let journal = create_journal(1, "remote notes");
+        register_journal(&mut store, &journal);
+        store.consume_action(Action::Journal(JournalAction::CreateLocal {
+            issue_id: journal.issue_id,
+        }));
+        store.consume_action(Action::Journal(JournalAction::EditLocalNotes {
+            issue_id: journal.issue_id,
+            notes: "local notes".to_string(),
+        }));
+        let mut component = JournalsListComponent::new(journal.issue_id);
+        component.update(
+            store.get_remote_journals(journal.issue_id),
+            store.get_local_journal(journal.issue_id),
+            WIDE_WIDTH,
+        );
+        let widget = component.create_widget(&store);
+        let line_count = widget.line_count(WIDE_WIDTH);
+
+        render_snapshot(
+            "journals_list_local_only_item_after_remote_items",
+            WIDE_WIDTH,
+            line_count,
+            widget,
+        );
+    }
+
+    #[test]
+    fn snapshot_uploading_local_item() {
+        let store = Store::new();
+        let local_entry = LocalJournalEntry {
+            journal: LocalJournal {
+                issue_id: IssueId::new(1),
+                notes: "uploading local notes".to_string(),
+            },
+            state: LocalJournalState::Uploading,
+        };
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], Some(&local_entry), WIDE_WIDTH);
+        let widget = component.create_widget(&store);
+        let line_count = widget.line_count(WIDE_WIDTH);
+
+        render_snapshot(
+            "journals_list_local_item_uploading",
+            WIDE_WIDTH,
+            line_count,
+            widget,
+        );
     }
 }

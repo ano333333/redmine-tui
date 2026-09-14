@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroUsize;
 
 use super::issue_store::{IssueAction, IssueState, IssueStore};
-use super::journal_state::{RemoteJournalEntry, RemoteJournalUploadConflict};
+use super::journal_state::{LocalJournalEntry, RemoteJournalEntry, RemoteJournalUploadConflict};
 use super::journal_store::{JournalAction, JournalStore};
 use super::notice_store::{Notice, NoticeAction, NoticeStore};
 use super::project_issues_store::{
@@ -182,6 +182,11 @@ impl Store {
     /// Issueが未登録の場合は空のsliceを返す。
     pub fn get_remote_journals(&self, issue_id: impl Into<IssueId>) -> &[RemoteJournalEntry] {
         self.journal_store.get_remote_journals(issue_id)
+    }
+
+    /// Issueに紐づく0件または1件のLocal Journalを返す。
+    pub fn get_local_journal(&self, issue_id: impl Into<IssueId>) -> Option<&LocalJournalEntry> {
+        self.journal_store.get_local_journal(issue_id)
     }
 
     /// Issueに登録されているRemote Journalを返す。

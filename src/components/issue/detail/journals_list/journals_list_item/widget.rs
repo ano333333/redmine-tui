@@ -9,7 +9,7 @@ use ratatui::style::Color;
 use ratatui::text::Text;
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
-use crate::stores::RemoteJournalState;
+use crate::stores::{LocalJournalState, RemoteJournalState};
 
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
@@ -31,6 +31,18 @@ pub struct RemoteJournalItemView<'a> {
     pub state_marker: &'static str,
 }
 
+/// Redmineへ未登録のJournalを、作成者や更新日のない専用headerで描画するための参照。
+pub struct LocalJournalItemView<'a> {
+    pub notes: &'a str,
+    pub state_marker: &'static str,
+}
+
+/// Remote固有のmetadataをLocalの表示モデルへ持ち込まず、共通Widgetへ渡す表示種別。
+pub enum JournalItemView<'a> {
+    Remote(RemoteJournalItemView<'a>),
+    Local(LocalJournalItemView<'a>),
+}
+
 /// 同期済みの場合は空文字列、未保存の状態ではヘッダーへ付加するラベルを返す。
 pub fn state_marker(state: &RemoteJournalState) -> &'static str {
     match state {
@@ -49,6 +61,14 @@ pub fn display_notes<'a>(journal_notes: &'a str, state: &'a RemoteJournalState) 
     }
 }
 
+/// Local Journalが端末内だけにあるか、Redmineへ送信中かを示すheader labelを返す。
+pub fn local_state_marker(state: &LocalJournalState) -> &'static str {
+    match state {
+        LocalJournalState::LocalOnly { .. } => "(local)",
+        LocalJournalState::Uploading => "(uploading)",
+    }
+}
+
 pub struct JournalItemWidgetState {
     comment_buffer: Buffer,
     hash: u64,
@@ -62,15 +82,13 @@ impl JournalItemWidgetState {
         }
     }
 
-    pub fn update(&mut self, width: u16, user: &str, updated_on: &DateTime<Local>, notes: &str) {
+    pub fn update(&mut self, width: u16, _: &str, _: &DateTime<Local>, notes: &str) {
         let mut hasher = DefaultHasher::new();
-        user.hash(&mut hasher);
-        updated_on.hash(&mut hasher);
         notes.hash(&mut hasher);
         let hash = hasher.finish();
 
         if self.comment_buffer.area.width != width || self.hash != hash {
-            self.comment_buffer = render_comment_in_buffer(width, user, updated_on, notes);
+            self.comment_buffer = render_comment_in_buffer(width, notes);
             self.hash = hash;
         }
     }
@@ -81,7 +99,7 @@ impl JournalItemWidgetState {
 }
 
 pub struct JournalItemWidget<'a> {
-    view: RemoteJournalItemView<'a>,
+    view: JournalItemView<'a>,
     details: Vec<ResolvedJournalDetail>,
     comment_state: &'a JournalItemWidgetState,
     focused: bool,
@@ -90,12 +108,7 @@ pub struct JournalItemWidget<'a> {
 impl<'a> Widget for JournalItemWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let property_height = self.details.len() as u16 + 3;
-        let property = create_property_paragraph(
-            self.view.user,
-            &self.details,
-            self.view.updated_on,
-            self.view.state_marker,
-        );
+        let property = create_property_paragraph(&self.view, &self.details);
 
         let property_area = Rect::new(
             area.x,
@@ -142,13 +155,13 @@ impl<'a> Widget for JournalItemWidget<'a> {
 
 impl<'a> JournalItemWidget<'a> {
     pub fn new(
-        view: RemoteJournalItemView<'a>,
+        view: impl Into<JournalItemView<'a>>,
         details: Vec<ResolvedJournalDetail>,
         comment_state: &'a JournalItemWidgetState,
         focused: bool,
     ) -> Self {
         Self {
-            view,
+            view: view.into(),
             details,
             comment_state,
             focused,
@@ -161,12 +174,13 @@ impl<'a> JournalItemWidget<'a> {
 }
 
 fn create_property_paragraph(
-    user: &str,
+    view: &JournalItemView<'_>,
     details: &[ResolvedJournalDetail],
-    updated_on: &DateTime<Local>,
-    state_marker: &str,
 ) -> Paragraph<'static> {
-    let title = create_header(user, updated_on, state_marker);
+    let title = match view {
+        JournalItemView::Remote(view) => create_remote_header(view),
+        JournalItemView::Local(view) => create_local_header(view),
+    };
     let mut lines = vec![title, Line::from("")];
     for detail in details {
         let line = Line::from(vec![
@@ -185,21 +199,40 @@ fn create_property_paragraph(
     Paragraph::new(Text::from(lines))
 }
 
-fn create_header(creator: &str, updated_at: &DateTime<Local>, state_marker: &str) -> Line<'static> {
+fn create_remote_header(view: &RemoteJournalItemView<'_>) -> Line<'static> {
     let mut spans = vec![
-        Span::from(creator.to_owned()).blue(),
+        Span::from(view.user.to_owned()).blue(),
         Span::from("が"),
-        Span::from(updated_at.format("%Y/%m/%d").to_string()).blue(),
+        Span::from(view.updated_on.format("%Y/%m/%d").to_string()).blue(),
         Span::from("に更新"),
     ];
-    if !state_marker.is_empty() {
+    if !view.state_marker.is_empty() {
         // 取得済みのメタデータと区別できるよう、ローカルで遷移する未保存状態を警告色にする。
-        spans.push(Span::from(format!(" {}", state_marker)).yellow());
+        spans.push(Span::from(format!(" {}", view.state_marker)).yellow());
     }
     Line::from(spans)
 }
 
-fn render_comment_in_buffer(width: u16, _: &str, _: &DateTime<Local>, body: &str) -> Buffer {
+fn create_local_header(view: &LocalJournalItemView<'_>) -> Line<'static> {
+    Line::from(vec![
+        Span::from("ローカルコメント").blue(),
+        Span::from(format!(" {}", view.state_marker)).yellow(),
+    ])
+}
+
+impl<'a> From<RemoteJournalItemView<'a>> for JournalItemView<'a> {
+    fn from(view: RemoteJournalItemView<'a>) -> Self {
+        Self::Remote(view)
+    }
+}
+
+impl<'a> From<LocalJournalItemView<'a>> for JournalItemView<'a> {
+    fn from(view: LocalJournalItemView<'a>) -> Self {
+        Self::Local(view)
+    }
+}
+
+fn render_comment_in_buffer(width: u16, body: &str) -> Buffer {
     let body = if body.is_empty() {
         EMPTY_NOTES_PLACEHOLDER
     } else {

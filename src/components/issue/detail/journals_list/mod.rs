@@ -1,5 +1,6 @@
 pub mod component;
 pub mod journals_list_item;
+mod local_journal_item;
 pub mod widget;
 
 pub use component::{EventProcessResult, FocusEvent, JournalsListComponent};

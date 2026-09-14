@@ -1,0 +1,15 @@
+---
+source: src/test_support.rs
+expression: describe_buffer(terminal.backend().buffer())
+---
+area=Rect { x: 0, y: 0, width: 32, height: 10 }
+00: "aliceが 2026/01/15に 更 新          " | 0:"a" fg=Blue bg=Reset mod=NONE, 1:"l" fg=Blue bg=Reset mod=NONE, 2:"i" fg=Blue bg=Reset mod=NONE, 3:"c" fg=Blue bg=Reset mod=NONE, 4:"e" fg=Blue bg=Reset mod=NONE, 5:"が" fg=Reset bg=Reset mod=NONE, 7:"2" fg=Blue bg=Reset mod=NONE, 8:"0" fg=Blue bg=Reset mod=NONE, 9:"2" fg=Blue bg=Reset mod=NONE, 10:"6" fg=Blue bg=Reset mod=NONE, 11:"/" fg=Blue bg=Reset mod=NONE, 12:"0" fg=Blue bg=Reset mod=NONE, 13:"1" fg=Blue bg=Reset mod=NONE, 14:"/" fg=Blue bg=Reset mod=NONE, 15:"1" fg=Blue bg=Reset mod=NONE, 16:"5" fg=Blue bg=Reset mod=NONE, 17:"に" fg=Reset bg=Reset mod=NONE, 19:"更" fg=Reset bg=Reset mod=NONE, 21:"新" fg=Reset bg=Reset mod=NONE
+01: "                                "
+02: "                                "
+03: "remote notes                    " | 0:"r" fg=Reset bg=Reset mod=NONE, 1:"e" fg=Reset bg=Reset mod=NONE, 2:"m" fg=Reset bg=Reset mod=NONE, 3:"o" fg=Reset bg=Reset mod=NONE, 4:"t" fg=Reset bg=Reset mod=NONE, 5:"e" fg=Reset bg=Reset mod=NONE, 7:"n" fg=Reset bg=Reset mod=NONE, 8:"o" fg=Reset bg=Reset mod=NONE, 9:"t" fg=Reset bg=Reset mod=NONE, 10:"e" fg=Reset bg=Reset mod=NONE, 11:"s" fg=Reset bg=Reset mod=NONE
+04: "                                "
+05: "ロ ー カ ル コ メ ン ト  (local)        " | 0:"ロ" fg=Blue bg=Reset mod=NONE, 2:"ー" fg=Blue bg=Reset mod=NONE, 4:"カ" fg=Blue bg=Reset mod=NONE, 6:"ル" fg=Blue bg=Reset mod=NONE, 8:"コ" fg=Blue bg=Reset mod=NONE, 10:"メ" fg=Blue bg=Reset mod=NONE, 12:"ン" fg=Blue bg=Reset mod=NONE, 14:"ト" fg=Blue bg=Reset mod=NONE, 16:" " fg=Yellow bg=Reset mod=NONE, 17:"(" fg=Yellow bg=Reset mod=NONE, 18:"l" fg=Yellow bg=Reset mod=NONE, 19:"o" fg=Yellow bg=Reset mod=NONE, 20:"c" fg=Yellow bg=Reset mod=NONE, 21:"a" fg=Yellow bg=Reset mod=NONE, 22:"l" fg=Yellow bg=Reset mod=NONE, 23:")" fg=Yellow bg=Reset mod=NONE
+06: "                                "
+07: "                                "
+08: "local notes                     " | 0:"l" fg=Reset bg=Reset mod=NONE, 1:"o" fg=Reset bg=Reset mod=NONE, 2:"c" fg=Reset bg=Reset mod=NONE, 3:"a" fg=Reset bg=Reset mod=NONE, 4:"l" fg=Reset bg=Reset mod=NONE, 6:"n" fg=Reset bg=Reset mod=NONE, 7:"o" fg=Reset bg=Reset mod=NONE, 8:"t" fg=Reset bg=Reset mod=NONE, 9:"e" fg=Reset bg=Reset mod=NONE, 10:"s" fg=Reset bg=Reset mod=NONE
+09: "                                "

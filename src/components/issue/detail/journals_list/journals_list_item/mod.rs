@@ -4,4 +4,4 @@ pub mod widget;
 
 pub use component::{EventProcessResult, JournalsListItemComponent};
 pub use focus_state::FocusEvent;
-pub use widget::{JournalItemWidget, JournalItemWidgetState};
+pub use widget::{JournalItemWidget, JournalItemWidgetState, LocalJournalItemView};
