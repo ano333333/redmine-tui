@@ -79,9 +79,12 @@ enum PendingEditorContext {
     IssueBody {
         id: IssueId,
     },
-    Journal {
+    RemoteJournal {
         issue_id: IssueId,
         journal_id: JournalId,
+    },
+    LocalJournal {
+        issue_id: IssueId,
     },
 }
 
@@ -406,12 +409,31 @@ impl<'a> AppComponent<'a> {
                     notes,
                 },
             )) => {
-                self.pending_editor_context = Some(PendingEditorContext::Journal {
+                self.pending_editor_context = Some(PendingEditorContext::RemoteJournal {
                     issue_id,
                     journal_id: id,
                 });
                 self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
                     initial_text: notes,
+                }));
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::EditLocalJournalRequested { issue_id, notes },
+            )) => {
+                self.pending_editor_context = Some(PendingEditorContext::LocalJournal { issue_id });
+                self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                    initial_text: notes,
+                }));
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::CreateLocalJournalRequested { issue_id },
+            )) => {
+                self.dispatcher
+                    .borrow_mut()
+                    .dispatch(Action::Journal(JournalAction::CreateLocal { issue_id }));
+                self.pending_editor_context = Some(PendingEditorContext::LocalJournal { issue_id });
+                self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                    initial_text: String::new(),
                 }));
             }
             None => {}
@@ -628,7 +650,7 @@ impl<'a> AppComponent<'a> {
                         body: response.edited_text,
                     });
             }
-            Some(PendingEditorContext::Journal {
+            Some(PendingEditorContext::RemoteJournal {
                 issue_id,
                 journal_id,
             }) => {
@@ -636,6 +658,14 @@ impl<'a> AppComponent<'a> {
                     JournalAction::EditRemoteNotes {
                         issue_id,
                         journal_id,
+                        notes: response.edited_text,
+                    },
+                ));
+            }
+            Some(PendingEditorContext::LocalJournal { issue_id }) => {
+                self.dispatcher.borrow_mut().dispatch(Action::Journal(
+                    JournalAction::EditLocalNotes {
+                        issue_id,
                         notes: response.edited_text,
                     },
                 ));
@@ -1373,6 +1403,81 @@ mod tests {
         assert_eq!(diff.before, "");
         assert_eq!(diff.after, "updated notes");
         assert!(failure.is_none());
+    }
+
+    #[test]
+    fn enter_on_create_local_journal_button_creates_local_journal_and_opens_editor() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        for _ in 0..100 {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        }
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+
+        let Some(AppEffect::OpenEditor(request)) = app.take_effect() else {
+            panic!("Local Journal作成時はエディタ起動effectが必要です");
+        };
+        assert_eq!(request.initial_text, "");
+
+        dispatcher.borrow_mut().consume_action();
+        assert!(dispatcher.borrow().store().get_local_journal(3).is_some());
+
+        app.handle_editor_response(EditorResponse {
+            edited_text: "local notes".to_string(),
+        });
+        dispatcher.borrow_mut().consume_action();
+
+        let dispatcher_ref = dispatcher.borrow();
+        let entry = dispatcher_ref
+            .store()
+            .get_local_journal(3)
+            .expect("created local journal should remain in Store");
+        assert_eq!(entry.journal.notes, "local notes");
+    }
+
+    #[test]
+    fn e_key_on_local_journal_notes_opens_editor_and_updates_store_through_dispatcher() {
+        let dispatcher = loaded_dispatcher();
+        dispatcher
+            .borrow_mut()
+            .dispatch(Action::Journal(JournalAction::CreateLocal {
+                issue_id: IssueId::new(3),
+            }));
+        dispatcher.borrow_mut().consume_action();
+        dispatcher
+            .borrow_mut()
+            .dispatch(Action::Journal(JournalAction::EditLocalNotes {
+                issue_id: IssueId::new(3),
+                notes: "initial local notes".to_string(),
+            }));
+        dispatcher.borrow_mut().consume_action();
+
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        for _ in 0..100 {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        }
+        app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
+
+        let Some(AppEffect::OpenEditor(request)) = app.take_effect() else {
+            panic!("Local Journal本文編集時はエディタ起動effectが必要です");
+        };
+        assert_eq!(request.initial_text, "initial local notes");
+
+        app.handle_editor_response(EditorResponse {
+            edited_text: "updated local notes".to_string(),
+        });
+        dispatcher.borrow_mut().consume_action();
+
+        let dispatcher_ref = dispatcher.borrow();
+        let entry = dispatcher_ref
+            .store()
+            .get_local_journal(3)
+            .expect("local journal should remain in Store");
+        assert_eq!(entry.journal.notes, "updated local notes");
     }
 
     #[test]

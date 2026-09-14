@@ -37,6 +37,13 @@ pub enum EventProcessResult {
         id: JournalId,
         notes: String,
     },
+    EditLocalJournalRequested {
+        issue_id: IssueId,
+        notes: String,
+    },
+    CreateLocalJournalRequested {
+        issue_id: IssueId,
+    },
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
@@ -397,6 +404,17 @@ impl IssueDetailComponent {
                             issue_id: self.id,
                             id,
                             notes,
+                        });
+                    }
+                    Some(JournalsListEventProcessResult::EditLocalJournalRequested { notes }) => {
+                        return Some(EventProcessResult::EditLocalJournalRequested {
+                            issue_id: self.id,
+                            notes,
+                        });
+                    }
+                    Some(JournalsListEventProcessResult::CreateLocalJournalRequested) => {
+                        return Some(EventProcessResult::CreateLocalJournalRequested {
+                            issue_id: self.id,
                         });
                     }
                     Some(JournalsListEventProcessResult::SaveRequested { id }) => {

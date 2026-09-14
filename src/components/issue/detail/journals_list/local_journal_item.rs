@@ -1,7 +1,7 @@
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::stores::LocalJournalEntry;
+use crate::stores::{LocalJournalEntry, LocalJournalState};
 
 use super::journals_list_item::focus_state;
 use super::journals_list_item::focus_state::{FocusEvent, FocusState};
@@ -11,6 +11,7 @@ use super::journals_list_item::{JournalItemWidget, JournalItemWidgetState, Local
 pub enum EventProcessResult {
     CursorLeavedFromBelow { x: u16 },
     CursorLeavedFromAbove { x: u16 },
+    EditRequested { notes: String },
 }
 
 /// Local Journalの表示内容、本文の描画cache、focus状態を保持するcomponent。
@@ -18,6 +19,7 @@ pub struct LocalJournalItemComponent {
     notes: String,
     state_marker: &'static str,
     comment_line_count: u16,
+    editable: bool,
     focus_state: FocusState,
     widget_state: JournalItemWidgetState,
 }
@@ -28,6 +30,7 @@ impl LocalJournalItemComponent {
             notes: String::new(),
             state_marker: "(local)",
             comment_line_count: 0,
+            editable: false,
             focus_state: FocusState::new(),
             widget_state: JournalItemWidgetState::new(),
         }
@@ -39,6 +42,7 @@ impl LocalJournalItemComponent {
         self.widget_state
             .update(width, "", &chrono::Local::now(), &self.notes);
         self.comment_line_count = self.widget_state.comment_line_count();
+        self.editable = matches!(entry.state, LocalJournalState::LocalOnly { .. });
         self.focus_state
             .update(width, 0, self.comment_line_count, true);
     }
@@ -51,9 +55,14 @@ impl LocalJournalItemComponent {
             focus_state::EventProcessResult::CursorLeavedFromAbove { x } => {
                 Some(EventProcessResult::CursorLeavedFromAbove { x })
             }
+            focus_state::EventProcessResult::Edit if self.editable => {
+                Some(EventProcessResult::EditRequested {
+                    notes: self.notes.clone(),
+                })
+            }
             focus_state::EventProcessResult::Edit
             | focus_state::EventProcessResult::SaveRequested => {
-                // Local専用の編集経路が接続されるまでは、Remote用の編集・保存操作を伝播させない。
+                // Uploading中の編集と、Local Journalでは未対応の保存操作は伝播させない。
                 None
             }
         }
@@ -98,7 +107,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_edit_and_save_on_focused_local_item_are_no_ops() {
+    fn process_event_e_on_focused_local_item_returns_edit_requested() {
         let entry = LocalJournalEntry {
             journal: LocalJournal {
                 issue_id: IssueId::new(1),
@@ -110,14 +119,33 @@ mod tests {
         component.update(&entry, 32);
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('e'), KeyModifiers::NONE))
-                .is_none()
-        );
+        match component.process_event(key_event(KeyCode::Char('e'), KeyModifiers::NONE)) {
+            Some(EventProcessResult::EditRequested { notes }) => assert_eq!(notes, "local notes"),
+            _ => panic!("expected edit request"),
+        }
         assert!(
             component
                 .process_event(key_event(KeyCode::Char('s'), KeyModifiers::CONTROL))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn process_event_e_on_uploading_local_item_is_a_no_op() {
+        let entry = LocalJournalEntry {
+            journal: LocalJournal {
+                issue_id: IssueId::new(1),
+                notes: "local notes".to_string(),
+            },
+            state: LocalJournalState::Uploading,
+        };
+        let mut component = LocalJournalItemComponent::new();
+        component.update(&entry, 32);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('e'), KeyModifiers::NONE))
                 .is_none()
         );
     }

@@ -30,6 +30,8 @@ pub enum EventProcessResult {
     CursorLeavedFromBelow,
     CursorLeavedFromAbove,
     EditRequested { id: JournalId, notes: String },
+    EditLocalJournalRequested { notes: String },
+    CreateLocalJournalRequested,
     SaveRequested { id: JournalId },
 }
 
@@ -57,6 +59,12 @@ impl JournalsListComponent {
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
         if self.create_button_focused {
             return match event {
+                Event::Key(key)
+                    if key.code == crossterm::event::KeyCode::Enter
+                        && self.local_item.is_none() =>
+                {
+                    Some(EventProcessResult::CreateLocalJournalRequested)
+                }
                 Event::Key(key) if key.code == crossterm::event::KeyCode::Char('k') => {
                     let Some(item) = self
                         .item_count()
@@ -89,6 +97,9 @@ impl JournalsListComponent {
                 }
                 LocalEventProcessResult::CursorLeavedFromAbove { x } => {
                     ChildEventProcessResult::CursorLeavedFromAbove { x }
+                }
+                LocalEventProcessResult::EditRequested { notes } => {
+                    return Some(EventProcessResult::EditLocalJournalRequested { notes });
                 }
             },
         };
@@ -426,6 +437,45 @@ mod tests {
             }
             _ => panic!("expected edit request"),
         }
+    }
+
+    #[test]
+    fn process_event_e_on_focused_local_item_returns_local_edit_requested() {
+        let local_entry = local_entry("local notes");
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], Some(&local_entry), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+
+        let result = component.process_event(key_event(KeyCode::Char('e')));
+
+        match result {
+            Some(EventProcessResult::EditLocalJournalRequested { notes }) => {
+                assert_eq!(notes, "local notes");
+            }
+            _ => panic!("expected local edit request"),
+        }
+    }
+
+    #[test]
+    fn process_event_enter_on_enabled_create_button_returns_create_requested() {
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], None, WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Enter)),
+            Some(EventProcessResult::CreateLocalJournalRequested)
+        ));
+    }
+
+    #[test]
+    fn process_event_enter_on_disabled_create_button_is_a_no_op() {
+        let local_entry = local_entry("local notes");
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], Some(&local_entry), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
+
+        assert!(component.process_event(key_event(KeyCode::Enter)).is_none());
     }
 
     #[test]
