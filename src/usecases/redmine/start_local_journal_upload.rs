@@ -6,7 +6,6 @@ use std::sync::Arc;
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{
     Action, Dispatcher, IssueState, JournalAction, LocalJournalState, NoticeAction, NoticeId,
-    RemoteJournalState,
 };
 use crate::vos::{EntityIdValue, IssueId};
 
@@ -78,11 +77,9 @@ where
         if !matches!(entry.state, LocalJournalState::LocalOnly { .. }) {
             panic!("cannot start local journal upload unless it is local only");
         }
-        if store
-            .get_remote_journals(issue_id)
-            .iter()
-            .any(|entry| matches!(entry.state, RemoteJournalState::Uploading { .. }))
-        {
+        // 非同期処理を作る前にも検査し、StoreのAction入口での排他検査と合わせて
+        // usecaseの直接呼び出しと直接dispatchの両方を拒否する。
+        if store.has_uploading_journal(issue_id) {
             panic!(
                 "cannot start local journal upload while another journal of issue {issue_id} is uploading"
             );

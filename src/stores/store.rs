@@ -84,9 +84,52 @@ impl Store {
     }
 
     pub fn consume_action(&mut self, action: Action) {
+        // IssueStoreとJournalStoreは互いを参照しないため、両者をまたぐupload排他は
+        // Action処理の共通入口で検査し、検査を通過したActionだけを子Storeへ委譲する。
         match action {
+            Action::Issue(IssueAction::StartUpload { id }) => {
+                if matches!(
+                    self.issue_store.get_issue_state(id),
+                    Some(IssueState::Edited)
+                ) {
+                    assert!(
+                        !self.journal_store.has_uploading_journal(id),
+                        "cannot start issue upload while a journal of issue {id} is uploading"
+                    );
+                }
+                self.issue_store
+                    .consume_action(IssueAction::StartUpload { id });
+            }
             Action::Issue(action) => self.issue_store.consume_action(action),
             Action::ProjectIssues(action) => self.project_issues_store.consume_action(action),
+            Action::Journal(JournalAction::StartLocalUpload { issue_id }) => {
+                assert!(
+                    !matches!(
+                        self.issue_store.get_issue_state(issue_id),
+                        Some(IssueState::Uploading)
+                    ),
+                    "cannot start local journal upload while issue {issue_id} is uploading"
+                );
+                self.journal_store
+                    .consume_action(JournalAction::StartLocalUpload { issue_id });
+            }
+            Action::Journal(JournalAction::StartRemoteUpload {
+                issue_id,
+                journal_id,
+            }) => {
+                assert!(
+                    !matches!(
+                        self.issue_store.get_issue_state(issue_id),
+                        Some(IssueState::Uploading)
+                    ),
+                    "cannot start remote journal upload while issue {issue_id} is uploading"
+                );
+                self.journal_store
+                    .consume_action(JournalAction::StartRemoteUpload {
+                        issue_id,
+                        journal_id,
+                    });
+            }
             Action::Journal(action) => self.journal_store.consume_action(action),
             Action::Notice(action) => self.notice_store.consume_action(action),
             // main loop が直接処理する終了通知であり、Store の状態には反映しない。
@@ -187,6 +230,14 @@ impl Store {
     /// Issueに紐づく0件または1件のLocal Journalを返す。
     pub fn get_local_journal(&self, issue_id: impl Into<IssueId>) -> Option<&LocalJournalEntry> {
         self.journal_store.get_local_journal(issue_id)
+    }
+
+    /// 対象IssueのRemote JournalまたはLocal Journalがupload中かを返す。
+    ///
+    /// Journalが未登録のIssue、およびJournalがすべて待機中のIssueでは`false`を返す。
+    /// usecaseから同一Issue内のJournal upload排他を検査するために使用する。
+    pub fn has_uploading_journal(&self, issue_id: impl Into<IssueId>) -> bool {
+        self.journal_store.has_uploading_journal(issue_id)
     }
 
     /// Issueに登録されているRemote Journalを返す。
@@ -378,6 +429,44 @@ mod tests {
         dispatcher.consume_action();
 
         assert!(dispatcher.store().get_issue(id).is_some());
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot start issue upload while a journal of issue 1 is uploading")]
+    fn issue_upload_start_panics_while_a_journal_of_the_issue_is_uploading() {
+        let id = IssueId::new(1);
+        let mut store = Store::new();
+        store.consume_action(JournalAction::CreateLocal { issue_id: id }.into());
+        store.consume_action(JournalAction::StartLocalUpload { issue_id: id }.into());
+        store.consume_action(IssueAction::Load { id }.into());
+        store.consume_action(
+            IssueAction::UpdateDescription {
+                id,
+                body: "edited".to_string(),
+            }
+            .into(),
+        );
+
+        store.consume_action(IssueAction::StartUpload { id }.into());
+    }
+
+    #[test]
+    fn issue_upload_start_succeeds_while_the_issues_journals_are_idle() {
+        let id = IssueId::new(1);
+        let mut store = Store::new();
+        store.consume_action(JournalAction::CreateLocal { issue_id: id }.into());
+        store.consume_action(IssueAction::Load { id }.into());
+        store.consume_action(
+            IssueAction::UpdateDescription {
+                id,
+                body: "edited".to_string(),
+            }
+            .into(),
+        );
+
+        store.consume_action(IssueAction::StartUpload { id }.into());
+
+        assert_eq!(store.get_issue_state(id), Some(&IssueState::Uploading));
     }
 
     #[test]

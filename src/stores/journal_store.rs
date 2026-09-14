@@ -176,6 +176,28 @@ impl JournalStore {
                 }
             }
             JournalAction::StartLocalUpload { issue_id } => {
+                let state = &self
+                    .by_issue
+                    .get(&issue_id)
+                    .and_then(|issue_journals| issue_journals.local.as_ref())
+                    .unwrap_or_else(|| {
+                        panic!("local journal is not registered for issue {issue_id}")
+                    })
+                    .state;
+                if matches!(state, LocalJournalState::Uploading) {
+                    panic!(
+                        "cannot start local journal upload for issue {issue_id} while it is uploading"
+                    );
+                }
+                if self
+                    .get_remote_journals(issue_id)
+                    .iter()
+                    .any(|entry| matches!(entry.state, RemoteJournalState::Uploading { .. }))
+                {
+                    panic!(
+                        "cannot start local journal upload while another journal of issue {issue_id} is uploading"
+                    );
+                }
                 let entry = self
                     .by_issue
                     .get_mut(&issue_id)
@@ -239,6 +261,32 @@ impl JournalStore {
                 issue_id,
                 journal_id,
             } => {
+                // 対象自身の不正な遷移は、他Journalとの排他関係によらない自己矛盾として
+                // 先に検出する。他Journalとの排他は正常な遷移元であるEditedにのみ適用する。
+                match &self.get_remote_journal(issue_id, journal_id).state {
+                    RemoteJournalState::Synced => {
+                        panic!("cannot start remote journal upload while it is synced");
+                    }
+                    RemoteJournalState::Uploading { .. } => {
+                        panic!("cannot start remote journal upload while it is uploading");
+                    }
+                    RemoteJournalState::Edited { .. } => {}
+                }
+                let another_journal_is_uploading =
+                    self.by_issue.get(&issue_id).is_some_and(|journals| {
+                        matches!(
+                            journals.local.as_ref().map(|entry| &entry.state),
+                            Some(LocalJournalState::Uploading)
+                        ) || journals.remote.iter().any(|entry| {
+                            entry.journal.id != journal_id
+                                && matches!(entry.state, RemoteJournalState::Uploading { .. })
+                        })
+                    });
+                if another_journal_is_uploading {
+                    panic!(
+                        "cannot start remote journal upload while another journal of issue {issue_id} is uploading"
+                    );
+                }
                 let entry = self.entry_mut(issue_id, journal_id);
                 match &mut entry.state {
                     RemoteJournalState::Synced => {
@@ -574,5 +622,23 @@ impl JournalStore {
         self.by_issue
             .get(&issue_id.into())
             .and_then(|journals| journals.local.as_ref())
+    }
+
+    /// 対象IssueのRemote JournalまたはLocal Journalがupload中かを返す。
+    ///
+    /// Journalが未登録のIssue、およびJournalがすべて待機中のIssueでは`false`を返す。
+    /// 同一Issue内の別Journalとのupload排他を検査するために使用する。
+    pub fn has_uploading_journal(&self, issue_id: impl Into<IssueId>) -> bool {
+        let issue_id = issue_id.into();
+        self.by_issue.get(&issue_id).is_some_and(|journals| {
+            journals
+                .remote
+                .iter()
+                .any(|entry| matches!(entry.state, RemoteJournalState::Uploading { .. }))
+                || matches!(
+                    journals.local.as_ref().map(|entry| &entry.state),
+                    Some(LocalJournalState::Uploading)
+                )
+        })
     }
 }

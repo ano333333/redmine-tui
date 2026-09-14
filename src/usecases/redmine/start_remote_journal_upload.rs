@@ -72,12 +72,9 @@ where
                 "cannot start remote journal upload unless remote journal {journal_id} is edited"
             ),
         };
-        if store
-            .get_remote_journals(issue_id)
-            .iter()
-            .filter(|entry| entry.journal.id != journal_id)
-            .any(|entry| matches!(entry.state, RemoteJournalState::Uploading { .. }))
-        {
+        // 非同期処理を作る前にも検査し、StoreのAction入口での排他検査と合わせて
+        // usecaseの直接呼び出しと直接dispatchの両方を拒否する。
+        if store.has_uploading_journal(issue_id) {
             panic!(
                 "cannot start remote journal upload while another journal of issue {issue_id} is uploading"
             );
@@ -498,6 +495,19 @@ mod tests {
             issue_id: ISSUE_ID,
             journal_id: JournalId::new(11),
         }));
+        dispatcher.consume_action();
+        let dispatcher = Rc::new(RefCell::new(dispatcher));
+
+        assert_panics(&dispatcher);
+    }
+
+    #[test]
+    fn start_panics_when_the_local_journal_is_uploading() {
+        let mut dispatcher = Dispatcher::new();
+        edited_issue_and_journal(&mut dispatcher);
+        dispatcher.dispatch(JournalAction::CreateLocal { issue_id: ISSUE_ID });
+        dispatcher.consume_action();
+        dispatcher.dispatch(JournalAction::StartLocalUpload { issue_id: ISSUE_ID });
         dispatcher.consume_action();
         let dispatcher = Rc::new(RefCell::new(dispatcher));
 

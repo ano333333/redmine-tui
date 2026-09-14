@@ -110,6 +110,44 @@ fn getters_on_an_empty_store_return_empty_results() {
     assert!(store.get_remote_journals(issue_id).is_empty());
     assert!(!store.has_remote_journal(issue_id, JournalId::new(10)));
     assert!(store.get_local_journal(issue_id).is_none());
+    assert!(!store.has_uploading_journal(issue_id));
+}
+
+#[test]
+fn has_uploading_journal_detects_remote_and_local_uploads_for_the_target_issue() {
+    let remote_issue_id = IssueId::new(1);
+    let local_issue_id = IssueId::new(2);
+    let idle_issue_id = IssueId::new(3);
+    let store = JournalStore {
+        by_issue: HashMap::from([
+            (
+                remote_issue_id,
+                IssueJournals {
+                    remote: vec![uploading_remote_entry(remote_issue_id, JournalId::new(10))],
+                    local: None,
+                },
+            ),
+            (
+                local_issue_id,
+                IssueJournals {
+                    remote: vec![],
+                    local: Some(local_entry(local_issue_id)),
+                },
+            ),
+            (
+                idle_issue_id,
+                IssueJournals {
+                    remote: vec![remote_entry(idle_issue_id, JournalId::new(30))],
+                    local: None,
+                },
+            ),
+        ]),
+    };
+
+    assert!(store.has_uploading_journal(remote_issue_id));
+    assert!(store.has_uploading_journal(local_issue_id));
+    assert!(!store.has_uploading_journal(idle_issue_id));
+    assert!(!store.has_uploading_journal(IssueId::new(4)));
 }
 
 #[test]
@@ -639,6 +677,31 @@ fn start_local_upload_panics_when_the_journal_is_uploading() {
 }
 
 #[test]
+#[should_panic(
+    expected = "cannot start local journal upload while another journal of issue 1 is uploading"
+)]
+fn start_local_upload_panics_when_a_remote_journal_is_uploading() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![uploading_remote_entry(issue_id, JournalId::new(10))],
+                local: Some(LocalJournalEntry {
+                    journal: LocalJournal {
+                        issue_id,
+                        notes: "local notes".to_string(),
+                    },
+                    state: LocalJournalState::LocalOnly { failure: None },
+                }),
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::StartLocalUpload { issue_id });
+}
+
+#[test]
 fn fail_local_upload_restores_local_only_with_failure_and_keeps_notes() {
     let issue_id = IssueId::new(1);
     let mut store = JournalStore {
@@ -920,6 +983,28 @@ fn start_remote_upload_panics_when_the_journal_is_already_uploading() {
 
     store.consume_action(JournalAction::StartRemoteUpload {
         issue_id: IssueId::new(1),
+        journal_id: JournalId::new(10),
+    });
+}
+
+#[test]
+#[should_panic(
+    expected = "cannot start remote journal upload while another journal of issue 1 is uploading"
+)]
+fn start_remote_upload_panics_when_the_local_journal_is_uploading() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![edited_remote_entry(issue_id, JournalId::new(10))],
+                local: Some(local_entry(issue_id)),
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::StartRemoteUpload {
+        issue_id,
         journal_id: JournalId::new(10),
     });
 }
