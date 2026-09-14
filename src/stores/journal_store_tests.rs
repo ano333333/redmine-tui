@@ -1494,3 +1494,120 @@ fn sync_fetched_panics_when_a_fetched_journal_id_is_registered_for_another_issue
         journals: vec![journal(IssueId::new(3), JournalId::new(10))],
     });
 }
+
+#[test]
+fn complete_local_upload_with_fetched_merges_the_remote_collection_and_clears_the_local_entry() {
+    let issue_id = IssueId::new(3);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![remote_entry(issue_id, JournalId::new(10))],
+                local: Some(local_entry(issue_id)),
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::CompleteLocalUploadWithFetched {
+        issue_id,
+        journals: vec![
+            journal(issue_id, JournalId::new(10)),
+            journal(issue_id, JournalId::new(20)),
+        ],
+    });
+
+    let journals = store.get_remote_journals(issue_id);
+    assert_eq!(
+        journals
+            .iter()
+            .map(|entry| entry.journal.id)
+            .collect::<Vec<_>>(),
+        vec![JournalId::new(10), JournalId::new(20)]
+    );
+    assert!(
+        journals
+            .iter()
+            .all(|entry| matches!(entry.state, RemoteJournalState::Synced))
+    );
+    assert!(store.get_local_journal(issue_id).is_none());
+}
+
+#[test]
+fn complete_local_upload_with_fetched_keeps_dirty_remote_entries_even_when_refetched() {
+    let issue_id = IssueId::new(3);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![
+                    edited_remote_entry(issue_id, JournalId::new(10)),
+                    uploading_remote_entry(issue_id, JournalId::new(11)),
+                ],
+                local: Some(local_entry(issue_id)),
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::CompleteLocalUploadWithFetched {
+        issue_id,
+        journals: vec![
+            journal_with_notes(issue_id, JournalId::new(10), "server notes"),
+            journal_with_notes(issue_id, JournalId::new(11), "server notes"),
+            journal(issue_id, JournalId::new(20)),
+        ],
+    });
+
+    let edited_entry = store.get_remote_journal(issue_id, JournalId::new(10));
+    assert!(matches!(
+        edited_entry.state,
+        RemoteJournalState::Edited { .. }
+    ));
+    assert_eq!(edited_entry.journal.notes, "remote notes 10");
+
+    let uploading_entry = store.get_remote_journal(issue_id, JournalId::new(11));
+    assert!(matches!(
+        uploading_entry.state,
+        RemoteJournalState::Uploading { .. }
+    ));
+    assert_eq!(uploading_entry.journal.notes, "remote notes 11");
+
+    let new_entry = store.get_remote_journal(issue_id, JournalId::new(20));
+    assert!(matches!(new_entry.state, RemoteJournalState::Synced));
+
+    assert!(store.get_local_journal(issue_id).is_none());
+}
+
+#[test]
+#[should_panic(expected = "local journal is not registered for issue 3")]
+fn complete_local_upload_with_fetched_panics_when_the_local_entry_is_missing() {
+    let issue_id = IssueId::new(3);
+    let mut store = JournalStore {
+        by_issue: HashMap::from([(
+            issue_id,
+            IssueJournals {
+                remote: vec![remote_entry(issue_id, JournalId::new(10))],
+                local: None,
+            },
+        )]),
+    };
+
+    store.consume_action(JournalAction::CompleteLocalUploadWithFetched {
+        issue_id,
+        journals: vec![journal(issue_id, JournalId::new(10))],
+    });
+}
+
+#[test]
+#[should_panic(
+    expected = "cannot complete local journal upload for issue 3 while it is local only"
+)]
+fn complete_local_upload_with_fetched_panics_when_the_local_entry_is_local_only() {
+    let issue_id = IssueId::new(3);
+    let mut store = JournalStore::new();
+    store.consume_action(JournalAction::CreateLocal { issue_id });
+
+    store.consume_action(JournalAction::CompleteLocalUploadWithFetched {
+        issue_id,
+        journals: vec![],
+    });
+}

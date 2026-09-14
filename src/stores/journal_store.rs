@@ -22,6 +22,9 @@ pub(super) struct IssueJournals {
 /// JournalStoreの状態更新を表すAction。
 pub enum JournalAction {
     /// 取得したRemote JournalをIssue単位で同期する。
+    ///
+    /// 編集中・upload中のRemote Journalは未保存の作業内容を失わないよう取得値で上書きせず、
+    /// 取得結果から消えていても削除しない。
     SyncFetched {
         issue_id: IssueId,
         journals: Vec<Journal>,
@@ -96,6 +99,18 @@ pub enum JournalAction {
     RemoveMissingRemoteJournal {
         issue_id: IssueId,
         journal_id: JournalId,
+    },
+    /// Local Journalのupload成功後、取得したJournal一覧の同期とLocal Journalの削除を一度に行う。
+    ///
+    /// 作成されたJournalはRemote側にしか現れないため、`SyncFetched`と同じ同期規則で取り込みつつ、
+    /// 同じAction内でLocal Journalを削除して二重表示を避ける。同期規則は`SyncFetched`と同じく、
+    /// 編集中・upload中のRemote Journalを取得値で上書きしない。
+    /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
+    /// FIXME: Entity定義と、1トランザクションとしてのActionの区切りが曖昧
+    /// 整合性・結果整合性を考えてActionを分割するかどうか検討する
+    CompleteLocalUploadWithFetched {
+        issue_id: IssueId,
+        journals: Vec<Journal>,
     },
 }
 
@@ -356,6 +371,32 @@ impl JournalStore {
                 issue_journals
                     .remote
                     .retain(|entry| entry.journal.id != journal_id);
+            }
+            JournalAction::CompleteLocalUploadWithFetched { issue_id, journals } => {
+                let issue_journals = self.by_issue.get_mut(&issue_id).unwrap_or_else(|| {
+                    panic!("local journal is not registered for issue {issue_id}")
+                });
+                // 取得値のmergeとLocal Journalの削除は不可分に扱うため、片方だけが適用された状態を
+                // 残さないよう、状態を変更する前にまとめて検証する。
+                match issue_journals.local {
+                    Some(LocalJournalEntry {
+                        state: LocalJournalState::Uploading,
+                        ..
+                    }) => {}
+                    // Uploadingでないなら未uploadのLocalOnlyであり、対応するRemote Journalが
+                    // 存在しないため、取得値にはLocal Journalの内容が含まれていない。
+                    Some(_) => {
+                        panic!(
+                            "cannot complete local journal upload for issue {issue_id} while it is local only"
+                        );
+                    }
+                    None => {
+                        panic!("local journal is not registered for issue {issue_id}");
+                    }
+                }
+                let remote = std::mem::take(&mut issue_journals.remote);
+                issue_journals.remote = Self::merge_sync_fetched(remote, journals);
+                issue_journals.local = None;
             }
         }
     }
