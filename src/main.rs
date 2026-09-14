@@ -316,6 +316,21 @@ fn handle_app_effect(
                 dispatcher, runtime, sender, client, issue_id, journal_id,
             );
         }
+        AppEffect::ContinueRemoteJournalUpload {
+            issue_id,
+            journal_id,
+            resolved_notes,
+        } => {
+            continue_remote_journal_upload_action(
+                dispatcher,
+                runtime,
+                sender,
+                client,
+                issue_id,
+                journal_id,
+                resolved_notes,
+            );
+        }
     }
     Ok(())
 }
@@ -334,7 +349,6 @@ fn start_remote_journal_upload_action<C>(
     spawn_action_task(runtime, sender, future);
 }
 
-#[allow(dead_code)]
 fn continue_remote_journal_upload_action<C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     runtime: &Runtime,

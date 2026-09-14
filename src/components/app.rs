@@ -17,6 +17,9 @@ use crate::components::issue_select_popup::component::EventProcessResult as Issu
 use crate::components::issue_select_popup::component::{
     Effect as IssueSelectPopupEffect, IssueSelectPopupComponent,
 };
+use crate::components::remote_journal_conflict_popup::{
+    EventProcessResult as RemoteJournalConflictEventProcessResult, RemoteJournalConflictComponent,
+};
 use crate::stores::{Action, Dispatcher, IssueAction, JournalAction, RemoteJournalState, Store};
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
@@ -65,6 +68,11 @@ pub enum AppEffect {
         issue_id: IssueId,
         journal_id: JournalId,
     },
+    ContinueRemoteJournalUpload {
+        issue_id: IssueId,
+        journal_id: JournalId,
+        resolved_notes: String,
+    },
 }
 
 enum PendingEditorContext {
@@ -85,6 +93,11 @@ enum PopupComponent<'a> {
     IssuePropertyConflict {
         issue_id: IssueId,
         component: IssuePropertyConflictComponent,
+    },
+    RemoteJournalConflict {
+        issue_id: IssueId,
+        journal_id: JournalId,
+        component: RemoteJournalConflictComponent,
     },
 }
 
@@ -213,6 +226,30 @@ impl<'a> AppComponent<'a> {
                     self.pending_effect = Some(AppEffect::ContinueIssueUpload {
                         id: *issue_id,
                         diffs: retry_diffs,
+                    });
+                    self.popup_components.pop_back();
+                }
+                None => {}
+            },
+            PopupComponent::RemoteJournalConflict {
+                issue_id,
+                journal_id,
+                component,
+            } => match component.process_event(event) {
+                Some(RemoteJournalConflictEventProcessResult::Canceled) => {
+                    dispatcher
+                        .borrow_mut()
+                        .dispatch(JournalAction::CancelRemoteUploadConflict {
+                            issue_id: *issue_id,
+                            journal_id: *journal_id,
+                        });
+                    self.popup_components.pop_back();
+                }
+                Some(RemoteJournalConflictEventProcessResult::Continued { resolved_notes }) => {
+                    self.pending_effect = Some(AppEffect::ContinueRemoteJournalUpload {
+                        issue_id: *issue_id,
+                        journal_id: *journal_id,
+                        resolved_notes,
                     });
                     self.popup_components.pop_back();
                 }
@@ -476,6 +513,32 @@ impl<'a> AppComponent<'a> {
 
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store, area: Rect) {
+        self.open_issue_property_conflict_popup_if_needed(store);
+        self.open_remote_journal_conflict_popups_if_needed(store);
+
+        if let Some(issue_component) = &mut self.issue_component {
+            issue_component.update(dispatcher, store, (area.width, area.height));
+        }
+
+        for popup_component in &self.popup_components {
+            if let PopupComponent::IssueSelect(popup_component) = &mut *popup_component.borrow_mut()
+            {
+                popup_component.update(store, area);
+            }
+            if let PopupComponent::IssuePropertyConflict { component, .. } =
+                &mut *popup_component.borrow_mut()
+            {
+                component.update(area);
+            }
+            if let PopupComponent::RemoteJournalConflict { component, .. } =
+                &mut *popup_component.borrow_mut()
+            {
+                component.update(area);
+            }
+        }
+    }
+
+    fn open_issue_property_conflict_popup_if_needed(&mut self, store: &Store) {
         if let Some(issue_component) = &self.issue_component
             && let Some((server_issue, conflicts)) =
                 store.get_issue_upload_conflict(issue_component.issue_id())
@@ -497,20 +560,43 @@ impl<'a> AppComponent<'a> {
                 },
             )));
         }
+    }
 
-        if let Some(issue_component) = &mut self.issue_component {
-            issue_component.update(dispatcher, store, (area.width, area.height));
-        }
-
-        for popup_component in &self.popup_components {
-            if let PopupComponent::IssueSelect(popup_component) = &mut *popup_component.borrow_mut()
-            {
-                popup_component.update(store, area);
-            }
-            if let PopupComponent::IssuePropertyConflict { component, .. } =
-                &mut *popup_component.borrow_mut()
-            {
-                component.update(area);
+    fn open_remote_journal_conflict_popups_if_needed(&mut self, store: &Store) {
+        if let Some(issue_component) = &self.issue_component {
+            let issue_id = issue_component.issue_id();
+            for entry in store.get_remote_journals(issue_id) {
+                let journal_id = entry.journal.id;
+                let Some((diff, conflict)) =
+                    store.get_remote_journal_upload_conflict(issue_id, journal_id)
+                else {
+                    continue;
+                };
+                if !self.popup_components.iter().any(|popup| {
+                    matches!(
+                        &*popup.borrow(),
+                        PopupComponent::RemoteJournalConflict {
+                            issue_id: popup_issue_id,
+                            journal_id: popup_journal_id,
+                            ..
+                        }
+                            if *popup_issue_id == issue_id
+                                && *popup_journal_id == journal_id
+                    )
+                }) {
+                    let diff = diff.clone();
+                    let conflict = conflict.clone();
+                    self.popup_components.push_back(Rc::new(RefCell::new(
+                        PopupComponent::RemoteJournalConflict {
+                            issue_id,
+                            journal_id,
+                            component: RemoteJournalConflictComponent::new(
+                                diff,
+                                conflict.server_notes.clone(),
+                            ),
+                        },
+                    )));
+                }
             }
         }
     }
@@ -582,6 +668,10 @@ impl<'a> AppComponent<'a> {
                     let widget = component.create_widget(area);
                     frame.render_widget(widget, area);
                 }
+                PopupComponent::RemoteJournalConflict { component, .. } => {
+                    let widget = component.create_widget(area);
+                    frame.render_widget(widget, area);
+                }
             }
         }
     }
@@ -597,6 +687,9 @@ impl<'a> AppComponent<'a> {
                 PopupComponent::DatePicker(_) => None,
                 PopupComponent::IssueSelect(_) => None,
                 PopupComponent::IssuePropertyConflict { component, .. } => {
+                    component.cursor_position(area)
+                }
+                PopupComponent::RemoteJournalConflict { component, .. } => {
                     component.cursor_position(area)
                 }
             }
@@ -1550,5 +1643,131 @@ mod tests {
         let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
 
         assert!(!app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher));
+    }
+
+    fn app_with_remote_journal_conflict_popup() -> (Rc<RefCell<Dispatcher>>, AppComponent<'static>)
+    {
+        let dispatcher = loaded_dispatcher_with_journals();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        {
+            let mut dispatcher_ref = dispatcher.borrow_mut();
+            dispatcher_ref.dispatch(Action::Journal(JournalAction::EditRemoteNotes {
+                issue_id: IssueId::new(3),
+                journal_id: JournalId::new(1),
+                notes: "edited notes".to_string(),
+            }));
+            dispatcher_ref.consume_action();
+            dispatcher_ref.dispatch(Action::Journal(JournalAction::StartRemoteUpload {
+                issue_id: IssueId::new(3),
+                journal_id: JournalId::new(1),
+            }));
+            dispatcher_ref.consume_action();
+            dispatcher_ref.dispatch(Action::Journal(JournalAction::DetectRemoteUploadConflict {
+                issue_id: IssueId::new(3),
+                journal_id: JournalId::new(1),
+                server_notes: "server notes".to_string(),
+            }));
+            dispatcher_ref.consume_action();
+        }
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        (dispatcher, app)
+    }
+
+    #[test]
+    fn update_opens_remote_journal_conflict_popup_only_once() {
+        let (dispatcher, mut app) = app_with_remote_journal_conflict_popup();
+
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        assert_eq!(app.popup_components.len(), 1);
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::RemoteJournalConflict { issue_id, journal_id, .. }
+                if *issue_id == IssueId::new(3) && *journal_id == JournalId::new(1)
+        ));
+    }
+
+    #[test]
+    fn q_key_on_remote_journal_conflict_popup_requests_cancel_remote_upload_conflict() {
+        let (dispatcher, mut app) = app_with_remote_journal_conflict_popup();
+
+        app.process_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+
+        assert!(app.popup_components.is_empty());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        dispatcher.borrow_mut().consume_action();
+        let dispatcher_ref = dispatcher.borrow();
+        let entry = dispatcher_ref.store().get_remote_journal(3, 1);
+        assert!(matches!(entry.state, RemoteJournalState::Edited { .. }));
+    }
+
+    #[test]
+    fn esc_key_on_remote_journal_conflict_popup_requests_cancel_remote_upload_conflict() {
+        let (dispatcher, mut app) = app_with_remote_journal_conflict_popup();
+
+        app.process_event(key_event(KeyCode::Esc), dispatcher.clone());
+
+        assert!(app.popup_components.is_empty());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        dispatcher.borrow_mut().consume_action();
+        let dispatcher_ref = dispatcher.borrow();
+        let entry = dispatcher_ref.store().get_remote_journal(3, 1);
+        assert!(matches!(entry.state, RemoteJournalState::Edited { .. }));
+    }
+
+    #[test]
+    fn continue_on_remote_journal_conflict_popup_requests_continue_remote_journal_upload() {
+        let (dispatcher, mut app) = app_with_remote_journal_conflict_popup();
+
+        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+
+        assert!(app.popup_components.is_empty());
+        let Some(AppEffect::ContinueRemoteJournalUpload {
+            issue_id,
+            journal_id,
+            resolved_notes,
+        }) = app.take_effect()
+        else {
+            panic!("expected continue remote journal upload effect");
+        };
+        assert_eq!(issue_id, IssueId::new(3));
+        assert_eq!(journal_id, JournalId::new(1));
+        assert_eq!(resolved_notes, "edited notes");
+    }
+
+    #[test]
+    fn re_conflict_reopens_remote_journal_conflict_popup_with_new_server_notes() {
+        let (dispatcher, mut app) = app_with_remote_journal_conflict_popup();
+
+        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+        assert!(app.popup_components.is_empty());
+
+        {
+            let mut dispatcher_ref = dispatcher.borrow_mut();
+            dispatcher_ref.dispatch(Action::Journal(JournalAction::DetectRemoteUploadConflict {
+                issue_id: IssueId::new(3),
+                journal_id: JournalId::new(1),
+                server_notes: "newly changed notes".to_string(),
+            }));
+            dispatcher_ref.consume_action();
+        }
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        assert_eq!(app.popup_components.len(), 1);
+
+        // Serverを選択してContinueし、新しいserver値がcomponentへ渡っていることを確認する。
+        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+
+        let Some(AppEffect::ContinueRemoteJournalUpload { resolved_notes, .. }) = app.take_effect()
+        else {
+            panic!("expected continue remote journal upload effect");
+        };
+        assert_eq!(resolved_notes, "newly changed notes");
     }
 }
