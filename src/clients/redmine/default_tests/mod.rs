@@ -16,6 +16,7 @@ mod integration_support;
 mod journal_conversion;
 mod journal_detail_conversion;
 mod update_issue;
+mod update_issue_notes;
 mod update_journal_notes;
 mod value_conversion;
 

@@ -363,6 +363,14 @@ mod tests {
             unreachable!()
         }
 
+        async fn update_issue_notes(
+            &self,
+            _: crate::vos::IssueId,
+            _: &str,
+        ) -> Result<(), RedmineClientError> {
+            unreachable!()
+        }
+
         async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError> {
             unreachable!()
         }

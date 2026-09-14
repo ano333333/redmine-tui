@@ -83,6 +83,14 @@ pub trait RedmineClient {
         journal_id: JournalId,
         notes: &str,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
+    /// Issueのnotesだけを更新対象としてRedmineへ送り、新しいJournalを作成する。
+    ///
+    /// [`Self::update_issue`]とは異なり、Issueの未保存propertyは送信しない。
+    fn update_issue_notes(
+        &self,
+        issue_id: IssueId,
+        notes: &str,
+    ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
     async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError>;
     async fn get_priorities(&self) -> Result<Vec<Priority>, RedmineClientError>;
     async fn get_projects(&self) -> Result<Vec<Project>, RedmineClientError>;

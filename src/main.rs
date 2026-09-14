@@ -1142,6 +1142,14 @@ mod tests {
             self.update_journal_result.clone()
         }
 
+        async fn update_issue_notes(
+            &self,
+            _: crate::vos::IssueId,
+            _: &str,
+        ) -> std::result::Result<(), RedmineClientError> {
+            unreachable!()
+        }
+
         async fn get_categories(&self) -> std::result::Result<Vec<Category>, RedmineClientError> {
             unreachable!()
         }
@@ -1431,6 +1439,14 @@ mod tests {
         async fn update_journal_notes(
             &self,
             _: crate::vos::JournalId,
+            _: &str,
+        ) -> std::result::Result<(), RedmineClientError> {
+            Err(self.unauthorized())
+        }
+
+        async fn update_issue_notes(
+            &self,
+            _: crate::vos::IssueId,
             _: &str,
         ) -> std::result::Result<(), RedmineClientError> {
             Err(self.unauthorized())
