@@ -1073,6 +1073,12 @@ mod tests {
         uploaded_journal_notes: Mutex<Vec<String>>,
         uploaded_issue_notes: Mutex<Vec<String>>,
         uploaded: Mutex<Vec<IssueAggregate>>,
+        // リトライを同じclientで検証できるよう、指定回数だけ通信失敗を返し、
+        // カウンタが0になった後は通常のレスポンスへ戻す。
+        get_failures_remaining: Mutex<usize>,
+        journal_failures_remaining: Mutex<usize>,
+        local_failures_remaining: Mutex<usize>,
+        get_requests: Mutex<usize>,
     }
 
     impl IssueUploadClient {
@@ -1091,6 +1097,10 @@ mod tests {
                 uploaded_journal_notes: Mutex::new(Vec::new()),
                 uploaded_issue_notes: Mutex::new(Vec::new()),
                 uploaded: Mutex::new(Vec::new()),
+                get_failures_remaining: Mutex::new(0),
+                journal_failures_remaining: Mutex::new(0),
+                local_failures_remaining: Mutex::new(0),
+                get_requests: Mutex::new(0),
             }
         }
 
@@ -1105,6 +1115,10 @@ mod tests {
                 uploaded_journal_notes: Mutex::new(Vec::new()),
                 uploaded_issue_notes: Mutex::new(Vec::new()),
                 uploaded: Mutex::new(Vec::new()),
+                get_failures_remaining: Mutex::new(0),
+                journal_failures_remaining: Mutex::new(0),
+                local_failures_remaining: Mutex::new(0),
+                get_requests: Mutex::new(0),
             }
         }
 
@@ -1119,6 +1133,10 @@ mod tests {
                 uploaded_journal_notes: Mutex::new(Vec::new()),
                 uploaded_issue_notes: Mutex::new(Vec::new()),
                 uploaded: Mutex::new(Vec::new()),
+                get_failures_remaining: Mutex::new(0),
+                journal_failures_remaining: Mutex::new(0),
+                local_failures_remaining: Mutex::new(0),
+                get_requests: Mutex::new(0),
             }
         }
 
@@ -1134,6 +1152,12 @@ mod tests {
             &self,
             _: IssueId,
         ) -> std::result::Result<FetchedIssue, RedmineClientError> {
+            *self.get_requests.lock().unwrap() += 1;
+            let mut failures_remaining = self.get_failures_remaining.lock().unwrap();
+            if *failures_remaining > 0 {
+                *failures_remaining -= 1;
+                return Err(Self::network_error());
+            }
             if self.get_error {
                 return Err(Self::network_error());
             }
@@ -1163,6 +1187,11 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(notes.to_string());
+            let mut failures_remaining = self.journal_failures_remaining.lock().unwrap();
+            if *failures_remaining > 0 {
+                *failures_remaining -= 1;
+                return Err(Self::network_error());
+            }
             self.update_journal_result.clone()
         }
 
@@ -1175,6 +1204,11 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(notes.to_string());
+            let mut failures_remaining = self.local_failures_remaining.lock().unwrap();
+            if *failures_remaining > 0 {
+                *failures_remaining -= 1;
+                return Err(Self::network_error());
+            }
             self.update_issue_notes_result.clone()
         }
 
@@ -1533,6 +1567,370 @@ mod tests {
             Action::Journal(JournalAction::FailLocalUpload { issue_id, .. })
                 if issue_id == IssueId::new(3)
         ));
+    }
+
+    fn journal_upload_app(dispatcher: Rc<RefCell<Dispatcher>>) -> AppComponent<'static> {
+        let mut app = AppComponent::new(dispatcher.clone(), Some(IssueId::new(3)));
+        app.update(
+            dispatcher.clone(),
+            dispatcher.borrow().store(),
+            Rect::new(0, 0, 80, 24),
+        );
+        app
+    }
+
+    fn loaded_journal_upload_dispatcher() -> Dispatcher {
+        let mut dispatcher = Dispatcher::new();
+        crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher);
+        dispatcher.dispatch(IssueAction::Load {
+            id: IssueId::new(3),
+        });
+        while dispatcher.consume_actinos_len() > 0 {
+            dispatcher.consume_action();
+        }
+        dispatcher
+    }
+
+    fn edited_remote_journal_dispatcher() -> Dispatcher {
+        let mut dispatcher = loaded_journal_upload_dispatcher();
+        dispatcher.dispatch(JournalAction::SyncFetched {
+            issue_id: IssueId::new(3),
+            journals: vec![
+                parse_journal_yaml(JournalId::new(1)),
+                parse_journal_yaml(JournalId::new(2)),
+                parse_journal_yaml(JournalId::new(3)),
+            ],
+        });
+        dispatcher.consume_action();
+        dispatcher.dispatch(JournalAction::EditRemoteNotes {
+            issue_id: IssueId::new(3),
+            journal_id: JournalId::new(1),
+            notes: "edited notes".to_string(),
+        });
+        dispatcher.consume_action();
+        dispatcher
+    }
+
+    fn local_journal_dispatcher() -> Dispatcher {
+        let mut dispatcher = loaded_journal_upload_dispatcher();
+        dispatcher.dispatch(JournalAction::CreateLocal {
+            issue_id: IssueId::new(3),
+        });
+        dispatcher.consume_action();
+        dispatcher.dispatch(JournalAction::EditLocalNotes {
+            issue_id: IssueId::new(3),
+            notes: "local notes".to_string(),
+        });
+        dispatcher.consume_action();
+        dispatcher
+    }
+
+    fn move_focus_down(
+        app: &mut AppComponent<'_>,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+        count: usize,
+    ) {
+        for _ in 0..count {
+            app.process_event(
+                Event::Key(crossterm::event::KeyEvent::new(
+                    crossterm::event::KeyCode::Char('j'),
+                    crossterm::event::KeyModifiers::NONE,
+                )),
+                dispatcher.clone(),
+            );
+            app.update(
+                dispatcher.clone(),
+                dispatcher.borrow().store(),
+                Rect::new(0, 0, 80, 24),
+            );
+        }
+    }
+
+    fn focus_remote_journal_notes(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) {
+        move_focus_down(app, dispatcher, 54);
+    }
+
+    fn focus_local_journal_notes(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) {
+        move_focus_down(app, dispatcher.clone(), 100);
+        app.process_event(
+            Event::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('k'),
+                crossterm::event::KeyModifiers::NONE,
+            )),
+            dispatcher.clone(),
+        );
+        app.update(
+            dispatcher.clone(),
+            dispatcher.borrow().store(),
+            Rect::new(0, 0, 80, 24),
+        );
+    }
+
+    fn press_ctrl_s(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) {
+        app.process_event(
+            Event::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('s'),
+                crossterm::event::KeyModifiers::CONTROL,
+            )),
+            dispatcher,
+        );
+    }
+
+    fn route_worker_actions(
+        receiver: &mpsc::Receiver<Action>,
+        expected: usize,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+        app: &mut AppComponent<'_>,
+    ) {
+        // worker完了Actionをmain loopと同じ順序でStoreとComponentへ反映する。
+        let (relay_sender, relay_receiver) = mpsc::channel();
+        for _ in 0..expected {
+            relay_sender
+                .send(
+                    receiver
+                        .recv_timeout(Duration::from_secs(2))
+                        .expect("worker action should be sent"),
+                )
+                .unwrap();
+        }
+        assert!(move_worker_action(&relay_receiver, dispatcher.clone()).is_none());
+        update(dispatcher, app, Rect::new(0, 0, 80, 24));
+    }
+
+    fn assert_toast_contains(
+        app: &AppComponent<'_>,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+        expected: &str,
+    ) {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|frame| app.render(dispatcher.borrow().store(), frame, frame.area()))
+            .unwrap();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        // 日本語はwide-character cell間に空白が入るため、本文はStoreで検証し、
+        // render bufferでは単一幅のエラー原因だけをtoast表示の目印にする。
+        assert!(
+            dispatcher
+                .borrow()
+                .store()
+                .get_notices()
+                .iter()
+                .any(|notice| notice.message.contains(expected))
+        );
+        assert!(rendered.contains("offline"), "rendered: {rendered}");
+    }
+
+    // Remote保存前GETの失敗がfocusを奪わないtoastになり、同じ入力位置から再保存できることを検証する。
+    // FIXME: E2Eで良い粒度なので移行する
+    #[test]
+    fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
+        let runtime = init_tokio_runtime().unwrap();
+        let initial_dispatcher = edited_remote_journal_dispatcher();
+        let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
+        let mut app = journal_upload_app(dispatcher.clone());
+        focus_remote_journal_notes(&mut app, dispatcher.clone());
+        press_ctrl_s(&mut app, dispatcher.clone());
+        let Some(AppEffect::StartRemoteJournalUpload {
+            issue_id,
+            journal_id,
+        }) = app.take_effect()
+        else {
+            panic!("expected remote upload effect");
+        };
+        let client = Arc::new(IssueUploadClient::with_journals(
+            sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
+            vec![parse_journal_yaml(JournalId::new(1))],
+        ));
+        *client.get_failures_remaining.lock().unwrap() = 1;
+        let (sender, receiver) = mpsc::channel();
+
+        start_remote_journal_upload_action(
+            dispatcher.clone(),
+            &runtime,
+            sender.clone(),
+            client.clone(),
+            issue_id,
+            journal_id,
+        );
+        update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+        press_ctrl_s(&mut app, dispatcher.clone());
+        // upload中の重複Ctrl+Sはeffectを生成せず、usecase呼び出し前に正常なno-opとなる。
+        assert!(app.take_effect().is_none());
+        route_worker_actions(&receiver, 2, dispatcher.clone(), &mut app);
+        assert_toast_contains(
+            &app,
+            dispatcher.clone(),
+            "Remote Journalの保存に失敗しました",
+        );
+
+        press_ctrl_s(&mut app, dispatcher.clone());
+        let Some(AppEffect::StartRemoteJournalUpload {
+            issue_id,
+            journal_id,
+        }) = app.take_effect()
+        else {
+            panic!("toast must not take focus from remote journal notes");
+        };
+        start_remote_journal_upload_action(
+            dispatcher.clone(),
+            &runtime,
+            sender,
+            client.clone(),
+            issue_id,
+            journal_id,
+        );
+        update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+        route_worker_actions(&receiver, 1, dispatcher.clone(), &mut app);
+
+        assert!(matches!(
+            dispatcher
+                .borrow()
+                .store()
+                .get_remote_journal(issue_id, journal_id)
+                .state,
+            crate::stores::RemoteJournalState::Synced
+        ));
+        assert_eq!(*client.get_requests.lock().unwrap(), 2);
+        assert_eq!(client.uploaded_journal_notes.lock().unwrap().len(), 1);
+    }
+
+    // Remote PUTの失敗をtoastで通知した後もfocusを維持し、再保存でSyncedへ戻ることを検証する。
+    #[test]
+    fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
+        let runtime = init_tokio_runtime().unwrap();
+        let initial_dispatcher = edited_remote_journal_dispatcher();
+        let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
+        let mut app = journal_upload_app(dispatcher.clone());
+        focus_remote_journal_notes(&mut app, dispatcher.clone());
+        let client = Arc::new(IssueUploadClient::with_journals(
+            sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
+            vec![parse_journal_yaml(JournalId::new(1))],
+        ));
+        *client.journal_failures_remaining.lock().unwrap() = 1;
+        let (sender, receiver) = mpsc::channel();
+
+        for expected_actions in [2, 1] {
+            press_ctrl_s(&mut app, dispatcher.clone());
+            let Some(AppEffect::StartRemoteJournalUpload {
+                issue_id,
+                journal_id,
+            }) = app.take_effect()
+            else {
+                panic!("toast must not take focus from remote journal notes");
+            };
+            start_remote_journal_upload_action(
+                dispatcher.clone(),
+                &runtime,
+                sender.clone(),
+                client.clone(),
+                issue_id,
+                journal_id,
+            );
+            update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+            route_worker_actions(&receiver, expected_actions, dispatcher.clone(), &mut app);
+            if expected_actions == 2 {
+                assert_toast_contains(
+                    &app,
+                    dispatcher.clone(),
+                    "Remote Journalの保存に失敗しました",
+                );
+            }
+        }
+
+        assert_eq!(*client.get_requests.lock().unwrap(), 2);
+        assert_eq!(client.uploaded_journal_notes.lock().unwrap().len(), 2);
+        assert!(matches!(
+            dispatcher.borrow().store().get_remote_journal(3, 1).state,
+            crate::stores::RemoteJournalState::Synced
+        ));
+    }
+
+    // Local PUTの失敗をtoastで通知した後もfocusを維持し、再保存を完了できることを検証する。
+    #[test]
+    fn local_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
+        let runtime = init_tokio_runtime().unwrap();
+        let initial_dispatcher = local_journal_dispatcher();
+        let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
+        let mut app = journal_upload_app(dispatcher.clone());
+        focus_local_journal_notes(&mut app, dispatcher.clone());
+        let client = Arc::new(IssueUploadClient::with_journals(
+            sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
+            vec![sample_journal(3)],
+        ));
+        *client.local_failures_remaining.lock().unwrap() = 1;
+        let (sender, receiver) = mpsc::channel();
+
+        for expected_actions in [2, 1] {
+            press_ctrl_s(&mut app, dispatcher.clone());
+            let Some(AppEffect::StartLocalJournalUpload { issue_id }) = app.take_effect() else {
+                panic!("toast must not take focus from local journal notes");
+            };
+            start_local_journal_upload_action(
+                dispatcher.clone(),
+                &runtime,
+                sender.clone(),
+                client.clone(),
+                issue_id,
+            );
+            update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+            route_worker_actions(&receiver, expected_actions, dispatcher.clone(), &mut app);
+            if expected_actions == 2 {
+                assert_toast_contains(
+                    &app,
+                    dispatcher.clone(),
+                    "Local Journalの保存に失敗しました",
+                );
+            }
+        }
+
+        assert!(dispatcher.borrow().store().get_local_journal(3).is_none());
+        assert_eq!(client.uploaded_issue_notes.lock().unwrap().len(), 2);
+        assert_eq!(*client.get_requests.lock().unwrap(), 1);
+    }
+
+    // Local PUT成功後の確認GET失敗を部分成功として通知し、同じ入力位置から再保存できることを検証する。
+    #[test]
+    fn local_confirmation_get_failure_warns_about_possible_success_and_retry_succeeds() {
+        let runtime = init_tokio_runtime().unwrap();
+        let initial_dispatcher = local_journal_dispatcher();
+        let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
+        let mut app = journal_upload_app(dispatcher.clone());
+        focus_local_journal_notes(&mut app, dispatcher.clone());
+        let client = Arc::new(IssueUploadClient::with_journals(
+            sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
+            vec![sample_journal(3)],
+        ));
+        *client.get_failures_remaining.lock().unwrap() = 1;
+        let (sender, receiver) = mpsc::channel();
+
+        for expected_actions in [2, 1] {
+            press_ctrl_s(&mut app, dispatcher.clone());
+            let Some(AppEffect::StartLocalJournalUpload { issue_id }) = app.take_effect() else {
+                panic!("toast must not take focus from local journal notes");
+            };
+            start_local_journal_upload_action(
+                dispatcher.clone(),
+                &runtime,
+                sender.clone(),
+                client.clone(),
+                issue_id,
+            );
+            update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+            route_worker_actions(&receiver, expected_actions, dispatcher.clone(), &mut app);
+            if expected_actions == 2 {
+                assert_toast_contains(&app, dispatcher.clone(), "保存は完了した可能性がありますが");
+            }
+        }
+
+        assert!(dispatcher.borrow().store().get_local_journal(3).is_none());
+        assert_eq!(client.uploaded_issue_notes.lock().unwrap().len(), 2);
+        assert_eq!(*client.get_requests.lock().unwrap(), 2);
     }
 
     struct FailingClient;
