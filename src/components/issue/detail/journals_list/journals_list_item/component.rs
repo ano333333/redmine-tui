@@ -136,10 +136,21 @@ fn format_bool(b: bool) -> String {
 }
 
 pub enum EventProcessResult {
-    CursorLeavedFromBelow { x: u16 },
-    CursorLeavedFromAbove { x: u16 },
-    EditRequested { id: JournalId, notes: String },
-    SaveRequested { id: JournalId },
+    CursorLeavedFromBelow {
+        x: u16,
+    },
+    CursorLeavedFromAbove {
+        x: u16,
+    },
+    EditRequested {
+        id: JournalId,
+        notes: String,
+    },
+    SaveRequested {
+        id: JournalId,
+    },
+    /// 保存キーを正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
+    SaveSuppressed,
 }
 
 pub struct JournalsListItemComponent {
@@ -193,6 +204,9 @@ impl JournalsListItemComponent {
                     EventProcessResult::SaveRequested {
                         id: JournalId::new(self.id),
                     }
+                }
+                focus_state::EventProcessResult::SaveSuppressed => {
+                    EventProcessResult::SaveSuppressed
                 }
             })
     }
@@ -532,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_ctrl_s_on_synced_is_a_no_op() {
+    fn process_event_ctrl_s_on_synced_returns_save_suppressed() {
         let mut store = fixture_store();
         let journal = create_journal(1, one_detail(), notes());
         let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
@@ -540,11 +554,11 @@ mod tests {
 
         let result = component.process_event(ctrl_s_event());
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::SaveSuppressed)));
     }
 
     #[test]
-    fn process_event_ctrl_s_on_uploading_is_a_no_op() {
+    fn process_event_ctrl_s_on_uploading_returns_save_suppressed() {
         let mut store = fixture_store();
         let journal = create_journal(1, one_detail(), notes());
         let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
@@ -553,7 +567,7 @@ mod tests {
 
         let result = component.process_event(ctrl_s_event());
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::SaveSuppressed)));
     }
 
     #[test]

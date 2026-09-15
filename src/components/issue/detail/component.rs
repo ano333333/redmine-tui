@@ -6,7 +6,7 @@ use ratatui::Frame;
 use ratatui::layout::{Offset, Position, Rect};
 use ratatui::widgets::Widget;
 
-use crate::stores::{Dispatcher, Store};
+use crate::stores::{Dispatcher, IssueState, Store};
 use crate::vos::{IssueId, JournalId};
 
 use super::body::BodyComponent;
@@ -60,6 +60,8 @@ pub enum EventProcessResult {
         issue_id: IssueId,
         id: JournalId,
     },
+    /// 入力を正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
+    Suppressed,
 }
 
 #[cfg(test)]
@@ -204,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_ctrl_s_on_synced_journals_list_notes_returns_nothing() {
+    fn process_event_ctrl_s_on_synced_journals_list_notes_is_suppressed() {
         let dispatcher = dispatcher_with_issue_and_journals();
         let mut component = IssueDetailComponent::new(3);
         component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
@@ -216,7 +218,49 @@ mod tests {
 
         let result = component.process_event(ctrl_s_event(), dispatcher.clone());
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Suppressed)));
+    }
+
+    #[test]
+    fn process_event_ctrl_s_during_remote_journal_upload_is_suppressed() {
+        let dispatcher = dispatcher_with_issue_and_journals();
+        edit_first_journal(&dispatcher);
+        dispatcher
+            .borrow_mut()
+            .dispatch(crate::stores::Action::Journal(
+                crate::stores::JournalAction::StartRemoteUpload {
+                    issue_id: IssueId::new(3),
+                    journal_id: JournalId::new(1),
+                },
+            ));
+        dispatcher.borrow_mut().consume_action();
+        let mut component = IssueDetailComponent::new(3);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+
+        let result = component.process_event(ctrl_s_event(), dispatcher);
+
+        assert!(matches!(result, Some(EventProcessResult::Suppressed)));
+    }
+
+    #[test]
+    fn process_event_ctrl_s_during_issue_upload_is_suppressed() {
+        let dispatcher = dispatcher_with_issue_and_journals();
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateDescription {
+                id: IssueId::new(3),
+                body: "edited body".to_string(),
+            });
+        dispatcher.borrow_mut().consume_action();
+        dispatcher.borrow_mut().dispatch(IssueAction::StartUpload {
+            id: IssueId::new(3),
+        });
+        dispatcher.borrow_mut().consume_action();
+        let mut component = IssueDetailComponent::new(3);
+
+        let result = component.process_event(ctrl_s_event(), dispatcher);
+
+        assert!(matches!(result, Some(EventProcessResult::Suppressed)));
     }
 
     #[test]
@@ -305,11 +349,22 @@ impl IssueDetailComponent {
     pub fn process_event(
         &mut self,
         event: crossterm::event::Event,
-        _dispatcher: Rc<RefCell<Dispatcher>>,
+        dispatcher: Rc<RefCell<Dispatcher>>,
     ) -> Option<EventProcessResult> {
         if let Event::Key(key) = &event {
             match key.code {
                 KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    // 同じIssueの保存中に重複したCtrl+Sをusecaseへ到達させないため、
+                    // 保存操作を統括するこのComponentで入力を正常なno-opとして消費する。
+                    let store = dispatcher.borrow();
+                    if matches!(
+                        store.store().get_issue_state(self.id),
+                        Some(IssueState::Uploading)
+                    ) || store.store().has_uploading_journal(self.id)
+                    {
+                        return Some(EventProcessResult::Suppressed);
+                    }
+                    drop(store);
                     if self.focused_component == FocusedComponent::JournalsList {
                         let result = self.journals_list.process_event(event.clone());
                         return match result {
@@ -323,6 +378,9 @@ impl IssueDetailComponent {
                                 Some(EventProcessResult::SaveLocalJournalRequested {
                                     issue_id: self.id,
                                 })
+                            }
+                            Some(JournalsListEventProcessResult::SaveSuppressed) => {
+                                Some(EventProcessResult::Suppressed)
                             }
                             _ => None,
                         };
@@ -472,6 +530,9 @@ impl IssueDetailComponent {
                         return Some(EventProcessResult::SaveLocalJournalRequested {
                             issue_id: self.id,
                         });
+                    }
+                    Some(JournalsListEventProcessResult::SaveSuppressed) => {
+                        return Some(EventProcessResult::Suppressed);
                     }
                     None => {}
                 }

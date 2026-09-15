@@ -9,10 +9,18 @@ use super::journals_list_item::widget::local_state_marker;
 use super::journals_list_item::{JournalItemWidget, JournalItemWidgetState, LocalJournalItemView};
 
 pub enum EventProcessResult {
-    CursorLeavedFromBelow { x: u16 },
-    CursorLeavedFromAbove { x: u16 },
-    EditRequested { notes: String },
+    CursorLeavedFromBelow {
+        x: u16,
+    },
+    CursorLeavedFromAbove {
+        x: u16,
+    },
+    EditRequested {
+        notes: String,
+    },
     SaveRequested,
+    /// 保存キーを正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
+    SaveSuppressed,
 }
 
 /// Local Journalの表示内容、本文の描画cache、focus状態を保持するcomponent。
@@ -63,6 +71,9 @@ impl LocalJournalItemComponent {
             }
             focus_state::EventProcessResult::SaveRequested if self.editable => {
                 Some(EventProcessResult::SaveRequested)
+            }
+            focus_state::EventProcessResult::SaveSuppressed => {
+                Some(EventProcessResult::SaveSuppressed)
             }
             focus_state::EventProcessResult::Edit
             | focus_state::EventProcessResult::SaveRequested => {
@@ -149,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_e_on_uploading_local_item_is_a_no_op() {
+    fn process_event_e_on_uploading_local_item_is_a_no_op_and_ctrl_s_is_suppressed() {
         let entry = LocalJournalEntry {
             journal: LocalJournal {
                 issue_id: IssueId::new(1),
@@ -166,10 +177,9 @@ mod tests {
                 .process_event(key_event(KeyCode::Char('e'), KeyModifiers::NONE))
                 .is_none()
         );
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('s'), KeyModifiers::CONTROL))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            Some(EventProcessResult::SaveSuppressed)
+        ));
     }
 }

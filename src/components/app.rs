@@ -445,6 +445,8 @@ impl<'a> AppComponent<'a> {
                     initial_text: String::new(),
                 }));
             }
+            // 子Componentが正常なno-opとして消費済みなので、App全体ではupload状態を再判定しない。
+            Some(IssueEventProcessResult::Detail(IssueDetailEventProcessResult::Suppressed)) => {}
             None => {}
         }
     }
@@ -1548,6 +1550,7 @@ mod tests {
         app.process_event(ctrl_s_event(), dispatcher.clone());
 
         assert!(app.take_effect().is_none());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
     }
 
     #[test]

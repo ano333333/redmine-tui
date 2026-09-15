@@ -29,11 +29,20 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromBelow,
     CursorLeavedFromAbove,
-    EditRequested { id: JournalId, notes: String },
-    EditLocalJournalRequested { notes: String },
+    EditRequested {
+        id: JournalId,
+        notes: String,
+    },
+    EditLocalJournalRequested {
+        notes: String,
+    },
     CreateLocalJournalRequested,
     SaveLocalJournalRequested,
-    SaveRequested { id: JournalId },
+    SaveRequested {
+        id: JournalId,
+    },
+    /// 保存キーを正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
+    SaveSuppressed,
 }
 
 pub struct JournalsListComponent {
@@ -105,6 +114,9 @@ impl JournalsListComponent {
                 LocalEventProcessResult::SaveRequested => {
                     return Some(EventProcessResult::SaveLocalJournalRequested);
                 }
+                LocalEventProcessResult::SaveSuppressed => {
+                    return Some(EventProcessResult::SaveSuppressed);
+                }
             },
         };
 
@@ -141,6 +153,7 @@ impl JournalsListComponent {
             ChildEventProcessResult::SaveRequested { id } => {
                 Some(EventProcessResult::SaveRequested { id })
             }
+            ChildEventProcessResult::SaveSuppressed => Some(EventProcessResult::SaveSuppressed),
         }
     }
 
@@ -520,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_ctrl_s_on_synced_focused_item_is_a_no_op() {
+    fn process_event_ctrl_s_on_synced_focused_item_returns_save_suppressed() {
         let mut store = Store::new();
         let journal = create_journal(1, "first paragraph");
         register_journal(&mut store, &journal);
@@ -534,7 +547,7 @@ mod tests {
 
         let result = component.process_event(ctrl_s_event());
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::SaveSuppressed)));
     }
 
     #[test]
@@ -728,7 +741,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_ctrl_s_on_uploading_local_item_is_a_no_op() {
+    fn process_event_ctrl_s_on_uploading_local_item_returns_save_suppressed() {
         let local_entry = LocalJournalEntry {
             journal: LocalJournal {
                 issue_id: IssueId::new(1),
@@ -740,7 +753,10 @@ mod tests {
         component.update(&[], Some(&local_entry), WIDE_WIDTH);
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
 
-        assert!(component.process_event(ctrl_s_event()).is_none());
+        assert!(matches!(
+            component.process_event(ctrl_s_event()),
+            Some(EventProcessResult::SaveSuppressed)
+        ));
     }
 
     fn uploading_local_component(

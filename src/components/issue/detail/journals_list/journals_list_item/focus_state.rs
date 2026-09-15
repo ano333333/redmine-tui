@@ -11,10 +11,16 @@ pub enum FocusEvent {
 }
 
 pub enum EventProcessResult {
-    CursorLeavedFromBelow { x: u16 },
-    CursorLeavedFromAbove { x: u16 },
+    CursorLeavedFromBelow {
+        x: u16,
+    },
+    CursorLeavedFromAbove {
+        x: u16,
+    },
     Edit,
     SaveRequested,
+    /// 保存キーを正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
+    SaveSuppressed,
 }
 
 enum FocusedPosition {
@@ -167,7 +173,7 @@ impl FocusState {
             }
             Action::Save => {
                 if self.save_key_is_no_op {
-                    return None;
+                    return Some(EventProcessResult::SaveSuppressed);
                 }
                 return Some(EventProcessResult::SaveRequested);
             }
@@ -596,13 +602,13 @@ mod tests {
     }
 
     #[test]
-    fn process_event_ctrl_s_on_no_op_state_consumes_the_key() {
+    fn process_event_ctrl_s_on_no_op_state_returns_save_suppressed() {
         let mut state = state(WIDE_WIDTH, 1, NOTE_LINE_COUNT);
         state.focus_event(FocusEvent::CursorEnteredFromBelow { x: 6 });
 
         let result = state.process_event(ctrl_s_event());
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::SaveSuppressed)));
     }
 
     #[test]
