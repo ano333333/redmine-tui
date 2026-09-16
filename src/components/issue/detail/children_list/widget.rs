@@ -13,7 +13,7 @@ const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 
 pub struct ChildIssueRow<'a> {
     pub issue: &'a IssueAggregate,
-    pub issue_status: &'a IssueStatus,
+    pub issue_status: Option<&'a IssueStatus>,
     pub assigned_to_name: Option<&'a str>,
 }
 
@@ -85,8 +85,13 @@ fn create_header_text(
 
 fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer, focused: bool) {
     let issue = child.issue;
-    let status_name = child.issue_status.name.as_str();
-    let is_closed = child.issue_status.is_closed;
+    let status_name = child
+        .issue_status
+        .map_or("(不明)", |issue_status| issue_status.name.as_str());
+    // 未知statusを完了と誤認させないため、closed styleは既知の完了状態にだけ適用する。
+    let is_closed = child
+        .issue_status
+        .is_some_and(|issue_status| issue_status.is_closed);
     let row = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Max(1)])
@@ -197,6 +202,15 @@ mod tests {
             None,
             35,
         );
+        let unknown = sample_issue_aggregate(
+            9,
+            "Child with unknown status",
+            9.into(),
+            None,
+            None,
+            None,
+            0,
+        );
         let done_status = IssueStatus {
             id: 3.into(),
             name: "完了(closed)".to_string(),
@@ -210,20 +224,25 @@ mod tests {
         render_snapshot(
             "children_mixed_option_and_status_display",
             64,
-            5,
+            6,
             ChildrenListWidget::new(
+                3,
+                1,
                 2,
-                1,
-                1,
                 vec![
                     ChildIssueRow {
                         issue: &done,
-                        issue_status: &done_status,
+                        issue_status: Some(&done_status),
                         assigned_to_name: Some("alice"),
                     },
                     ChildIssueRow {
                         issue: &open,
-                        issue_status: &open_status,
+                        issue_status: Some(&open_status),
+                        assigned_to_name: None,
+                    },
+                    ChildIssueRow {
+                        issue: &unknown,
+                        issue_status: None,
                         assigned_to_name: None,
                     },
                 ],
@@ -246,24 +265,30 @@ mod tests {
             name: "進行中(accepted)".to_string(),
             is_closed: false,
         };
+        let child_c = sample_issue_aggregate(9, "Unknown child", 9.into(), None, None, None, 0);
         let widget = ChildrenListWidget::new(
+            3,
+            1,
             2,
-            1,
-            1,
             vec![
                 ChildIssueRow {
                     issue: &child_a,
-                    issue_status: &child_a_status,
+                    issue_status: Some(&child_a_status),
                     assigned_to_name: Some("alice"),
                 },
                 ChildIssueRow {
                     issue: &child_b,
-                    issue_status: &child_b_status,
+                    issue_status: Some(&child_b_status),
+                    assigned_to_name: None,
+                },
+                ChildIssueRow {
+                    issue: &child_c,
+                    issue_status: None,
                     assigned_to_name: None,
                 },
             ],
             None,
         );
-        assert_eq!(widget.line_count(), 5);
+        assert_eq!(widget.line_count(), 6);
     }
 }

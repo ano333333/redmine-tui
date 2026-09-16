@@ -293,7 +293,7 @@ mod tests {
                 1,
                 vec![ChildIssueRow {
                     issue: &self.child_issue,
-                    issue_status: &self.child_status,
+                    issue_status: Some(&self.child_status),
                     assigned_to_name: Some("alice"),
                 }],
                 Some(0),
