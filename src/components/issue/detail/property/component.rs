@@ -33,7 +33,7 @@ impl PropertyComponent {
             let paragraph = create_property_widget(
                 issue,
                 store,
-                store.get_issue_status(issue.issue.status_id),
+                store.find_issue_status(issue.issue.status_id),
                 None,
             );
             paragraph.line_count(width) as u16
@@ -49,7 +49,7 @@ impl PropertyComponent {
         create_property_widget(
             issue,
             store,
-            store.get_issue_status(issue.issue.status_id),
+            store.find_issue_status(issue.issue.status_id),
             self.focus_state.focused_y(),
         )
     }
@@ -62,7 +62,7 @@ impl PropertyComponent {
 fn create_property_widget<'a>(
     issue: &'a IssueAggregate,
     store: &'a Store,
-    issue_status: &'a IssueStatus,
+    issue_status: Option<&'a IssueStatus>,
     focused_y: Option<u16>,
 ) -> PropertyWidget<'a> {
     let author = store
@@ -101,7 +101,9 @@ fn create_property_widget<'a>(
         author,
         issue.created_on,
         issue.updated_on,
-        issue_status.name.as_str(),
+        issue_status
+            .map(|issue_status| issue_status.name.as_str())
+            .unwrap_or("(unknown)"),
         tracker,
         priority,
         project,
@@ -120,7 +122,7 @@ fn create_property_widget<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stores::IssueAction;
+    use crate::stores::{Action, IssueAction};
     use crate::test_support::{render_snapshot, sync_fixture_entities};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Position;
@@ -152,9 +154,33 @@ mod tests {
         store
     }
 
+    fn store_with_missing_issue_status() -> Store {
+        let mut store = store_with_property_issue();
+        store.consume_action(Action::SyncIssueStatuses {
+            issue_statuses: vec![],
+        });
+        store
+    }
+
     fn assert_layout_contract(component: &PropertyComponent, store: &Store, cursor: Position) {
         assert_eq!(component.line_count(store, WIDTH), PROPERTY_LINE_COUNT);
         assert_eq!(component.get_cursor_position(), cursor);
+    }
+
+    // FIXME: author / priority / project / tracker / category の欠損も検証する際は、
+    // master data lookup の重複したセットアップを避けるため、このテストへ統合する。
+    #[test]
+    fn missing_status_is_rendered_without_panicking() {
+        let store = store_with_missing_issue_status();
+        let component = PropertyComponent::new(ISSUE_ID);
+
+        assert_eq!(component.line_count(&store, WIDTH), PROPERTY_LINE_COUNT);
+        render_snapshot(
+            "property_component_missing_status",
+            WIDTH,
+            component.line_count(&store, WIDTH),
+            component.create_widget(&store),
+        );
     }
 
     #[test]
