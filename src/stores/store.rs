@@ -283,6 +283,11 @@ impl Store {
             .expect("issue status must exist")
     }
 
+    /// 起動時snapshotに対象statusが含まれない場合も、呼び出し側がfallback表示を続けられるようにする。
+    pub fn find_issue_status(&self, issue_status_id: IssueStatusId) -> Option<&IssueStatus> {
+        self.issue_statuses.get(&issue_status_id)
+    }
+
     pub fn get_priorities(&self) -> &HashMap<PriorityId, Priority> {
         &self.priorities
     }
@@ -608,6 +613,38 @@ mod tests {
             store.get_issue_status(IssueStatusId::new(10)).name,
             "redmine status"
         );
+    }
+
+    #[test]
+    fn find_issue_status_returns_the_registered_status() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::SyncIssueStatuses {
+            issue_statuses: vec![IssueStatus {
+                id: IssueStatusId::new(10),
+                name: "redmine status".to_string(),
+                is_closed: false,
+            }],
+        });
+
+        let found = store.find_issue_status(IssueStatusId::new(10));
+
+        assert!(matches!(found, Some(status) if status.name == "redmine status"));
+    }
+
+    #[test]
+    fn find_issue_status_returns_none_for_an_unregistered_status() {
+        let mut store = Store::new();
+
+        store.consume_action(Action::SyncIssueStatuses {
+            issue_statuses: vec![IssueStatus {
+                id: IssueStatusId::new(10),
+                name: "redmine status".to_string(),
+                is_closed: false,
+            }],
+        });
+
+        assert!(store.find_issue_status(IssueStatusId::new(99)).is_none());
     }
 
     #[test]
