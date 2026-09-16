@@ -25,8 +25,12 @@ fn resolve_attr(attr: &JournalDetailAttr, store: &Store) -> ResolvedJournalDetai
     let (field_label, old_display, new_display) = match attr {
         JournalDetailAttr::StatusId { old, new } => (
             "ステータス",
-            store.get_issue_status(*old).name.clone(),
-            store.get_issue_status(*new).name.clone(),
+            store
+                .find_issue_status(*old)
+                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+            store
+                .find_issue_status(*new)
+                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
         ),
         JournalDetailAttr::TrackerId { old, new } => (
             "トラッカー",
@@ -568,6 +572,37 @@ mod tests {
         let result = component.process_event(ctrl_s_event());
 
         assert!(matches!(result, Some(EventProcessResult::SaveSuppressed)));
+    }
+
+    #[test]
+    fn resolve_journal_details_status_falls_back_to_unknown_for_missing_ids() {
+        let mut store = fixture_store();
+        let journal = create_journal(1, vec![status_detail(1, 99), status_detail(99, 2)], notes());
+        register_journal(&mut store, &journal);
+
+        let details = resolve_journal_details(&journal.details, &store);
+
+        assert_eq!(details[0].field_label, "ステータス");
+        assert_eq!(
+            details[0].old_display,
+            store
+                .find_issue_status(IssueStatusId::new(1))
+                .unwrap()
+                .name
+                .clone()
+        );
+        assert_eq!(details[0].new_display, UNKNOWN_DISPLAY);
+
+        assert_eq!(details[1].field_label, "ステータス");
+        assert_eq!(details[1].old_display, UNKNOWN_DISPLAY);
+        assert_eq!(
+            details[1].new_display,
+            store
+                .find_issue_status(IssueStatusId::new(2))
+                .unwrap()
+                .name
+                .clone()
+        );
     }
 
     #[test]
