@@ -26,10 +26,10 @@ fn resolve_attr(attr: &JournalDetailAttr, store: &Store) -> ResolvedJournalDetai
         JournalDetailAttr::StatusId { old, new } => (
             "ステータス",
             store
-                .find_issue_status(*old)
+                .get_issue_status(*old)
                 .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
             store
-                .find_issue_status(*new)
+                .get_issue_status(*new)
                 .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
         ),
         JournalDetailAttr::TrackerId { old, new } => (
@@ -586,7 +586,7 @@ mod tests {
         assert_eq!(
             details[0].old_display,
             store
-                .find_issue_status(IssueStatusId::new(1))
+                .get_issue_status(IssueStatusId::new(1))
                 .unwrap()
                 .name
                 .clone()
@@ -598,7 +598,7 @@ mod tests {
         assert_eq!(
             details[1].new_display,
             store
-                .find_issue_status(IssueStatusId::new(2))
+                .get_issue_status(IssueStatusId::new(2))
                 .unwrap()
                 .name
                 .clone()

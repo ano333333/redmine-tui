@@ -277,14 +277,9 @@ impl Store {
         &self.issue_statuses
     }
 
-    pub fn get_issue_status(&self, issue_status_id: IssueStatusId) -> &IssueStatus {
-        self.issue_statuses
-            .get(&issue_status_id)
-            .expect("issue status must exist")
-    }
-
-    /// 起動時snapshotに対象statusが含まれない場合も、呼び出し側がfallback表示を続けられるようにする。
-    pub fn find_issue_status(&self, issue_status_id: IssueStatusId) -> Option<&IssueStatus> {
+    /// 起動時snapshotに対象statusが含まれない場合は`None`を返す。
+    /// 呼び出し側はこの欠損を通常状態として扱い、用途に応じたfallbackを行う。
+    pub fn get_issue_status(&self, issue_status_id: IssueStatusId) -> Option<&IssueStatus> {
         self.issue_statuses.get(&issue_status_id)
     }
 
@@ -597,7 +592,7 @@ mod tests {
     }
 
     #[test]
-    fn sync_issue_statuses_replaces_issue_statuses() {
+    fn sync_issue_statuses_replaces_entries_and_lookup_handles_known_and_unknown_ids() {
         let mut store = Store::new();
 
         store.consume_action(Action::SyncIssueStatuses {
@@ -609,42 +604,10 @@ mod tests {
         });
 
         assert_eq!(store.get_issue_statuses().len(), 1);
-        assert_eq!(
-            store.get_issue_status(IssueStatusId::new(10)).name,
-            "redmine status"
-        );
-    }
-
-    #[test]
-    fn find_issue_status_returns_the_registered_status() {
-        let mut store = Store::new();
-
-        store.consume_action(Action::SyncIssueStatuses {
-            issue_statuses: vec![IssueStatus {
-                id: IssueStatusId::new(10),
-                name: "redmine status".to_string(),
-                is_closed: false,
-            }],
-        });
-
-        let found = store.find_issue_status(IssueStatusId::new(10));
+        let found = store.get_issue_status(IssueStatusId::new(10));
 
         assert!(matches!(found, Some(status) if status.name == "redmine status"));
-    }
-
-    #[test]
-    fn find_issue_status_returns_none_for_an_unregistered_status() {
-        let mut store = Store::new();
-
-        store.consume_action(Action::SyncIssueStatuses {
-            issue_statuses: vec![IssueStatus {
-                id: IssueStatusId::new(10),
-                name: "redmine status".to_string(),
-                is_closed: false,
-            }],
-        });
-
-        assert!(store.find_issue_status(IssueStatusId::new(99)).is_none());
+        assert!(store.get_issue_status(IssueStatusId::new(99)).is_none());
     }
 
     #[test]

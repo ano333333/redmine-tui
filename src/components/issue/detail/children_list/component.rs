@@ -73,7 +73,7 @@ fn child_status_counts(store: &Store, child_ids: &[IssueId]) -> (u16, u16, u16) 
         .filter(|id| {
             store.get_issue(**id).is_some_and(|(issue, _)| {
                 store
-                    .find_issue_status(issue.issue.status_id)
+                    .get_issue_status(issue.issue.status_id)
                     .is_closed_status()
             })
         })
@@ -89,7 +89,7 @@ fn create_child_rows<'a>(store: &'a Store, child_ids: &[IssueId]) -> Vec<ChildIs
         .filter_map(|id| store.get_issue(*id))
         .map(|(issue, _)| ChildIssueRow {
             issue,
-            issue_status: store.find_issue_status(issue.issue.status_id),
+            issue_status: store.get_issue_status(issue.issue.status_id),
             assigned_to_name: issue
                 .assigned_to_id
                 .and_then(|user_id| store.get_user(user_id))
@@ -156,7 +156,7 @@ mod tests {
         let (child_all_num, child_closed_num, child_opened_num) =
             child_status_counts(&store, &parent.child_ids);
 
-        assert!(store.find_issue_status(5.into()).is_none());
+        assert!(store.get_issue_status(5.into()).is_none());
         assert_eq!(children.len(), 2);
         assert_eq!(child_closed_num, 0);
         assert_eq!(child_opened_num, 2);

@@ -33,7 +33,7 @@ impl PropertyComponent {
             let paragraph = create_property_widget(
                 issue,
                 store,
-                store.find_issue_status(issue.issue.status_id),
+                store.get_issue_status(issue.issue.status_id),
                 None,
             );
             paragraph.line_count(width) as u16
@@ -49,7 +49,7 @@ impl PropertyComponent {
         create_property_widget(
             issue,
             store,
-            store.find_issue_status(issue.issue.status_id),
+            store.get_issue_status(issue.issue.status_id),
             self.focus_state.focused_y(),
         )
     }
