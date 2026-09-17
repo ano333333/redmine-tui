@@ -13,7 +13,7 @@ pub mod user;
 pub use category::Category;
 pub use issue::{Issue, ProjectIssuesPage};
 pub use issue_aggregate::IssueAggregate;
-pub use issue_status::IssueStatus;
+pub use issue_status::{IssueStatus, IssueStatusExt};
 pub use journal::{Journal, LocalJournal};
 pub use priority::Priority;
 pub use project::Project;

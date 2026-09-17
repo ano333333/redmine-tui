@@ -5,7 +5,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
-use crate::entities::{IssueAggregate, IssueStatus};
+use crate::entities::{IssueAggregate, IssueStatus, IssueStatusExt};
 use crate::vos::IssueId;
 
 // TODO: Extract this focus background color into one shared constant for all widgets.
@@ -88,10 +88,7 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
     let status_name = child
         .issue_status
         .map_or("(不明)", |issue_status| issue_status.name.as_str());
-    // 未知statusを完了と誤認させないため、closed styleは既知の完了状態にだけ適用する。
-    let is_closed = child
-        .issue_status
-        .is_some_and(|issue_status| issue_status.is_closed);
+    let is_closed = child.issue_status.is_closed_status();
     let row = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Max(1)])

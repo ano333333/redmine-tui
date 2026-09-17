@@ -1,6 +1,7 @@
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
+use crate::entities::IssueStatusExt;
 use crate::stores::Store;
 use crate::vos::IssueId;
 
@@ -31,32 +32,9 @@ impl ChildrenListComponent {
             .get_issue(self.id)
             .expect("ChildrenListComponent requires its issue to exist in Store");
 
-        let child_all_num = issue.child_ids.len() as u16;
-        let child_closed_num = issue
-            .child_ids
-            .iter()
-            .filter(|id| {
-                store.get_issue(**id).is_some_and(|(issue, _)| {
-                    let issue_status = store.get_issue_status(issue.issue.status_id);
-                    issue_status.is_closed
-                })
-            })
-            .count() as u16;
-        let child_opened_num = child_all_num - child_closed_num;
-
-        let children: Vec<_> = issue
-            .child_ids
-            .iter()
-            .filter_map(|id| store.get_issue(*id))
-            .map(|(issue, _)| ChildIssueRow {
-                issue,
-                issue_status: Some(store.get_issue_status(issue.issue.status_id)),
-                assigned_to_name: issue
-                    .assigned_to_id
-                    .and_then(|user_id| store.get_user(user_id))
-                    .map(|user| user.name.as_str()),
-            })
-            .collect();
+        let (child_all_num, child_closed_num, child_opened_num) =
+            child_status_counts(store, &issue.child_ids);
+        let children = create_child_rows(store, &issue.child_ids);
 
         ChildrenListWidget::new(
             child_all_num,
@@ -88,10 +66,43 @@ impl ChildrenListComponent {
     }
 }
 
+fn child_status_counts(store: &Store, child_ids: &[IssueId]) -> (u16, u16, u16) {
+    let child_all_num = child_ids.len() as u16;
+    let child_closed_num = child_ids
+        .iter()
+        .filter(|id| {
+            store.get_issue(**id).is_some_and(|(issue, _)| {
+                store
+                    .find_issue_status(issue.issue.status_id)
+                    .is_closed_status()
+            })
+        })
+        .count() as u16;
+    let child_opened_num = child_all_num - child_closed_num;
+
+    (child_all_num, child_closed_num, child_opened_num)
+}
+
+fn create_child_rows<'a>(store: &'a Store, child_ids: &[IssueId]) -> Vec<ChildIssueRow<'a>> {
+    child_ids
+        .iter()
+        .filter_map(|id| store.get_issue(*id))
+        .map(|(issue, _)| ChildIssueRow {
+            issue,
+            issue_status: store.find_issue_status(issue.issue.status_id),
+            assigned_to_name: issue
+                .assigned_to_id
+                .and_then(|user_id| store.get_user(user_id))
+                .map(|user| user.name.as_str()),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stores::IssueAction;
+    use crate::entities::IssueStatus;
+    use crate::stores::{Action, IssueAction};
     use crate::test_support::{render_snapshot, sync_fixture_entities};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Position;
@@ -114,6 +125,18 @@ mod tests {
         store
     }
 
+    fn store_with_parent_and_unknown_status_child() -> Store {
+        let mut store = store_with_parent_and_children();
+        store.consume_action(Action::SyncIssueStatuses {
+            issue_statuses: vec![IssueStatus {
+                id: 3.into(),
+                name: "進行中(accepted)".to_string(),
+                is_closed: false,
+            }],
+        });
+        store
+    }
+
     fn key_event(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
@@ -121,6 +144,30 @@ mod tests {
     fn assert_layout_contract(component: &ChildrenListComponent, store: &Store, cursor: Position) {
         assert_eq!(component.line_count(store), CHILDREN_LIST_LINE_COUNT);
         assert_eq!(component.get_cursor_position(), cursor);
+    }
+
+    #[test]
+    fn create_widget_keeps_unknown_status_child_and_counts_it_as_open() {
+        let store = store_with_parent_and_unknown_status_child();
+        let mut component = ChildrenListComponent::new(ISSUE_ID);
+        component.update(&store);
+        let (parent, _) = store.get_issue(ISSUE_ID).unwrap();
+        let children = create_child_rows(&store, &parent.child_ids);
+        let (child_all_num, child_closed_num, child_opened_num) =
+            child_status_counts(&store, &parent.child_ids);
+
+        assert!(store.find_issue_status(5.into()).is_none());
+        assert_eq!(children.len(), 2);
+        assert_eq!(child_closed_num, 0);
+        assert_eq!(child_opened_num, 2);
+        assert_eq!(child_all_num, child_closed_num + child_opened_num);
+        assert_eq!(component.line_count(&store), CHILDREN_LIST_LINE_COUNT);
+        render_snapshot(
+            "children_list_component_unknown_status_child",
+            WIDTH,
+            component.line_count(&store),
+            component.create_widget(&store),
+        );
     }
 
     #[test]
