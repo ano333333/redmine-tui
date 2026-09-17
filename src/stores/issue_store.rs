@@ -373,6 +373,10 @@ impl IssueStore {
 
     fn can_update_issue(&self, id: impl Into<IssueId>) -> bool {
         let id = id.into();
+        // stateが未登録ならSyncedとみなすため、先にentityの欠損を状態異常として拒否する。
+        if !self.issues.contains_key(&id) {
+            panic!("cannot update missing issue {id}");
+        }
         let state = self.state_or_synced(id);
         if state == &IssueState::Uploading {
             panic!("cannot update issue while issue {id} is {state:?}");

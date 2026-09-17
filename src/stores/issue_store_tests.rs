@@ -287,6 +287,55 @@ fn uploading_issue_update_panics() {
     );
 }
 
+macro_rules! missing_issue_update_panics {
+    ($($name:ident: $action:expr),+ $(,)?) => {
+        $(
+            #[test]
+            #[should_panic(expected = "cannot update missing issue 99")]
+            fn $name() {
+                let mut store = Store::new();
+
+                store.consume_action($action.into());
+            }
+        )+
+    };
+}
+
+missing_issue_update_panics! {
+    missing_issue_update_description_panics: IssueAction::UpdateDescription {
+        id: 99.into(),
+        body: "body".to_string(),
+    },
+    missing_issue_update_status_panics: IssueAction::UpdateStatus {
+        id: 99.into(),
+        status_id: 1.into(),
+    },
+    missing_issue_update_assigned_to_panics: IssueAction::UpdateAssignedTo {
+        id: 99.into(),
+        assigned_to_id: None,
+    },
+    missing_issue_update_target_version_panics: IssueAction::UpdateTargetVersion {
+        id: 99.into(),
+        target_version_id: None,
+    },
+    missing_issue_update_category_panics: IssueAction::UpdateCategory {
+        id: 99.into(),
+        category_id: None,
+    },
+    missing_issue_update_done_ratio_panics: IssueAction::UpdateDoneRatio {
+        id: 99.into(),
+        done_ratio: 10,
+    },
+    missing_issue_update_start_date_panics: IssueAction::UpdateStartDate {
+        id: 99.into(),
+        start_date: None,
+    },
+    missing_issue_update_due_date_panics: IssueAction::UpdateDueDate {
+        id: 99.into(),
+        due_date: None,
+    },
+}
+
 #[test]
 #[should_panic(expected = "cannot start issue upload while issue 1 is Uploading")]
 fn uploading_issue_start_upload_panics() {
