@@ -1,12 +1,105 @@
+use std::cell::RefCell;
+use std::future::Future;
+use std::rc::Rc;
+use std::sync::Arc;
+
 use crate::clients::redmine::{RedmineClient, RedmineClientError};
 use crate::entities::IssueAggregate;
+use crate::stores::{Action, Dispatcher, IssueAction, IssueState};
+use crate::vos::{IssueId, IssuePropertyDiff};
+
+use super::{apply_issue_property_diffs, fetch_issue_with_conflicts};
 
 /// 競合がないことを確認済みの Issue を Redmine サーバーへアップロードする。
-pub async fn upload_issue(
+pub(crate) async fn upload_issue(
     client: &impl RedmineClient,
     issue: &IssueAggregate,
 ) -> Result<(), RedmineClientError> {
     client.update_issue(issue).await
+}
+
+/// 編集済みのIssueのuploadを開始する。
+///
+/// 呼び出し時に状態を検証し、`StartUpload`を同期的にqueueへ追加してproperty diffをsnapshotする。
+/// 返却したFutureは競合確認GETとIssue PUTを行い、完了Actionを返す。
+///
+/// # Panics
+///
+/// Issueが未登録、またはEdited以外の場合にpanicする。
+pub fn start_issue_upload<C>(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    client: Arc<C>,
+    id: IssueId,
+) -> impl Future<Output = Vec<Action>> + 'static
+where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    {
+        let dispatcher = dispatcher.borrow();
+        let (_, state) = dispatcher
+            .store()
+            .get_issue(id)
+            .expect("tried to upload unknown issue");
+        if state != &IssueState::Edited {
+            panic!("uploading issue is not edited");
+        }
+    }
+    dispatcher
+        .borrow_mut()
+        .dispatch(IssueAction::StartUpload { id });
+    let diffs = dispatcher
+        .borrow()
+        .store()
+        .get_issue_property_diffs(id)
+        .to_vec();
+
+    async move { upload_issue_action(client.as_ref(), id, &diffs).await }
+}
+
+pub async fn upload_issue_action(
+    client: &impl RedmineClient,
+    id: IssueId,
+    diffs: &[IssuePropertyDiff],
+) -> Vec<Action> {
+    let (mut server_issue, conflicts) = match fetch_issue_with_conflicts(client, id, diffs).await {
+        Ok(result) => result,
+        Err(error) => {
+            return vec![
+                IssueAction::FailUpload {
+                    id,
+                    message: error.to_string(),
+                }
+                .into(),
+            ];
+        }
+    };
+    if !conflicts.is_empty() {
+        return vec![
+            IssueAction::UploadConflictsDetected {
+                server_issue,
+                conflicts,
+            }
+            .into(),
+        ];
+    }
+
+    apply_issue_property_diffs(&mut server_issue, diffs);
+    if let Err(error) = upload_issue(client, &server_issue).await {
+        return vec![
+            IssueAction::FailUpload {
+                id,
+                message: error.to_string(),
+            }
+            .into(),
+        ];
+    }
+
+    vec![
+        IssueAction::Sync {
+            issue: server_issue,
+        }
+        .into(),
+    ]
 }
 
 #[cfg(test)]

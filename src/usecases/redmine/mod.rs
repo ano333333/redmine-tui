@@ -25,4 +25,4 @@ pub use resolve_remote_journal_upload::{
 };
 pub use start_local_journal_upload::start_local_journal_upload;
 pub use start_remote_journal_upload::start_remote_journal_upload;
-pub use upload_issue::upload_issue;
+pub use upload_issue::{start_issue_upload, upload_issue_action};

@@ -38,13 +38,13 @@ use self::{
         app::{AppEffect, EditorRequest, EditorResponse},
     },
     libs::yaml::parse_journal_yaml,
-    stores::{Action, Dispatcher, IssueAction, IssueState, JournalAction},
+    stores::{Action, Dispatcher, IssueAction, JournalAction},
     usecases::redmine::{
-        apply_issue_property_diffs, continue_remote_journal_upload, fetch_issue,
-        fetch_issue_with_conflicts, fetch_project_issues_page, load_initial_entities,
-        start_local_journal_upload, start_remote_journal_upload, upload_issue,
+        continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
+        load_initial_entities, start_issue_upload, start_local_journal_upload,
+        start_remote_journal_upload, upload_issue_action,
     },
-    vos::{IssueId, IssuePropertyDiff, JournalId},
+    vos::{IssueId, JournalId},
 };
 
 const TICK_RATE_MS: u64 = 250;
@@ -289,23 +289,12 @@ fn handle_app_effect(
             app_component.update(dispatcher.clone(), dispatcher.borrow().store(), rect);
         }
         AppEffect::StartIssueUpload(id) => {
-            let mut d = dispatcher.borrow_mut();
-            d.dispatch(IssueAction::StartUpload { id });
-            let (_, state) = d
-                .store()
-                .get_issue(id)
-                .expect("tried to upload unknown issue");
-            if state != &IssueState::Edited {
-                panic!("uploading issue is not edited");
-            }
-            let diffs = d.store().get_issue_property_diffs(id).to_vec();
-            spawn_action_task(runtime, sender, async move {
-                vec![issue_upload_action(client.as_ref(), id, &diffs).await]
-            });
+            let future = start_issue_upload(dispatcher, client, id);
+            spawn_action_task(runtime, sender, future);
         }
         AppEffect::ContinueIssueUpload { id, diffs } => {
             spawn_action_task(runtime, sender, async move {
-                vec![issue_upload_action(client.as_ref(), id, &diffs).await]
+                upload_issue_action(client.as_ref(), id, &diffs).await
             });
         }
         AppEffect::StartRemoteJournalUpload {
@@ -410,44 +399,6 @@ fn start_issue_fetch<C>(
 
     // Issueが取得済みになる前にJournalを同期するため、usecaseが定めた順序を維持する。
     spawn_action_task(runtime, sender, future);
-}
-
-async fn issue_upload_action(
-    client: &impl RedmineClient,
-    id: IssueId,
-    diffs: &[IssuePropertyDiff],
-) -> Action {
-    let (mut server_issue, conflicts) = match fetch_issue_with_conflicts(client, id, diffs).await {
-        Ok(result) => result,
-        Err(error) => {
-            return IssueAction::FailUpload {
-                id,
-                message: error.to_string(),
-            }
-            .into();
-        }
-    };
-    if !conflicts.is_empty() {
-        return IssueAction::UploadConflictsDetected {
-            server_issue,
-            conflicts,
-        }
-        .into();
-    }
-
-    apply_issue_property_diffs(&mut server_issue, diffs);
-    if let Err(error) = upload_issue(client, &server_issue).await {
-        return IssueAction::FailUpload {
-            id,
-            message: error.to_string(),
-        }
-        .into();
-    }
-
-    IssueAction::Sync {
-        issue: server_issue,
-    }
-    .into()
 }
 
 fn run_editor(terminal: &mut DefaultTerminal, request: EditorRequest) -> Result<EditorResponse> {
@@ -901,15 +852,25 @@ mod tests {
         );
         server_issue.updated_on = crate::test_support::local_datetime("2026-08-23T12:00:00+09:00");
         server_issue.issue.description = "original description".to_string();
-        let client = IssueUploadClient::new(server_issue.clone());
-        let diffs = vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
-            before: "original description".to_string(),
-            after: "local description".to_string(),
-        })];
+        let client = Arc::new(IssueUploadClient::new(server_issue.clone()));
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        dispatcher.borrow_mut().dispatch(IssueAction::Sync {
+            issue: server_issue.clone(),
+        });
+        dispatcher.borrow_mut().consume_action();
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateDescription {
+                id: 1.into(),
+                body: "local description".to_string(),
+            });
+        dispatcher.borrow_mut().consume_action();
 
-        let action = issue_upload_action(&client, 1.into(), &diffs).await;
+        let actions = start_issue_upload(dispatcher.clone(), client.clone(), 1.into()).await;
 
-        let Action::Issue(IssueAction::Sync { issue }) = action else {
+        assert_eq!(actions.len(), 1);
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        let [Action::Issue(IssueAction::Sync { issue })] = actions.as_slice() else {
             panic!("expected Sync");
         };
         assert_eq!(issue.issue.subject, "server subject");
@@ -922,16 +883,32 @@ mod tests {
         assert_eq!(uploaded[0].updated_on, issue.updated_on);
     }
 
+    #[test]
+    #[should_panic(expected = "uploading issue is not edited")]
+    fn starting_issue_upload_panics_when_issue_is_not_edited() {
+        let issue =
+            sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
+        let client = Arc::new(IssueUploadClient::new(issue.clone()));
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::Sync { issue });
+        dispatcher.borrow_mut().consume_action();
+
+        std::mem::drop(start_issue_upload(dispatcher, client, 1.into()));
+    }
+
     #[tokio::test]
     async fn issue_upload_returns_fail_action_when_fetch_fails() {
         let client = IssueUploadClient::failing_get();
 
-        let action = issue_upload_action(&client, 1.into(), &[]).await;
+        let actions = upload_issue_action(&client, 1.into(), &[]).await;
 
+        assert_eq!(actions.len(), 1);
         assert!(matches!(
-            action,
-            Action::Issue(IssueAction::FailUpload { id, message })
-                if id == IssueId::new(1) && message == "network error: offline"
+            actions.as_slice(),
+            [Action::Issue(IssueAction::FailUpload { id, message })]
+                if *id == IssueId::new(1) && message == "network error: offline"
         ));
         assert!(client.uploaded.lock().unwrap().is_empty());
     }
@@ -942,12 +919,13 @@ mod tests {
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         let client = IssueUploadClient::failing_update(server_issue);
 
-        let action = issue_upload_action(&client, 1.into(), &[]).await;
+        let actions = upload_issue_action(&client, 1.into(), &[]).await;
 
+        assert_eq!(actions.len(), 1);
         assert!(matches!(
-            action,
-            Action::Issue(IssueAction::FailUpload { id, message })
-                if id == IssueId::new(1) && message == "network error: offline"
+            actions.as_slice(),
+            [Action::Issue(IssueAction::FailUpload { id, message })]
+                if *id == IssueId::new(1) && message == "network error: offline"
         ));
     }
 
@@ -962,17 +940,20 @@ mod tests {
             after: "local description".to_string(),
         })];
 
-        let action = issue_upload_action(&client, 1.into(), &diffs).await;
+        let actions = upload_issue_action(&client, 1.into(), &diffs).await;
 
-        let Action::Issue(IssueAction::UploadConflictsDetected {
-            server_issue,
-            conflicts,
-        }) = action
+        assert_eq!(actions.len(), 1);
+        let [
+            Action::Issue(IssueAction::UploadConflictsDetected {
+                server_issue,
+                conflicts,
+            }),
+        ] = actions.as_slice()
         else {
             panic!("expected UploadConflictsDetected");
         };
         assert_eq!(server_issue.issue.description, "server description");
-        assert_eq!(conflicts, diffs);
+        assert_eq!(conflicts, &diffs);
         assert!(client.uploaded.lock().unwrap().is_empty());
     }
 
