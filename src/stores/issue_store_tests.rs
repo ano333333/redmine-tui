@@ -695,17 +695,10 @@ fn fetch_failure_retains_message_without_an_issue_body() {
 }
 
 #[test]
-fn late_fetch_completions_outside_fetching_are_ignored() {
+fn late_fetch_failure_outside_fetching_is_ignored() {
     let id = IssueId::new(99);
     let mut store = Store::new();
 
-    store.consume_action(
-        IssueAction::FetchSucceeded {
-            id,
-            issue: sample_issue_aggregate(99, "late", 1.into(), None, None, None, 0),
-        }
-        .into(),
-    );
     store.consume_action(
         IssueAction::FetchFailed {
             id,
@@ -719,19 +712,12 @@ fn late_fetch_completions_outside_fetching_are_ignored() {
 }
 
 #[test]
-fn late_fetch_success_and_failure_do_not_change_a_synced_issue() {
+fn late_fetch_failure_does_not_change_a_synced_issue() {
     let id = IssueId::new(1);
     let mut store = Store::new();
     store.consume_action(IssueAction::Load { id }.into());
     let original_subject = store.get_issue(id).unwrap().0.issue.subject.clone();
 
-    store.consume_action(
-        IssueAction::FetchSucceeded {
-            id,
-            issue: sample_issue_aggregate(1, "late", 1.into(), None, None, None, 0),
-        }
-        .into(),
-    );
     store.consume_action(
         IssueAction::FetchFailed {
             id,
@@ -746,7 +732,7 @@ fn late_fetch_success_and_failure_do_not_change_a_synced_issue() {
 }
 
 #[test]
-fn late_fetch_success_and_failure_do_not_change_a_fetch_failure() {
+fn late_fetch_failure_does_not_change_a_fetch_failure() {
     let id = IssueId::new(99);
     let mut store = Store::new();
     store.consume_action(IssueAction::StartFetching { id }.into());
@@ -758,13 +744,6 @@ fn late_fetch_success_and_failure_do_not_change_a_fetch_failure() {
         .into(),
     );
 
-    store.consume_action(
-        IssueAction::FetchSucceeded {
-            id,
-            issue: sample_issue_aggregate(99, "late", 1.into(), None, None, None, 0),
-        }
-        .into(),
-    );
     store.consume_action(
         IssueAction::FetchFailed {
             id,
@@ -783,7 +762,7 @@ fn late_fetch_success_and_failure_do_not_change_a_fetch_failure() {
 }
 
 #[test]
-fn late_fetch_completions_do_not_overwrite_edited_or_uploading_issues() {
+fn late_fetch_failure_does_not_overwrite_edited_or_uploading_issues() {
     for start_upload in [false, true] {
         let id = IssueId::new(1);
         let mut store = Store::new();
@@ -799,13 +778,6 @@ fn late_fetch_completions_do_not_overwrite_edited_or_uploading_issues() {
             store.consume_action(IssueAction::StartUpload { id }.into());
         }
 
-        store.consume_action(
-            IssueAction::FetchSucceeded {
-                id,
-                issue: sample_issue_aggregate(1, "late", 1.into(), None, None, None, 0),
-            }
-            .into(),
-        );
         store.consume_action(
             IssueAction::FetchFailed {
                 id,
@@ -826,6 +798,66 @@ fn late_fetch_completions_do_not_overwrite_edited_or_uploading_issues() {
         );
         assert_eq!(store.get_issue_property_diffs(id).len(), 1);
     }
+}
+
+macro_rules! fetch_success_outside_fetching_panics {
+    ($($name:ident: $expected:literal => [$($setup:expr),* $(,)?]),+ $(,)?) => {
+        $(
+            #[test]
+            #[should_panic(expected = $expected)]
+            fn $name() {
+                let id = IssueId::new(99);
+                let mut store = Store::new();
+                $(store.consume_action($setup.into());)*
+
+                store.consume_action(
+                    IssueAction::FetchSucceeded {
+                        id,
+                        issue: sample_issue_aggregate(99, "late", 1.into(), None, None, None, 0),
+                    }
+                    .into(),
+                );
+            }
+        )+
+    };
+}
+
+fetch_success_outside_fetching_panics! {
+    fetch_success_without_state_panics:
+        "fetch succeeded for issue 99 without an issue state" => [],
+    fetch_success_while_synced_panics:
+        "fetch succeeded while issue 99 is Synced" => [IssueAction::Sync {
+            issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
+        }],
+    fetch_success_after_fetch_failure_panics:
+        "fetch succeeded while issue 99 is FetchFailed" => [
+            IssueAction::StartFetching { id: IssueId::new(99) },
+            IssueAction::FetchFailed {
+                id: IssueId::new(99),
+                message: "original error".to_string(),
+            },
+        ],
+    fetch_success_while_edited_panics:
+        "fetch succeeded while issue 99 is Edited" => [
+            IssueAction::Sync {
+                issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
+            },
+            IssueAction::UpdateDescription {
+                id: IssueId::new(99),
+                body: "local edit".to_string(),
+            },
+        ],
+    fetch_success_while_uploading_panics:
+        "fetch succeeded while issue 99 is Uploading" => [
+            IssueAction::Sync {
+                issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
+            },
+            IssueAction::UpdateDescription {
+                id: IssueId::new(99),
+                body: "local edit".to_string(),
+            },
+            IssueAction::StartUpload { id: IssueId::new(99) },
+        ],
 }
 
 #[test]

@@ -142,19 +142,23 @@ impl IssueStore {
                 }
             }
             IssueAction::FetchSucceeded { id, issue } => {
-                // 非Fetchingへの完了は従来のno-opを維持し、受理するpayloadだけIDを検証する。
-                if matches!(self.get_issue_state(id), Some(IssueState::Fetching)) {
-                    let actual_id = issue.issue.id;
-                    if actual_id != id {
-                        panic!(
-                            "fetch succeeded with mismatched issue id: requested {id}, got {actual_id}"
-                        );
-                    }
-                    self.issues.insert(id, issue);
-                    self.issue_property_diffs.remove(&id);
-                    self.issue_upload_conflicts.remove(&id);
-                    self.issue_states.insert(id, IssueState::Synced);
+                // 新しい同期結果やローカル編集を遅延した成功で上書きしないよう、
+                // Fetching以外への着弾は制御破綻として拒否する。
+                match self.get_issue_state(id) {
+                    Some(IssueState::Fetching) => {}
+                    Some(state) => panic!("fetch succeeded while issue {id} is {state:?}"),
+                    None => panic!("fetch succeeded for issue {id} without an issue state"),
                 }
+                let actual_id = issue.issue.id;
+                if actual_id != id {
+                    panic!(
+                        "fetch succeeded with mismatched issue id: requested {id}, got {actual_id}"
+                    );
+                }
+                self.issues.insert(id, issue);
+                self.issue_property_diffs.remove(&id);
+                self.issue_upload_conflicts.remove(&id);
+                self.issue_states.insert(id, IssueState::Synced);
             }
             IssueAction::FetchFailed { id, message } => {
                 if matches!(self.get_issue_state(id), Some(IssueState::Fetching)) {
