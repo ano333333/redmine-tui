@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::clients::redmine::{RedmineClient, RedmineClientError};
 use crate::entities::IssueAggregate;
-use crate::stores::{Action, Dispatcher, IssueAction, IssueState};
+use crate::stores::{Action, Dispatcher, IssueAction, IssueState, NoticeAction, NoticeId};
 use crate::vos::{IssueId, IssuePropertyDiff};
 
 use super::{apply_issue_property_diffs, fetch_issue_with_conflicts};
@@ -64,13 +64,7 @@ pub async fn upload_issue_action(
     let (mut server_issue, conflicts) = match fetch_issue_with_conflicts(client, id, diffs).await {
         Ok(result) => result,
         Err(error) => {
-            return vec![
-                IssueAction::FailUpload {
-                    id,
-                    message: error.to_string(),
-                }
-                .into(),
-            ];
+            return issue_upload_failure_actions(id, error.to_string());
         }
     };
     if !conflicts.is_empty() {
@@ -85,13 +79,7 @@ pub async fn upload_issue_action(
 
     apply_issue_property_diffs(&mut server_issue, diffs);
     if let Err(error) = upload_issue(client, &server_issue).await {
-        return vec![
-            IssueAction::FailUpload {
-                id,
-                message: error.to_string(),
-            }
-            .into(),
-        ];
+        return issue_upload_failure_actions(id, error.to_string());
     }
 
     vec![
@@ -99,6 +87,21 @@ pub async fn upload_issue_action(
             issue: server_issue,
         }
         .into(),
+    ]
+}
+
+// FIXME: usecaseがUI表示物(notice/toast)の文言を組み立てているのは設計上の負債である。
+// 将来的にはIssueStoreの状態を見て判断するtoast component等を導入し、
+// この処理をそちらへ移すべき。
+fn issue_upload_failure_actions(id: IssueId, message: String) -> Vec<Action> {
+    vec![
+        NoticeAction::Push {
+            id: NoticeId::new(),
+            message: format!("Issue #{id}の保存に失敗しました: {message}"),
+            created_at: chrono::Local::now(),
+        }
+        .into(),
+        IssueAction::FailUpload { id, message }.into(),
     ]
 }
 

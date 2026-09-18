@@ -904,12 +904,19 @@ mod tests {
 
         let actions = upload_issue_action(&client, 1.into(), &[]).await;
 
-        assert_eq!(actions.len(), 1);
-        assert!(matches!(
-            actions.as_slice(),
-            [Action::Issue(IssueAction::FailUpload { id, message })]
-                if *id == IssueId::new(1) && message == "network error: offline"
-        ));
+        assert_eq!(actions.len(), 2);
+        let Action::Notice(NoticeAction::Push { message, .. }) = &actions[0] else {
+            panic!("expected failure notice action");
+        };
+        assert_eq!(
+            message,
+            "Issue #1の保存に失敗しました: network error: offline"
+        );
+        let Action::Issue(IssueAction::FailUpload { id, message }) = &actions[1] else {
+            panic!("expected fail upload action");
+        };
+        assert_eq!(*id, IssueId::new(1));
+        assert_eq!(message, "network error: offline");
         assert!(client.uploaded.lock().unwrap().is_empty());
     }
 
@@ -921,12 +928,19 @@ mod tests {
 
         let actions = upload_issue_action(&client, 1.into(), &[]).await;
 
-        assert_eq!(actions.len(), 1);
-        assert!(matches!(
-            actions.as_slice(),
-            [Action::Issue(IssueAction::FailUpload { id, message })]
-                if *id == IssueId::new(1) && message == "network error: offline"
-        ));
+        assert_eq!(actions.len(), 2);
+        let Action::Notice(NoticeAction::Push { message, .. }) = &actions[0] else {
+            panic!("expected failure notice action");
+        };
+        assert_eq!(
+            message,
+            "Issue #1の保存に失敗しました: network error: offline"
+        );
+        let Action::Issue(IssueAction::FailUpload { id, message }) = &actions[1] else {
+            panic!("expected fail upload action");
+        };
+        assert_eq!(*id, IssueId::new(1));
+        assert_eq!(message, "network error: offline");
     }
 
     #[tokio::test]
