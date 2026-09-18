@@ -161,13 +161,18 @@ impl IssueStore {
                 self.issue_states.insert(id, IssueState::Synced);
             }
             IssueAction::FetchFailed { id, message } => {
-                if matches!(self.get_issue_state(id), Some(IssueState::Fetching)) {
-                    self.issues.remove(&id);
-                    self.issue_property_diffs.remove(&id);
-                    self.issue_upload_conflicts.remove(&id);
-                    self.issue_states
-                        .insert(id, IssueState::FetchFailed { message });
+                // 新しい同期結果やローカル編集を遅延した失敗で破棄しないよう、
+                // Fetching以外への着弾は制御破綻として拒否する。
+                match self.get_issue_state(id) {
+                    Some(IssueState::Fetching) => {}
+                    Some(state) => panic!("fetch failed while issue {id} is {state:?}"),
+                    None => panic!("fetch failed for issue {id} without an issue state"),
                 }
+                self.issues.remove(&id);
+                self.issue_property_diffs.remove(&id);
+                self.issue_upload_conflicts.remove(&id);
+                self.issue_states
+                    .insert(id, IssueState::FetchFailed { message });
             }
             IssueAction::StartUpload { id } => {
                 let state = self.state_or_synced(id);

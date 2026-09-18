@@ -694,110 +694,64 @@ fn fetch_failure_retains_message_without_an_issue_body() {
     assert!(store.get_issue(id).is_none());
 }
 
-#[test]
-fn late_fetch_failure_outside_fetching_is_ignored() {
-    let id = IssueId::new(99);
-    let mut store = Store::new();
+macro_rules! fetch_failure_outside_fetching_panics {
+    ($($name:ident: $expected:literal => [$($setup:expr),* $(,)?]),+ $(,)?) => {
+        $(
+            #[test]
+            #[should_panic(expected = $expected)]
+            fn $name() {
+                let id = IssueId::new(99);
+                let mut store = Store::new();
+                $(store.consume_action($setup.into());)*
 
-    store.consume_action(
-        IssueAction::FetchFailed {
-            id,
-            message: "late error".to_string(),
-        }
-        .into(),
-    );
-
-    assert!(store.get_issue_state(id).is_none());
-    assert!(store.get_issue(id).is_none());
-}
-
-#[test]
-fn late_fetch_failure_does_not_change_a_synced_issue() {
-    let id = IssueId::new(1);
-    let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id }.into());
-    let original_subject = store.get_issue(id).unwrap().0.issue.subject.clone();
-
-    store.consume_action(
-        IssueAction::FetchFailed {
-            id,
-            message: "late error".to_string(),
-        }
-        .into(),
-    );
-
-    let (issue, state) = store.get_issue(id).expect("synced issue must remain");
-    assert_eq!(issue.issue.subject, original_subject);
-    assert_eq!(state, &IssueState::Synced);
-}
-
-#[test]
-fn late_fetch_failure_does_not_change_a_fetch_failure() {
-    let id = IssueId::new(99);
-    let mut store = Store::new();
-    store.consume_action(IssueAction::StartFetching { id }.into());
-    store.consume_action(
-        IssueAction::FetchFailed {
-            id,
-            message: "original error".to_string(),
-        }
-        .into(),
-    );
-
-    store.consume_action(
-        IssueAction::FetchFailed {
-            id,
-            message: "late error".to_string(),
-        }
-        .into(),
-    );
-
-    assert!(store.get_issue(id).is_none());
-    assert_eq!(
-        store.get_issue_state(id),
-        Some(&IssueState::FetchFailed {
-            message: "original error".to_string(),
-        })
-    );
-}
-
-#[test]
-fn late_fetch_failure_does_not_overwrite_edited_or_uploading_issues() {
-    for start_upload in [false, true] {
-        let id = IssueId::new(1);
-        let mut store = Store::new();
-        store.consume_action(IssueAction::Load { id }.into());
-        store.consume_action(
-            IssueAction::UpdateDescription {
-                id,
-                body: "local edit".to_string(),
+                store.consume_action(
+                    IssueAction::FetchFailed {
+                        id,
+                        message: "late error".to_string(),
+                    }
+                    .into(),
+                );
             }
-            .into(),
-        );
-        if start_upload {
-            store.consume_action(IssueAction::StartUpload { id }.into());
-        }
+        )+
+    };
+}
 
-        store.consume_action(
+fetch_failure_outside_fetching_panics! {
+    fetch_failure_without_state_panics:
+        "fetch failed for issue 99 without an issue state" => [],
+    fetch_failure_while_synced_panics:
+        "fetch failed while issue 99 is Synced" => [IssueAction::Sync {
+            issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
+        }],
+    fetch_failure_after_fetch_failure_panics:
+        "fetch failed while issue 99 is FetchFailed" => [
+            IssueAction::StartFetching { id: IssueId::new(99) },
             IssueAction::FetchFailed {
-                id,
-                message: "late error".to_string(),
-            }
-            .into(),
-        );
-
-        let (issue, state) = store.get_issue(id).expect("loaded issue must remain");
-        assert_eq!(issue.issue.description, "local edit");
-        assert_eq!(
-            state,
-            if start_upload {
-                &IssueState::Uploading
-            } else {
-                &IssueState::Edited
-            }
-        );
-        assert_eq!(store.get_issue_property_diffs(id).len(), 1);
-    }
+                id: IssueId::new(99),
+                message: "original error".to_string(),
+            },
+        ],
+    fetch_failure_while_edited_panics:
+        "fetch failed while issue 99 is Edited" => [
+            IssueAction::Sync {
+                issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
+            },
+            IssueAction::UpdateDescription {
+                id: IssueId::new(99),
+                body: "local edit".to_string(),
+            },
+        ],
+    fetch_failure_while_uploading_panics:
+        "fetch failed while issue 99 is Uploading" => [
+            IssueAction::Sync {
+                issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
+            },
+            IssueAction::UpdateDescription {
+                id: IssueId::new(99),
+                body: "local edit".to_string(),
+            },
+            IssueAction::StartUpload { id: IssueId::new(99) },
+        ],
 }
 
 macro_rules! fetch_success_outside_fetching_panics {
