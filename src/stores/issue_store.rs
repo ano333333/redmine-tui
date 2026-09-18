@@ -142,9 +142,14 @@ impl IssueStore {
                 }
             }
             IssueAction::FetchSucceeded { id, issue } => {
-                if matches!(self.get_issue_state(id), Some(IssueState::Fetching))
-                    && issue.issue.id == id
-                {
+                // 非Fetchingへの完了は従来のno-opを維持し、受理するpayloadだけIDを検証する。
+                if matches!(self.get_issue_state(id), Some(IssueState::Fetching)) {
+                    let actual_id = issue.issue.id;
+                    if actual_id != id {
+                        panic!(
+                            "fetch succeeded with mismatched issue id: requested {id}, got {actual_id}"
+                        );
+                    }
                     self.issues.insert(id, issue);
                     self.issue_property_diffs.remove(&id);
                     self.issue_upload_conflicts.remove(&id);

@@ -655,7 +655,8 @@ fn matching_fetch_success_registers_the_issue_as_synced() {
 }
 
 #[test]
-fn mismatched_fetch_success_is_ignored() {
+#[should_panic(expected = "fetch succeeded with mismatched issue id: requested 99, got 100")]
+fn mismatched_fetch_success_panics() {
     let requested_id = IssueId::new(99);
     let response_issue = sample_issue_aggregate(100, "wrong", 1.into(), None, None, None, 0);
     let mut store = Store::new();
@@ -668,13 +669,6 @@ fn mismatched_fetch_success_is_ignored() {
         }
         .into(),
     );
-
-    assert_eq!(
-        store.get_issue_state(requested_id),
-        Some(&IssueState::Fetching)
-    );
-    assert!(store.get_issue(requested_id).is_none());
-    assert!(store.get_issue(100).is_none());
 }
 
 #[test]
