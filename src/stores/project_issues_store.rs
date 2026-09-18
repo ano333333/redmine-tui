@@ -106,7 +106,9 @@ impl ProjectIssuesStore {
                     ProjectIssuesPageState::Failed { message },
                 );
             }
-            _ => {}
+            // guardに一致しない古いrequest IDや異なるexact keyの完了通知は、
+            // stale completionとして意図的に無視する。
+            ProjectIssuesAction::LoadSucceeded { .. } | ProjectIssuesAction::LoadFailed { .. } => {}
         }
     }
 

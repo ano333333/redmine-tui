@@ -129,17 +129,21 @@ impl IssueStore {
                 self.issue_states.insert(id, IssueState::Synced);
             }
             IssueAction::StartFetching { id } => {
-                let can_start = match self.get_issue_state(id) {
+                // UIとfetch usecaseはstateがNoneまたはFetchFailedの場合にだけこのActionを発行する。
+                // Fetchingや取得済み状態への着弾は呼び出し側の不変条件違反として拒否する。
+                let state = self.get_issue_state(id);
+                let can_start = match state {
                     None => !self.issues.contains_key(&id),
                     Some(IssueState::FetchFailed { .. }) => true,
                     Some(_) => false,
                 };
-                if can_start {
-                    self.issues.remove(&id);
-                    self.issue_property_diffs.remove(&id);
-                    self.issue_upload_conflicts.remove(&id);
-                    self.issue_states.insert(id, IssueState::Fetching);
+                if !can_start {
+                    panic!("cannot start fetching issue {id} while it is {state:?}");
                 }
+                self.issues.remove(&id);
+                self.issue_property_diffs.remove(&id);
+                self.issue_upload_conflicts.remove(&id);
+                self.issue_states.insert(id, IssueState::Fetching);
             }
             IssueAction::FetchSucceeded { id, issue } => {
                 // 新しい同期結果やローカル編集を遅延した成功で上書きしないよう、

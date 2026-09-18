@@ -591,51 +591,52 @@ fn failed_issue_can_restart_fetching_and_clears_the_error() {
     assert!(store.get_issue(id).is_none());
 }
 
-#[test]
-fn duplicate_start_fetching_is_ignored() {
-    let id = IssueId::new(99);
-    let mut store = Store::new();
-    store.consume_action(IssueAction::StartFetching { id }.into());
+macro_rules! start_fetching_outside_startable_states_panics {
+    ($($name:ident: $expected:literal => [$($setup:expr),* $(,)?]),+ $(,)?) => {
+        $(
+            #[test]
+            #[should_panic(expected = $expected)]
+            fn $name() {
+                let id = IssueId::new(99);
+                let mut store = Store::new();
+                $(store.consume_action($setup.into());)*
 
-    store.consume_action(IssueAction::StartFetching { id }.into());
-
-    assert_eq!(store.get_issue_state(id), Some(&IssueState::Fetching));
-    assert!(store.get_issue(id).is_none());
+                store.consume_action(IssueAction::StartFetching { id }.into());
+            }
+        )+
+    };
 }
 
-#[test]
-fn loaded_issue_states_ignore_start_fetching_and_retain_local_data() {
-    for start_upload in [false, true] {
-        let id = IssueId::new(1);
-        let mut store = Store::new();
-        store.consume_action(IssueAction::Load { id }.into());
-        store.consume_action(IssueAction::StartFetching { id }.into());
-        assert_eq!(store.get_issue(id).unwrap().1, &IssueState::Synced);
-        store.consume_action(
+start_fetching_outside_startable_states_panics! {
+    start_fetching_while_fetching_panics:
+        "cannot start fetching issue 99 while it is Some(Fetching)" => [
+            IssueAction::StartFetching { id: IssueId::new(99) },
+        ],
+    start_fetching_while_synced_panics:
+        "cannot start fetching issue 99 while it is Some(Synced)" => [IssueAction::Sync {
+            issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
+        }],
+    start_fetching_while_edited_panics:
+        "cannot start fetching issue 99 while it is Some(Edited)" => [
+            IssueAction::Sync {
+                issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
+            },
             IssueAction::UpdateDescription {
-                id,
+                id: IssueId::new(99),
                 body: "local edit".to_string(),
-            }
-            .into(),
-        );
-        if start_upload {
-            store.consume_action(IssueAction::StartUpload { id }.into());
-        }
-
-        store.consume_action(IssueAction::StartFetching { id }.into());
-
-        let (issue, state) = store.get_issue(id).expect("loaded issue must remain");
-        assert_eq!(issue.issue.description, "local edit");
-        assert_eq!(
-            state,
-            if start_upload {
-                &IssueState::Uploading
-            } else {
-                &IssueState::Edited
-            }
-        );
-        assert_eq!(store.get_issue_property_diffs(id).len(), 1);
-    }
+            },
+        ],
+    start_fetching_while_uploading_panics:
+        "cannot start fetching issue 99 while it is Some(Uploading)" => [
+            IssueAction::Sync {
+                issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
+            },
+            IssueAction::UpdateDescription {
+                id: IssueId::new(99),
+                body: "local edit".to_string(),
+            },
+            IssueAction::StartUpload { id: IssueId::new(99) },
+        ],
 }
 
 #[test]
