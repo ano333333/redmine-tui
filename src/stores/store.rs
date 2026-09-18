@@ -345,6 +345,10 @@ impl Store {
         self.issue_store.get_issue_upload_conflict(id)
     }
 
+    pub fn get_issue_upload_failure(&self, id: IssueId) -> Option<&str> {
+        self.issue_store.get_issue_upload_failure(id)
+    }
+
     /// 表示中のnoticeを追加順で返す。
     pub fn get_notices(&self) -> &[Notice] {
         self.notice_store.notices()

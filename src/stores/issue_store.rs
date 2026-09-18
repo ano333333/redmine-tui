@@ -93,6 +93,7 @@ pub(super) struct IssueStore {
     issue_states: HashMap<IssueId, IssueState>,
     issue_property_diffs: HashMap<IssueId, Vec<IssuePropertyDiff>>,
     issue_upload_conflicts: HashMap<IssueId, (IssueAggregate, Vec<IssuePropertyDiff>)>,
+    issue_upload_failures: HashMap<IssueId, String>,
 }
 
 impl IssueStore {
@@ -102,6 +103,7 @@ impl IssueStore {
             issue_states: HashMap::new(),
             issue_property_diffs: HashMap::new(),
             issue_upload_conflicts: HashMap::new(),
+            issue_upload_failures: HashMap::new(),
         }
     }
 
@@ -127,6 +129,7 @@ impl IssueStore {
                 self.issues.insert(id, issue);
                 self.issue_property_diffs.remove(&id);
                 self.issue_upload_conflicts.remove(&id);
+                self.issue_upload_failures.remove(&id);
                 self.issue_states.insert(id, IssueState::Synced);
             }
             IssueAction::StartFetching { id } => {
@@ -144,6 +147,7 @@ impl IssueStore {
                 self.issues.remove(&id);
                 self.issue_property_diffs.remove(&id);
                 self.issue_upload_conflicts.remove(&id);
+                self.issue_upload_failures.remove(&id);
                 self.issue_states.insert(id, IssueState::Fetching);
             }
             IssueAction::FetchSucceeded { id, issue } => {
@@ -163,6 +167,7 @@ impl IssueStore {
                 self.issues.insert(id, issue);
                 self.issue_property_diffs.remove(&id);
                 self.issue_upload_conflicts.remove(&id);
+                self.issue_upload_failures.remove(&id);
                 self.issue_states.insert(id, IssueState::Synced);
             }
             IssueAction::FetchFailed { id, message } => {
@@ -176,6 +181,7 @@ impl IssueStore {
                 self.issues.remove(&id);
                 self.issue_property_diffs.remove(&id);
                 self.issue_upload_conflicts.remove(&id);
+                self.issue_upload_failures.remove(&id);
                 self.issue_states
                     .insert(id, IssueState::FetchFailed { message });
             }
@@ -185,6 +191,7 @@ impl IssueStore {
                     panic!("cannot start issue upload while issue {id} is {state:?}");
                 }
                 self.issue_upload_conflicts.remove(&id);
+                self.issue_upload_failures.remove(&id);
                 self.issue_states.insert(id, IssueState::Uploading);
             }
             IssueAction::CancelUpload { id } => {
@@ -192,6 +199,7 @@ impl IssueStore {
                 if state != &IssueState::Uploading {
                     panic!("cannot cancel issue upload while issue {id} is {state:?}");
                 }
+                // Uploadingへ入るStartUploadが以前のfailureを破棄済みなので、ここではclear不要。
                 self.issue_upload_conflicts.remove(&id);
                 self.issue_states.insert(id, IssueState::Edited);
             }
@@ -202,12 +210,13 @@ impl IssueStore {
                 }
                 self.issue_upload_conflicts.remove(&id);
             }
-            IssueAction::FailUpload { id, .. } => {
+            IssueAction::FailUpload { id, message } => {
                 let state = self.state_or_synced(id);
                 if state != &IssueState::Uploading {
                     panic!("cannot fail issue upload while issue {id} is {state:?}");
                 }
                 self.issue_upload_conflicts.remove(&id);
+                self.issue_upload_failures.insert(id, message);
                 self.issue_states.insert(id, IssueState::Edited);
             }
             IssueAction::UploadConflictsDetected {
@@ -389,6 +398,10 @@ impl IssueStore {
         self.issue_upload_conflicts
             .get(&id)
             .map(|(issue, conflicts)| (issue, conflicts.as_slice()))
+    }
+
+    pub(super) fn get_issue_upload_failure(&self, id: IssueId) -> Option<&str> {
+        self.issue_upload_failures.get(&id).map(String::as_str)
     }
 
     pub(super) fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<&IssueState> {

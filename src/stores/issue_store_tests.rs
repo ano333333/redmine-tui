@@ -459,7 +459,7 @@ fn cancel_issue_upload_returns_issue_to_edited_and_retains_diffs() {
 }
 
 #[test]
-fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs() {
+fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs_and_message() {
     let mut store = Store::new();
     store.consume_action(IssueAction::Load { id: 1.into() }.into());
     store.consume_action(
@@ -470,6 +470,13 @@ fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs() {
         .into(),
     );
     store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
+    store.consume_action(
+        IssueAction::UploadConflictsDetected {
+            server_issue: sample_issue_aggregate(1, "server issue", 1.into(), None, None, None, 0),
+            conflicts: store.get_issue_property_diffs(1).to_vec(),
+        }
+        .into(),
+    );
 
     store.consume_action(
         IssueAction::FailUpload {
@@ -482,6 +489,15 @@ fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs() {
     let (_, state) = store.get_issue(1).expect("issue should be loaded");
     assert_eq!(state, &IssueState::Edited);
     assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
+    assert!(store.get_issue_upload_conflict(1.into()).is_none());
+    assert_eq!(
+        store.get_issue_upload_failure(1.into()),
+        Some("upload failed")
+    );
+
+    store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
+
+    assert_eq!(store.get_issue_upload_failure(1.into()), None);
 }
 
 #[test]
@@ -556,6 +572,17 @@ fn upload_success_sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
         .into(),
     );
     store.consume_action(IssueAction::StartUpload { id: 9.into() }.into());
+    store.consume_action(
+        IssueAction::FailUpload {
+            id: 9.into(),
+            message: "temporary failure".to_string(),
+        }
+        .into(),
+    );
+    assert_eq!(
+        store.get_issue_upload_failure(9.into()),
+        Some("temporary failure")
+    );
 
     store.consume_action(
         IssueAction::Sync {
@@ -577,6 +604,7 @@ fn upload_success_sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
     assert_eq!(issue.issue.description, "body");
     assert_eq!(state, &IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
+    assert_eq!(store.get_issue_upload_failure(9.into()), None);
 }
 
 #[test]
