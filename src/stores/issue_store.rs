@@ -48,6 +48,7 @@ pub enum IssueAction {
     },
     FailUpload {
         id: IssueId,
+        message: String,
     },
     UploadConflictsDetected {
         server_issue: IssueAggregate,
@@ -201,7 +202,7 @@ impl IssueStore {
                 }
                 self.issue_upload_conflicts.remove(&id);
             }
-            IssueAction::FailUpload { id } => {
+            IssueAction::FailUpload { id, .. } => {
                 let state = self.state_or_synced(id);
                 if state != &IssueState::Uploading {
                     panic!("cannot fail issue upload while issue {id} is {state:?}");

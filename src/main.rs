@@ -419,7 +419,13 @@ async fn issue_upload_action(
 ) -> Action {
     let (mut server_issue, conflicts) = match fetch_issue_with_conflicts(client, id, diffs).await {
         Ok(result) => result,
-        Err(_) => return IssueAction::FailUpload { id }.into(),
+        Err(error) => {
+            return IssueAction::FailUpload {
+                id,
+                message: error.to_string(),
+            }
+            .into();
+        }
     };
     if !conflicts.is_empty() {
         return IssueAction::UploadConflictsDetected {
@@ -430,8 +436,12 @@ async fn issue_upload_action(
     }
 
     apply_issue_property_diffs(&mut server_issue, diffs);
-    if upload_issue(client, &server_issue).await.is_err() {
-        return IssueAction::FailUpload { id }.into();
+    if let Err(error) = upload_issue(client, &server_issue).await {
+        return IssueAction::FailUpload {
+            id,
+            message: error.to_string(),
+        }
+        .into();
     }
 
     IssueAction::Sync {
@@ -920,7 +930,8 @@ mod tests {
 
         assert!(matches!(
             action,
-            Action::Issue(IssueAction::FailUpload { id }) if id == IssueId::new(1)
+            Action::Issue(IssueAction::FailUpload { id, message })
+                if id == IssueId::new(1) && message == "network error: offline"
         ));
         assert!(client.uploaded.lock().unwrap().is_empty());
     }
@@ -935,7 +946,8 @@ mod tests {
 
         assert!(matches!(
             action,
-            Action::Issue(IssueAction::FailUpload { id }) if id == IssueId::new(1)
+            Action::Issue(IssueAction::FailUpload { id, message })
+                if id == IssueId::new(1) && message == "network error: offline"
         ));
     }
 
@@ -986,7 +998,13 @@ mod tests {
         let (sender, receiver) = mpsc::channel::<Action>();
 
         spawn_action_task(&runtime, sender, async {
-            vec![IssueAction::FailUpload { id: 7.into() }.into()]
+            vec![
+                IssueAction::FailUpload {
+                    id: 7.into(),
+                    message: "upload failed".to_string(),
+                }
+                .into(),
+            ]
         });
 
         let received = receiver
@@ -994,7 +1012,8 @@ mod tests {
             .expect("action should be sent through the channel");
         assert!(matches!(
             received,
-            Action::Issue(IssueAction::FailUpload { id }) if id == IssueId::new(7)
+            Action::Issue(IssueAction::FailUpload { id, message })
+                if id == IssueId::new(7) && message == "upload failed"
         ));
     }
 

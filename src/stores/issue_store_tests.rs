@@ -393,7 +393,13 @@ fn synced_issue_fail_upload_panics() {
     let mut store = Store::new();
     store.consume_action(IssueAction::Load { id: 1.into() }.into());
 
-    store.consume_action(IssueAction::FailUpload { id: 1.into() }.into());
+    store.consume_action(
+        IssueAction::FailUpload {
+            id: 1.into(),
+            message: "upload failed".to_string(),
+        }
+        .into(),
+    );
 }
 
 #[test]
@@ -409,7 +415,13 @@ fn edited_issue_fail_upload_panics() {
         .into(),
     );
 
-    store.consume_action(IssueAction::FailUpload { id: 1.into() }.into());
+    store.consume_action(
+        IssueAction::FailUpload {
+            id: 1.into(),
+            message: "upload failed".to_string(),
+        }
+        .into(),
+    );
 }
 
 #[test]
@@ -459,7 +471,13 @@ fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs() {
     );
     store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
 
-    store.consume_action(IssueAction::FailUpload { id: 1.into() }.into());
+    store.consume_action(
+        IssueAction::FailUpload {
+            id: 1.into(),
+            message: "upload failed".to_string(),
+        }
+        .into(),
+    );
 
     let (_, state) = store.get_issue(1).expect("issue should be loaded");
     assert_eq!(state, &IssueState::Edited);
