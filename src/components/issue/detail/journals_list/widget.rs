@@ -4,9 +4,15 @@ use std::cmp::min;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Paragraph, Widget};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Widget};
+
+use crate::widgets::gutter::GUTTER_WIDTH;
+use crate::widgets::theme::{ACCENT, MUTED};
 
 use super::journals_list_item::JournalItemWidget;
+
+const CREATE_BUTTON_WIDTH: u16 = 12;
+const CREATE_BUTTON_HEIGHT: u16 = 3;
 
 pub struct JournalsListWidget<'a> {
     widgets: Vec<JournalItemWidget<'a>>,
@@ -53,25 +59,30 @@ impl Widget for JournalsListWidget<'_> {
         }
 
         if y < end_y {
-            let height = min(3, end_y - y);
-            let area = Rect::new(area.x, y, area.width, height);
-            let border_style = if self.create_button_focused {
-                Style::default().fg(Color::LightGreen)
+            let button_x = area.x.saturating_add(GUTTER_WIDTH.min(area.width));
+            let button_area = Rect::new(
+                button_x,
+                y,
+                area.width
+                    .saturating_sub(GUTTER_WIDTH)
+                    .min(CREATE_BUTTON_WIDTH),
+                (end_y - y).min(CREATE_BUTTON_HEIGHT),
+            );
+            let color = if !self.create_button_enabled {
+                MUTED
+            } else if self.create_button_focused {
+                ACCENT
             } else {
-                Style::default()
+                Color::White
             };
-            let text_style = if self.create_button_enabled {
-                Style::default()
-            } else {
-                Style::default().fg(Color::DarkGray)
-            };
-            Paragraph::new(Line::styled("新規作成", text_style))
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(border_style),
-                )
-                .render(area, buf);
+            let button_style = Style::default().fg(color);
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(button_style);
+            Paragraph::new(Line::styled(" 新規作成 ", button_style))
+                .block(block)
+                .render(button_area, buf);
         }
     }
 }

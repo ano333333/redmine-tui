@@ -294,7 +294,7 @@ impl JournalsListComponent {
     pub fn get_cursor_position(&self, width: u16) -> Position {
         let Some(focused_item) = self.focused_item else {
             if self.create_button_focused {
-                return Position::new(1, self.line_count(width).saturating_sub(2));
+                return Position::new(1, self.line_count(width).saturating_sub(1));
             }
             return Position::new(0, 0);
         };
@@ -581,7 +581,7 @@ mod tests {
         assert_eq!(component.focused_item, Some(JournalItemIdentity::Local));
         assert_eq!(
             component.get_cursor_position(WIDE_WIDTH),
-            Position::new(3, component.items[0].line_count(WIDE_WIDTH) + 3)
+            Position::new(5, component.items[0].line_count(WIDE_WIDTH) + 3)
         );
 
         assert!(matches!(
@@ -628,7 +628,7 @@ mod tests {
         );
         assert_eq!(
             component.get_cursor_position(WIDE_WIDTH),
-            Position::new(0, 3)
+            Position::new(2, 3)
         );
     }
 
@@ -641,7 +641,7 @@ mod tests {
         assert!(component.create_button_focused);
         assert_eq!(
             component.get_cursor_position(WIDE_WIDTH),
-            Position::new(1, 1)
+            Position::new(1, 2)
         );
 
         component.focus_event(FocusEvent::Unfocused);
@@ -649,7 +649,7 @@ mod tests {
         assert!(component.create_button_focused);
         assert_eq!(
             component.get_cursor_position(WIDE_WIDTH),
-            Position::new(1, 1)
+            Position::new(1, 2)
         );
     }
 
@@ -703,7 +703,7 @@ mod tests {
         assert_eq!(component.focused_item, Some(JournalItemIdentity::Local));
         assert_eq!(
             component.get_cursor_position(WIDE_WIDTH),
-            Position::new(2, 3)
+            Position::new(4, 3)
         );
     }
 
@@ -806,6 +806,10 @@ mod tests {
         assert_eq!(
             component.focused_item,
             Some(JournalItemIdentity::Remote(JournalId::new(2)))
+        );
+        assert_eq!(
+            component.get_cursor_position(WIDE_WIDTH),
+            Position::new(2, 8)
         );
 
         let mut fetched = remotes.clone();

@@ -3,6 +3,8 @@ use std::cmp::min;
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::layout::Position;
 
+use crate::widgets::gutter::GUTTER_WIDTH;
+
 pub enum FocusEvent {
     Focused { position: Position },
     Unfocused,
@@ -220,7 +222,7 @@ impl FocusState {
     }
 
     pub fn get_cursor_position(&self) -> Position {
-        match self.focused_position {
+        let position = match self.focused_position {
             None => Position { x: 0, y: 0 },
             Some(FocusedPosition::Detail(index)) => Position {
                 x: 0,
@@ -230,6 +232,12 @@ impl FocusState {
                 x: position.x,
                 y: 2 + self.property_count as u16 + 1 + position.y,
             },
+        };
+
+        if self.focused_position.is_some() {
+            Position::new(position.x + GUTTER_WIDTH, position.y)
+        } else {
+            position
         }
     }
 
@@ -304,7 +312,7 @@ mod tests {
 
         state.update(NARROW_WIDTH, 1, NARROW_NOTE_LINE_COUNT, true);
 
-        assert_eq!(state.get_cursor_position(), Position::new(17, 6));
+        assert_eq!(state.get_cursor_position(), Position::new(19, 6));
     }
 
     #[test]
@@ -316,7 +324,7 @@ mod tests {
 
         state.update(WIDE_WIDTH, 1, NOTE_LINE_COUNT, true);
 
-        assert_eq!(state.get_cursor_position(), Position::new(0, 2));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 2));
     }
 
     #[test]
@@ -326,7 +334,7 @@ mod tests {
 
         state.update(WIDE_WIDTH, 2, PLACEHOLDER_LINE_COUNT, true);
 
-        assert_eq!(state.get_cursor_position(), Position::new(6, 5));
+        assert_eq!(state.get_cursor_position(), Position::new(8, 5));
     }
 
     #[test]
@@ -336,7 +344,7 @@ mod tests {
         state.focus_event(FocusEvent::CursorEnteredFromAbove { x: 6 });
 
         assert!(state.is_focused());
-        assert_eq!(state.get_cursor_position(), Position::new(0, 2));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 2));
     }
 
     #[test]
@@ -345,7 +353,7 @@ mod tests {
 
         state.focus_event(FocusEvent::CursorEnteredFromAbove { x: 6 });
 
-        assert_eq!(state.get_cursor_position(), Position::new(6, 3));
+        assert_eq!(state.get_cursor_position(), Position::new(8, 3));
     }
 
     #[test]
@@ -354,7 +362,7 @@ mod tests {
 
         state.focus_event(FocusEvent::CursorEnteredFromBelow { x: 6 });
 
-        assert_eq!(state.get_cursor_position(), Position::new(6, 8));
+        assert_eq!(state.get_cursor_position(), Position::new(8, 8));
     }
 
     #[test]
@@ -363,7 +371,7 @@ mod tests {
 
         state.focus_event(FocusEvent::CursorEnteredFromBelow { x: 6 });
 
-        assert_eq!(state.get_cursor_position(), Position::new(6, 5));
+        assert_eq!(state.get_cursor_position(), Position::new(8, 5));
     }
 
     #[test]
@@ -374,7 +382,7 @@ mod tests {
             position: Position::new(6, 0),
         });
 
-        assert_eq!(state.get_cursor_position(), Position::new(0, 2));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 2));
     }
 
     #[test]
@@ -385,7 +393,7 @@ mod tests {
             position: Position::new(6, 99),
         });
 
-        assert_eq!(state.get_cursor_position(), Position::new(6, 5));
+        assert_eq!(state.get_cursor_position(), Position::new(8, 5));
     }
 
     #[test]
@@ -396,7 +404,7 @@ mod tests {
             position: Position::new(6, 0),
         });
 
-        assert_eq!(state.get_cursor_position(), Position::new(6, 3));
+        assert_eq!(state.get_cursor_position(), Position::new(8, 3));
     }
 
     #[test]
@@ -407,7 +415,7 @@ mod tests {
             position: Position::new(6, 99),
         });
 
-        assert_eq!(state.get_cursor_position(), Position::new(6, 8));
+        assert_eq!(state.get_cursor_position(), Position::new(8, 8));
     }
 
     #[test]
@@ -418,7 +426,7 @@ mod tests {
             position: Position::new(6, 99),
         });
 
-        assert_eq!(state.get_cursor_position(), Position::new(6, 6));
+        assert_eq!(state.get_cursor_position(), Position::new(8, 6));
     }
 
     #[test]
@@ -440,7 +448,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(0, 3));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 3));
     }
 
     #[test]
@@ -451,7 +459,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(0, 4));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 4));
     }
 
     #[test]
@@ -462,7 +470,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(0, 4));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 4));
     }
 
     #[test]
@@ -474,7 +482,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(0, 5));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 5));
     }
 
     #[test]
@@ -485,7 +493,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
         assert_leave_from_below(result, 6);
-        assert_eq!(state.get_cursor_position(), Position::new(6, 7));
+        assert_eq!(state.get_cursor_position(), Position::new(8, 7));
     }
 
     #[test]
@@ -497,7 +505,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('k')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(0, 2));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 2));
     }
 
     #[test]
@@ -510,7 +518,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('k')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(0, 3));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 3));
     }
 
     #[test]
@@ -523,7 +531,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('k')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(6, 4));
+        assert_eq!(state.get_cursor_position(), Position::new(8, 4));
     }
 
     #[test]
@@ -534,7 +542,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('k')));
 
         assert_leave_from_above(result, 6);
-        assert_eq!(state.get_cursor_position(), Position::new(6, 3));
+        assert_eq!(state.get_cursor_position(), Position::new(8, 3));
     }
 
     #[test]
@@ -545,7 +553,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('k')));
 
         assert_leave_from_above(result, 0);
-        assert_eq!(state.get_cursor_position(), Position::new(0, 2));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 2));
     }
 
     #[test]
@@ -556,15 +564,15 @@ mod tests {
         });
 
         assert!(state.process_event(key_event(KeyCode::Char('h'))).is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(0, 4));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 4));
         assert!(state.process_event(key_event(KeyCode::Char('h'))).is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(0, 4));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 4));
 
         for _ in 0..40 {
             assert!(state.process_event(key_event(KeyCode::Char('l'))).is_none());
         }
 
-        assert_eq!(state.get_cursor_position(), Position::new(31, 4));
+        assert_eq!(state.get_cursor_position(), Position::new(33, 4));
     }
 
     #[test]
@@ -585,7 +593,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('x')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(0, 2));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 2));
     }
 
     #[test]
@@ -598,7 +606,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('e')));
 
         assert!(matches!(result, Some(EventProcessResult::Edit)));
-        assert_eq!(state.get_cursor_position(), Position::new(6, 4));
+        assert_eq!(state.get_cursor_position(), Position::new(8, 4));
     }
 
     #[test]
@@ -648,6 +656,6 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('e')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(0, 2));
+        assert_eq!(state.get_cursor_position(), Position::new(2, 2));
     }
 }

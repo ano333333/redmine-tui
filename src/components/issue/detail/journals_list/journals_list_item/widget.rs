@@ -5,16 +5,18 @@ use chrono::{DateTime, Local};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::prelude::{Line, Span, Stylize};
-use ratatui::style::Color;
 use ratatui::text::Text;
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use crate::stores::{LocalJournalState, RemoteJournalState};
 
-// TODO: Extract this focus background color into one shared constant for all widgets.
-const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
+use crate::widgets::gutter::{GUTTER_WIDTH, Gutter, indented_area};
+use crate::widgets::theme::FOCUS_BG;
+
 const EMPTY_NOTES_PLACEHOLDER: &str = "(none)";
 const UPDATED_ON_NONE_DISPLAY: &str = "(不明)";
+/// 縦線を引かない末尾の余白行。次のJournalとの区切りになる。
+const GUTTER_TRAILING_LINES: u16 = 1;
 
 /// JournalDetailAttrをStoreで解決した、表示用の値。WidgetはStoreを知らない。
 pub struct ResolvedJournalDetail {
@@ -89,8 +91,9 @@ impl JournalItemWidgetState {
         notes.hash(&mut hasher);
         let hash = hasher.finish();
 
-        if self.comment_buffer.area.width != width || self.hash != hash {
-            self.comment_buffer = render_comment_in_buffer(width, notes);
+        let comment_width = width.saturating_sub(GUTTER_WIDTH);
+        if self.comment_buffer.area.width != comment_width || self.hash != hash {
+            self.comment_buffer = render_comment_in_buffer(comment_width, notes);
             self.hash = hash;
         }
     }
@@ -109,33 +112,46 @@ pub struct JournalItemWidget<'a> {
 
 impl<'a> Widget for JournalItemWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        let gutter_area = Rect::new(
+            area.x,
+            area.y,
+            area.width,
+            area.height.min(
+                self.line_count(area.width)
+                    .saturating_sub(GUTTER_TRAILING_LINES),
+            ),
+        );
+        let gutter = Gutter::headed_line();
+        gutter.render(gutter_area, buf);
+        let content = indented_area(area);
+
         let property_height = self.details.len() as u16 + 3;
         let property = create_property_paragraph(&self.view, &self.details);
 
         let property_area = Rect::new(
-            area.x,
-            area.y,
-            area.width,
-            min(area.height, property_height),
+            content.x,
+            content.y,
+            content.width,
+            min(content.height, property_height),
         );
         if property_area.height > 0 {
             property.render(property_area, buf);
         }
 
         let buf_src = &self.comment_state.comment_buffer;
-        let comment_y = area.y.saturating_add(property_height);
-        let comment_height = area
+        let comment_y = content.y.saturating_add(property_height);
+        let comment_height = content
             .height
             .saturating_sub(property_height)
             .min(buf_src.area.height);
-        let width = min(buf_src.area.width, area.width);
+        let width = min(buf_src.area.width, content.width);
         let height = comment_height;
         for y in 0..height {
             for x in 0..width {
                 let Some(src_cell) = buf_src.cell((x, y)).cloned() else {
                     continue;
                 };
-                let dst_x = area.x + x;
+                let dst_x = content.x + x;
                 let dst_y = comment_y + y;
                 if let Some(dst_cell) = buf.cell_mut((dst_x, dst_y)) {
                     *dst_cell = src_cell;

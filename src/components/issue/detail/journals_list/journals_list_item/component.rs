@@ -257,7 +257,7 @@ impl JournalsListItemComponent {
     }
 
     pub fn line_count(&self, _: u16) -> u16 {
-        1 + 1 + self.detail_count as u16 + 1 + self.comment_line_count
+        1 + 1 + self.detail_count as u16 + 1 + self.comment_line_count + 1
     }
 
     pub fn get_cursor_position(&self) -> Position {
@@ -398,7 +398,7 @@ mod tests {
 
         component.update(register_journal(&mut store, &journal), WIDE_WIDTH);
 
-        assert_layout_contract(&component, WIDE_WIDTH, 9, Position::new(0, 0));
+        assert_layout_contract(&component, WIDE_WIDTH, 10, Position::new(0, 0));
         render_snapshot(
             "journals_list_item_component_initial_unfocused",
             WIDE_WIDTH,
@@ -440,7 +440,7 @@ mod tests {
 
         component.update(register_journal(&mut store, &updated_journal), WIDE_WIDTH);
 
-        assert_layout_contract(&component, WIDE_WIDTH, 7, Position::new(0, 0));
+        assert_layout_contract(&component, WIDE_WIDTH, 8, Position::new(0, 0));
         render_snapshot(
             "journals_list_item_component_update_changed_notes",
             WIDE_WIDTH,
@@ -457,7 +457,7 @@ mod tests {
 
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 6 });
 
-        assert_layout_contract(&component, WIDE_WIDTH, 9, Position::new(0, 2));
+        assert_layout_contract(&component, WIDE_WIDTH, 10, Position::new(2, 2));
         render_snapshot(
             "journals_list_item_component_focus_from_above_to_detail",
             WIDE_WIDTH,
@@ -475,7 +475,7 @@ mod tests {
 
         component.focus_event(FocusEvent::Unfocused);
 
-        assert_layout_contract(&component, WIDE_WIDTH, 9, Position::new(0, 0));
+        assert_layout_contract(&component, WIDE_WIDTH, 10, Position::new(0, 0));
         render_snapshot(
             "journals_list_item_component_unfocused",
             WIDE_WIDTH,
@@ -494,7 +494,7 @@ mod tests {
         let result = component.process_event(key_event(KeyCode::Char('j')));
 
         assert!(result.is_none());
-        assert_layout_contract(&component, WIDE_WIDTH, 9, Position::new(0, 3));
+        assert_layout_contract(&component, WIDE_WIDTH, 10, Position::new(2, 3));
     }
 
     #[test]
@@ -532,7 +532,7 @@ mod tests {
             NARROW_WIDTH,
         );
 
-        assert_layout_contract(&component, NARROW_WIDTH, 9, Position::new(17, 6));
+        assert_layout_contract(&component, NARROW_WIDTH, 10, Position::new(19, 6));
     }
 
     #[test]
@@ -621,6 +621,6 @@ mod tests {
 
         component.update(register_journal(&mut store, &updated_journal), WIDE_WIDTH);
 
-        assert_layout_contract(&component, WIDE_WIDTH, 8, Position::new(0, 2));
+        assert_layout_contract(&component, WIDE_WIDTH, 9, Position::new(2, 2));
     }
 }

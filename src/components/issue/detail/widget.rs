@@ -5,7 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
 use crate::widgets::theme::{ACCENT, SECTION_BAR};
-use crate::widgets::{Hr, VerticalScrollWidget, VerticalScrollWidgetState};
+use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
 
 use super::body::widget::BodyWidget;
 use super::children_list::widget::ChildrenListWidget;
@@ -132,7 +132,7 @@ impl<'a> Widget for IssueDetailWidget<'a> {
         scroll_widget.render_widget(self.body, body_line_count);
         scroll_widget.render_widget(Paragraph::new(""), 1);
         scroll_widget.render_widget(self.children_list, children_line_count);
-        scroll_widget.render_widget(Hr::default(), 1);
+        scroll_widget.render_widget(SectionHeader::new("履歴"), SectionHeader::LINE_COUNT);
         scroll_widget.render_widget(self.journals_list, journals_line_count);
 
         scroll_widget.render(scroll_area, buf);
@@ -370,11 +370,13 @@ mod tests {
         fn journals_start_y(&self, width: u16) -> u16 {
             self.header_height(width)
                 + self.property_widget().line_count(width) as u16
-                + SectionHeader::LINE_COUNT
+                // SectionHeader::LINE_COUNT
+                + 3
                 + self.body_widget().line_count(width) as u16
                 + 1
                 + self.children_list_widget().line_count()
-                + 1
+                // SectionHeader::LINE_COUNT
+                + 3
         }
     }
 

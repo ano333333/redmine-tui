@@ -301,7 +301,7 @@ mod tests {
     }
 }
 
-/// IssueDetailWidgetがPropertyとBodyの間に差し込むSectionHeaderの行数。
+/// IssueDetailWidgetがブロック間に差し込むSectionHeaderの行数。
 /// カーソル位置計算とrenderの積み上げを揃えるための定数。
 const SECTION_HEADER_LINES: i32 = 3;
 
@@ -618,7 +618,7 @@ impl IssueDetailComponent {
         if self.focused_component == FocusedComponent::ChildrenList {
             return self.children_list.get_cursor_position() + offset;
         }
-        offset.y += self.children_list.line_count(store) as i32 + 1;
+        offset.y += self.children_list.line_count(store) as i32 + SECTION_HEADER_LINES;
 
         if self.focused_component == FocusedComponent::JournalsList {
             return self.journals_list.get_cursor_position(self.width) + offset;
