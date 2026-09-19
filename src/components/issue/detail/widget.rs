@@ -130,7 +130,7 @@ impl<'a> Widget for IssueDetailWidget<'a> {
         scroll_widget.render_widget(self.property, property_line_count);
         scroll_widget.render_widget(SectionHeader::new("説明"), SectionHeader::LINE_COUNT);
         scroll_widget.render_widget(self.body, body_line_count);
-        scroll_widget.render_widget(Hr::default(), 1);
+        scroll_widget.render_widget(Paragraph::new(""), 1);
         scroll_widget.render_widget(self.children_list, children_line_count);
         scroll_widget.render_widget(Hr::default(), 1);
         scroll_widget.render_widget(self.journals_list, journals_line_count);

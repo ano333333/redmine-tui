@@ -1,6 +1,9 @@
 use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
 
+use super::widget::HEADER_LINES;
+use crate::widgets::gutter::GUTTER_WIDTH;
+
 use crate::vos::IssueId;
 
 pub enum FocusEvent {
@@ -97,8 +100,9 @@ impl FocusState {
             .position(|&id| id == focused_id)
             .unwrap_or(0);
         Position {
-            x: 0,
-            y: index as u16 + 2,
+            // 一覧は縦線の分だけ字下げされている
+            x: GUTTER_WIDTH,
+            y: index as u16 + HEADER_LINES,
         }
     }
 
@@ -129,7 +133,14 @@ mod tests {
         state.focus_event(FocusEvent::CursorEnteredFromAbove);
 
         assert_eq!(state.focused_index(), Some(0));
-        assert_eq!(state.get_cursor_position(), Position { x: 0, y: 2 });
+        // 一覧は縦線の分だけ字下げされる
+        assert_eq!(
+            state.get_cursor_position(),
+            Position {
+                x: GUTTER_WIDTH,
+                y: 2
+            }
+        );
     }
 
     #[test]
@@ -140,7 +151,13 @@ mod tests {
         state.focus_event(FocusEvent::CursorEnteredFromBelow);
 
         assert_eq!(state.focused_index(), Some(2));
-        assert_eq!(state.get_cursor_position(), Position { x: 0, y: 4 });
+        assert_eq!(
+            state.get_cursor_position(),
+            Position {
+                x: GUTTER_WIDTH,
+                y: 4
+            }
+        );
     }
 
     #[test]

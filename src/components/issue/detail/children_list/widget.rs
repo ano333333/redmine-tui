@@ -1,15 +1,19 @@
 use chrono::{DateTime, Local};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use crate::entities::{IssueAggregate, IssueStatus, IssueStatusExt};
 use crate::vos::IssueId;
+use crate::widgets::gutter::{Gutter, indented_area};
+use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED, SECTION_BAR};
 
-// TODO: Extract this focus background color into one shared constant for all widgets.
-const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
+/// 見出しとその下の空行。縦線はこの下の一覧部分にだけ引く。
+pub const HEADER_LINES: u16 = 2;
+/// 縦線を引かない末尾の余白行。次のブロックとの区切りになる。
+const GUTTER_TRAILING_LINES: u16 = 1;
 
 pub struct ChildIssueRow<'a> {
     pub issue: &'a IssueAggregate,
@@ -26,21 +30,39 @@ pub struct ChildrenListWidget<'a> {
 }
 
 impl<'a> Widget for ChildrenListWidget<'a> {
-    fn render(self, mut area: Rect, buf: &mut Buffer) {
+    fn render(self, area: Rect, buf: &mut Buffer) {
         let header_text = create_header_text(
             self.children_num,
             self.closed_children_num,
             self.open_children_num,
         );
         header_text.render(area, buf);
-        area.y += 2;
-        area.height = area.height.saturating_sub(2);
 
+        // 縦線と字下げは見出しの下、一覧の部分だけに掛ける
+        let list_area = Rect::new(
+            area.x,
+            area.y + HEADER_LINES,
+            area.width,
+            area.height.saturating_sub(HEADER_LINES),
+        );
+        let gutter_area = Rect::new(
+            list_area.x,
+            list_area.y,
+            list_area.width,
+            list_area.height.min(
+                self.line_count()
+                    .saturating_sub(HEADER_LINES + GUTTER_TRAILING_LINES),
+            ),
+        );
+        let gutter = Gutter::line();
+        gutter.render(gutter_area, buf);
+
+        let mut row_area = indented_area(list_area);
         let focused_index = self.focused_index;
         for (index, child) in self.children.iter().enumerate() {
-            render_children_issue(child, area, buf, focused_index == Some(index));
-            area.y += 1;
-            area.height = area.height.saturating_sub(1);
+            render_children_issue(child, row_area, buf, focused_index == Some(index));
+            row_area.y += 1;
+            row_area.height = row_area.height.saturating_sub(1);
         }
     }
 }
@@ -63,7 +85,8 @@ impl<'a> ChildrenListWidget<'a> {
     }
 
     pub fn line_count(&self) -> u16 {
-        2 + self.children_num + 1
+        // 見出し2行 + 子チケット + 縦線を引かない末尾の余白1行
+        HEADER_LINES + self.children_num + 1
     }
 }
 
@@ -73,12 +96,13 @@ fn create_header_text(
     child_incomplete_num: u16,
 ) -> Text<'static> {
     let child_header_title = Line::from(vec![
-        Span::from("子チケット"),
-        Span::from(" "),
+        Span::from(SECTION_BAR).fg(ACCENT),
+        Span::from(" 子チケット ").bold(),
+        Span::from(format!("{child_all_num}")).fg(ACCENT).bold(),
         Span::from(format!(
-            "{} ({}件未完了 - {}件完了)",
-            child_all_num, child_incomplete_num, child_complete_num
-        )),
+            "  未完了 {child_incomplete_num} / 完了 {child_complete_num}"
+        ))
+        .fg(MUTED),
     ]);
     Text::from(vec![child_header_title, Line::from("")])
 }

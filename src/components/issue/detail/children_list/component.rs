@@ -104,6 +104,7 @@ mod tests {
     use crate::entities::IssueStatus;
     use crate::stores::{Action, IssueAction};
     use crate::test_support::{render_snapshot, sync_fixture_entities};
+    use crate::widgets::gutter::GUTTER_WIDTH;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Position;
 
@@ -141,9 +142,16 @@ mod tests {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
+    /// `cursor` は一覧内の位置で渡す。縦線による字下げはここで足す。
     fn assert_layout_contract(component: &ChildrenListComponent, store: &Store, cursor: Position) {
         assert_eq!(component.line_count(store), CHILDREN_LIST_LINE_COUNT);
-        assert_eq!(component.get_cursor_position(), cursor);
+        assert_eq!(
+            component.get_cursor_position(),
+            Position {
+                x: cursor.x + GUTTER_WIDTH,
+                y: cursor.y,
+            }
+        );
     }
 
     #[test]
