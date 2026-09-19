@@ -1625,6 +1625,22 @@ mod tests {
         dispatcher
     }
 
+    fn edited_issue_dispatcher() -> (Dispatcher, IssueAggregate) {
+        let mut dispatcher = loaded_journal_upload_dispatcher();
+        let server_issue = dispatcher
+            .store()
+            .get_issue(IssueId::new(3))
+            .expect("fixture issue should be loaded")
+            .0
+            .clone();
+        dispatcher.dispatch(IssueAction::UpdateDescription {
+            id: IssueId::new(3),
+            body: "locally edited description".to_string(),
+        });
+        dispatcher.consume_action();
+        (dispatcher, server_issue)
+    }
+
     fn local_journal_dispatcher() -> Dispatcher {
         let mut dispatcher = loaded_journal_upload_dispatcher();
         dispatcher.dispatch(JournalAction::CreateLocal {
@@ -1738,6 +1754,59 @@ mod tests {
                 .any(|notice| notice.message.contains(expected))
         );
         assert!(rendered.contains("offline"), "rendered: {rendered}");
+    }
+
+    #[test]
+    fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clears_failure() {
+        let runtime = init_tokio_runtime().unwrap();
+        let (initial_dispatcher, server_issue) = edited_issue_dispatcher();
+        let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
+        let mut app = journal_upload_app(dispatcher.clone());
+        let client = Arc::new(IssueUploadClient::failing_update(server_issue));
+        let (sender, receiver) = mpsc::channel();
+
+        press_ctrl_s(&mut app, dispatcher.clone());
+        let Some(AppEffect::StartIssueUpload(id)) = app.take_effect() else {
+            panic!("expected issue upload effect");
+        };
+        let future = start_issue_upload(dispatcher.clone(), client.clone(), id);
+        spawn_action_task(&runtime, sender.clone(), future);
+        update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+        route_worker_actions(&receiver, 2, dispatcher.clone(), &mut app);
+
+        let store = dispatcher.borrow();
+        assert!(matches!(
+            store.store().get_issue_state(id),
+            Some(crate::stores::IssueState::Edited)
+        ));
+        assert_eq!(store.store().get_issue_property_diffs(id).len(), 1);
+        assert_eq!(
+            store.store().get_issue_upload_failure(id),
+            Some("network error: offline")
+        );
+        assert_eq!(store.store().get_notices().len(), 1);
+        drop(store);
+        assert_toast_contains(&app, dispatcher.clone(), "Issue #3の保存に失敗しました");
+
+        press_ctrl_s(&mut app, dispatcher.clone());
+        let Some(AppEffect::StartIssueUpload(id)) = app.take_effect() else {
+            panic!("expected retry issue upload effect");
+        };
+        let future = start_issue_upload(dispatcher.clone(), client, id);
+        spawn_action_task(&runtime, sender, future);
+        update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+        assert_eq!(
+            dispatcher.borrow().store().get_issue_upload_failure(id),
+            None
+        );
+        assert_eq!(
+            dispatcher
+                .borrow()
+                .store()
+                .get_issue_property_diffs(id)
+                .len(),
+            1
+        );
     }
 
     // Remote保存前GETの失敗がfocusを奪わないtoastになり、同じ入力位置から再保存できることを検証する。
