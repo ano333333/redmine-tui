@@ -17,11 +17,19 @@ enum Action {
 
 pub struct FocusState {
     focused: bool,
+    cursor_position: Position,
 }
 
 impl FocusState {
     pub fn new() -> Self {
-        Self { focused: false }
+        Self {
+            focused: false,
+            cursor_position: Position::default(),
+        }
+    }
+
+    pub fn update(&mut self, cursor_position: Position) {
+        self.cursor_position = cursor_position;
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
@@ -44,7 +52,7 @@ impl FocusState {
     }
 
     pub fn get_cursor_position(&self) -> Position {
-        Position { x: 2, y: 2 }
+        self.cursor_position
     }
 
     pub fn is_focused(&self) -> bool {

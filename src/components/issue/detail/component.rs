@@ -545,6 +545,7 @@ impl IssueDetailComponent {
     pub fn update(&mut self, _: Rc<RefCell<Dispatcher>>, store: &Store, frame_size: (u16, u16)) {
         (self.width, self.height) = frame_size;
         if let Some((issue, _)) = store.get_issue(self.id) {
+            self.header.update(store);
             self.body.update(issue, self.width);
             self.children_list.update(store);
 

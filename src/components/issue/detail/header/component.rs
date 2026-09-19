@@ -27,6 +27,12 @@ impl HeaderComponent {
         self.focus_state.focus_event(event);
     }
 
+    pub fn update(&mut self, store: &Store) {
+        let widget = self.create_widget(store);
+        self.focus_state
+            .update(Position::new(widget.title_start_x(), 0));
+    }
+
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
         if let Some((issue, issue_state)) = store.get_issue(self.id) {
             let widget = HeaderWidget::new(
@@ -95,10 +101,49 @@ mod tests {
         terminal
             .draw(|frame| widget.render(frame.area(), frame.buffer_mut()))
             .unwrap();
+        // コンパクトヘッダーはID・マーカー・タイトルを先頭行にまとめる
         let title_line = (0..40)
-            .map(|x| terminal.backend().buffer()[(x, 2)].symbol())
+            .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
             .collect::<String>();
 
-        assert!(title_line.starts_with("↑issue1"));
+        // IDバッジ・送信中マーカー・タイトルが先頭行にこの順で並ぶ
+        // (全角文字はセル単位で見ると後ろに空セルが続くため、順序だけを検証する)
+        let id_at = title_line.find("#1").expect("id badge");
+        let marker_at = title_line.find('↑').expect("uploading marker");
+        let title_at = title_line.find("issue1").expect("title");
+        assert!(
+            id_at < marker_at && marker_at < title_at,
+            "got: {title_line}"
+        );
+    }
+
+    #[test]
+    fn cursor_position_points_to_synced_issue_title() {
+        let mut store = Store::new();
+        store.consume_action(IssueAction::Load { id: 1.into() }.into());
+
+        let mut component = HeaderComponent::new(1);
+        component.update(&store);
+
+        assert_eq!(component.get_cursor_position(), Position::new(4, 0));
+    }
+
+    #[test]
+    fn cursor_position_accounts_for_uploading_decorator() {
+        let mut store = Store::new();
+        store.consume_action(IssueAction::Load { id: 1.into() }.into());
+        store.consume_action(
+            IssueAction::UpdateDescription {
+                id: 1.into(),
+                body: "edited body".to_string(),
+            }
+            .into(),
+        );
+        store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
+
+        let mut component = HeaderComponent::new(1);
+        component.update(&store);
+
+        assert_eq!(component.get_cursor_position(), Position::new(12, 0));
     }
 }
