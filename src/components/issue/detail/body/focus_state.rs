@@ -2,6 +2,8 @@ use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
 use std::cmp::min;
 
+use crate::widgets::gutter::GUTTER_WIDTH;
+
 pub enum FocusEvent {
     Focused { position: Position },
     Unfocused,
@@ -85,7 +87,12 @@ impl FocusState {
     }
 
     pub fn get_cursor_position(&self) -> Position {
-        self.cursor_position.unwrap_or(Position::new(0, 0))
+        self.cursor_position
+            .map(|position| Position {
+                x: position.x + GUTTER_WIDTH,
+                y: position.y,
+            })
+            .unwrap_or(Position::new(0, 0))
     }
 
     pub fn is_focused(&self) -> bool {
@@ -163,6 +170,10 @@ mod tests {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
     }
 
+    fn gutter_indented_position(x: u16, y: u16) -> Position {
+        Position::new(x + GUTTER_WIDTH, y)
+    }
+
     #[test]
     fn process_event_ignores_key_when_unfocused() {
         let mut state = FocusState::new();
@@ -186,7 +197,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('h')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(2, 2));
+        assert_eq!(state.get_cursor_position(), gutter_indented_position(2, 2));
     }
 
     #[test]
@@ -200,7 +211,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('l')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(4, 2));
+        assert_eq!(state.get_cursor_position(), gutter_indented_position(4, 2));
     }
 
     #[test]
@@ -214,7 +225,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(3, 3));
+        assert_eq!(state.get_cursor_position(), gutter_indented_position(3, 3));
     }
 
     #[test]
@@ -228,7 +239,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('k')));
 
         assert!(result.is_none());
-        assert_eq!(state.get_cursor_position(), Position::new(3, 1));
+        assert_eq!(state.get_cursor_position(), gutter_indented_position(3, 1));
     }
 
     #[test]
@@ -243,7 +254,7 @@ mod tests {
             result,
             Some(EventProcessResult::CursorLeavedFromBelow { x: 4 })
         ));
-        assert_eq!(state.get_cursor_position(), Position::new(4, 4));
+        assert_eq!(state.get_cursor_position(), gutter_indented_position(4, 4));
     }
 
     #[test]
@@ -258,7 +269,7 @@ mod tests {
             result,
             Some(EventProcessResult::CursorLeavedFromAbove { x: 4 })
         ));
-        assert_eq!(state.get_cursor_position(), Position::new(4, 0));
+        assert_eq!(state.get_cursor_position(), gutter_indented_position(4, 0));
     }
 
     #[test]
@@ -272,7 +283,7 @@ mod tests {
         let result = state.process_event(key_event(KeyCode::Char('e')));
 
         assert!(matches!(result, Some(EventProcessResult::Edit)));
-        assert_eq!(state.get_cursor_position(), Position::new(3, 2));
+        assert_eq!(state.get_cursor_position(), gutter_indented_position(3, 2));
     }
 
     #[test]
@@ -284,7 +295,7 @@ mod tests {
             position: Position::new(20, 9),
         });
 
-        assert_eq!(state.get_cursor_position(), Position::new(9, 4));
+        assert_eq!(state.get_cursor_position(), gutter_indented_position(9, 4));
         assert!(state.is_focused());
     }
 
@@ -298,7 +309,7 @@ mod tests {
 
         state.update(4, 3);
 
-        assert_eq!(state.get_cursor_position(), Position::new(4, 3));
+        assert_eq!(state.get_cursor_position(), gutter_indented_position(4, 3));
     }
 
     #[test]

@@ -1,7 +1,10 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect, Size};
-use ratatui::widgets::Widget;
+use ratatui::style::Stylize;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Paragraph, Widget};
 
+use crate::widgets::theme::{ACCENT, SECTION_BAR};
 use crate::widgets::{Hr, VerticalScrollWidget, VerticalScrollWidgetState};
 
 use super::body::widget::BodyWidget;
@@ -125,7 +128,7 @@ impl<'a> Widget for IssueDetailWidget<'a> {
         let journals_line_count = self.journals_list.line_count(width);
 
         scroll_widget.render_widget(self.property, property_line_count);
-        scroll_widget.render_widget(Hr::default(), 1);
+        scroll_widget.render_widget(SectionHeader::new("説明"), SectionHeader::LINE_COUNT);
         scroll_widget.render_widget(self.body, body_line_count);
         scroll_widget.render_widget(Hr::default(), 1);
         scroll_widget.render_widget(self.children_list, children_line_count);
@@ -133,6 +136,37 @@ impl<'a> Widget for IssueDetailWidget<'a> {
         scroll_widget.render_widget(self.journals_list, journals_line_count);
 
         scroll_widget.render(scroll_area, buf);
+    }
+}
+
+/// `(空行) ▌ 見出し (空行)` の3行でセクションの切れ目を示す小さなWidget。
+struct SectionHeader {
+    title: Option<&'static str>,
+}
+
+impl SectionHeader {
+    /// 空行 + 見出し + 空行。
+    const LINE_COUNT: u16 = 3;
+
+    fn new(title: &'static str) -> Self {
+        Self { title: Some(title) }
+    }
+}
+
+impl Widget for SectionHeader {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let Some(title) = self.title else {
+            return;
+        };
+        if area.height < 2 {
+            return;
+        }
+
+        let line = Line::from(vec![
+            Span::from(SECTION_BAR).fg(ACCENT),
+            Span::from(format!(" {title}")).bold(),
+        ]);
+        Paragraph::new(line).render(Rect::new(area.x, area.y + 1, area.width, 1), buf);
     }
 }
 
@@ -336,7 +370,7 @@ mod tests {
         fn journals_start_y(&self, width: u16) -> u16 {
             self.header_height(width)
                 + self.property_widget().line_count(width) as u16
-                + 1
+                + SectionHeader::LINE_COUNT
                 + self.body_widget().line_count(width) as u16
                 + 1
                 + self.children_list_widget().line_count()

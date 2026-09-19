@@ -54,7 +54,9 @@ impl BodyComponent {
     pub fn update(&mut self, issue: &IssueAggregate, width: u16) {
         self.body = issue.issue.description.clone();
         self.widget_state.update(width, &self.body);
-        let height = self.widget_state.line_count(width) as u16;
+        // フォーカスは本文の行だけを対象にする。line_count は末尾の余白行を
+        // 含むので、そのまま渡すと空行にカーソルが乗る。
+        let height = self.widget_state.text_line_count() as u16;
         self.focus_state.update(width, height);
     }
 
@@ -76,13 +78,23 @@ mod tests {
     use super::super::focus_state::FocusEvent;
     use super::*;
     use crate::test_support::{render_snapshot, sample_issue_aggregate};
+    use crate::widgets::gutter::GUTTER_WIDTH;
+
+    /// BodyWidgetが末尾に空ける、縦線を引かない余白行。
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Position;
+
+    /// BodyWidgetが末尾に空ける、縦線を引かない余白行。
+    const GUTTER_TRAILING_LINES: u16 = 1;
 
     const ISSUE_ID: u16 = 1;
     const WIDE_WIDTH: u16 = 32;
     const NARROW_WIDTH: u16 = 16;
-    const WIDE_LINE_COUNT: u16 = 6;
+    /// 本文は縦線の字下げを除いた幅(WIDE_WIDTH - 2)で折り返す。
+    const WIDE_LINE_COUNT: u16 = 7;
+    /// 本文の最終行。
+    const WIDE_LAST_LINE: u16 = WIDE_LINE_COUNT - 1;
+    /// 同上(NARROW_WIDTH - 2)。
     const NARROW_LINE_COUNT: u16 = 8;
 
     fn key_event(code: KeyCode) -> Event {
@@ -124,8 +136,18 @@ mod tests {
         line_count: u16,
         cursor: Position,
     ) {
-        assert_eq!(component.line_count(width), line_count);
-        assert_eq!(component.get_cursor_position(), cursor);
+        // line_count は末尾の余白1行、cursor は本文内の座標
+        assert_eq!(
+            component.line_count(width),
+            line_count + GUTTER_TRAILING_LINES
+        );
+        assert_eq!(
+            component.get_cursor_position(),
+            Position {
+                x: cursor.x + GUTTER_WIDTH,
+                y: cursor.y,
+            }
+        );
     }
 
     #[test]
@@ -177,7 +199,12 @@ mod tests {
             }
             _ => panic!("expected cursor leave from below"),
         }
-        assert_layout_contract(&component, WIDE_WIDTH, WIDE_LINE_COUNT, Position::new(6, 5));
+        assert_layout_contract(
+            &component,
+            WIDE_WIDTH,
+            WIDE_LINE_COUNT,
+            Position::new(6, WIDE_LAST_LINE),
+        );
         render_snapshot(
             "body_component_process_j_on_bottom_line",
             WIDE_WIDTH,
@@ -243,7 +270,7 @@ mod tests {
         let mut component = BodyComponent::new(ISSUE_ID);
         component.update(&issue, WIDE_WIDTH);
         component.focus_event(FocusEvent::Focused {
-            position: Position::new(31, 5),
+            position: Position::new(31, WIDE_LAST_LINE),
         });
 
         component.update(&issue, NARROW_WIDTH);
@@ -252,7 +279,7 @@ mod tests {
             &component,
             NARROW_WIDTH,
             NARROW_LINE_COUNT,
-            Position::new(16, 5),
+            Position::new(16, WIDE_LAST_LINE),
         );
         render_snapshot(
             "body_component_update_narrower_width",

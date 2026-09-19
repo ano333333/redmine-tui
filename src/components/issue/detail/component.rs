@@ -301,6 +301,10 @@ mod tests {
     }
 }
 
+/// IssueDetailWidgetがPropertyとBodyの間に差し込むSectionHeaderの行数。
+/// カーソル位置計算とrenderの積み上げを揃えるための定数。
+const SECTION_HEADER_LINES: i32 = 3;
+
 #[derive(PartialEq)]
 enum FocusedComponent {
     Header,
@@ -604,7 +608,7 @@ impl IssueDetailComponent {
         if self.focused_component == FocusedComponent::Property {
             return self.property.get_cursor_position(self.width) + offset;
         }
-        offset.y += self.property.line_count(store, self.width) as i32 + 1;
+        offset.y += self.property.line_count(store, self.width) as i32 + SECTION_HEADER_LINES;
 
         if self.focused_component == FocusedComponent::Body {
             return self.body.get_cursor_position() + offset;

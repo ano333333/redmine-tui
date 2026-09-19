@@ -2,11 +2,13 @@ use std::cmp::min;
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
-// TODO: Extract this focus background color into one shared constant for all widgets.
-const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
+use crate::widgets::gutter::{GUTTER_WIDTH, Gutter, indented_area};
+use crate::widgets::theme::FOCUS_BG;
+
+/// 縦線を引かない末尾の余白行。次のブロックとの区切りになる。
+const GUTTER_TRAILING_LINES: u16 = 1;
 
 pub struct BodyWidgetState {
     buffer: Buffer,
@@ -48,11 +50,17 @@ impl BodyWidgetState {
     }
 
     pub fn line_count(&self, _: u16) -> usize {
+        self.text_line_count() + GUTTER_TRAILING_LINES as usize
+    }
+
+    /// 末尾の余白行を含まない、本文そのものの行数。
+    pub fn text_line_count(&self) -> usize {
         self.buffer.area.height as usize
     }
 
     pub fn update(&mut self, width: u16, body: &str) {
-        self.buffer = Self::render_in_buffer(body, width);
+        // 本文は縦線の字下げを除いた幅で描く
+        self.buffer = Self::render_in_buffer(body, width.saturating_sub(GUTTER_WIDTH));
     }
 
     fn render_in_buffer(body: &str, width: u16) -> Buffer {
@@ -71,7 +79,17 @@ pub struct BodyWidget<'a> {
 
 impl<'a> Widget for BodyWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        self.state.render(area, buf, self.focused);
+        let gutter_area = Rect::new(
+            area.x,
+            area.y,
+            area.width.min(GUTTER_WIDTH),
+            area.height
+                .min((self.line_count(area.width) as u16).saturating_sub(GUTTER_TRAILING_LINES)),
+        );
+        let content_area = indented_area(area);
+
+        Gutter::line().render(gutter_area, buf);
+        self.state.render(content_area, buf, self.focused);
     }
 }
 
@@ -115,11 +133,12 @@ mod tests {
         let mut state = BodyWidgetState::new();
         let body = "# Heading\n\n- first item\n- second item\n\nParagraph text that should wrap."
             .to_string();
+        // 本文は縦線の字下げを除いた幅で折り返し、末尾に余白1行が付く
         state.update(32, &body);
-        assert_eq!(BodyWidget::new(&state, false).line_count(32), 6);
+        assert_eq!(BodyWidget::new(&state, false).line_count(32), 8);
 
         state.update(18, &body);
-        assert_eq!(BodyWidget::new(&state, false).line_count(18), 7);
+        assert_eq!(BodyWidget::new(&state, false).line_count(18), 9);
     }
 
     #[test]
