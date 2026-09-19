@@ -38,7 +38,7 @@ use self::{
         app::{AppEffect, EditorRequest, EditorResponse},
     },
     libs::yaml::parse_journal_yaml,
-    stores::{Action, Dispatcher, IssueAction, JournalAction},
+    stores::{Action, Dispatcher, IssueAction, JournalAction, NoticeAction, NoticeId},
     usecases::redmine::{
         continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
         load_initial_entities, start_issue_upload, start_local_journal_upload,
@@ -128,6 +128,9 @@ fn main() -> ExitCode {
                 error = %err,
                 "failed to handle app effect"
             );
+            dispatcher
+                .borrow_mut()
+                .dispatch(editor_failure_notice_action(&err, chrono::Local::now()));
         }
         if let Some(e) = terminal
             .draw(|f| draw(f, &app_component, dispatcher.clone()))
@@ -402,7 +405,7 @@ fn start_issue_fetch<C>(
 }
 
 fn run_editor(terminal: &mut DefaultTerminal, request: EditorRequest) -> Result<EditorResponse> {
-    // FIXME: 実terminalとexternal editor processを使い、editorの非zero終了をErrとして返すE2E testを追加する。
+    // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
     let filename = format!(
         "redmine-tui-editor-{}.md",
         SystemTime::now()
@@ -450,6 +453,17 @@ fn ensure_editor_exit_status(status: ExitStatus) -> Result<()> {
                 |code| code.to_string()
             )
         )))
+    }
+}
+
+fn editor_failure_notice_action(
+    error: &dyn std::fmt::Display,
+    created_at: chrono::DateTime<chrono::Local>,
+) -> NoticeAction {
+    NoticeAction::Push {
+        id: NoticeId::new(),
+        message: format!("エディタによる編集に失敗しました: {error}"),
+        created_at,
     }
 }
 
