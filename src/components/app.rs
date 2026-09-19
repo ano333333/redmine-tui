@@ -1308,8 +1308,7 @@ mod tests {
                 assert_eq!(widget.items[0], (None, "選択なし(None)".to_string()));
                 assert_eq!(widget.focused_index, 1);
             }
-            PopupComponent::SpentTimeInput(_) => panic!("category popup should be a select box"),
-            _ => {}
+            _ => panic!("category popup should be a select box"),
         }
 
         app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
