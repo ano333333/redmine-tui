@@ -54,8 +54,8 @@ impl PropertyComponent {
         )
     }
 
-    pub fn get_cursor_position(&self) -> Position {
-        self.focus_state.get_cursor_position()
+    pub fn get_cursor_position(&self, width: u16) -> Position {
+        self.focus_state.get_cursor_position(width)
     }
 }
 
@@ -124,19 +124,28 @@ mod tests {
     use super::*;
     use crate::stores::{Action, IssueAction};
     use crate::test_support::{render_snapshot, sync_fixture_entities};
+    use crate::widgets::gutter::GUTTER_WIDTH;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Position;
 
+    /// 値列の開始桁。WIDTH(=40)は2カラムに畳まない幅なので、常に左カラム。
+    /// 縦線の字下げ分を含む。
+    const VALUE_X: u16 = GUTTER_WIDTH + PropertyWidget::VALUE_X;
+
     const ISSUE_ID: u16 = 1;
     const WIDTH: u16 = 40;
-    const PROPERTY_LINE_COUNT: u16 = 15;
+    /// プロパティの項目数。
+    const FIELD_COUNT: u16 = 15;
+    /// WIDTH(=40)は2カラムに畳まない幅。15項目 + 縦線を引かない末尾の余白1行。
+    const PROPERTY_LINE_COUNT: u16 = FIELD_COUNT + 1;
     const TARGET_VERSION_LINE: u16 = 8;
     const START_DATE_LINE: u16 = 9;
     const DUE_DATE_LINE: u16 = 10;
     const DONE_RATIO_LINE: u16 = 11;
     const TOTAL_SPENT_HOURS_LINE: u16 = 13;
     const CATEGORY_LINE: u16 = 14;
-    const FOCUSABLE_LAST_LINE: u16 = PROPERTY_LINE_COUNT - 1;
+    /// フォーカス可能な最後の項目インデックス(末尾の余白行は含まない)。
+    const FOCUSABLE_LAST_LINE: u16 = FIELD_COUNT - 1;
 
     fn key_event(code: KeyCode) -> Event {
         Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
@@ -164,7 +173,7 @@ mod tests {
 
     fn assert_layout_contract(component: &PropertyComponent, store: &Store, cursor: Position) {
         assert_eq!(component.line_count(store, WIDTH), PROPERTY_LINE_COUNT);
-        assert_eq!(component.get_cursor_position(), cursor);
+        assert_eq!(component.get_cursor_position(WIDTH), cursor);
     }
 
     // FIXME: author / priority / project / tracker / category の欠損も検証する際は、
@@ -190,7 +199,7 @@ mod tests {
 
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
 
-        assert_layout_contract(&component, &store, Position::new(20, 0));
+        assert_layout_contract(&component, &store, Position::new(VALUE_X, 0));
         render_snapshot(
             "property_component_focus_from_above",
             WIDTH,
@@ -206,7 +215,11 @@ mod tests {
 
         component.focus_event(FocusEvent::CursorEnteredFromBelow);
 
-        assert_layout_contract(&component, &store, Position::new(20, FOCUSABLE_LAST_LINE));
+        assert_layout_contract(
+            &component,
+            &store,
+            Position::new(VALUE_X, FOCUSABLE_LAST_LINE),
+        );
         render_snapshot(
             "property_component_focus_from_below",
             WIDTH,
@@ -224,7 +237,7 @@ mod tests {
         let result = component.process_event(key_event(KeyCode::Char('j')));
 
         assert!(result.is_none());
-        assert_layout_contract(&component, &store, Position::new(20, 1));
+        assert_layout_contract(&component, &store, Position::new(VALUE_X, 1));
         render_snapshot(
             "property_component_process_j",
             WIDTH,
@@ -248,7 +261,7 @@ mod tests {
             result,
             Some(EventProcessResult::OpenIssueStatusPopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(20, 3));
+        assert_layout_contract(&component, &store, Position::new(VALUE_X, 3));
         render_snapshot(
             "property_component_process_e_on_status",
             WIDTH,
@@ -272,7 +285,7 @@ mod tests {
             result,
             Some(EventProcessResult::OpenAssignedToPopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(20, 7));
+        assert_layout_contract(&component, &store, Position::new(VALUE_X, 7));
     }
 
     #[test]
@@ -290,7 +303,11 @@ mod tests {
             result,
             Some(EventProcessResult::OpenTargetVersionPopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(20, TARGET_VERSION_LINE));
+        assert_layout_contract(
+            &component,
+            &store,
+            Position::new(VALUE_X, TARGET_VERSION_LINE),
+        );
     }
 
     #[test]
@@ -308,7 +325,7 @@ mod tests {
             result,
             Some(EventProcessResult::OpenDoneRatioPopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(20, DONE_RATIO_LINE));
+        assert_layout_contract(&component, &store, Position::new(VALUE_X, DONE_RATIO_LINE));
     }
 
     #[test]
@@ -326,7 +343,7 @@ mod tests {
             result,
             Some(EventProcessResult::OpenStartDatePopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(20, START_DATE_LINE));
+        assert_layout_contract(&component, &store, Position::new(VALUE_X, START_DATE_LINE));
     }
 
     #[test]
@@ -341,7 +358,7 @@ mod tests {
         let result = component.process_event(key_event(KeyCode::Char('e')));
 
         assert!(matches!(result, Some(EventProcessResult::OpenDueDatePopup)));
-        assert_layout_contract(&component, &store, Position::new(20, DUE_DATE_LINE));
+        assert_layout_contract(&component, &store, Position::new(VALUE_X, DUE_DATE_LINE));
     }
 
     #[test]
@@ -360,7 +377,7 @@ mod tests {
         assert_layout_contract(
             &component,
             &store,
-            Position::new(20, TOTAL_SPENT_HOURS_LINE),
+            Position::new(VALUE_X, TOTAL_SPENT_HOURS_LINE),
         );
         render_snapshot(
             "property_component_process_e_on_spent_time",
@@ -382,6 +399,6 @@ mod tests {
             result,
             Some(EventProcessResult::OpenCategoryPopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(20, CATEGORY_LINE));
+        assert_layout_contract(&component, &store, Position::new(VALUE_X, CATEGORY_LINE));
     }
 }

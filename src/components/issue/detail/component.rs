@@ -602,7 +602,7 @@ impl IssueDetailComponent {
         offset.y += self.header.line_count(store, self.width) as i32;
 
         if self.focused_component == FocusedComponent::Property {
-            return self.property.get_cursor_position() + offset;
+            return self.property.get_cursor_position(self.width) + offset;
         }
         offset.y += self.property.line_count(store, self.width) as i32 + 1;
 

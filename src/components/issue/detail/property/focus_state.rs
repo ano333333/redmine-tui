@@ -1,6 +1,9 @@
 use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
 
+use super::widget::PropertyWidget;
+use crate::widgets::gutter::GUTTER_WIDTH;
+
 const LINE_COUNT: u16 = 15;
 const ISSUE_STATUS_LINE: u16 = 3;
 const ASSIGNED_TO_LINE: u16 = 7;
@@ -71,10 +74,32 @@ impl FocusState {
         }
     }
 
-    pub fn get_cursor_position(&self) -> Position {
-        Position {
-            x: 20,
-            y: self.focused_y.unwrap_or(0),
+    /// 2カラム表示では、フォーカス項目のインデックスを (列, 行) へ写す。
+    pub fn get_cursor_position(&self, width: u16) -> Position {
+        let index = self.focused_y.unwrap_or(0);
+
+        // 左カラムの値は、縦線の字下げ分だけ右へずれる
+        let left_column_x = GUTTER_WIDTH + PropertyWidget::VALUE_X;
+
+        if !PropertyWidget::is_two_column(width) {
+            return Position {
+                x: left_column_x,
+                y: index,
+            };
+        }
+
+        let split_at = LINE_COUNT.div_ceil(2);
+        if index < split_at {
+            Position {
+                x: left_column_x,
+                y: index,
+            }
+        } else {
+            Position {
+                // right_column_x は字下げを含んだ桁を返す
+                x: PropertyWidget::right_column_x(width) + PropertyWidget::VALUE_X,
+                y: index - split_at,
+            }
         }
     }
 
@@ -171,11 +196,77 @@ mod tests {
         assert_eq!(state.focused_y(), None);
     }
 
+    /// 2カラムに畳まない幅。
+    const NARROW_WIDTH: u16 = 40;
+    /// 左カラムの値が始まる桁(縦線の字下げ + ラベル幅)。
+    const LEFT_COLUMN_VALUE_X: u16 = GUTTER_WIDTH + PropertyWidget::VALUE_X;
+    /// 2カラムに畳む幅。
+    const WIDE_WIDTH: u16 = 100;
+
+    #[test]
+    fn get_cursor_position_maps_later_fields_to_the_right_column_when_wide() {
+        let split_at = LINE_COUNT.div_ceil(2);
+
+        // 分割位置の手前は左カラムに残る
+        let state = FocusState {
+            focused_y: Some(split_at - 1),
+        };
+        assert_eq!(
+            state.get_cursor_position(WIDE_WIDTH),
+            Position {
+                x: LEFT_COLUMN_VALUE_X,
+                y: split_at - 1,
+            }
+        );
+
+        // 分割位置の項目は右カラムの先頭へ回る
+        let state = FocusState {
+            focused_y: Some(split_at),
+        };
+        assert_eq!(
+            state.get_cursor_position(WIDE_WIDTH),
+            Position {
+                x: PropertyWidget::right_column_x(WIDE_WIDTH) + PropertyWidget::VALUE_X,
+                y: 0,
+            }
+        );
+
+        // 最後の項目は右カラムの最下行
+        let state = FocusState {
+            focused_y: Some(LINE_COUNT - 1),
+        };
+        assert_eq!(
+            state.get_cursor_position(WIDE_WIDTH).y,
+            LINE_COUNT - 1 - split_at
+        );
+    }
+
+    #[test]
+    fn get_cursor_position_stays_in_one_column_when_narrow() {
+        let state = FocusState {
+            focused_y: Some(LINE_COUNT - 1),
+        };
+
+        assert_eq!(
+            state.get_cursor_position(NARROW_WIDTH),
+            Position {
+                x: LEFT_COLUMN_VALUE_X,
+                y: LINE_COUNT - 1,
+            }
+        );
+    }
+
     #[test]
     fn get_cursor_position_returns_default_when_unfocused() {
         let state = FocusState::new();
 
-        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 0 });
+        assert_eq!(
+            state.get_cursor_position(NARROW_WIDTH),
+            Position {
+                x: LEFT_COLUMN_VALUE_X,
+                y: 0
+            }
+        );
     }
 
     #[test]
@@ -183,19 +274,31 @@ mod tests {
         let mut state = FocusState::new();
 
         state.focus_event(FocusEvent::CursorEnteredFromAbove);
-        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 0 });
+        assert_eq!(
+            state.get_cursor_position(NARROW_WIDTH),
+            Position {
+                x: LEFT_COLUMN_VALUE_X,
+                y: 0
+            }
+        );
 
         state.focus_event(FocusEvent::CursorEnteredFromBelow);
         assert_eq!(
-            state.get_cursor_position(),
+            state.get_cursor_position(NARROW_WIDTH),
             Position {
-                x: 20,
+                x: LEFT_COLUMN_VALUE_X,
                 y: LINE_COUNT - 1
             }
         );
 
         state.focus_event(FocusEvent::Unfocused);
-        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 0 });
+        assert_eq!(
+            state.get_cursor_position(NARROW_WIDTH),
+            Position {
+                x: LEFT_COLUMN_VALUE_X,
+                y: 0
+            }
+        );
     }
 
     #[test]
@@ -205,16 +308,22 @@ mod tests {
 
         state.process_event(key_event(KeyCode::Char('j')));
 
-        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 1 });
+        assert_eq!(
+            state.get_cursor_position(NARROW_WIDTH),
+            Position {
+                x: LEFT_COLUMN_VALUE_X,
+                y: 1
+            }
+        );
 
         state.focus_event(FocusEvent::CursorEnteredFromBelow);
 
         state.process_event(key_event(KeyCode::Char('k')));
 
         assert_eq!(
-            state.get_cursor_position(),
+            state.get_cursor_position(NARROW_WIDTH),
             Position {
-                x: 20,
+                x: LEFT_COLUMN_VALUE_X,
                 y: LINE_COUNT - 2
             }
         );
@@ -244,9 +353,9 @@ mod tests {
         ));
         assert_eq!(state.focused_y(), Some(LINE_COUNT - 1));
         assert_eq!(
-            state.get_cursor_position(),
+            state.get_cursor_position(NARROW_WIDTH),
             Position {
-                x: 20,
+                x: LEFT_COLUMN_VALUE_X,
                 y: LINE_COUNT - 1
             }
         );
@@ -264,7 +373,13 @@ mod tests {
             Some(EventProcessResult::CursorLeavedFromAbove)
         ));
         assert_eq!(state.focused_y(), Some(0));
-        assert_eq!(state.get_cursor_position(), Position { x: 20, y: 0 });
+        assert_eq!(
+            state.get_cursor_position(NARROW_WIDTH),
+            Position {
+                x: LEFT_COLUMN_VALUE_X,
+                y: 0
+            }
+        );
     }
 
     #[test]
