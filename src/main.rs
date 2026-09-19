@@ -21,7 +21,7 @@ use std::{
     env, fs,
     future::Future,
     io::Result,
-    process::{Command, ExitCode},
+    process::{Command, ExitCode, ExitStatus},
     rc::Rc,
     sync::{Arc, atomic, mpsc},
     time::{SystemTime, UNIX_EPOCH},
@@ -402,6 +402,7 @@ fn start_issue_fetch<C>(
 }
 
 fn run_editor(terminal: &mut DefaultTerminal, request: EditorRequest) -> Result<EditorResponse> {
+    // FIXME: 実terminalとexternal editor processを使い、editorの非zero終了をErrとして返すE2E testを追加する。
     let filename = format!(
         "redmine-tui-editor-{}.md",
         SystemTime::now()
@@ -426,15 +427,30 @@ fn run_editor(terminal: &mut DefaultTerminal, request: EditorRequest) -> Result<
     let raw_mode_result = enable_raw_mode();
     terminal.clear()?;
 
+    // editor失敗時もTUIを操作可能な状態へ戻してからエラーを返す。
     reenter_result?;
     raw_mode_result?;
-    status?;
+    ensure_editor_exit_status(status?)?;
 
     let edited = fs::read_to_string(&path)?;
     let _ = fs::remove_file(&path);
     Ok(EditorResponse {
         edited_text: edited,
     })
+}
+
+fn ensure_editor_exit_status(status: ExitStatus) -> Result<()> {
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "editor exited with non-zero status: {}",
+            status.code().map_or_else(
+                || "terminated without an exit code".to_string(),
+                |code| code.to_string()
+            )
+        )))
+    }
 }
 
 fn draw(frame: &mut Frame, app_component: &AppComponent, dispatcher: Rc<RefCell<Dispatcher>>) {
