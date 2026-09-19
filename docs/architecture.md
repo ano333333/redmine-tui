@@ -104,6 +104,20 @@ Store の更新は原則として Dispatcher を介して行う。
 - editor 起動、Redmine への非同期取得・保存などの外部副作用は `AppEffect` として Component から取り出し、`main.rs` の main loop 側で実行する。Redmine 関連の `AppEffect` は `usecases::redmine` の関数を tokio task として spawn し、完了 Action を `mpsc::channel` 経由で Dispatcher に戻す。
 - `create_widget(&Store)` で Store を参照して表示用 entity を取得してよい。
 
+Store は、失敗または Action の不受理に見える分岐を以下に区別して扱う。
+
+- 異常系: 自プロセスの制御破綻を示す状態機械違反。`panic!` で即座に停止する。異常系を `Result` で呼び出し元へ返すのは、Flux を参考にした一方向データフローでは dispatch 時点と consume 時点が分離しておりエラーを返す先がないため採用しない。
+- 準異常系: 外部プロセスや外部データ起因の復帰可能な失敗。message を Action に載せ、状態復帰と notice によるユーザー通知を行う。失敗後の再試行に必要な状態がある場合は、失敗 Action によって対象の状態機械を再試行可能な状態へ戻し、message を状態の一部として保持する。
+- stale completion: 重複を許した非同期要求の追い越し。request ID の一致判定で破棄し、暗黙の状態判定では破棄しない。現時点でこれに該当するのは `ProjectIssuesStore` のみ。`IssueAction` と `JournalAction` は重複を事前条件で排除するため、想定した状態以外へ着弾した完了は stale completion として捨てず異常系として拒否する。
+- マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。`JournalStore::merge_sync_fetched` の dirty entry 保護がこれにあたる。
+- 冪等 no-op: 同じ `NoticeId` の再追加など、Action 自体が冪等であることを契約として持つ正常な no-op。stale completion とマージ戦略は同じ no-op の見た目になりやすいため独立して扱う。
+
+getter 契約は、API が表す状態と cardinality で決める。不在が示す意味が異なるため、entity の種類だけで一律には決めない。
+
+- strict 単体取得: 存在が呼び出し元の事前条件である getter は参照を直接返し、不在は異常系として `panic!` する。
+- 状態・cardinality を表す `Option`: 未取得・取得中・取得失敗、ページの未要求、0 件・1 件など、不在そのものが状態や cardinality を表す取得は `Option` を返す。呼び出し側が取得値の存在を特定の経路で前提する場合は、無言の `unwrap()` ではなく `expect(...)` で不変条件を説明する。
+- master snapshot の `Option`: 起動時に一度だけ同期するマスターデータ（`IssueStatus` など）は、起動後に取得した Issue や Journal がスナップショットに存在しない ID を参照し得るため陳腐化で欠損し得る。単体のマスターデータ getter は `Option` を返し、呼び出し元は表示上の fallback で処理する。
+
 ## Component lifecycle
 
 Component は以下の lifecycle を前提に実装する。
