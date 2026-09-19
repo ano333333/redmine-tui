@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 9 — UsecaseとStoreにおけるエラー分類とハンドリング方針</title>
+    <style>
+      *,*::before,*::after{box-sizing:border-box}body{margin:0;background:#0f1117;color:#d0d4e8;font:15px/1.75 system-ui,"Noto Sans JP",sans-serif}.layout{display:flex;min-height:100vh}nav{position:sticky;top:0;width:240px;height:100vh;padding:28px 20px;background:#1a1d27;border-right:1px solid #2e3350}nav a{display:block;padding:5px 0;color:#8ba3f5;text-decoration:none;font-size:13px}main{max-width:980px;padding:52px 64px}h1,h2,h3{color:#e8eaf6}h1{font-size:27px;line-height:1.25}h2{margin-top:44px;padding-bottom:8px;border-bottom:1px solid #2e3350;font-size:19px}h3{margin-top:28px;font-size:16px}code{font-family:"JetBrains Mono",monospace;color:#8ba3f5}.status{display:inline-block;padding:3px 10px;border:1px solid #2a7a50;border-radius:20px;color:#4caf8a}table{width:100%;border-collapse:collapse;margin:18px 0}th,td{padding:9px 12px;border:1px solid #2e3350;text-align:left;vertical-align:top}th{background:#1a1d27;color:#e8eaf6}li{margin:5px 0}@media(max-width:820px){.layout{display:block}nav{position:static;width:auto;height:auto}main{padding:32px 22px}}
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <strong>ADR 9</strong>
+        <a href="#context">Context</a>
+        <a href="#decision">Decision</a>
+        <a href="#errors">Error Handling</a>
+        <a href="#rationale">Rationale</a>
+        <a href="#consequences">Consequences</a>
+        <a href="#alternatives">Alternatives</a>
+        <a href="#future">Future Work</a>
+        <hr />
+        <a href="7.html">ADR 7</a>
+        <a href="../architecture.html">Architecture</a>
+      </nav>
+      <main>
+        <h1>9. UsecaseとStoreにおけるエラー分類とハンドリング方針</h1>
+        <span class="status">Accepted</span>
+
+        <section id="context">
+          <h2>Context</h2>
+          <p><code>redmine-tui</code> はRedmineサーバーとの通信を行い、IssueとJournalを取得・編集・保存するようになった。StoreはIssue、Remote Journal、Local Journal、およびそれぞれのupload状態を段階的な状態機械として保持している。</p>
+          <p>ネットワーク障害のように、アプリが正しく動作していても発生する失敗は、ユーザーに伝えて再試行できるようにすべきである。一方、Storeの状態機械に反するActionや、Usecaseの事前条件を満たさない呼び出しは、自プロセスの制御が破綻していることを示す。そのまま処理を続けると、不整合な状態が別の場所へ伝播する。</p>
+          <p>現行の<code>JournalStore</code>では、状態機械に反するActionを<code>panic!</code>で拒否する実装パターンが確立している。<code>SyncFetched</code>の所有者不一致、<code>RemoveMissingRemoteJournal</code>の状態不一致、<code>EditRemoteNotes</code>のupload中編集などがこれにあたる。一方、<code>IssueStore</code>には成立しないActionを黙って捨てる箇所が残っており、それが意図した破棄なのか、握り潰されたバグなのかを読み分けにくい。</p>
+          <p>Journal CRUDの実装に伴い、<code>JournalUploadFailure</code>、<code>NoticeStore</code>、<code>ToastWidget</code>、panic時のterminal復帰、worker taskのpanic伝播はすでに<code>main</code>へ導入されている。本ADRはこれらを共通基盤として扱い、Issue側を含むエラーハンドリングへ一貫して適用する。</p>
+          <p>また、<code>IssueStatus</code>や<code>Category</code>などのマスターデータは起動時に一度だけ同期する。起動後に取得したIssueやJournalが、起動時のスナップショットに存在しないIDを参照することはあり得る。この参照失敗を、自プロセスの不変条件違反と同列に扱ってはならない。</p>
+        </section>
+
+        <section id="decision">
+          <h2>Decision</h2>
+          <h3>エラーに見える分岐の4分類</h3>
+          <p>失敗またはActionの不受理に見える分岐を、以下の4つに分類する。新しい分岐を追加する際は、どの分類に該当するかを明確にする。</p>
+          <table>
+            <thead><tr><th>分類</th><th>発生源</th><th>扱い</th></tr></thead>
+            <tbody>
+              <tr><td>異常系</td><td>自プロセスの制御破綻</td><td><code>panic!</code> / <code>assert!</code></td></tr>
+              <tr><td>準異常系</td><td>外部プロセスや外部データ起因の復帰可能な失敗</td><td>messageをActionに載せ、状態復帰とユーザー通知を行う</td></tr>
+              <tr><td>stale completion</td><td>重複を許した非同期要求の追い越し</td><td>request IDで判定して破棄する</td></tr>
+              <tr><td>マージ戦略</td><td>ローカル編集の保護</td><td>意図的なno-op</td></tr>
+            </tbody>
+          </table>
+          <p>Action自体が冪等性を契約として持つ場合は、この4分類の対象外となる正常なno-opを認める。たとえば同じ<code>NoticeId</code>の再追加や、すでに消えたnoticeの<code>Dismiss</code>は、重複通知および手動破棄と期限切れ処理の競合を安全に扱うための仕様である。このようなno-opは対象variantと理由をコード上で明記する。</p>
+
+          <h3>異常系</h3>
+          <p>自プロセスの制御が破綻している状態を異常系とし、<code>panic!</code>または<code>assert!</code>で即座に停止する。復帰を試みない。</p>
+          <ul>
+            <li>現在のIssueまたはJournalの状態に対して成立し得ないAction。</li>
+            <li>Usecase呼び出し時点で、StoreのIssueまたはJournalが事前条件を満たしていないこと。</li>
+            <li>ActionのIDや所有関係が、検証済みであるべきStore上の関係と矛盾すること。</li>
+            <li>存在を前提にした単体getterの対象がStoreに存在しないこと。</li>
+          </ul>
+          <p>upload中のIssueまたはJournalに対する編集Actionは異常系とする。UI側で編集や重複保存をブロックし、Actionが発行され得ない状態を保証する。uploadと編集の同時進行に必要なgeneration管理は採用しない。</p>
+          <p>サーバーからRemote Journalが消えていた場合の<code>RemoveMissingRemoteJournal</code>、三者比較での競合検出、<code>server == after</code>によるPUT省略は正常な処理であり、異常系には含めない。</p>
+
+          <h3>準異常系</h3>
+          <p>アプリの制御が正しくても発生する、外部プロセスまたは外部データ起因の復帰可能な失敗を準異常系とする。</p>
+          <ul>
+            <li>Redmineとのnetwork / HTTP I/O失敗。</li>
+            <li>Redmineレスポンスの形式不正や、要求したIDとレスポンスの不一致。</li>
+            <li>外部editorの起動、終了状態の確認、編集ファイルの読み書きの失敗。</li>
+          </ul>
+          <p><code>RedmineClientError</code>などClient層のエラー型からユーザー向けmessageへの変換はUsecaseまたは外部副作用を扱う<code>main.rs</code>で行う。StoreはClient層のエラー型へ依存せず、Actionで受け取ったmessageだけを保持する。</p>
+          <p>失敗後の再試行に必要な状態がある場合は、失敗Actionによって対象を再試行可能な状態へ戻し、messageを状態の一部として保持する。<code>JournalUploadFailure</code>のようなStore固有の失敗型は<code>src/stores/</code>に置き、<code>src/vos/</code>には置かない。</p>
+          <p>現時点ではIssueとJournalの保存失敗を<code>message: String</code>で表す。Local JournalのPUT失敗とPUT後GET失敗のように案内を変える必要がある場合は、違いをmessageへ含める。</p>
+          <p>一時通知は<code>NoticeAction::Push</code>として<code>NoticeStore</code>へ送り、<code>ToastWidget</code>で表示する。Storeが保持する失敗状態とnoticeは役割が異なるため、必要に応じて同じ失敗から複数のActionを生成する。</p>
+
+          <h3>stale completion</h3>
+          <p>同一対象への重複した非同期要求を意図的に許す場合に限り、完了Actionの破棄を認める。破棄はrequest IDの一致判定で行い、暗黙の状態判定では行わない。</p>
+          <p>現時点で該当するのは<code>ProjectIssuesStore</code>である。<code>fetch_project_issues_page</code>は同じexact keyへ新しい要求を開始できるため、<code>is_loading_request</code>がrequest IDの不一致を検出して古い完了を破棄する。</p>
+          <p><code>IssueAction</code>と<code>JournalAction</code>は重複要求を許さず、generation管理を持たない。完了Actionが想定状態以外へ着弾した場合はstale completionとして捨てず、異常系として拒否する。</p>
+
+          <h3>マージ戦略としてのno-op</h3>
+          <p>サーバー由来のデータを取り込む際、ローカル編集を保護するため更新を適用しないことがある。<code>JournalAction::SyncFetched</code>が<code>Edited</code>または<code>Uploading</code>のRemote Journalを取得値で上書きせず、取得結果から消えていても保持する処理がこれにあたる。該当箇所には意図をコメントで明記し、対象variantを列挙したテストで固定する。</p>
+
+          <h3>Store getterの契約</h3>
+          <p>Store getterが不在を許すかどうかは、entityの種類だけで一律に決めず、APIが表す状態とcardinalityで決める。</p>
+          <p><strong>存在が呼び出し元の事前条件である単体取得:</strong> 直前の検査によって存在が保証されるgetterは参照を直接返し、不在を異常系として<code>panic!</code>する。<code>get_remote_journal(issue_id, journal_id)</code>がこれにあたる。</p>
+          <p><strong>不在そのものが状態またはcardinalityを表す取得:</strong> <code>get_issue</code>、<code>get_project_issues_page_state</code>、<code>get_local_journal</code>は<code>Option</code>を維持する。<code>get_remote_journals</code>は未登録なら空sliceを返す。特定経路で存在を前提にする呼び出し側は、不変条件を説明する<code>expect(...)</code>または明示的な<code>panic!</code>を使う。</p>
+          <p><strong>起動時に一度だけ同期するマスターデータ:</strong> <code>IssueStatus</code>、<code>Priority</code>、<code>Category</code>、<code>TargetVersion</code>、<code>Tracker</code>、<code>Project</code>、<code>User</code>、<code>TimeEntityActivity</code>の単体getterは<code>Option</code>を返し、欠損を表示上のfallbackで処理する。現状この規則に反する<code>Store::get_issue_status</code>は<code>Option&lt;&amp;IssueStatus&gt;</code>へ変更する。</p>
+
+          <h3>panicを利用するための共通基盤</h3>
+          <p>現行の<code>main</code>には以下が実装済みであり、本ADRの実装でも維持する。</p>
+          <ul>
+            <li>process全体のpanic hookが既定hookの前に<code>ratatui::restore()</code>を呼ぶ。</li>
+            <li>Actionを返す非同期処理は<code>spawn_action_task</code>を使い、taskのpanicを<code>Action::WorkerPanicked</code>としてmain loopへ送る。</li>
+            <li>taskのcancellationはworker panicとして扱わない。</li>
+          </ul>
+          <p>Actionを返すworker taskを追加する際は、<code>runtime.spawn</code>を呼び出し側へ増やさず、同じhelperを使う。</p>
+        </section>
+
+        <section id="errors">
+          <h2>Error Handling</h2>
+          <p>準異常系のnoticeはtoastとして最前面に表示し、focusを取らない。<code>AppComponent::render</code>は通常画面とpopupの後に<code>ToastWidget</code>を描画し、toastはキー入力やcursor位置を変更しない。</p>
+          <p>IssueおよびJournalのupload失敗と、TUI実行中の外部editor失敗はtoastで表示する。<code>IssueState::FetchFailed</code>と<code>ProjectIssuesPageState::Failed</code>は再試行操作を持つ各Component内に表示する。初期マスターデータの取得失敗はTUI初期化前にstderrへ出力して起動を中止する。</p>
+          <p><code>NoticeStore</code>が発生時刻を保持し、main loopがtickごとに<code>Dispatcher::update_store(now)</code>を呼んで期限切れを破棄する。現在時刻はStore内で取得せず、<code>NoticeAction::Push</code>の<code>created_at</code>と<code>Store::update(now)</code>の引数で受け取る。</p>
+          <p>tokio timerとchannelでnoticeを破棄する方式は、worker taskとchannel往復を追加する割にmain loopのtick粒度で十分な精度が得られるため採用しない。</p>
+        </section>
+
+        <section id="rationale">
+          <h2>Rationale</h2>
+          <p>4分類を明示することで、条件を満たさないActionを扱う箇所が、バグの検出、外部失敗からの復帰、古い完了の排除、ローカル編集の保護のどれなのかを読み分けられる。特にstale completionとマージ戦略は同じno-opに見えやすいため、独立して扱う。</p>
+          <p>getterの契約をAPIの意味とcardinalityで決めるのは、不在が示す意味が異なるためである。Remote Journal単体の不在は事前条件違反になり得るが、Issueの未取得やLocal Journalが0件であることは通常状態である。マスターデータの不在も、起動時スナップショットの陳腐化によって通常運用で発生し得る。</p>
+          <p>準異常系をmessageで保持するのは、現時点の分岐と表示に必要な情報がmessageに尽きるためである。再試行可否など構造化情報が必要になった時点で追加する。</p>
+          <p>既存の<code>NoticeStore</code>と<code>ToastWidget</code>を再利用し、Journal CRUDですでに動作しているfocus非依存の表示、期限切れ、決定的なStoreテストをIssueやeditorの失敗にも適用する。</p>
+        </section>
+
+        <section id="consequences">
+          <h2>Consequences</h2>
+          <ul>
+            <li><code>IssueStore</code>で黙って破棄している不正な完了Actionと編集Actionを異常系として拒否する。</li>
+            <li><code>IssueAction::FailUpload</code>へmessageを追加し、再試行可能な状態へ戻しながら失敗情報を保持する。あわせて、同じ失敗をnotice表示へ接続する。</li>
+            <li>TUI実行中の外部editor失敗をnoticeへ接続する。</li>
+            <li><code>Store::get_issue_status</code>の戻り値変更を、呼び出し元と関連snapshotへ反映する。</li>
+            <li>異常系で停止した場合、未保存の編集内容は失われる。</li>
+            <li>既存のnotice、toast、Store更新、panic hook、spawn helperは新設せず、共通基盤として維持・再利用する。</li>
+          </ul>
+        </section>
+
+        <section id="alternatives">
+          <h2>Alternatives Considered</h2>
+          <h3>すべてのエラーを<code>Result</code>で呼び出し元へ返す</h3>
+          <p>Actionをdispatchした時点とconsumeされる時点が分離しているため、呼び出し元に返す先がない。main loopへ各Storeの状態機械の知識も漏れる。</p>
+          <h3>異常系も含めてすべてtoast表示する</h3>
+          <p>壊れた状態のまま処理を続けると、別の場所で不整合が顕在化して原因の特定が難しくなる。</p>
+          <h3><code>debug_assert!</code>を使う</h3>
+          <p>release buildでだけ不整合が黙って進み、build種別によって状態機械の契約が変わる。</p>
+          <h3>すべてのマスターデータをIssue fetchのたびに再同期する</h3>
+          <p>通信量と応答性の代償が大きいため、参照失敗をUI上のfallbackで扱う。</p>
+          <h3><code>ToastStore</code>を新設する</h3>
+          <p>現行の<code>NoticeStore</code>は表示方法に依存しない一時通知としてすでに使われている。同じ状態を分割せず、表示側だけを<code>ToastWidget</code>とする。</p>
+          <h3>tokioの<code>unhandled_panic</code>を使う</h3>
+          <p><code>--cfg tokio_unstable</code>が必要で、main threadの終了とterminal復帰は別途必要になる。既存の<code>JoinHandle</code>監視と<code>Action::WorkerPanicked</code>を維持する。</p>
+        </section>
+
+        <section id="future">
+          <h2>Future Work</h2>
+          <ul>
+            <li>編集内容のfileへのflushと起動時の復元。</li>
+            <li><code>IssueStore</code>のentry統合による、Issue本体と状態の不整合の型levelでの排除。</li>
+            <li><code>Option</code>を返すqueryとstrict getterを分離する必要性の再検討。</li>
+            <li><code>RedmineClientError</code>の種別に基づく再試行可否とUI導線の出し分け。</li>
+            <li>複数toastの集約・積み上げ規則。</li>
+            <li>fetch失敗messageの構造化と、log向け情報・UI向け文言の分離。</li>
+            <li>同一IssueまたはJournalへの再取得・cancelを導入する場合のgeneration管理。</li>
+          </ul>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
