@@ -98,7 +98,7 @@ mod tests {
     ) -> RemoteJournalItemView<'j> {
         RemoteJournalItemView {
             user: &journal.user,
-            updated_on: &journal.updated_on,
+            updated_on: journal.updated_on.as_ref(),
             notes,
             state_marker,
         }
@@ -109,7 +109,7 @@ mod tests {
             id: JournalId::new(1),
             issue_id: IssueId::new(1),
             user,
-            updated_on,
+            updated_on: Some(updated_on),
             details: vec![],
             notes: notes.to_owned(),
         }
@@ -138,7 +138,7 @@ mod tests {
         let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
 
         let mut state = JournalItemWidgetState::new();
-        state.update(24, &user, &updated_on, &notes);
+        state.update(24, &user, Some(&updated_on), &notes);
         let journal = create_journal(user, updated_on, &notes);
         let view = view_of(&journal, &notes, "");
         let journals = vec![JournalItemWidget::new(
@@ -171,7 +171,7 @@ mod tests {
         let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
 
         let mut state = JournalItemWidgetState::new();
-        state.update(24, &user, &updated_on, &notes);
+        state.update(24, &user, Some(&updated_on), &notes);
         let journal = create_journal(user, updated_on, &notes);
         let view = view_of(&journal, &notes, "");
         let journals = vec![JournalItemWidget::new(
@@ -196,7 +196,7 @@ mod tests {
         let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
 
         let mut state = JournalItemWidgetState::new();
-        state.update(24, &user, &updated_on, &notes);
+        state.update(24, &user, Some(&updated_on), &notes);
         let journal = create_journal(user, updated_on, &notes);
         let view = view_of(&journal, &notes, "");
         let journals = vec![JournalItemWidget::new(
@@ -220,7 +220,7 @@ mod tests {
 
         let wide_short = {
             let mut state = JournalItemWidgetState::new();
-            state.update(32, &user, &updated_on, &short_notes);
+            state.update(32, &user, Some(&updated_on), &short_notes);
             let journal = create_journal(user.clone(), updated_on, &short_notes);
             let view = view_of(&journal, &short_notes, "");
             let journals = vec![JournalItemWidget::new(
@@ -234,7 +234,7 @@ mod tests {
 
         let narrow_short = {
             let mut state = JournalItemWidgetState::new();
-            state.update(18, &user, &updated_on, &short_notes);
+            state.update(18, &user, Some(&updated_on), &short_notes);
             let journal = create_journal(user.clone(), updated_on, &short_notes);
             let view = view_of(&journal, &short_notes, "");
             let journals = vec![JournalItemWidget::new(
@@ -248,7 +248,7 @@ mod tests {
 
         let narrow_long = {
             let mut state = JournalItemWidgetState::new();
-            state.update(18, &user, &updated_on, &long_notes);
+            state.update(18, &user, Some(&updated_on), &long_notes);
             let journal = create_journal(user.clone(), updated_on, &long_notes);
             let view = view_of(&journal, &long_notes, "");
             let journals = vec![JournalItemWidget::new(

@@ -225,8 +225,12 @@ impl JournalsListItemComponent {
         self.notes = notes;
         self.state = entry.state.clone();
         self.detail_count = journal.details.len();
-        self.widget_state
-            .update(width, &journal.user, &journal.updated_on, &self.notes);
+        self.widget_state.update(
+            width,
+            &journal.user,
+            journal.updated_on.as_ref(),
+            &self.notes,
+        );
         self.comment_line_count = self.widget_state.comment_line_count();
         self.focus_state.update(
             width,
@@ -240,7 +244,7 @@ impl JournalsListItemComponent {
         let entry = store.get_remote_journal(self.issue_id, JournalId::new(self.id));
         let view = RemoteJournalItemView {
             user: &entry.journal.user,
-            updated_on: &entry.journal.updated_on,
+            updated_on: entry.journal.updated_on.as_ref(),
             notes: &self.notes,
             state_marker: state_marker(&entry.state),
         };
@@ -321,7 +325,7 @@ mod tests {
             id: JournalId::new(id),
             issue_id: IssueId::new(1),
             user: "alice".to_string(),
-            updated_on: local_datetime("2026-01-15T00:00:00+09:00"),
+            updated_on: Some(local_datetime("2026-01-15T00:00:00+09:00")),
             details,
             notes: notes.into(),
         }

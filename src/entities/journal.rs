@@ -8,7 +8,7 @@ pub struct Journal {
     pub id: JournalId,
     pub issue_id: IssueId,
     pub user: String,
-    pub updated_on: DateTime<Local>,
+    pub updated_on: Option<DateTime<Local>>,
     pub details: Vec<JournalDetail>,
     pub notes: String,
 }

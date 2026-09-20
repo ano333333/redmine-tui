@@ -23,7 +23,7 @@ fn journal_with_notes(
         id: journal_id.into(),
         issue_id: issue_id.into(),
         user: "admin".to_string(),
-        updated_on: local_datetime("2026-09-10T00:00:00+09:00"),
+        updated_on: Some(local_datetime("2026-09-10T00:00:00+09:00")),
         details: vec![],
         notes: notes.to_string(),
     }
@@ -1363,7 +1363,7 @@ fn complete_remote_upload_moves_an_uploading_journal_to_synced_with_the_notes_an
     assert_eq!(entry.journal.notes, "edited notes");
     assert_eq!(
         entry.journal.updated_on,
-        local_datetime("2026-09-10T00:00:00+09:00")
+        Some(local_datetime("2026-09-10T00:00:00+09:00"))
     );
 }
 

@@ -14,6 +14,7 @@ use crate::stores::{LocalJournalState, RemoteJournalState};
 // TODO: Extract this focus background color into one shared constant for all widgets.
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
 const EMPTY_NOTES_PLACEHOLDER: &str = "(none)";
+const UPDATED_ON_NONE_DISPLAY: &str = "(不明)";
 
 /// JournalDetailAttrをStoreで解決した、表示用の値。WidgetはStoreを知らない。
 pub struct ResolvedJournalDetail {
@@ -25,7 +26,8 @@ pub struct ResolvedJournalDetail {
 /// Remote Journalの永続entityとローカルの編集状態を描画用に統合した参照。
 pub struct RemoteJournalItemView<'a> {
     pub user: &'a str,
-    pub updated_on: &'a chrono::DateTime<chrono::Local>,
+    /// 一度も編集されていないjournalはRedmineが`null`を返すため`None`になりうる。
+    pub updated_on: Option<&'a chrono::DateTime<chrono::Local>>,
     /// 編集開始時にも使う表示中のnotes。本文の描画自体は事前計算済みのbufferが担う。
     pub notes: &'a str,
     pub state_marker: &'static str,
@@ -82,7 +84,7 @@ impl JournalItemWidgetState {
         }
     }
 
-    pub fn update(&mut self, width: u16, _: &str, _: &DateTime<Local>, notes: &str) {
+    pub fn update(&mut self, width: u16, _: &str, _: Option<&DateTime<Local>>, notes: &str) {
         let mut hasher = DefaultHasher::new();
         notes.hash(&mut hasher);
         let hash = hasher.finish();
@@ -200,10 +202,15 @@ fn create_property_paragraph(
 }
 
 fn create_remote_header(view: &RemoteJournalItemView<'_>) -> Line<'static> {
+    let updated_on_display = view
+        .updated_on
+        .map_or(UPDATED_ON_NONE_DISPLAY.to_string(), |updated_on| {
+            updated_on.format("%Y/%m/%d").to_string()
+        });
     let mut spans = vec![
         Span::from(view.user.to_owned()).blue(),
         Span::from("が"),
-        Span::from(view.updated_on.format("%Y/%m/%d").to_string()).blue(),
+        Span::from(updated_on_display).blue(),
         Span::from("に更新"),
     ];
     if !view.state_marker.is_empty() {
@@ -262,7 +269,7 @@ mod tests {
             id: JournalId::new(1),
             issue_id: IssueId::new(1),
             user,
-            updated_on,
+            updated_on: Some(updated_on),
             details: vec![],
             notes: notes.to_owned(),
         }
@@ -275,7 +282,7 @@ mod tests {
     ) -> RemoteJournalItemView<'v> {
         RemoteJournalItemView {
             user: &journal.user,
-            updated_on: &journal.updated_on,
+            updated_on: journal.updated_on.as_ref(),
             notes,
             state_marker,
         }
@@ -309,7 +316,7 @@ mod tests {
         let width = 20;
 
         let mut state = JournalItemWidgetState::new();
-        state.update(width, &creator, &updated_at, &notes);
+        state.update(width, &creator, Some(&updated_at), &notes);
 
         let journal = create_journal(creator, updated_at, &notes);
         let view = view_of(&journal, &notes, "");
@@ -327,7 +334,7 @@ mod tests {
         let width = 20;
 
         let mut state = JournalItemWidgetState::new();
-        state.update(width, &creator, &updated_at, &notes);
+        state.update(width, &creator, Some(&updated_at), &notes);
 
         let journal = create_journal(creator, updated_at, &notes);
         let view = view_of(&journal, &notes, "");
@@ -346,7 +353,7 @@ mod tests {
         let width = 24;
 
         let mut state = JournalItemWidgetState::new();
-        state.update(width, &user, &updated_on, &notes);
+        state.update(width, &user, Some(&updated_on), &notes);
 
         let journal = create_journal(user, updated_on, &notes);
         let view = view_of(&journal, &notes, "");
@@ -365,7 +372,7 @@ mod tests {
         let width = 24;
 
         let mut state = JournalItemWidgetState::new();
-        state.update(width, &user, &updated_on, &notes);
+        state.update(width, &user, Some(&updated_on), &notes);
 
         let journal = create_journal(user, updated_on, &notes);
         let view = view_of(&journal, &notes, "");
@@ -383,7 +390,7 @@ mod tests {
         let width = 24;
 
         let mut state = JournalItemWidgetState::new();
-        state.update(width, &user, &updated_on, &notes);
+        state.update(width, &user, Some(&updated_on), &notes);
 
         let journal = create_journal(user, updated_on, &notes);
         let view = view_of(&journal, &notes, "(uploading)");
@@ -407,7 +414,7 @@ mod tests {
         let width = 24;
 
         let mut state = JournalItemWidgetState::new();
-        state.update(width, &user, &updated_on, &notes);
+        state.update(width, &user, Some(&updated_on), &notes);
 
         let journal = create_journal(user, updated_on, &notes);
         let view = view_of(&journal, &notes, "");
@@ -416,6 +423,33 @@ mod tests {
 
         render_snapshot(
             "journal_item_empty_notes_placeholder",
+            width,
+            line_count,
+            widget,
+        );
+    }
+
+    #[test]
+    fn snapshot_journal_item_renders_placeholder_when_updated_on_is_none() {
+        let user = "alice".to_string();
+        let details = vec![assigned_to_detail(None, Some("bob"))];
+        let notes = "first paragraph\n\nsecond paragraph with wrapping words".to_string();
+        let width = 24;
+
+        let mut state = JournalItemWidgetState::new();
+        state.update(width, &user, None, &notes);
+
+        let view = RemoteJournalItemView {
+            user: &user,
+            updated_on: None,
+            notes: &notes,
+            state_marker: "",
+        };
+        let widget = JournalItemWidget::new(view, details, &state, true);
+        let line_count = widget.line_count(width);
+
+        render_snapshot(
+            "journal_item_updated_on_none_placeholder",
             width,
             line_count,
             widget,

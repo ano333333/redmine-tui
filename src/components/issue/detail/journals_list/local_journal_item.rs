@@ -49,7 +49,7 @@ impl LocalJournalItemComponent {
         self.notes.clone_from(&entry.journal.notes);
         self.state_marker = local_state_marker(&entry.state);
         self.widget_state
-            .update(width, "", &chrono::Local::now(), &self.notes);
+            .update(width, "", Some(&chrono::Local::now()), &self.notes);
         self.comment_line_count = self.widget_state.comment_line_count();
         self.editable = matches!(entry.state, LocalJournalState::LocalOnly { .. });
         self.focus_state

@@ -151,7 +151,7 @@ mod tests {
             id: JournalId::new(id),
             issue_id: ISSUE_ID,
             user: "alice".to_string(),
-            updated_on: local_datetime("2026-09-10T00:00:00+09:00"),
+            updated_on: Some(local_datetime("2026-09-10T00:00:00+09:00")),
             details: vec![],
             notes: notes.to_string(),
         }
@@ -379,7 +379,7 @@ mod tests {
                     id: journal_id,
                     issue_id: ISSUE_ID,
                     user: "alice".to_string(),
-                    updated_on: local_datetime("2026-09-10T00:00:00+09:00"),
+                    updated_on: Some(local_datetime("2026-09-10T00:00:00+09:00")),
                     details: vec![],
                     notes: "remote".to_string(),
                 }],

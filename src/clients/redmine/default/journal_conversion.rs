@@ -14,7 +14,7 @@ use super::value_conversion;
 pub(super) struct RedmineJournal {
     pub(super) id: u16,
     pub(super) user: RedmineJournalUser,
-    pub(super) updated_on: String,
+    pub(super) updated_on: Option<String>,
     pub(super) notes: String,
     /// Journal JSONにネストされたIssue属性の変更履歴。
     #[serde(default)]
@@ -34,13 +34,19 @@ pub(super) struct RedmineJournalUser {
 /// Journal DTOを、所属するIssueを明示したドメイン型へ変換する。
 ///
 /// RedmineのJournal JSONにはIssue IDが含まれないため、呼び出し元はJournalを
-/// 内包していたIssueのIDを渡す必要がある。`updated_on`がRFC 3339形式でなければ
-/// [`RedmineClientError::Client`]を返す。属性変更の変換エラーも同じエラー型で返す。
+/// 内包していたIssueのIDを渡す必要がある。一度も編集されていないjournalは
+/// `updated_on`が`null`で返るため、その場合は`None`として扱う。`updated_on`が
+/// 値を持つのにRFC 3339形式でなければ[`RedmineClientError::Client`]を返す。
+/// 属性変更の変換エラーも同じエラー型で返す。
 pub(super) fn convert_journal(
     issue_id: IssueId,
     journal: RedmineJournal,
 ) -> Result<Journal, RedmineClientError> {
-    let updated_on = value_conversion::parse_datetime(&journal.updated_on)?;
+    let updated_on = journal
+        .updated_on
+        .as_deref()
+        .map(value_conversion::parse_datetime)
+        .transpose()?;
     // `attr`以外のpropertyは変換対象外を表すNoneとなるため、Journalには含めない。
     let details = journal
         .details

@@ -211,7 +211,7 @@ mod tests {
             id: JOURNAL_ID,
             issue_id: ISSUE_ID,
             user: "alice".to_string(),
-            updated_on: local_datetime("2026-09-10T00:00:00+09:00"),
+            updated_on: Some(local_datetime("2026-09-10T00:00:00+09:00")),
             details: vec![],
             notes: "remote notes".to_string(),
         }
@@ -688,7 +688,7 @@ mod tests {
         assert_eq!(entry.journal.notes, "edited notes");
         assert_eq!(
             entry.journal.updated_on,
-            local_datetime("2026-09-10T00:00:00+09:00")
+            Some(local_datetime("2026-09-10T00:00:00+09:00"))
         );
     }
 
@@ -724,7 +724,7 @@ mod tests {
         assert_eq!(entry.journal.notes, "edited notes");
         assert_eq!(
             entry.journal.updated_on,
-            local_datetime("2026-09-10T00:00:00+09:00")
+            Some(local_datetime("2026-09-10T00:00:00+09:00"))
         );
     }
 

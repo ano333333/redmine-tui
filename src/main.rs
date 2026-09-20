@@ -1313,7 +1313,9 @@ mod tests {
             id: JournalId::new(1),
             issue_id: IssueId::new(issue_id),
             user: "alice".to_string(),
-            updated_on: crate::test_support::local_datetime("2026-01-15T00:00:00+09:00"),
+            updated_on: Some(crate::test_support::local_datetime(
+                "2026-01-15T00:00:00+09:00",
+            )),
             details: vec![],
             notes: "first journal notes marker".to_string(),
         }

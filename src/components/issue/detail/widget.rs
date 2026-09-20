@@ -206,12 +206,17 @@ mod tests {
             let journal_notes =
                 "Journal note first paragraph\n\nJournal note second paragraph".to_string();
             let mut journal_state = JournalItemWidgetState::new();
-            journal_state.update(width, &journal_user, &journal_updated_on, &journal_notes);
+            journal_state.update(
+                width,
+                &journal_user,
+                Some(&journal_updated_on),
+                &journal_notes,
+            );
             let journal = Journal {
                 id: JournalId::new(1),
                 issue_id: IssueId::new(1),
                 user: journal_user,
-                updated_on: journal_updated_on,
+                updated_on: Some(journal_updated_on),
                 details: vec![],
                 notes: journal_notes,
             };
@@ -308,7 +313,7 @@ mod tests {
             }];
             let view = RemoteJournalItemView {
                 user: &self.journal.user,
-                updated_on: &self.journal.updated_on,
+                updated_on: self.journal.updated_on.as_ref(),
                 notes: &self.journal.notes,
                 state_marker: "",
             };

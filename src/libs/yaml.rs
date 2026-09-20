@@ -91,7 +91,7 @@ pub fn parse_journal_yaml(id: JournalId) -> Journal {
     );
     let issue_id = IssueId::new(as_u16(&yaml, "issue_id"));
     let user = as_string(&yaml, "user");
-    let updated_on = as_local_datetime(&yaml, "updated_on");
+    let updated_on = Some(as_local_datetime(&yaml, "updated_on"));
     let notes = yaml["notes"].as_str().unwrap_or_default().to_string();
     let details = yaml["details"]
         .as_vec()
@@ -399,7 +399,11 @@ mod tests {
         assert_eq!(journal.issue_id, IssueId::new(3));
         assert_eq!(journal.user, "user1");
         assert_eq!(
-            journal.updated_on.format("%Y/%m/%d").to_string(),
+            journal
+                .updated_on
+                .expect("updated_on should be set")
+                .format("%Y/%m/%d")
+                .to_string(),
             "2026/02/10"
         );
         assert_eq!(journal.notes, "");
@@ -419,7 +423,11 @@ mod tests {
         assert_eq!(journal.issue_id, IssueId::new(3));
         assert_eq!(journal.user, "user1");
         assert_eq!(
-            journal.updated_on.format("%Y/%m/%d").to_string(),
+            journal
+                .updated_on
+                .expect("updated_on should be set")
+                .format("%Y/%m/%d")
+                .to_string(),
             "2026/02/16"
         );
         assert_eq!(journal.notes, "");
@@ -441,7 +449,11 @@ mod tests {
         assert_eq!(journal.issue_id, IssueId::new(3));
         assert_eq!(journal.user, "user1");
         assert_eq!(
-            journal.updated_on.format("%Y/%m/%d").to_string(),
+            journal
+                .updated_on
+                .expect("updated_on should be set")
+                .format("%Y/%m/%d")
+                .to_string(),
             "2026/02/16"
         );
         assert!(!journal.notes.is_empty());

@@ -80,7 +80,7 @@ fn journal_entries_wrap_entity_and_state() {
         id: JournalId::new(10),
         issue_id: IssueId::new(1),
         user: "admin".to_string(),
-        updated_on: local_datetime("2026-09-10T00:00:00+09:00"),
+        updated_on: Some(local_datetime("2026-09-10T00:00:00+09:00")),
         details: vec![],
         notes: "remote notes".to_string(),
     };
