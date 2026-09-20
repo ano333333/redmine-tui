@@ -37,8 +37,7 @@ use self::{
         AppComponent,
         app::{AppEffect, EditorRequest, EditorResponse},
     },
-    libs::yaml::parse_journal_yaml,
-    stores::{Action, Dispatcher, IssueAction, JournalAction, NoticeAction, NoticeId},
+    stores::{Action, Dispatcher, NoticeAction, NoticeId},
     usecases::redmine::{
         continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
         load_initial_entities, start_issue_upload, start_local_journal_upload,
@@ -81,7 +80,6 @@ fn main() -> ExitCode {
         }
     };
     consume_initial_actions(dispatcher.clone(), actions);
-    init_fixture_issues_and_journals(dispatcher.clone());
     if let Err(error) = logging::initialize_logging() {
         eprintln!("{error}");
         return ExitCode::FAILURE;
@@ -534,28 +532,6 @@ fn consume_initial_actions(dispatcher: Rc<RefCell<Dispatcher>>, actions: Vec<Act
     }
 }
 
-fn init_fixture_issues_and_journals(dispatcher: Rc<RefCell<Dispatcher>>) {
-    let mut d = dispatcher.borrow_mut();
-    dispatch_fixture_issues_and_journals(&mut d);
-    while d.consume_actinos_len() > 0 {
-        d.consume_action();
-    }
-}
-
-fn dispatch_fixture_issues_and_journals(d: &mut Dispatcher) {
-    d.dispatch(IssueAction::Load { id: 1.into() });
-    d.dispatch(IssueAction::Load { id: 2.into() });
-    d.dispatch(IssueAction::Load { id: 3.into() });
-    d.dispatch(Action::Journal(JournalAction::SyncFetched {
-        issue_id: IssueId::new(3),
-        journals: vec![
-            parse_journal_yaml(JournalId::new(1)),
-            parse_journal_yaml(JournalId::new(2)),
-            parse_journal_yaml(JournalId::new(3)),
-        ],
-    }));
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -567,7 +543,8 @@ mod tests {
         Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project,
         ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
     };
-    use crate::stores::{NoticeAction, NoticeId, ProjectIssuesAction};
+    use crate::libs::yaml::parse_journal_yaml;
+    use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId, ProjectIssuesAction};
     use crate::test_support::sample_issue_aggregate;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId};
