@@ -3,16 +3,13 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect, Size};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
 use crate::vos::{IssueId, ProjectId};
+use crate::widgets::theme::{ACCENT, BADGE_BG, FOCUS_BG, MUTED, SECTION_BAR, TIMELINE_FG};
 use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
-
-const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
-const SELECTED_BG: Color = Color::Rgb(0x22, 0x22, 0x22);
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IssueSelectPopupProject {
     pub id: ProjectId,
@@ -208,7 +205,7 @@ impl<'a> IssueSelectPopupWidget<'a> {
             .borders(Borders::ALL)
             .inner(area)
             .height
-            .saturating_sub(1)
+            .saturating_sub(2)
     }
 
     pub fn line_count(&self, _: u16) -> usize {
@@ -235,7 +232,9 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
 
     Clear.render(area, buf);
 
-    let block = Block::default().borders(Borders::ALL).title("Issue選択");
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(TIMELINE_FG));
     let inner = block.inner(area);
     block.render(area, buf);
 
@@ -244,35 +243,12 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
     }
 
     let columns = split_columns(inner);
-    let header_style = Style::default()
-        .fg(Color::LightGreen)
-        .add_modifier(Modifier::BOLD);
-    render_single_line(
-        buf,
-        columns[0].x,
-        inner.y,
-        columns[0].width,
-        "Project",
-        header_style,
-    );
-    render_single_line(
-        buf,
-        columns[1].x,
-        inner.y,
-        columns[1].width,
-        "ID",
-        header_style,
-    );
-    render_single_line(
-        buf,
-        columns[2].x,
-        inner.y,
-        columns[2].width,
-        "Issue",
-        header_style,
-    );
+    render_section_header(buf, columns[0], inner.y, "PROJECTS");
+    render_section_header(buf, columns[1], inner.y, "ISSUES");
+    render_section_header(buf, columns[2], inner.y, "PREVIEW");
+    render_column_separators(inner, &columns, buf);
 
-    let body_height = inner.height.saturating_sub(1) as usize;
+    let body_height = inner.height.saturating_sub(2) as usize;
     let focused_issue = widget.issues.get(widget.focused_issue_index);
 
     let mut project_scroll = VerticalScrollWidget::new(
@@ -309,7 +285,8 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
                 row == widget.focused_issue_index,
                 widget.focused_column == IssueSelectPopupFocusColumn::Issue,
             );
-            issue_scroll.render_widget(SingleLineWidget::new(issue.issue_id.to_string(), style), 1);
+            let label = format!("#{:<5} {}", issue.issue_id, issue.subject);
+            issue_scroll.render_widget(SingleLineWidget::new(label, style), 1);
         }
         issue_scroll.render(
             Rect::new(
@@ -335,7 +312,7 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
                 Rect::new(
                     columns[1].x,
                     inner.y + 1,
-                    columns[1].width + columns[2].width,
+                    columns[1].width,
                     body_height as u16,
                 ),
                 buf,
@@ -359,6 +336,27 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
             widget.state.render_preview(issue_area, buf);
         }
     }
+
+    let footer_y = inner.y + inner.height.saturating_sub(1);
+    render_single_line(
+        buf,
+        inner.x,
+        footer_y,
+        inner.width,
+        "  h/l 切替   j/k 移動   Enter 開く   q 閉じる",
+        Style::default().fg(MUTED),
+    );
+}
+
+fn render_section_header(buf: &mut Buffer, area: Rect, y: u16, title: &str) {
+    render_single_line(
+        buf,
+        area.x,
+        y,
+        area.width,
+        &format!("{SECTION_BAR} {title}"),
+        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+    );
 }
 
 struct SingleLineWidget<'a> {
@@ -384,22 +382,41 @@ impl Widget for SingleLineWidget<'_> {
 }
 
 fn split_columns(area: Rect) -> Vec<Rect> {
-    Layout::default()
+    let parts = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(28),
-            Constraint::Length(8),
+            Constraint::Percentage(24),
+            Constraint::Length(1),
+            Constraint::Percentage(38),
+            Constraint::Length(1),
             Constraint::Fill(1),
         ])
         .split(area)
-        .to_vec()
+        .to_vec();
+    vec![parts[0], parts[2], parts[4]]
+}
+
+fn render_column_separators(inner: Rect, columns: &[Rect], buf: &mut Buffer) {
+    if columns.len() < 3 || inner.height <= 2 {
+        return;
+    }
+
+    let body_height = inner.height - 2;
+    for x in [columns[0].right(), columns[1].right()] {
+        for y in inner.y + 1..inner.y + 1 + body_height {
+            buf[(x, y)].set_symbol("│").set_fg(BADGE_BG);
+        }
+    }
 }
 
 fn selected_row_style(selected: bool, active: bool) -> Style {
     if selected && active {
-        Style::default().bg(FOCUS_BG)
+        Style::default()
+            .fg(ACCENT)
+            .bg(FOCUS_BG)
+            .add_modifier(Modifier::BOLD)
     } else if selected {
-        Style::default().bg(SELECTED_BG)
+        Style::default().bg(BADGE_BG)
     } else {
         Style::default()
     }
@@ -756,7 +773,7 @@ mod tests {
     }
 
     #[test]
-    fn render_wraps_subject_and_leaves_blank_line_before_description() {
+    fn snapshot_issue_select_popup_wraps_subject_and_leaves_blank_line_before_description() {
         let projects = vec![IssueSelectPopupProject::new(1, "redmine-tui")];
         let issues = vec![IssueSelectPopupIssue::new(
             1,
@@ -766,42 +783,25 @@ mod tests {
         )];
         let description = "Description starts after blank line".to_string();
         let area = Rect::new(0, 0, 80, 20);
-        let issue_column = issue_column(area);
         let mut state = IssueSelectPopupWidgetState::new();
         state.update(
             IssueSelectPopupWidget::preview_width(area),
             &issues[0],
             &description,
         );
-        let widget = IssueSelectPopupWidget::new(
-            &projects,
-            &issues,
-            0,
-            0,
-            IssueSelectPopupFocusColumn::Issue,
-            &state,
-            IssueSelectPopupIssueColumnState::Loaded,
-        );
-        let mut buffer = Buffer::empty(area);
-
-        Widget::render(widget, area, &mut buffer);
-
-        assert_eq!(
-            line_text(&buffer, issue_column, issue_column.y + 1).trim_end(),
-            "Subject words that must wrap onto"
-        );
-        assert_eq!(
-            line_text(&buffer, issue_column, issue_column.y + 2).trim_end(),
-            "another preview line"
-        );
-        assert!(
-            line_text(&buffer, issue_column, issue_column.y + 3)
-                .trim()
-                .is_empty()
-        );
-        assert_eq!(
-            line_text(&buffer, issue_column, issue_column.y + 4).trim_end(),
-            "Description starts after blank line"
+        render_snapshot(
+            "issue_select_popup_wrapped_subject_and_description",
+            area.width,
+            area.height,
+            IssueSelectPopupWidget::new(
+                &projects,
+                &issues,
+                0,
+                0,
+                IssueSelectPopupFocusColumn::Issue,
+                &state,
+                IssueSelectPopupIssueColumnState::Loaded,
+            ),
         );
     }
 
@@ -831,11 +831,5 @@ mod tests {
         let area = IssueSelectPopupWidget::popup_area(area);
         let inner = Block::default().borders(Borders::ALL).inner(area);
         split_columns(inner)[0]
-    }
-
-    fn line_text(buffer: &Buffer, area: Rect, y: u16) -> String {
-        (area.x..area.x + area.width)
-            .map(|x| buffer[(x, y)].symbol())
-            .collect::<String>()
     }
 }
