@@ -1075,7 +1075,7 @@ mod tests {
         assert!(sql.contains("(1, 3, 'Issue', 1001, ''"));
         assert!(sql.contains("INSERT INTO journal_details"));
         assert!(sql.contains("'attr', 'status_id', '1', '2'"));
-        assert!(sql.contains("'attr', 'due_date', '2026/02/16', '2026/02/17'"));
+        assert!(sql.contains("'attr', 'due_date', '2026-02-16', '2026-02-17'"));
     }
 
     #[test]

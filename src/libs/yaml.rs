@@ -45,7 +45,7 @@ fn as_bool(yaml: &Yaml, key: &str) -> bool {
 
 fn as_local_datetime(yaml: &Yaml, key: &str) -> DateTime<Local> {
     let str = yaml[key].as_str().expect(format!("no {}", key).as_str());
-    let naive_date = NaiveDate::parse_from_str(str, "%Y/%m/%d")
+    let naive_date = NaiveDate::parse_from_str(str, "%Y-%m-%d")
         .expect(format!("failed to parse {} as naive datetime: {}", key, str).as_str());
     let naive_datetime = naive_date.and_hms_opt(0, 0, 0).unwrap();
     Local.from_local_datetime(&naive_datetime).single().unwrap()
@@ -61,7 +61,7 @@ fn as_f64_option(yaml: &Yaml, key: &str) -> Option<f64> {
 
 fn as_local_datetime_option(yaml: &Yaml, key: &str) -> Option<DateTime<Local>> {
     yaml[key].as_str().map(|s| {
-        let naive_date = NaiveDate::parse_from_str(s, "%Y/%m/%d")
+        let naive_date = NaiveDate::parse_from_str(s, "%Y-%m-%d")
             .expect(format!("failed to parse {} as naive datetime: {}", key, s).as_str());
         let naive_datetime = naive_date.and_hms_opt(0, 0, 0).unwrap();
         Local.from_local_datetime(&naive_datetime).single().unwrap()
@@ -402,9 +402,9 @@ mod tests {
             journal
                 .updated_on
                 .expect("updated_on should be set")
-                .format("%Y/%m/%d")
+                .format("%Y-%m-%d")
                 .to_string(),
-            "2026/02/10"
+            "2026-02-10"
         );
         assert_eq!(journal.notes, "");
         assert_eq!(journal.details.len(), 1);
@@ -426,9 +426,9 @@ mod tests {
             journal
                 .updated_on
                 .expect("updated_on should be set")
-                .format("%Y/%m/%d")
+                .format("%Y-%m-%d")
                 .to_string(),
-            "2026/02/16"
+            "2026-02-16"
         );
         assert_eq!(journal.notes, "");
         assert_eq!(journal.details.len(), 1);
@@ -436,8 +436,8 @@ mod tests {
             JournalDetail::Attr(JournalDetailAttr::DueDate { old, new }) => {
                 let old = old.as_ref().expect("due_date.old should be set");
                 let new = new.as_ref().expect("due_date.new should be set");
-                assert_eq!(old.format("%Y/%m/%d").to_string(), "2026/02/16");
-                assert_eq!(new.format("%Y/%m/%d").to_string(), "2026/02/17");
+                assert_eq!(old.format("%Y-%m-%d").to_string(), "2026-02-16");
+                assert_eq!(new.format("%Y-%m-%d").to_string(), "2026-02-17");
             }
             _ => panic!("journal 2 should have a due_date detail"),
         }
@@ -452,9 +452,9 @@ mod tests {
             journal
                 .updated_on
                 .expect("updated_on should be set")
-                .format("%Y/%m/%d")
+                .format("%Y-%m-%d")
                 .to_string(),
-            "2026/02/16"
+            "2026-02-16"
         );
         assert!(!journal.notes.is_empty());
         assert!(journal.notes.starts_with("### h3"));
