@@ -304,6 +304,10 @@ impl SeedData {
     }
 
     fn push_users_sql(&self, sql: &mut String) {
+        sql.push_str(
+            "UPDATE users SET must_change_passwd = 0 WHERE login = 'admin' AND must_change_passwd = 1;\n\n",
+        );
+
         sql.push_str("INSERT INTO users (id, login, hashed_password, firstname, lastname, admin, status, language, auth_source_id, created_on, updated_on, type, mail_notification, salt, must_change_passwd) VALUES\n");
         push_values(
             sql,
