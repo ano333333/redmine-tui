@@ -37,8 +37,7 @@ pub enum EditableField {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Action {
     Quit,
-    FocusNext,
-    FocusPrevious,
+    Focus(FocusField),
     Confirm,
     InputKey(KeyEvent),
 }
@@ -126,11 +125,33 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
     fn interpret_key_event(&self, key: KeyEvent) -> Option<Action> {
         match key.code {
             KeyCode::Esc => Some(Action::Quit),
+            KeyCode::Char('l')
+                if self.input_mode == InputMode::Navigating
+                    && self.focused_field == FocusField::Activity =>
+            {
+                Some(Action::Focus(FocusField::Hours))
+            }
+            KeyCode::Char('h')
+                if self.input_mode == InputMode::Navigating
+                    && self.focused_field == FocusField::Hours =>
+            {
+                Some(Action::Focus(FocusField::Activity))
+            }
             KeyCode::Char('j') if self.input_mode == InputMode::Navigating => {
-                Some(Action::FocusNext)
+                match self.focused_field {
+                    FocusField::Activity | FocusField::Hours => {
+                        Some(Action::Focus(FocusField::Memo))
+                    }
+                    FocusField::Memo => Some(Action::Focus(FocusField::Submit)),
+                    FocusField::Submit => None,
+                }
             }
             KeyCode::Char('k') if self.input_mode == InputMode::Navigating => {
-                Some(Action::FocusPrevious)
+                match self.focused_field {
+                    FocusField::Memo => Some(Action::Focus(FocusField::Activity)),
+                    FocusField::Submit => Some(Action::Focus(FocusField::Memo)),
+                    FocusField::Activity | FocusField::Hours => None,
+                }
             }
             KeyCode::Enter => Some(Action::Confirm),
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -148,12 +169,8 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
     fn process_action(&mut self, action: Option<Action>) -> Option<EventProcessResult> {
         match action {
             Some(Action::Quit) => Some(EventProcessResult::Quited),
-            Some(Action::FocusNext) => {
-                self.focus_next();
-                None
-            }
-            Some(Action::FocusPrevious) => {
-                self.focus_previous();
+            Some(Action::Focus(field)) => {
+                self.focus(field);
                 None
             }
             Some(Action::Confirm) => match self.focused_field {
@@ -184,40 +201,15 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
         }
     }
 
-    fn focus_next(&mut self) {
+    fn focus(&mut self, field: FocusField) {
         self.input_mode = InputMode::Navigating;
-        match self.focused_field {
-            FocusField::Activity => {
-                self.focused_field = FocusField::Hours;
-            }
-            FocusField::Hours => {
-                Self::set_textarea_cursor(&mut self.hours_textarea, false);
-                self.focused_field = FocusField::Memo;
-            }
-            FocusField::Memo => {
-                Self::set_textarea_cursor(&mut self.memo_textarea, false);
-                self.focused_field = FocusField::Submit;
-            }
-            FocusField::Submit => {}
+        if self.focused_field == FocusField::Hours {
+            Self::set_textarea_cursor(&mut self.hours_textarea, false);
         }
-    }
-
-    fn focus_previous(&mut self) {
-        self.input_mode = InputMode::Navigating;
-        match self.focused_field {
-            FocusField::Activity => {}
-            FocusField::Hours => {
-                Self::set_textarea_cursor(&mut self.hours_textarea, false);
-                self.focused_field = FocusField::Activity;
-            }
-            FocusField::Memo => {
-                Self::set_textarea_cursor(&mut self.memo_textarea, false);
-                self.focused_field = FocusField::Hours;
-            }
-            FocusField::Submit => {
-                self.focused_field = FocusField::Memo;
-            }
+        if self.focused_field == FocusField::Memo {
+            Self::set_textarea_cursor(&mut self.memo_textarea, false);
         }
+        self.focused_field = field;
     }
 
     fn toggle_input_mode(&mut self, field: EditableField) {
@@ -358,17 +350,17 @@ mod tests {
 
         let position = component.cursor_position(area);
 
-        assert_eq!(position, Some(Position::new(17, 7)));
+        assert_eq!(position, Some(Position::new(8, 6)));
     }
 
     #[test]
-    fn j_and_k_move_focus_while_navigating() {
+    fn navigation_keys_move_focus_while_navigating() {
         let store = store_with_time_entity_activities();
         let mut component = SpentTimeInputPopupComponent::new(&store);
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('j')))
+                .process_event(key_event(KeyCode::Char('l')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Hours);
@@ -406,11 +398,14 @@ mod tests {
                 .process_event(key_event(KeyCode::Char('k')))
                 .is_none()
         );
+        assert_eq!(component.focused_field, FocusField::Activity);
+
+        component.process_event(key_event(KeyCode::Char('l')));
         assert_eq!(component.focused_field, FocusField::Hours);
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('k')))
+                .process_event(key_event(KeyCode::Char('h')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Activity);
@@ -427,7 +422,7 @@ mod tests {
     fn enter_on_hours_toggles_edit_mode_and_inputs_text() {
         let store = store_with_time_entity_activities();
         let mut component = SpentTimeInputPopupComponent::new(&store);
-        component.process_event(key_event(KeyCode::Char('j')));
+        component.process_event(key_event(KeyCode::Char('l')));
 
         assert!(component.process_event(key_event(KeyCode::Enter)).is_none());
         assert_eq!(component.focused_field, FocusField::Hours);
@@ -467,7 +462,6 @@ mod tests {
     fn enter_on_memo_toggles_edit_mode_and_inputs_text() {
         let store = store_with_time_entity_activities();
         let mut component = SpentTimeInputPopupComponent::new(&store);
-        component.process_event(key_event(KeyCode::Char('j')));
         component.process_event(key_event(KeyCode::Char('j')));
 
         assert!(component.process_event(key_event(KeyCode::Enter)).is_none());

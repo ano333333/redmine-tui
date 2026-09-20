@@ -1,9 +1,11 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 use ratatui_textarea::TextArea;
+
+use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED, TIMELINE_FG};
 
 pub struct SpentTimeInputPopupWidget<'a> {
     activity: &'a str,
@@ -37,11 +39,13 @@ impl<'a> SpentTimeInputPopupWidget<'a> {
     }
 
     pub fn popup_area(area: Rect) -> Rect {
+        let width = area.width.saturating_mul(4) / 5;
+        let height = area.height.saturating_mul(3) / 5;
         Rect {
-            x: area.x + area.width / 4,
-            y: area.y + area.height / 4,
-            width: area.width / 2,
-            height: area.height / 2,
+            x: area.x + area.width.saturating_sub(width) / 2,
+            y: area.y + area.height.saturating_sub(height) / 2,
+            width,
+            height,
         }
     }
 }
@@ -56,7 +60,11 @@ impl Widget for SpentTimeInputPopupWidget<'_> {
 
         Clear.render(area, buf);
 
-        let block = Block::default().borders(Borders::ALL).title("工数入力");
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" 実績工数 ")
+            .title_style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
+            .border_style(Style::default().fg(TIMELINE_FG));
         let inner = block.inner(area);
         block.render(area, buf);
 
@@ -64,70 +72,74 @@ impl Widget for SpentTimeInputPopupWidget<'_> {
             return;
         }
 
-        let cols = Layout::default()
+        let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                // アクティビティ
                 Constraint::Length(3),
-                // 工数
-                Constraint::Length(3),
-                // メモ
-                Constraint::Length(3),
-                Constraint::Length(1),
-                // 保存ボタン
+                Constraint::Fill(1),
                 Constraint::Length(3),
             ])
             .split(inner);
 
+        let summary = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Fill(1), Constraint::Length(16)])
+            .split(rows[0]);
+
         let activity = Paragraph::new(Line::from(self.activity)).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("アクティビティ")
+                .title(" ACTIVITY ")
                 .border_style(Self::border_style(self.activity_focused)),
         );
-        activity.render(cols[0], buf);
+        activity.render(summary[0], buf);
 
         let mut hours = self.hours_textarea.clone();
         hours.set_block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("工数")
+                .title(" HOURS ")
                 .border_style(Self::border_style(self.hours_textarea_focused)),
         );
-        (&hours).render(cols[1], buf);
+        (&hours).render(summary[1], buf);
 
         let mut memo = self.memo_textarea.clone();
         memo.set_block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("メモ")
+                .title(" MEMO ")
                 .border_style(Self::border_style(self.memo_textarea_focused)),
         );
-        (&memo).render(cols[2], buf);
+        (&memo).render(rows[1], buf);
 
-        let rows = Layout::default()
+        let actions = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
                 Constraint::Fill(1),
-                Constraint::Length(8),
+                Constraint::Length(16),
                 Constraint::Length(1),
             ])
-            .split(cols[4]);
-        let button = Paragraph::new(Line::from(" 保存 ")).block(
+            .split(rows[2]);
+        Paragraph::new(Line::styled(
+            "Enter: edit / h,j,k,l: move",
+            Style::default().fg(MUTED),
+        ))
+        .render(rows[2], buf);
+        let button = Paragraph::new(Line::from(" SAVE ")).block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Self::border_style(self.submit_button_focused)),
         );
-        button.render(rows[1], buf);
+        button.render(actions[1], buf);
     }
 }
 
 impl<'a> SpentTimeInputPopupWidget<'a> {
     fn border_style(focused: bool) -> Style {
         if focused {
-            Style::default().fg(Color::LightGreen)
+            Style::default().fg(ACCENT).bg(FOCUS_BG)
         } else {
-            Style::default()
+            Style::default().fg(TIMELINE_FG)
         }
     }
 }
