@@ -808,10 +808,14 @@ fn as_string(yaml: &Yaml, key: &str) -> Result<String, String> {
 }
 
 fn as_string_option(yaml: &Yaml, key: &str) -> Result<Option<String>, String> {
-    if yaml[key].is_badvalue() {
-        return Ok(None);
+    match &yaml[key] {
+        Yaml::BadValue | Yaml::Null => Ok(None),
+        Yaml::String(s) => Ok(Some(s.clone())),
+        Yaml::Integer(i) => Ok(Some(i.to_string())),
+        Yaml::Real(r) => Ok(Some(r.clone())),
+        Yaml::Boolean(b) => Ok(Some(b.to_string())),
+        _ => Err(format!("unsupported YAML value type for field: {key}")),
     }
-    Ok(yaml[key].as_str().map(ToString::to_string))
 }
 
 fn as_bool(yaml: &Yaml, key: &str) -> Result<bool, String> {
@@ -1010,6 +1014,29 @@ mod tests {
     }
 
     #[test]
+    fn as_string_option_stringifies_integer_yaml_literals() {
+        let yaml = YamlLoader::load_from_str("old: 1\nnew: 2")
+            .unwrap()
+            .remove(0);
+
+        assert_eq!(
+            as_string_option(&yaml, "old").unwrap(),
+            Some("1".to_string())
+        );
+        assert_eq!(
+            as_string_option(&yaml, "new").unwrap(),
+            Some("2".to_string())
+        );
+    }
+
+    #[test]
+    fn as_string_option_returns_none_for_missing_key() {
+        let yaml = YamlLoader::load_from_str("old: 1").unwrap().remove(0);
+
+        assert_eq!(as_string_option(&yaml, "missing").unwrap(), None);
+    }
+
+    #[test]
     fn sql_string_escapes_quotes_backslashes_and_newlines() {
         assert_eq!(
             sql_string("it's \\ fine\nnext"),
@@ -1047,7 +1074,7 @@ mod tests {
         assert!(sql.contains("INSERT INTO journals"));
         assert!(sql.contains("(1, 3, 'Issue', 1001, ''"));
         assert!(sql.contains("INSERT INTO journal_details"));
-        assert!(sql.contains("'attr', 'status_id', '新規(new)', '割り当て(assigned)'"));
+        assert!(sql.contains("'attr', 'status_id', '1', '2'"));
         assert!(sql.contains("'attr', 'due_date', '2026/02/16', '2026/02/17'"));
     }
 
