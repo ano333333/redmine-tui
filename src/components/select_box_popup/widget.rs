@@ -1,10 +1,10 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
-use ratatui::text::Line;
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Widget};
 
-const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
+use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED};
 
 pub struct SelectBoxPopupWidget<'a> {
     pub items: &'a [(Option<u16>, String)],
@@ -43,7 +43,9 @@ impl Widget for SelectBoxPopupWidget<'_> {
 
         Clear.render(area, buf);
 
-        let block = Block::default().borders(Borders::ALL);
+        let block = Block::default().borders(Borders::ALL).title_bottom(
+            Line::from(" j/k 移動 · Enter 決定 · q 戻る ").style(Style::default().fg(MUTED)),
+        );
         let inner = block.inner(area);
         block.render(area, buf);
 
@@ -55,22 +57,43 @@ impl Widget for SelectBoxPopupWidget<'_> {
 
         for (row, (_, name)) in self.items.iter().take(visible_count).enumerate() {
             let y = inner.y + row as u16;
-            let style = if row == self.focused_index {
-                Style::default().bg(FOCUS_BG)
+            let focused = row == self.focused_index;
+            let style = if focused {
+                Style::default().bg(FOCUS_BG).add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
-            render_single_line(buf, inner.x, y, inner.width, name, style);
+            render_single_line(buf, inner.x, y, inner.width, name, style, focused);
         }
     }
 }
 
-fn render_single_line(buf: &mut Buffer, x: u16, y: u16, width: u16, text: &str, style: Style) {
+fn render_single_line(
+    buf: &mut Buffer,
+    x: u16,
+    y: u16,
+    width: u16,
+    text: &str,
+    style: Style,
+    focused: bool,
+) {
     let blank = " ".repeat(width as usize);
     buf.set_line(x, y, &Line::styled(blank, style), width);
 
-    let clipped = text.chars().take(width as usize).collect::<String>();
-    buf.set_line(x, y, &Line::styled(clipped, style), width);
+    let marker = if focused { "› " } else { "  " };
+    let clipped = text
+        .chars()
+        .take(width.saturating_sub(2) as usize)
+        .collect::<String>();
+    buf.set_line(
+        x,
+        y,
+        &Line::from(vec![
+            Span::styled(marker, style.fg(if focused { ACCENT } else { MUTED })),
+            Span::styled(clipped, style),
+        ]),
+        width,
+    );
 }
 
 #[cfg(test)]
