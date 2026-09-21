@@ -1,6 +1,7 @@
 mod clients;
 mod components;
 mod entities;
+mod inputs;
 mod libs;
 mod logging;
 mod stores;
