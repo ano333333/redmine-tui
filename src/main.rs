@@ -97,13 +97,17 @@ fn main() -> ExitCode {
         terminal.get_frame().area(),
     );
     let tick_rate = std::time::Duration::from_millis(TICK_RATE_MS);
+    let mut last_tick = std::time::Instant::now();
     loop {
         if let Some(message) = move_worker_action(&worker_action_rx, dispatcher.clone()) {
             eprintln!("worker task panicked: {message}");
             return ExitCode::FAILURE;
         }
-        // 時間依存のStore更新はmain loopのtickごとに同じ現在時刻を入口へ渡す。
-        dispatcher.borrow_mut().update_store(chrono::Local::now());
+        let now = std::time::Instant::now();
+        let tick = chrono::Duration::from_std(now.duration_since(last_tick))
+            .unwrap_or_else(|_| chrono::Duration::zero());
+        last_tick = now;
+        dispatcher.borrow_mut().update_store(tick);
         let size = terminal.size().expect("failed to get terminal size");
         update(
             dispatcher.clone(),
@@ -130,7 +134,7 @@ fn main() -> ExitCode {
             );
             dispatcher
                 .borrow_mut()
-                .dispatch(editor_failure_notice_action(&err, chrono::Local::now()));
+                .dispatch(editor_failure_notice_action(&err));
         }
         if let Some(e) = terminal
             .draw(|f| draw(f, &app_component, dispatcher.clone()))
@@ -458,14 +462,10 @@ fn ensure_editor_exit_status(status: ExitStatus) -> Result<()> {
     }
 }
 
-fn editor_failure_notice_action(
-    error: &dyn std::fmt::Display,
-    created_at: chrono::DateTime<chrono::Local>,
-) -> NoticeAction {
+fn editor_failure_notice_action(error: &dyn std::fmt::Display) -> NoticeAction {
     NoticeAction::Push {
         id: NoticeId::new(),
         message: format!("エディタによる編集に失敗しました: {error}"),
-        created_at,
     }
 }
 
@@ -1055,12 +1055,10 @@ mod tests {
     #[test]
     fn update_store_removes_expired_notices() {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-        let created_at = crate::test_support::local_datetime("2026-02-16T10:00:00+09:00");
         for _ in 0..2 {
             dispatcher.borrow_mut().dispatch(NoticeAction::Push {
                 id: NoticeId::new(),
                 message: "failed".to_string(),
-                created_at,
             });
         }
         while dispatcher.borrow().consume_actinos_len() > 0 {
@@ -1070,7 +1068,7 @@ mod tests {
 
         dispatcher
             .borrow_mut()
-            .update_store(created_at + chrono::Duration::seconds(5));
+            .update_store(chrono::Duration::seconds(5));
 
         assert!(dispatcher.borrow().store().get_notices().is_empty());
     }
@@ -1078,17 +1076,15 @@ mod tests {
     #[test]
     fn update_store_keeps_notices_within_the_visible_duration() {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-        let created_at = crate::test_support::local_datetime("2026-02-16T10:00:00+09:00");
         dispatcher.borrow_mut().dispatch(NoticeAction::Push {
             id: NoticeId::new(),
             message: "fresh".to_string(),
-            created_at,
         });
         dispatcher.borrow_mut().consume_action();
 
         dispatcher
             .borrow_mut()
-            .update_store(created_at + chrono::Duration::seconds(1));
+            .update_store(chrono::Duration::seconds(1));
 
         assert_eq!(dispatcher.borrow().store().get_notices().len(), 1);
     }

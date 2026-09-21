@@ -97,7 +97,6 @@ fn issue_upload_failure_actions(id: IssueId, message: String) -> Vec<Action> {
         NoticeAction::Push {
             id: NoticeId::new(),
             message: format!("Issue #{id}の保存に失敗しました: {message}"),
-            created_at: chrono::Local::now(),
         }
         .into(),
         IssueAction::FailUpload { id, message }.into(),

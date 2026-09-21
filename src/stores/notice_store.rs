@@ -27,19 +27,21 @@ pub struct Notice {
     pub id: NoticeId,
     /// ユーザーへ表示するメッセージ。
     pub message: String,
-    /// 通知の表示期限を計算する基準時刻。
-    pub created_at: chrono::DateTime<chrono::Local>,
+    pub(super) elapsed: chrono::Duration,
+}
+
+impl Notice {
+    /// 表示期限内かどうかを返す。累積経過時間が期限ちょうどの場合は表示終了とみなす。
+    pub(super) fn is_visible(&self) -> bool {
+        self.elapsed < NOTICE_VISIBLE_FOR
+    }
 }
 
 /// 一時通知の追加と破棄を表すAction。
 // Journal保存などの失敗発生源と手動破棄操作が接続されると各variantがproduction codeから使われる。
 pub enum NoticeAction {
     /// 指定したIDが未登録の場合だけ通知を追加する。
-    Push {
-        id: NoticeId,
-        message: String,
-        created_at: chrono::DateTime<chrono::Local>,
-    },
+    Push { id: NoticeId, message: String },
     /// 指定したIDの通知を破棄する。未登録のIDは正常なno-opとして扱う。
     Dismiss { id: NoticeId },
 }
@@ -57,11 +59,7 @@ impl NoticeStore {
 
     pub(super) fn consume_action(&mut self, action: NoticeAction) {
         match action {
-            NoticeAction::Push {
-                id,
-                message,
-                created_at,
-            } => {
+            NoticeAction::Push { id, message } => {
                 // 非同期処理から同じ完了通知が複数回届いても表示を重複させない。
                 if self.notices.iter().any(|notice| notice.id == id) {
                     return;
@@ -69,7 +67,7 @@ impl NoticeStore {
                 self.notices.push(Notice {
                     id,
                     message,
-                    created_at,
+                    elapsed: chrono::Duration::zero(),
                 });
             }
             NoticeAction::Dismiss { id } => {
@@ -83,9 +81,10 @@ impl NoticeStore {
         &self.notices
     }
 
-    pub(super) fn update(&mut self, now: chrono::DateTime<chrono::Local>) {
-        // Store内で現在時刻を取得せず、呼び出し側の1時点を全Storeで共有できるようにする。
-        self.notices
-            .retain(|notice| notice.created_at + NOTICE_VISIBLE_FOR > now);
+    pub(super) fn update(&mut self, tick: chrono::Duration) {
+        self.notices.iter_mut().for_each(|notice| {
+            notice.elapsed += tick;
+        });
+        self.notices.retain(Notice::is_visible);
     }
 }

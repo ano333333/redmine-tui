@@ -25,7 +25,6 @@ pub fn remote_journal_upload_failure_actions(
         NoticeAction::Push {
             id: NoticeId::new(),
             message: format!("Remote Journalの保存に失敗しました: {message}"),
-            created_at: chrono::Local::now(),
         }
         .into(),
         JournalAction::FailRemoteUpload {

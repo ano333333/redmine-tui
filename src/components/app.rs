@@ -891,7 +891,6 @@ mod tests {
         store.consume_action(Action::Notice(NoticeAction::Push {
             id: NoticeId::new(),
             message: "Issueの保存に失敗しました: 接続が切れました".to_string(),
-            created_at: crate::test_support::local_datetime("2026-02-16T10:00:00+09:00"),
         }));
 
         let widget = create_toast_widget(&store);

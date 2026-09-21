@@ -22,7 +22,6 @@ fn local_journal_upload_failure_actions(
         NoticeAction::Push {
             id: NoticeId::new(),
             message: notice_message,
-            created_at: chrono::Local::now(),
         }
         .into(),
         JournalAction::FailLocalUpload { issue_id, message }.into(),

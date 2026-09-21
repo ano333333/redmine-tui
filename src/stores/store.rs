@@ -39,9 +39,9 @@ impl Dispatcher {
     pub fn consume_actinos_len(&self) -> usize {
         self.actions.len()
     }
-    /// 時間経過に依存する全Storeの状態を、呼び出し側が取得した同一時刻で更新する。
-    pub fn update_store(&mut self, now: chrono::DateTime<chrono::Local>) {
-        self.store.update(now);
+    /// 時間経過に依存する全Storeへ、前回更新からの同じ経過時間を適用する。
+    pub fn update_store(&mut self, tick: chrono::Duration) {
+        self.store.update(tick);
     }
     pub fn consume_action(&mut self) {
         if let Some(action) = self.actions.pop_front() {
@@ -377,11 +377,11 @@ impl Store {
         self.notice_store.notices()
     }
 
-    /// 時間経過に依存する内部状態を更新する。
+    /// 前回更新からの経過時間を内部状態へ累積する。
     ///
-    /// `now`ちょうどに表示期限を迎えたnoticeも破棄する。
-    pub fn update(&mut self, now: chrono::DateTime<chrono::Local>) {
-        self.notice_store.update(now);
+    /// この更新で表示期限ちょうどに達したnoticeも破棄する。
+    pub fn update(&mut self, tick: chrono::Duration) {
+        self.notice_store.update(tick);
     }
 }
 
