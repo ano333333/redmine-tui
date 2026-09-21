@@ -20,7 +20,10 @@ use crate::components::remote_journal_conflict_popup::{
     EventProcessResult as RemoteJournalConflictEventProcessResult, RemoteJournalConflictComponent,
 };
 use crate::inputs::{InputEvent, KeyCode};
-use crate::stores::{Action, Dispatcher, IssueAction, JournalAction, RemoteJournalState, Store};
+use crate::stores::{
+    Action, Dispatcher, IssueAction, IssueState, JournalAction, LocalJournalState,
+    RemoteJournalState, Store,
+};
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
     build_done_ratio_options, build_issue_status_options, build_priority_options,
@@ -94,6 +97,28 @@ enum PendingEditorContext {
     LocalJournal {
         issue_id: IssueId,
     },
+}
+
+/// Storeの状態遷移違反を防ぐため、editor effectを生成できる状態かを最終確認する。
+///
+/// 各Componentの操作可否判定はUIイベントを抑制する責務として残し、この境界でも検査する。
+fn can_start_editing(context: &PendingEditorContext, store: &Store) -> bool {
+    match context {
+        PendingEditorContext::IssueBody { id } => {
+            !matches!(store.try_get_issue_state(*id), Some(IssueState::Uploading))
+        }
+        PendingEditorContext::RemoteJournal {
+            issue_id,
+            journal_id,
+        } => !matches!(
+            store.get_remote_journal(*issue_id, *journal_id).state,
+            RemoteJournalState::Uploading { .. }
+        ),
+        PendingEditorContext::LocalJournal { issue_id } => matches!(
+            store.try_get_local_journal(*issue_id),
+            Some(entry) if matches!(entry.state, LocalJournalState::LocalOnly { .. })
+        ),
+    }
 }
 
 enum PopupComponent<'a> {
@@ -302,9 +327,12 @@ impl<'a> AppComponent<'a> {
             Some(IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::EditIssueBodyRequested { id, body },
             )) => {
-                self.pending_editor_context = Some(PendingEditorContext::IssueBody { id });
-                self.pending_effect =
-                    Some(AppEffect::OpenEditor(EditorRequest { initial_text: body }));
+                let context = PendingEditorContext::IssueBody { id };
+                if can_start_editing(&context, dispatcher.borrow().store()) {
+                    self.pending_editor_context = Some(context);
+                    self.pending_effect =
+                        Some(AppEffect::OpenEditor(EditorRequest { initial_text: body }));
+                }
             }
             Some(IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::OpenIssueStatusPopup,
@@ -483,21 +511,27 @@ impl<'a> AppComponent<'a> {
                     notes,
                 },
             )) => {
-                self.pending_editor_context = Some(PendingEditorContext::RemoteJournal {
+                let context = PendingEditorContext::RemoteJournal {
                     issue_id,
                     journal_id: id,
-                });
-                self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
-                    initial_text: notes,
-                }));
+                };
+                if can_start_editing(&context, dispatcher.borrow().store()) {
+                    self.pending_editor_context = Some(context);
+                    self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                        initial_text: notes,
+                    }));
+                }
             }
             Some(IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::EditLocalJournalRequested { issue_id, notes },
             )) => {
-                self.pending_editor_context = Some(PendingEditorContext::LocalJournal { issue_id });
-                self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
-                    initial_text: notes,
-                }));
+                let context = PendingEditorContext::LocalJournal { issue_id };
+                if can_start_editing(&context, dispatcher.borrow().store()) {
+                    self.pending_editor_context = Some(context);
+                    self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                        initial_text: notes,
+                    }));
+                }
             }
             Some(IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::CreateLocalJournalRequested { issue_id },
@@ -916,6 +950,85 @@ mod tests {
 
     fn ctrl_s_event() -> InputEvent {
         InputEvent::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::control()))
+    }
+
+    #[test]
+    fn can_start_editing_issue_body_unless_issue_is_uploading() {
+        let id = IssueId::new(3);
+        let context = PendingEditorContext::IssueBody { id };
+        let mut store = Store::new();
+        store.consume_action(IssueAction::Load { id }.into());
+
+        assert!(can_start_editing(&context, &store));
+
+        store.consume_action(
+            IssueAction::UpdateDescription {
+                id,
+                body: "updated body".to_string(),
+            }
+            .into(),
+        );
+        store.consume_action(IssueAction::StartUpload { id }.into());
+
+        assert!(!can_start_editing(&context, &store));
+    }
+
+    #[test]
+    fn can_start_editing_remote_journal_unless_it_is_uploading() {
+        let issue_id = IssueId::new(3);
+        let journal_id = JournalId::new(1);
+        let context = PendingEditorContext::RemoteJournal {
+            issue_id,
+            journal_id,
+        };
+        let mut store = Store::new();
+        store.consume_action(
+            JournalAction::SyncFetched {
+                issue_id,
+                journals: vec![parse_journal_yaml(journal_id)],
+            }
+            .into(),
+        );
+
+        assert!(can_start_editing(&context, &store));
+
+        store.consume_action(
+            JournalAction::EditRemoteNotes {
+                issue_id,
+                journal_id,
+                notes: "edited notes".to_string(),
+            }
+            .into(),
+        );
+
+        assert!(can_start_editing(&context, &store));
+
+        store.consume_action(
+            JournalAction::StartRemoteUpload {
+                issue_id,
+                journal_id,
+            }
+            .into(),
+        );
+
+        assert!(!can_start_editing(&context, &store));
+    }
+
+    #[test]
+    fn can_start_editing_local_journal_only_when_it_is_local_only() {
+        let issue_id = IssueId::new(3);
+        let context = PendingEditorContext::LocalJournal { issue_id };
+        let mut store = Store::new();
+
+        assert!(!can_start_editing(&context, &store));
+
+        store.consume_action(JournalAction::CreateLocal { issue_id }.into());
+
+        assert!(can_start_editing(&context, &store));
+
+        store.consume_action(JournalAction::StartLocalUpload { issue_id }.into());
+
+        assert!(!can_start_editing(&context, &store));
     }
 
     fn edit_first_journal(dispatcher: &Rc<RefCell<Dispatcher>>) {
@@ -1694,7 +1807,7 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_s_on_uploading_local_journal_notes_installs_no_effect() {
+    fn e_and_ctrl_s_on_uploading_local_journal_notes_install_no_effect() {
         let dispatcher = loaded_dispatcher();
         for action in [
             JournalAction::CreateLocal {
@@ -1718,6 +1831,10 @@ mod tests {
             app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         }
         app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
+
+        assert!(app.take_effect().is_none());
+
         app.process_event(ctrl_s_event(), dispatcher.clone());
 
         assert!(app.take_effect().is_none());

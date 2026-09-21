@@ -18,6 +18,8 @@ pub enum EventProcessResult {
     EditRequested {
         notes: String,
     },
+    /// 編集キーを正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
+    EditSuppressed,
     SaveRequested,
     /// 保存キーを正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
     SaveSuppressed,
@@ -75,10 +77,9 @@ impl LocalJournalItemComponent {
             focus_state::EventProcessResult::SaveSuppressed => {
                 Some(EventProcessResult::SaveSuppressed)
             }
-            focus_state::EventProcessResult::Edit
-            | focus_state::EventProcessResult::SaveRequested => {
-                // Uploading中の編集・保存操作は重複処理を避けるため伝播させない。
-                None
+            focus_state::EventProcessResult::Edit => Some(EventProcessResult::EditSuppressed),
+            focus_state::EventProcessResult::SaveRequested => {
+                Some(EventProcessResult::SaveSuppressed)
             }
         }
     }
@@ -160,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_e_on_uploading_local_item_is_a_no_op_and_ctrl_s_is_suppressed() {
+    fn process_event_e_and_ctrl_s_on_uploading_local_item_are_suppressed() {
         let entry = LocalJournalEntry {
             journal: LocalJournal {
                 issue_id: IssueId::new(1),
@@ -172,11 +173,10 @@ mod tests {
         component.update(&entry, 32);
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('e'), KeyModifiers::none()))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('e'), KeyModifiers::none())),
+            Some(EventProcessResult::EditSuppressed)
+        ));
         assert!(matches!(
             component.process_event(key_event(KeyCode::Char('s'), KeyModifiers::control())),
             Some(EventProcessResult::SaveSuppressed)

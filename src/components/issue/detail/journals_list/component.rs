@@ -36,6 +36,7 @@ pub enum EventProcessResult {
     EditLocalJournalRequested {
         notes: String,
     },
+    EditSuppressed,
     CreateLocalJournalRequested,
     SaveLocalJournalRequested,
     SaveRequested {
@@ -107,6 +108,9 @@ impl JournalsListComponent {
                 }
                 LocalEventProcessResult::EditRequested { notes } => {
                     return Some(EventProcessResult::EditLocalJournalRequested { notes });
+                }
+                LocalEventProcessResult::EditSuppressed => {
+                    return Some(EventProcessResult::EditSuppressed);
                 }
                 LocalEventProcessResult::SaveRequested => {
                     return Some(EventProcessResult::SaveLocalJournalRequested);
@@ -753,6 +757,25 @@ mod tests {
         assert!(matches!(
             component.process_event(ctrl_s_event()),
             Some(EventProcessResult::SaveSuppressed)
+        ));
+    }
+
+    #[test]
+    fn process_event_e_on_uploading_local_item_returns_edit_suppressed() {
+        let local_entry = LocalJournalEntry {
+            journal: LocalJournal {
+                issue_id: IssueId::new(1),
+                notes: "local notes".to_string(),
+            },
+            state: LocalJournalState::Uploading,
+        };
+        let mut component = JournalsListComponent::new(IssueId::new(1));
+        component.update(&[], Some(&local_entry), WIDE_WIDTH);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
+
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('e'))),
+            Some(EventProcessResult::EditSuppressed)
         ));
     }
 

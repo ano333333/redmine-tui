@@ -534,6 +534,9 @@ impl IssueDetailComponent {
                             notes,
                         });
                     }
+                    Some(JournalsListEventProcessResult::EditSuppressed) => {
+                        return Some(EventProcessResult::Suppressed);
+                    }
                     Some(JournalsListEventProcessResult::CreateLocalJournalRequested) => {
                         return Some(EventProcessResult::CreateLocalJournalRequested {
                             issue_id: self.id,
