@@ -60,6 +60,8 @@ impl KeyModifiers {
     }
 }
 
+pub mod native;
+
 #[cfg(test)]
 mod tests {
     use super::*;
