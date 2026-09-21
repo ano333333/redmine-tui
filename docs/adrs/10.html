@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 10 — GitHub Pages向けWASMデモとplatform境界</title>
+    <style>*,*::before,*::after{box-sizing:border-box}body{margin:0;background:#0f1117;color:#d0d4e8;font:15px/1.75 system-ui,"Noto Sans JP",sans-serif}.layout{display:flex;min-height:100vh}nav{position:sticky;top:0;width:240px;height:100vh;padding:28px 20px;background:#1a1d27;border-right:1px solid #2e3350;overflow:auto}nav a{display:block;padding:5px 0;color:#8ba3f5;text-decoration:none;font-size:13px}main{max-width:980px;padding:52px 64px}h1,h2,h3{color:#e8eaf6}h1{font-size:27px;line-height:1.25}h2{margin-top:44px;padding-bottom:8px;border-bottom:1px solid #2e3350;font-size:19px}h3{margin-top:28px;font-size:16px}code,pre{font-family:"JetBrains Mono",monospace}code{color:#8ba3f5}pre{overflow:auto;padding:16px 18px;background:#13151f;border:1px solid #2a2e45;border-radius:8px;color:#d0d4e8}pre code{color:inherit}.status{display:inline-block;padding:3px 10px;border:1px solid #b28a2e;border-radius:20px;color:#f0b429}li{margin:5px 0}@media(max-width:820px){.layout{display:block}nav{position:static;width:auto;height:auto}main{padding:32px 22px}}</style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav><strong>ADR 10</strong><a href="#context">Context</a><a href="#decision">Decision</a><a href="#rationale">Rationale</a><a href="#consequences">Consequences</a><a href="#alternatives">Alternatives</a><a href="#future">Future Work</a><a href="#questions">Open Questions</a><hr /><a href="9.html">ADR 9</a><a href="../architecture.html">Architecture</a></nav>
+      <main>
+        <h1>10. GitHub Pages向けWASMデモとplatform境界</h1>
+        <span class="status">Proposed</span>
+<section id="context"><h2>Context</h2>
+<p><code>redmine-tui</code>を操作可能なサンプルとしてGitHub Pagesへ公開する。Web版は実Redmineへ接続せず、repositoryのfixtureを組み込んだデモとし、描画にはRatzillaの<code>DomBackend</code>を使用する。</p>
+<p>GitHub Pagesは静的ファイルだけを配信するため、server process、PTY、filesystem、環境変数、子processを利用できない。現在のnative実装には次のplatform依存がある。</p>
+<ul>
+<li>Ratatui/crosstermによる描画と入力</li>
+<li>Tokio multi-thread runtimeと<code>Send + &#x27;static</code>なworker task</li>
+<li>HTTPを行う<code>DefaultRedmineClient</code></li>
+<li><code>std::fs</code>で<code>datas/</code>を読むfixture loader</li>
+<li>一時ファイルと外部processを使うeditor</li>
+<li>local fileへのlog出力とprocess環境変数</li>
+</ul>
+<p>Store、Component、Widget、entity、value object、Redmine usecaseの状態遷移はnative/Webで共有する。platform差をComponentやStoreへ散在させず、アプリケーションの入口と外部副作用のadapterへ閉じ込める。</p>
+<p>既存ADRとの関係は次のとおりである。</p>
+<ul>
+<li>ADR 1のComponent lifecycleとADR 6・7の非同期取得状態を維持する。</li>
+<li>ADR 3の「Dispatcher / Store / Componentはmain threadだけが更新する」という所有方針を維持する。</li>
+<li>ADR 3のTokio workerおよび同期editorに限定した実行方式を、本ADRのruntime/editor境界で置き換える。</li>
+<li>ADR 9のupload中編集を異常系とする判断を維持する。</li>
+<li>ADR 9のNoticeが壁時計の発生時刻を保持する契約だけを、本ADRの表示経過時間による契約で置き換える。履歴を保存するため既存ADR自体は更新しない。</li>
+</ul>
+</section>
+<section id="decision"><h2>Decision</h2>
+<h3>全体構成</h3>
+<p>共通アプリケーション層とplatform固有adapterを分離する。</p>
+<pre><code> InputEvent ──&gt; Component ──effect──&gt; App runner ──&gt; platform ports
+                    │                    │             ├─ Redmine
+                    v                    │             ├─ Editor
+                  Action                 │             ├─ Runtime
+                    │                    │             └─ Logging
+                    v                    │
+              Dispatcher/Store &lt;── completion
+
+ native: crossterm / Tokio / HTTP / external editor / file log
+ Web:    DomBackend / spawn_local / memory mock / textarea / console</code></pre>
+<p>共通層はcrossterm、Ratzilla、DOM、Tokio runtime、filesystem、process、HTTP実装へ直接依存しない。初期実装では単一Cargo packageを維持し、必要ならnative/Web runnerと<code>lib.rs</code>を追加するが、ComponentやStoreの大規模な再編は行わない。</p>
+<h3>build targetと配信</h3>
+<p>nativeをdefault、Webを明示的なfeatureとtargetで選択する。</p>
+<pre><code>[features]
+default = [&quot;native&quot;]
+native = [&quot;dep:crossterm&quot;, &quot;ratatui/crossterm&quot;]
+web-demo = [&quot;dep:ratzilla&quot;, &quot;dep:wasm-bindgen&quot;, &quot;dep:wasm-bindgen-futures&quot;]</code></pre>
+<p>実際の依存解決に応じてtarget-specific dependenciesも使い、native専用依存をWASMへ入れない。nativeと<code>web-demo</code>の同時指定、または非WASM targetでの<code>web-demo</code>は<code>compile_error!</code>で拒否する。</p>
+<p>Web成果物はTrunkでbuildし、repository名を含むGitHub Pagesのbase pathを設定する。GitHub Actionsが静的な<code>dist/</code>をPagesへdeployする。公開成果物へRedmine URLやAPI keyを埋め込まない。</p>
+<h3>描画backendとrunner</h3>
+<p>nativeはRatatui/crossterm backend、WebはRatzilla <code>DomBackend</code>を使う。WidgetはRatatuiの<code>Frame</code>、<code>Buffer</code>、<code>Rect</code>だけを利用し、backend型を知らない状態を維持する。</p>
+<p>nativeのpoll loopとWebのcallback/render loopをplatform runnerへ分離する。両runnerは次のapplication lifecycleを守る。</p>
+<ol>
+<li>completion、tick、resize、入力を受理する。</li>
+<li>completion Actionをdispatchする。</li>
+<li>Actionを1件consumeするごとに、描画可能ならComponentをupdateする。</li>
+<li>入力を現在のinteraction modeに応じた宛先へ渡す。</li>
+<li>effectを取り出してplatform portを起動する。</li>
+<li>描画可能ならrenderする。</li>
+</ol>
+<p>物理的なcallback時刻ではなくrunnerの受理順をアプリケーション上の順序とする。Dispatcher、Store、ComponentはWebでもbrowser main threadだけが更新し、DOM callbackやtaskから直接変更しない。</p>
+<h3>InputEvent</h3>
+<p>Componentが直接受け取る<code>crossterm::event::Event</code>をアプリ固有の<code>InputEvent</code>へ置き換える。native adapterはcrossterm eventを、Web adapterはRatzilla eventを変換する。</p>
+<pre><code>pub enum InputEvent {
+    Key(KeyEvent),
+}
+
+pub struct KeyEvent {
+    pub code: KeyCode,
+    pub modifiers: KeyModifiers,
+}</code></pre>
+<p>初期型は現在Componentが解釈するkey入力を損失なく表す最小構成とする。Ratzillaの<code>keydown</code>をpressへ変換し、必要になればpress/repeat/releaseのkindを追加する。resize、tick、worker/editor completionはComponent入力ではないためrunner eventとする。mouseはComponentが必要とした時点で追加する。</p>
+<p>変換不能なplatform固有keyは無視する。文字、矢印、Enter、Escape、Tab、Backspace、現在使用する修飾keyを変換testで固定する。</p>
+<h3>interaction modeと入力元</h3>
+<p>editorの開閉と入力のpull/配送先をplatform interaction hostが一元管理する。</p>
+<pre><code>enum InteractionMode {
+    Application,
+    Editing(EditorSession),
+}</code></pre>
+<ul>
+<li><code>Application</code>: terminalまたはRatzilla入力をComponentへ渡す。</li>
+<li><code>Editing</code>: 入力をexternal editorまたはtextareaへ渡し、Componentへ渡さない。</li>
+</ul>
+<p>編集中は保存、Issue切り替え、再取得、popup操作、別editor開始などのComponent入力を配送しない。二重editor開始はlifecycle違反として拒否する。</p>
+<p>tick、worker completion、resizeの記録は編集中も受理する。ActionはStoreへ適用するが、Component更新と通常画面の描画はeditor終了まで遅延する。終了時に最新のStoreと描画領域から一度updateして再描画する。</p>
+<h3>editorの共通契約</h3>
+<p>platform固有editorを、同一UI threadから開始して非同期に完了する非<code>Send</code>のportとして抽象化する。</p>
+<pre><code>pub struct EditorRequest { pub initial_text: String }
+
+pub enum EditorOutcome {
+    Submitted { edited_text: String },
+    Cancelled,
+}
+
+pub trait TextEditor {
+    fn edit(&amp;mut self, request: EditorRequest)
+        -&gt; impl Future&lt;Output = Result&lt;EditorOutcome, EditorError&gt;&gt; + &#x27;_;
+}</code></pre>
+<p>空文字列のSubmitは有効な編集でありCancelの代用にしない。外部失敗は<code>Err</code>とする。EditorはIssue/Journal IDを知らず、共通側がpending contextを保持する。完了時はすべての結果でcontextをtakeし、Submitだけが対応する編集Actionをdispatchする。Cancelはno-op、失敗はADR 9に従ってnoticeを追加する。</p>
+<p>editor開始前にStoreを検査し、次の状態でだけ開始する。</p>
+<ul>
+<li>Issue description: <code>Synced</code>または<code>Edited</code></li>
+<li>Remote Journal: <code>Synced</code>または<code>Edited</code></li>
+<li>Local Journal: <code>LocalOnly</code></li>
+</ul>
+<p>現在、Issue descriptionとRemote Journalはupload中のeditor開始を完全には抑止していないため、WASM対応の準備として制御を追加する。Storeのpanicは防御的検査として維持する。Local Journal新規作成では<code>CreateLocal</code>をconsumeしてからeditorを開く。</p>
+<h3>native editor</h3>
+<p>nativeは一時ファイルと<code>$VISUAL</code>、<code>$EDITOR</code>、<code>nvim</code>による現在の仕様を維持するが、子processの終了は非同期に待つ。<code>std::process::Command::status</code>によるmain thread停止は維持しない。</p>
+<p>raw mode解除、alternate screen離脱、再入場、raw mode再有効化、clearはnative runnerが管理する。editor中はcrossterm入力と描画を止め、editor completionとworker completionを待つ。全終了経路でterminalと一時ファイルをcleanupするguardを使う。正常終了は<code>Submitted</code>、起動失敗または非zero終了は<code>Err</code>とする。</p>
+<h3>Web textareaとRatzilla focus</h3>
+<p>Webは<code>textarea</code>を含むmodalをRatzilla gridの外側へ追加する。初期値を設定してtextareaへDOM focusを移し、Submit/Cancel callbackでFutureを完了させる。IME composition中のEnter/Escapeを誤認せず、完了後はDOM node、listener、Rust closureを解放する。</p>
+<p>Ratzilla cursor、Componentの論理focus、browserのDOM focusは別に扱う。<code>DomBackend::on_key_event</code>はgridへ<code>tabindex=&quot;0&quot;</code>とkey listenerを設定する。textareaがfocusを持つ間はRatzilla入力をComponentへ配送せず、editorが消費するeventの伝播も停止する。</p>
+<p>終了時はmodalを破棄し、現在のgrid要素をDOMから取得し直して<code>focus()</code>する。その後、論理focusを変更せず最新サイズでupdate/renderする。<code>DomBackend</code>はresize後のdrawでgridを再構築し得るため、開始時のElement参照を再利用しない。</p>
+<p>reload、tab close、navigationでは、未確定textareaを含むmemory上の編集をすべて破棄する。<code>beforeunload</code>警告、永続化、復元は行わない。editor session IDは初期実装へ入れず、遅延callbackが実際に問題になれば追加する。</p>
+<h3>非同期task実行境界</h3>
+<p>共通runnerは次を区別する。</p>
+<ul>
+<li>background task: Redmine I/Oまたはmock server処理。完了Actionをrunnerへ返す。</li>
+<li>local UI task: editorやDOM interaction。同一UI threadで完了し、<code>Send</code>を要求しない。</li>
+</ul>
+<p>nativeはTokio、Webは<code>wasm_bindgen_futures::spawn_local</code>を使う。runtime handle、sender、executor固有型をComponent、Store、Clientへ渡さない。</p>
+<p>Redmine usecaseのFutureは現在の<code>Send + &#x27;static</code>を維持し、Clientも<code>Send + Sync</code>を要求する。Webの<code>spawn_local</code>は<code>Send</code>なFutureも起動でき、<code>DemoRedmineClient</code>はDOMへ触れないインメモリserver mockなので、この境界を弱める理由はない。Web clientの共有状態には<code>Arc</code>と短時間だけ保持する同期primitiveを使い、lockを<code>.await</code>越しに保持しない。現在の<code>RedmineClient</code>には返却Futureの<code>Send</code>を明示しない<code>async fn</code>形式のmethodもあるため、全methodを<code>fn -&gt; impl Future&lt;Output = ...&gt; + Send</code>形式へ揃え、Clientの契約として明示する。</p>
+<p>taskのspawn自体はusecaseではなく<code>main.rs</code>の<code>spawn_action_task</code>がTokio <code>Runtime::spawn</code>で行う。この起動部分をruntime portへ置き換え、nativeはTokio、Webは<code>spawn_local</code>へ同じ<code>Send + &#x27;static</code>なbackground Futureを渡す。completionをrunnerへ返すchannelまたはlocal queueはplatform adapterが選ぶ。</p>
+<p><code>load_initial_entities</code>がusecase内で使用する<code>tokio::join!</code>はTokio固有なので、executorに依存しない<code>futures::join!</code>へ置き換える。これはtaskをspawnせず、同一task内で複数のClient Futureを並行pollする。</p>
+<p>usecaseは開始Actionを同期dispatchした後、Dispatcher/StoreをFutureへ捕捉せず、owned inputとClientだけを渡す原則を維持する。Futureの完了だけをrunnerがmain threadでdispatchする。共通契約は「taskがStoreを直接変更しない」「runner受理順でAction化する」「UI taskをlocal実行できること」とし、同じexecutor型やthread数は要求しない。</p>
+<h3>editor中のbackground completion</h3>
+<p>editor中もbackground完了ActionをStoreへ適用する。開始条件とComponent入力停止により、編集中の対象へ新しいuploadを開始する経路はない。同一対象のeditor結果とupload completionは競合しない。</p>
+<p>安全に完了し得るのは別Issueのfetch、Issue選択用page fetch、別対象ですでに開始済みのuploadなどである。対象がupload中ならeditorを開始しない。</p>
+<h3>Noticeと経過時間</h3>
+<p>Noticeの表示時間はeditor中に消費しない。現在の<code>created_at + 5秒 &gt; now</code>では、editor中に発生したnoticeが一度も描画されず消える可能性がある。</p>
+<p>Storeの時間更新を現在時刻ではなく表示経過時間で受け取る契約へ変更する。Noticeは残り表示時間を保持し、通常画面の表示中だけ減算する。editor中にActionを適用しても表示経過時間には<code>Duration::ZERO</code>を渡す。実時間の計測にはplatformの単調時計を使う。</p>
+<p>これはADR 9の「Noticeが発生時刻を保持し、<code>Store::update(now)</code>へ現在時刻を渡す」という決定だけを置き換える。エラー分類、notice表示、決定的なStore testという目的は維持する。</p>
+<h3>DemoRedmineClientとfixture</h3>
+<p>Webは実HTTPを行わない<code>DemoRedmineClient</code>を使い、master、Issue、Journal、project別Issue一覧を<code>include_str!</code>でWASMへ組み込む。</p>
+<p>filesystem読込とYAML文字列のparseを分離する。native fixture loaderはfile内容を、Web clientはembedded文字列を同じparserへ渡し、fixtureを複製しない。</p>
+<p><code>DemoRedmineClient</code>はmemory内にserver側状態を持つ。</p>
+<ul>
+<li>get系methodはmemory snapshotを返す。</li>
+<li>Issue/Journal updateはmemory上のserver stateへ反映する。</li>
+<li>更新後の再取得では反映済み値を返す。</li>
+<li>network、認証、CORS、API keyを使わない。</li>
+<li>reloadで初期fixtureへ戻る。</li>
+</ul>
+<p>既存Redmine usecaseを通し、fetch/upload/conflict処理を操作可能にする。実通信を模した意図的な遅延は追加せず、memory上の処理を直ちに完了させる。fixture変更時は<code>datas/</code>、<code>docker/redmine/seed_test_data.rb</code>、<code>tests/redmine_seeder_files_test.sh</code>の整合性を確認する。</p>
+<h3>loggingとpanic</h3>
+<p>nativeはfile tracingを維持する。Webはfilesystemへ書かず、<code>tracing</code> eventをlevelに応じてbrowser consoleへ出す。Web panicもmessageとstackをconsoleへ残す。nativeのpanic時terminal復帰は維持する。</p>
+<p>Webのlog初期化失敗だけでデモを起動不能にしない。listener登録や<code>DomBackend</code>生成など必須処理の失敗は画面またはconsoleへ報告して停止する。</p>
+<h3>実装順</h3>
+<ol>
+<li><code>InputEvent</code>と変換testを追加し、Componentからcrossterm型を除く。</li>
+<li>editor/interaction host、開始可能状態、入力切替、cleanup、Notice経過時間をnativeへ適用する。</li>
+<li>background/local taskのruntime境界を抽象化し、Tokioを適合させる。初期取得の<code>tokio::join!</code>を<code>futures::join!</code>へ置き換える。</li>
+<li>Cargo feature、Web entry point、Trunk、<code>DomBackend</code>を設定する。</li>
+<li>embedded fixture parserと<code>DemoRedmineClient</code>を実装する。</li>
+<li>textarea、focus復帰、console loggingを実装する。</li>
+<li>native test、WASM build、fixture整合性testを実行し、Pagesへdeployする。</li>
+</ol>
+<p>各段階でnative版をbuild/test可能に保つ。UI変更時だけsnapshotを確認し、意図した差分に限って更新する。</p>
+</section>
+<section id="rationale"><h2>Rationale</h2>
+<p>RatzillaはRatatui bufferをbrowserへ直接描画できるため、Widgetを再利用しながらcrossterm非対応を回避できる。platform差を入力、runner、Client、editor、runtime、loggingへ限定すると、Storeの状態機械とComponent lifecycleを共有できる。</p>
+<p>textareaをFutureとして待てばbrowser event loopを止めず、native editorも同じ開始・完了契約にできる。物理的な待機方法ではなくinteraction modeとAction適用順を共通化する。</p>
+<p>embedded fixtureとmemory server mockによりcredential、CORS、Pages上のserverが不要になる。同じusecaseを通すため、静的画面ではなく編集・保存を含む操作サンプルになる。</p>
+</section>
+<section id="consequences"><h2>Consequences</h2>
+<ul>
+<li>Componentはcrosstermではなく<code>InputEvent</code>へ依存する。</li>
+<li><code>main.rs</code>のplatform処理をnative/Web runnerとportへ分離する。</li>
+<li><code>RedmineClient</code>とusecaseの<code>Send + Sync</code>契約は維持し、Webのbackground Futureも同じ契約で起動する。</li>
+<li>editor中もStoreはcompletionを受理するが、Component更新と描画は終了まで遅延する。</li>
+<li>Noticeは通常画面の表示経過時間で期限切れになる。</li>
+<li>native editorは子processを非同期に待つ。</li>
+<li>Web編集は永続化されずpage離脱ですべて失われる。</li>
+<li>Web bundle内のfixtureは公開情報として扱う。</li>
+<li>native/Web双方のbuild検証がCIに必要になる。</li>
+<li>実装完了時に<code>docs/architecture.md</code>を更新する。</li>
+</ul>
+</section>
+<section id="alternatives"><h2>Alternatives Considered</h2>
+<h3>xterm.jsとANSI出力</h3>
+<p>ANSI、入力、resize、日本語幅、IME、mouseのbridgeが必要になる。操作サンプルにはRatzillaの方が単純なため採用しない。</p>
+<h3>platform event型を共通型として使用する</h3>
+<p>一方の型へ他方を擬装するかComponentへ条件コンパイルが広がるため、独自<code>InputEvent</code>を使う。</p>
+<h3>browserから実Redmineへ接続する</h3>
+<p>CORS、mixed content、credential露出、接続先依存が生じるため採用しない。</p>
+<h3>fixtureをfetchする</h3>
+<p>追加の非同期初期化と配信path管理が必要になる。初期デモでは<code>include_str!</code>を使う。</p>
+<h3>Web editorをRatatui componentにする</h3>
+<p>IME、選択、clipboard、accessibilityを再実装するため、標準textareaを使う。</p>
+<h3>textarea完了を同期blockする</h3>
+<p>browser event loopが止まりSubmit/Cancelを処理できないため、Futureで待つ。</p>
+<h3>editor中のcompletionを保留する</h3>
+<p>同一対象の競合は開始条件で排除でき、他対象まで保留する理由がないため採用しない。</p>
+<h3>Webのすべてのtaskへ<code>Send</code>を要求する</h3>
+<p>Redmine background Futureは<code>Send</code>を維持するが、editorなどDOMを保持するlocal UI Futureは<code>Send</code>ではない。両者を一つのspawn契約へ統合しない。</p>
+<h3>page離脱時に永続化する</h3>
+<p>fixture-onlyデモでは不要なため、初期状態へ戻す。</p>
+</section>
+<section id="future"><h2>Future Work</h2>
+<ul>
+<li>mouse入力を使用する場合の<code>InputEvent</code>拡張</li>
+<li>editor session IDによる遅延callback検出</li>
+<li>Web bundle sizeとfixture量の最適化</li>
+<li>実Redmine接続を行う場合のcredential/CORS設計</li>
+</ul>
+</section>
+<section id="questions"><h2>Open Questions</h2>
+<ul>
+<li>textareaのSubmit keyをbuttonだけにするか、修飾keyも提供するか。</li>
+</ul>
+</section>
+      </main>
+    </div>
+  </body>
+</html>
