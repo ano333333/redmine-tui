@@ -1,7 +1,7 @@
-use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
 use std::cmp::min;
 
+use crate::inputs::{InputEvent, KeyCode};
 use crate::widgets::gutter::GUTTER_WIDTH;
 
 pub enum FocusEvent {
@@ -43,7 +43,7 @@ impl FocusState {
         }
     }
 
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         let action = self.action_from_event(event)?;
         self.apply_action(action)
     }
@@ -99,11 +99,8 @@ impl FocusState {
         self.cursor_position.is_some()
     }
 
-    fn action_from_event(&self, event: Event) -> Option<Action> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-
+    fn action_from_event(&self, event: InputEvent) -> Option<Action> {
+        let InputEvent::Key(key) = event;
         self.cursor_position?;
 
         match key.code {
@@ -164,10 +161,10 @@ impl FocusState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyEvent, KeyModifiers};
+    use crate::inputs::{InputEvent, KeyEvent, KeyModifiers};
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
     fn gutter_indented_position(x: u16, y: u16) -> Position {

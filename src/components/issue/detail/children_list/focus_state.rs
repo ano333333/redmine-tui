@@ -1,9 +1,9 @@
-use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
 
 use super::widget::HEADER_LINES;
 use crate::widgets::gutter::GUTTER_WIDTH;
 
+use crate::inputs::{InputEvent, KeyCode};
 use crate::vos::IssueId;
 
 pub enum FocusEvent {
@@ -67,11 +67,9 @@ impl FocusState {
         }
     }
 
-    pub fn process_event(&mut self, event: &Event) -> Option<EventProcessResult> {
+    pub fn process_event(&mut self, event: &InputEvent) -> Option<EventProcessResult> {
         let focused_id = self.focused_id?;
-        let Event::Key(key) = event else {
-            return None;
-        };
+        let InputEvent::Key(key) = event;
         let focused_index = self.ids.iter().position(|&id| id == focused_id)?;
 
         match key.code {
@@ -115,10 +113,10 @@ impl FocusState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyEvent, KeyModifiers};
+    use crate::inputs::{InputEvent, KeyEvent, KeyModifiers};
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
     fn ids(values: &[u16]) -> Vec<IssueId> {

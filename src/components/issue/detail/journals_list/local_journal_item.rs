@@ -1,6 +1,7 @@
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
+use crate::inputs::native::convert_key;
 use crate::stores::{LocalJournalEntry, LocalJournalState};
 
 use super::journals_list_item::focus_state;
@@ -57,6 +58,11 @@ impl LocalJournalItemComponent {
     }
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
+        let Event::Key(key) = event else {
+            return None;
+        };
+        // 上位Componentの入力契約がcrosstermの間だけ、共通入力へ移行済みのFocusStateとの境界で変換する。
+        let event = convert_key(key)?;
         match self.focus_state.process_event(event)? {
             focus_state::EventProcessResult::CursorLeavedFromBelow { x } => {
                 Some(EventProcessResult::CursorLeavedFromBelow { x })

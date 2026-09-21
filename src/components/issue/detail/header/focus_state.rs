@@ -1,5 +1,6 @@
-use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Position;
+
+use crate::inputs::{InputEvent, KeyCode};
 
 pub enum FocusEvent {
     Focused,
@@ -46,7 +47,7 @@ impl FocusState {
         }
     }
 
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         let action = self.action_from_event(event)?;
         self.apply_action(action)
     }
@@ -59,15 +60,12 @@ impl FocusState {
         self.focused
     }
 
-    fn action_from_event(&self, event: Event) -> Option<Action> {
+    fn action_from_event(&self, event: InputEvent) -> Option<Action> {
         if !self.focused {
             return None;
         }
 
-        let Event::Key(key) = event else {
-            return None;
-        };
-
+        let InputEvent::Key(key) = event;
         match key.code {
             KeyCode::Char('j') => Some(Action::LeaveFromBelow),
             _ => None,
@@ -87,10 +85,10 @@ impl FocusState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyEvent, KeyModifiers};
+    use crate::inputs::{InputEvent, KeyEvent, KeyModifiers};
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
     #[test]

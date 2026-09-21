@@ -3,6 +3,7 @@ use super::widget::{HeaderWidget, TitleDecorater};
 use crossterm::event::Event;
 use ratatui::layout::Position;
 
+use crate::inputs::native::convert_key;
 use crate::stores::{IssueState, Store};
 use crate::vos::IssueId;
 
@@ -20,7 +21,11 @@ impl HeaderComponent {
     }
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        self.focus_state.process_event(event)
+        let Event::Key(key) = event else {
+            return None;
+        };
+        // 上位Componentの入力契約がcrosstermの間だけ、共通入力へ移行済みのFocusStateとの境界で変換する。
+        self.focus_state.process_event(convert_key(key)?)
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {

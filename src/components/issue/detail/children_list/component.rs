@@ -2,6 +2,7 @@ use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::entities::IssueStatusExt;
+use crate::inputs::native::convert_key;
 use crate::stores::Store;
 use crate::vos::IssueId;
 
@@ -52,7 +53,12 @@ impl ChildrenListComponent {
     }
 
     pub fn process_event(&mut self, event: &Event) -> Option<EventProcessResult> {
-        self.focus_state.process_event(event)
+        let Event::Key(key) = event else {
+            return None;
+        };
+        // 上位Componentの入力契約がcrosstermの間だけ、共通入力へ移行済みのFocusStateとの境界で変換する。
+        let event = convert_key(*key)?;
+        self.focus_state.process_event(&event)
     }
 
     pub fn get_cursor_position(&self) -> Position {

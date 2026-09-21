@@ -1,8 +1,8 @@
 use std::cmp::min;
 
-use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::layout::Position;
 
+use crate::inputs::{InputEvent, KeyCode};
 use crate::widgets::gutter::GUTTER_WIDTH;
 
 pub enum FocusEvent {
@@ -89,17 +89,14 @@ impl FocusState {
         }
     }
 
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         self.focused_position.as_ref()?;
         let action = self.action_from_event(event)?;
         self.apply_action(action)
     }
 
-    fn action_from_event(&self, event: Event) -> Option<Action> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-
+    fn action_from_event(&self, event: InputEvent) -> Option<Action> {
+        let InputEvent::Key(key) = event;
         match key.code {
             KeyCode::Char('j') => Some(Action::MoveDown),
             KeyCode::Char('k') => Some(Action::MoveUp),
@@ -111,9 +108,7 @@ impl FocusState {
             {
                 Some(Action::Edit)
             }
-            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                Some(Action::Save)
-            }
+            KeyCode::Char('s') if key.modifiers.is_control() => Some(Action::Save),
             _ => None,
         }
     }
@@ -249,7 +244,7 @@ impl FocusState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::{KeyEvent, KeyModifiers};
+    use crate::inputs::{InputEvent, KeyEvent, KeyModifiers};
 
     const WIDE_WIDTH: u16 = 32;
     const NARROW_WIDTH: u16 = 18;
@@ -257,8 +252,8 @@ mod tests {
     const NARROW_NOTE_LINE_COUNT: u16 = 5;
     const PLACEHOLDER_LINE_COUNT: u16 = 1;
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
     fn state(width: u16, property_count: usize, comment_line_count: u16) -> FocusState {
@@ -277,8 +272,8 @@ mod tests {
         state
     }
 
-    fn ctrl_s_event() -> Event {
-        Event::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL))
+    fn ctrl_s_event() -> InputEvent {
+        InputEvent::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::control()))
     }
 
     fn assert_leave_from_below(result: Option<EventProcessResult>, expected_x: u16) {
