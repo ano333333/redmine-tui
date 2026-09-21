@@ -8,6 +8,8 @@ use super::focus_state::{EventProcessResult as RawEventProcessResult, FocusState
 use super::widget::{
     RemoteJournalConflictChoice, RemoteJournalConflictPopupWidget, RemoteJournalConflictWidget,
 };
+use crate::inputs::InputEvent;
+use crate::inputs::native::convert_key;
 
 /// Remote Journal競合popupのキー操作結果。
 pub enum EventProcessResult {
@@ -50,6 +52,13 @@ impl RemoteJournalConflictComponent {
 
     /// キーイベントを処理し、popupの終了やupload再試行が必要な場合は結果を返す。
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
+        let Event::Key(key) = event else {
+            return None;
+        };
+        self.process_input_event(convert_key(key)?)
+    }
+
+    fn process_input_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         self.focus_state
             .process_event(event)
             .and_then(|result| match result {
@@ -134,7 +143,7 @@ impl RemoteJournalConflictComponent {
 mod tests {
     use super::*;
 
-    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::{Position, Rect};
 
     use crate::components::remote_journal_conflict_popup::widget::RemoteJournalConflictButton;
@@ -148,8 +157,8 @@ mod tests {
         height: 10,
     };
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
     fn component() -> RemoteJournalConflictComponent {
@@ -204,7 +213,7 @@ mod tests {
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('l')))
+                .process_input_event(key_event(KeyCode::Char('l')))
                 .is_none()
         );
         component.update(AREA);
@@ -215,7 +224,7 @@ mod tests {
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('h')))
+                .process_input_event(key_event(KeyCode::Char('h')))
                 .is_none()
         );
         component.update(AREA);
@@ -238,12 +247,12 @@ mod tests {
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('j')))
+                .process_input_event(key_event(KeyCode::Char('j')))
                 .is_none()
         );
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('l')))
+                .process_input_event(key_event(KeyCode::Char('l')))
                 .is_none()
         );
         component.update(AREA);
@@ -254,7 +263,7 @@ mod tests {
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('h')))
+                .process_input_event(key_event(KeyCode::Char('h')))
                 .is_none()
         );
         component.update(AREA);
@@ -269,7 +278,7 @@ mod tests {
         let mut component = component();
         component.update(AREA);
 
-        component.process_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('j')));
         component.update(AREA);
 
         assert_button_cursor(
@@ -282,13 +291,13 @@ mod tests {
     fn enter_on_choice_changes_selected_notes() {
         let mut component = component();
 
-        component.process_event(key_event(KeyCode::Char('l')));
-        component.process_event(key_event(KeyCode::Enter));
-        let result = component.process_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('l')));
+        component.process_input_event(key_event(KeyCode::Enter));
+        let result = component.process_input_event(key_event(KeyCode::Char('j')));
         assert!(result.is_none());
 
         let Some(EventProcessResult::Continued { resolved_notes }) =
-            component.process_event(key_event(KeyCode::Enter))
+            component.process_input_event(key_event(KeyCode::Enter))
         else {
             panic!("continue should return selected notes");
         };
@@ -300,11 +309,11 @@ mod tests {
         let mut component = component();
 
         assert!(matches!(
-            component.process_event(key_event(KeyCode::Char('q'))),
+            component.process_input_event(key_event(KeyCode::Char('q'))),
             Some(EventProcessResult::Canceled)
         ));
         assert!(matches!(
-            component.process_event(key_event(KeyCode::Esc)),
+            component.process_input_event(key_event(KeyCode::Esc)),
             Some(EventProcessResult::Canceled)
         ));
     }
@@ -313,10 +322,10 @@ mod tests {
     fn enter_on_cancel_requests_popup_close() {
         let mut component = component();
 
-        component.process_event(key_event(KeyCode::Char('j')));
-        component.process_event(key_event(KeyCode::Char('l')));
+        component.process_input_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('l')));
         assert!(matches!(
-            component.process_event(key_event(KeyCode::Enter)),
+            component.process_input_event(key_event(KeyCode::Enter)),
             Some(EventProcessResult::Canceled)
         ));
     }
@@ -325,8 +334,8 @@ mod tests {
     fn enter_on_continue_returns_local_notes_by_default() {
         let mut component = component();
 
-        component.process_event(key_event(KeyCode::Char('j')));
-        let result = component.process_event(key_event(KeyCode::Enter));
+        component.process_input_event(key_event(KeyCode::Char('j')));
+        let result = component.process_input_event(key_event(KeyCode::Enter));
 
         let Some(EventProcessResult::Continued { resolved_notes }) = result else {
             panic!("continue should return selected notes");
@@ -345,7 +354,7 @@ mod tests {
         );
         component.update(AREA);
         for _ in 0..2 {
-            component.process_event(key_event(KeyCode::Char('j')));
+            component.process_input_event(key_event(KeyCode::Char('j')));
             component.update(AREA);
         }
 
@@ -359,7 +368,7 @@ mod tests {
     #[test]
     fn snapshot_create_widget_renders_vertical_scroll_widget_with_button_focus() {
         let mut component = component();
-        component.process_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('j')));
         component.update(AREA);
 
         render_snapshot(

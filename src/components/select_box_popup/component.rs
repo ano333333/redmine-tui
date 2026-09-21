@@ -1,8 +1,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crossterm::event::{Event, KeyCode};
+use crossterm::event::Event;
 
+use crate::inputs::native::convert_key;
+use crate::inputs::{InputEvent, KeyCode};
 use crate::stores::Dispatcher;
 
 use super::SelectBoxPopupWidget;
@@ -48,7 +50,11 @@ impl<'a> SelectBoxPopupComponent<'a> {
         let Event::Key(key) = event else {
             return None;
         };
+        self.process_input_event(convert_key(key)?)
+    }
 
+    fn process_input_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
+        let InputEvent::Key(key) = event;
         match key.code {
             KeyCode::Char('j') => {
                 if self.focused_index + 1 < self.items.len() {
@@ -84,14 +90,11 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crossterm::event::{KeyEvent, KeyModifiers};
-
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
-    }
-
-    fn dispatcher() -> Rc<RefCell<Dispatcher>> {
-        Rc::new(RefCell::new(Dispatcher::new()))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(crate::inputs::KeyEvent::new(
+            code,
+            crate::inputs::KeyModifiers::none(),
+        ))
     }
 
     fn items() -> Vec<(u16, String)> {
@@ -162,7 +165,7 @@ mod tests {
         let selected_dispatcher = Rc::new(RefCell::new(None));
         let mut component = component_with_observer(0, false, selected_id, selected_dispatcher);
 
-        let result = component.process_event(key_event(KeyCode::Char('j')), dispatcher());
+        let result = component.process_input_event(key_event(KeyCode::Char('j')));
 
         assert!(result.is_none());
         assert_eq!(component.create_widget().focused_index, 1);
@@ -174,7 +177,7 @@ mod tests {
         let selected_dispatcher = Rc::new(RefCell::new(None));
         let mut component = component_with_observer(2, false, selected_id, selected_dispatcher);
 
-        let result = component.process_event(key_event(KeyCode::Char('j')), dispatcher());
+        let result = component.process_input_event(key_event(KeyCode::Char('j')));
 
         assert!(result.is_none());
         assert_eq!(component.create_widget().focused_index, 2);
@@ -186,7 +189,7 @@ mod tests {
         let selected_dispatcher = Rc::new(RefCell::new(None));
         let mut component = component_with_observer(2, false, selected_id, selected_dispatcher);
 
-        let result = component.process_event(key_event(KeyCode::Char('k')), dispatcher());
+        let result = component.process_input_event(key_event(KeyCode::Char('k')));
 
         assert!(result.is_none());
         assert_eq!(component.create_widget().focused_index, 1);
@@ -198,7 +201,7 @@ mod tests {
         let selected_dispatcher = Rc::new(RefCell::new(None));
         let mut component = component_with_observer(0, false, selected_id, selected_dispatcher);
 
-        let result = component.process_event(key_event(KeyCode::Char('k')), dispatcher());
+        let result = component.process_input_event(key_event(KeyCode::Char('k')));
 
         assert!(result.is_none());
         assert_eq!(component.create_widget().focused_index, 0);
@@ -210,9 +213,7 @@ mod tests {
         let selected_dispatcher = Rc::new(RefCell::new(None));
         let mut component =
             component_with_observer(1, false, selected_id.clone(), selected_dispatcher.clone());
-        let dispatcher = dispatcher();
-
-        let result = component.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+        let result = component.process_input_event(key_event(KeyCode::Enter));
 
         assert!(matches!(result, Some(EventProcessResult::Entered)));
         assert_eq!(*selected_id.borrow(), Some(Some(2)));
@@ -226,11 +227,8 @@ mod tests {
         let selected_dispatcher = Rc::new(RefCell::new(None));
         let mut component =
             component_with_observer(0, true, selected_id.clone(), selected_dispatcher.clone());
-        let dispatcher = dispatcher();
-
-        let move_result =
-            component.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
-        let result = component.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+        let move_result = component.process_input_event(key_event(KeyCode::Char('k')));
+        let result = component.process_input_event(key_event(KeyCode::Enter));
 
         assert!(move_result.is_none());
         assert!(matches!(result, Some(EventProcessResult::Entered)));
@@ -245,7 +243,7 @@ mod tests {
         let selected_dispatcher = Rc::new(RefCell::new(None));
         let mut component = component_with_observer(1, false, selected_id, selected_dispatcher);
 
-        let result = component.process_event(key_event(KeyCode::Char('q')), dispatcher());
+        let result = component.process_input_event(key_event(KeyCode::Char('q')));
 
         assert!(matches!(result, Some(EventProcessResult::Quited)));
         assert_eq!(component.create_widget().focused_index, 1);

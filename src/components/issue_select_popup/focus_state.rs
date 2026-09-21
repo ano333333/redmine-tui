@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode};
+use crate::inputs::{InputEvent, KeyCode};
 
 use super::widget::IssueSelectPopupFocusColumn;
 
@@ -51,7 +51,7 @@ impl FocusState {
         self.clamp_focus();
     }
 
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         let action = self.action_from_event(event)?;
         self.apply_action(action)
     }
@@ -80,11 +80,8 @@ impl FocusState {
         self.empty_issue_column_enterable = enterable;
     }
 
-    fn action_from_event(&self, event: Event) -> Option<Action> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-
+    fn action_from_event(&self, event: InputEvent) -> Option<Action> {
+        let InputEvent::Key(key) = event;
         match key.code {
             KeyCode::Char('j') => Some(Action::MoveDown),
             KeyCode::Char('k') => Some(Action::MoveUp),
@@ -204,10 +201,10 @@ impl FocusState {
 mod tests {
     use super::*;
 
-    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
     fn state_focused_on(project_index: usize, issue_index: usize) -> FocusState {
@@ -410,15 +407,6 @@ mod tests {
         state.replace_project_issue_counts(vec![0]);
 
         let result = state.process_event(key_event(KeyCode::Enter));
-
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn process_event_returns_none_for_non_key_event() {
-        let mut state = state_focused_on(0, 0);
-
-        let result = state.process_event(Event::Resize(80, 24));
 
         assert!(result.is_none());
     }

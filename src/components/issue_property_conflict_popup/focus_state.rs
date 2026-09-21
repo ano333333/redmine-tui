@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode};
+use crate::inputs::{InputEvent, KeyCode};
 
 use super::widget::{IssuePropertyConflictButton, IssuePropertyConflictFocus};
 
@@ -49,7 +49,7 @@ impl FocusState {
     }
 
     /// キーイベントをフォーカス移動または確定イベントへ変換する。
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         let action = self.action_from_event(event)?;
         self.apply_action(action)
     }
@@ -67,11 +67,8 @@ impl FocusState {
         }
     }
 
-    fn action_from_event(&self, event: Event) -> Option<Action> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-
+    fn action_from_event(&self, event: InputEvent) -> Option<Action> {
+        let InputEvent::Key(key) = event;
         match key.code {
             KeyCode::Char('j') => Some(Action::MoveDown),
             KeyCode::Char('k') => Some(Action::MoveUp),
@@ -186,10 +183,10 @@ impl FocusState {
 mod tests {
     use super::*;
 
-    use crossterm::event::{Event, KeyEvent, KeyModifiers};
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
     #[test]

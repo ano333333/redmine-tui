@@ -2,6 +2,8 @@ use crossterm::event::Event;
 use ratatui::layout::{Position, Rect, Size};
 
 use crate::entities::IssueAggregate;
+use crate::inputs::InputEvent;
+use crate::inputs::native::convert_key;
 use crate::vos::{EntityIdValue, IssuePropertyDiff};
 use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
 
@@ -46,6 +48,13 @@ impl IssuePropertyConflictComponent {
 
     /// キーイベントを処理し、popupの終了や続行が必要な場合は結果を返す。
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
+        let Event::Key(key) = event else {
+            return None;
+        };
+        self.process_input_event(convert_key(key)?)
+    }
+
+    fn process_input_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         self.focus_state
             .process_event(event)
             .and_then(|result| match result {
@@ -322,7 +331,7 @@ fn property_name(diff: &IssuePropertyDiff) -> &'static str {
 mod tests {
     use super::*;
 
-    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::{Position, Rect};
 
     use crate::test_support::render_snapshot;
@@ -338,8 +347,8 @@ mod tests {
         height: 10,
     };
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
     fn diffs() -> Vec<IssuePropertyDiff> {
@@ -406,7 +415,7 @@ mod tests {
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('j')))
+                .process_input_event(key_event(KeyCode::Char('j')))
                 .is_none()
         );
         component.update(AREA);
@@ -417,7 +426,7 @@ mod tests {
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('k')))
+                .process_input_event(key_event(KeyCode::Char('k')))
                 .is_none()
         );
         component.update(AREA);
@@ -434,7 +443,7 @@ mod tests {
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('l')))
+                .process_input_event(key_event(KeyCode::Char('l')))
                 .is_none()
         );
         component.update(AREA);
@@ -445,7 +454,7 @@ mod tests {
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('h')))
+                .process_input_event(key_event(KeyCode::Char('h')))
                 .is_none()
         );
         component.update(AREA);
@@ -459,15 +468,15 @@ mod tests {
     fn enter_on_cell_changes_resolved_diffs_returned_by_continue() {
         let mut component = component(diffs());
 
-        component.process_event(key_event(KeyCode::Char('l')));
-        let result = component.process_event(key_event(KeyCode::Enter));
+        component.process_input_event(key_event(KeyCode::Char('l')));
+        let result = component.process_input_event(key_event(KeyCode::Enter));
 
         assert!(result.is_none());
-        component.process_event(key_event(KeyCode::Char('j')));
-        component.process_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('j')));
 
         let Some(EventProcessResult::Continued { diffs }) =
-            component.process_event(key_event(KeyCode::Enter))
+            component.process_input_event(key_event(KeyCode::Enter))
         else {
             panic!("continue should return selected diffs");
         };
@@ -485,15 +494,15 @@ mod tests {
         let mut component = component(diffs());
         component.update(AREA);
 
-        component.process_event(key_event(KeyCode::Char('j')));
-        component.process_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('j')));
         component.update(AREA);
         assert_eq!(
             component.cursor_position(AREA),
             Some(Position { x: 71, y: 7 })
         );
 
-        component.process_event(key_event(KeyCode::Char('h')));
+        component.process_input_event(key_event(KeyCode::Char('h')));
         component.update(AREA);
         assert_eq!(
             component.cursor_position(AREA),
@@ -506,15 +515,15 @@ mod tests {
         let mut component = component(diffs());
 
         assert!(matches!(
-            component.process_event(key_event(KeyCode::Char('q'))),
+            component.process_input_event(key_event(KeyCode::Char('q'))),
             Some(EventProcessResult::Canceled)
         ));
 
-        component.process_event(key_event(KeyCode::Char('j')));
-        component.process_event(key_event(KeyCode::Char('j')));
-        component.process_event(key_event(KeyCode::Char('h')));
+        component.process_input_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('h')));
         assert!(matches!(
-            component.process_event(key_event(KeyCode::Enter)),
+            component.process_input_event(key_event(KeyCode::Enter)),
             Some(EventProcessResult::Canceled)
         ));
     }
@@ -523,11 +532,11 @@ mod tests {
     fn enter_on_continue_returns_selected_after_diffs_and_omits_server_choices() {
         let mut component = component(diffs());
 
-        component.process_event(key_event(KeyCode::Char('l')));
-        component.process_event(key_event(KeyCode::Enter));
-        component.process_event(key_event(KeyCode::Char('j')));
-        component.process_event(key_event(KeyCode::Char('j')));
-        let result = component.process_event(key_event(KeyCode::Enter));
+        component.process_input_event(key_event(KeyCode::Char('l')));
+        component.process_input_event(key_event(KeyCode::Enter));
+        component.process_input_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('j')));
+        let result = component.process_input_event(key_event(KeyCode::Enter));
 
         let Some(EventProcessResult::Continued { diffs }) = result else {
             panic!("continue should return selected diffs");
@@ -555,7 +564,7 @@ mod tests {
 
         component.update(AREA);
         for _ in 0..8 {
-            component.process_event(key_event(KeyCode::Char('j')));
+            component.process_input_event(key_event(KeyCode::Char('j')));
             component.update(AREA);
         }
 
@@ -569,8 +578,8 @@ mod tests {
     #[test]
     fn snapshot_create_widget_renders_vertical_scroll_widget_with_button_focus() {
         let mut component = component(diffs());
-        component.process_event(key_event(KeyCode::Char('j')));
-        component.process_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('j')));
+        component.process_input_event(key_event(KeyCode::Char('j')));
         component.update(AREA);
 
         render_snapshot(
