@@ -1,11 +1,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::Frame;
 use ratatui::layout::{Offset, Position, Rect};
 use ratatui::widgets::Widget;
 
+use crate::inputs::{InputEvent, KeyCode};
 use crate::stores::{Dispatcher, IssueState, Store};
 use crate::vos::{IssueId, JournalId};
 
@@ -72,15 +72,15 @@ pub enum EventProcessResult {
 mod tests {
     use super::*;
 
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::stores::IssueAction;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
-    fn ctrl_s_event() -> Event {
-        Event::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL))
+    fn ctrl_s_event() -> InputEvent {
+        InputEvent::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::control()))
     }
 
     fn edit_first_journal(dispatcher: &Rc<RefCell<Dispatcher>>) {
@@ -353,50 +353,49 @@ impl IssueDetailComponent {
         i
     }
 
-    /// crosstermの同期イベントを処理する。updateとrenderがこの順で後続する
+    /// 共通の入力イベントを同期的に処理する。updateとrenderがこの順で後続する
     pub fn process_event(
         &mut self,
-        event: crossterm::event::Event,
+        event: InputEvent,
         dispatcher: Rc<RefCell<Dispatcher>>,
     ) -> Option<EventProcessResult> {
-        if let Event::Key(key) = &event {
-            match key.code {
-                KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    // 同じIssueの保存中に重複したCtrl+Sをusecaseへ到達させないため、
-                    // 保存操作を統括するこのComponentで入力を正常なno-opとして消費する。
-                    let store = dispatcher.borrow();
-                    if matches!(
-                        store.store().try_get_issue_state(self.id),
-                        Some(IssueState::Uploading)
-                    ) || store.store().has_uploading_journal(self.id)
-                    {
-                        return Some(EventProcessResult::Suppressed);
-                    }
-                    drop(store);
-                    if self.focused_component == FocusedComponent::JournalsList {
-                        let result = self.journals_list.process_event(event.clone());
-                        return match result {
-                            Some(JournalsListEventProcessResult::SaveRequested { id }) => {
-                                Some(EventProcessResult::SaveRequested {
-                                    issue_id: self.id,
-                                    id,
-                                })
-                            }
-                            Some(JournalsListEventProcessResult::SaveLocalJournalRequested) => {
-                                Some(EventProcessResult::SaveLocalJournalRequested {
-                                    issue_id: self.id,
-                                })
-                            }
-                            Some(JournalsListEventProcessResult::SaveSuppressed) => {
-                                Some(EventProcessResult::Suppressed)
-                            }
-                            _ => None,
-                        };
-                    }
-                    return Some(EventProcessResult::StartIssueUpload);
+        let InputEvent::Key(key) = event;
+        match key.code {
+            KeyCode::Char('s') if key.modifiers.is_control() => {
+                // 同じIssueの保存中に重複したCtrl+Sをusecaseへ到達させないため、
+                // 保存操作を統括するこのComponentで入力を正常なno-opとして消費する。
+                let store = dispatcher.borrow();
+                if matches!(
+                    store.store().try_get_issue_state(self.id),
+                    Some(IssueState::Uploading)
+                ) || store.store().has_uploading_journal(self.id)
+                {
+                    return Some(EventProcessResult::Suppressed);
                 }
-                _ => {}
+                drop(store);
+                if self.focused_component == FocusedComponent::JournalsList {
+                    let result = self.journals_list.process_event(event.clone());
+                    return match result {
+                        Some(JournalsListEventProcessResult::SaveRequested { id }) => {
+                            Some(EventProcessResult::SaveRequested {
+                                issue_id: self.id,
+                                id,
+                            })
+                        }
+                        Some(JournalsListEventProcessResult::SaveLocalJournalRequested) => {
+                            Some(EventProcessResult::SaveLocalJournalRequested {
+                                issue_id: self.id,
+                            })
+                        }
+                        Some(JournalsListEventProcessResult::SaveSuppressed) => {
+                            Some(EventProcessResult::Suppressed)
+                        }
+                        _ => None,
+                    };
+                }
+                return Some(EventProcessResult::StartIssueUpload);
             }
+            _ => {}
         }
 
         // FIXME:

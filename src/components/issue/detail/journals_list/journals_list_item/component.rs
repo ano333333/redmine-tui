@@ -1,7 +1,6 @@
-use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::inputs::native::convert_key;
+use crate::inputs::InputEvent;
 use crate::stores::{RemoteJournalEntry, RemoteJournalState, Store};
 use crate::vos::{EntityIdValue, IssueId, JournalDetail, JournalDetailAttr, JournalId};
 
@@ -192,12 +191,7 @@ impl JournalsListItemComponent {
         )
     }
 
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-        // 上位Componentの入力契約がcrosstermの間だけ、共通入力へ移行済みのFocusStateとの境界で変換する。
-        let event = convert_key(key)?;
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         self.focus_state
             .process_event(event)
             .map(|result| match result {
@@ -274,7 +268,7 @@ impl JournalsListItemComponent {
 
 #[cfg(test)]
 mod tests {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
     use crate::{
@@ -287,12 +281,12 @@ mod tests {
     const WIDE_WIDTH: u16 = 32;
     const NARROW_WIDTH: u16 = 18;
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
-    fn ctrl_s_event() -> Event {
-        Event::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL))
+    fn ctrl_s_event() -> InputEvent {
+        InputEvent::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::control()))
     }
 
     fn make_edited(store: &mut Store, journal: &Journal) -> RemoteJournalEntry {

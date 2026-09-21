@@ -22,6 +22,12 @@ pub enum KeyCode {
     Esc,
     Tab,
     BackTab,
+    Backspace,
+    Delete,
+    Left,
+    Right,
+    Home,
+    End,
 }
 
 /// 現在の操作で区別が必要な修飾状態だけを表す。

@@ -38,6 +38,7 @@ use self::{
         AppComponent,
         app::{AppEffect, EditorRequest, EditorResponse},
     },
+    inputs::native::convert_key,
     stores::{Action, Dispatcher, NoticeAction, NoticeId},
     usecases::redmine::{
         continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
@@ -259,7 +260,9 @@ fn handle_key_event(
     area: Rect,
 ) -> bool {
     let should_continue = match event {
-        Event::Key(_) => app_component.handle_key_event(event, dispatcher.clone()),
+        Event::Key(key) => convert_key(key).map_or(true, |event| {
+            app_component.handle_key_event(event, dispatcher.clone())
+        }),
         _ => true,
     };
     update(dispatcher.clone(), app_component, area);
@@ -536,6 +539,7 @@ fn consume_initial_actions(dispatcher: Rc<RefCell<Dispatcher>>, actions: Vec<Act
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use std::{sync::Mutex, time::Duration};
 
     use crate::clients::redmine::base::FetchedIssue;
@@ -1671,10 +1675,7 @@ mod tests {
     ) {
         for _ in 0..count {
             app.process_event(
-                Event::Key(crossterm::event::KeyEvent::new(
-                    crossterm::event::KeyCode::Char('j'),
-                    crossterm::event::KeyModifiers::NONE,
-                )),
+                InputEvent::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::none())),
                 dispatcher.clone(),
             );
             app.update(
@@ -1692,10 +1693,7 @@ mod tests {
     fn focus_local_journal_notes(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) {
         move_focus_down(app, dispatcher.clone(), 100);
         app.process_event(
-            Event::Key(crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char('k'),
-                crossterm::event::KeyModifiers::NONE,
-            )),
+            InputEvent::Key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::none())),
             dispatcher.clone(),
         );
         app.update(
@@ -1707,10 +1705,7 @@ mod tests {
 
     fn press_ctrl_s(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) {
         app.process_event(
-            Event::Key(crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char('s'),
-                crossterm::event::KeyModifiers::CONTROL,
-            )),
+            InputEvent::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::control())),
             dispatcher,
         );
     }

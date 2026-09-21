@@ -1,8 +1,6 @@
 use chrono::{DateTime, Datelike, Days, Local, Months, NaiveDate, TimeZone};
-use crossterm::event::Event;
 use ratatui_textarea::TextArea;
 
-use crate::inputs::native::convert_key;
 use crate::inputs::{InputEvent, KeyCode, KeyEvent};
 
 use super::widget::DatePickerPopupWidget;
@@ -69,14 +67,7 @@ impl<'a> DatePickerPopupComponent<'a> {
         }
     }
 
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-        self.process_input_event(convert_key(key)?)
-    }
-
-    fn process_input_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         let InputEvent::Key(key) = event;
         let action = self.interpret_key_event(key)?;
         self.process_action(action)
@@ -196,6 +187,12 @@ impl<'a> DatePickerPopupComponent<'a> {
             KeyCode::Enter => ratatui_textarea::Key::Enter,
             KeyCode::Esc => ratatui_textarea::Key::Esc,
             KeyCode::Tab | KeyCode::BackTab => ratatui_textarea::Key::Tab,
+            KeyCode::Backspace => ratatui_textarea::Key::Backspace,
+            KeyCode::Delete => ratatui_textarea::Key::Delete,
+            KeyCode::Left => ratatui_textarea::Key::Left,
+            KeyCode::Right => ratatui_textarea::Key::Right,
+            KeyCode::Home => ratatui_textarea::Key::Home,
+            KeyCode::End => ratatui_textarea::Key::End,
         };
         ratatui_textarea::Input {
             key: textarea_key,
@@ -404,22 +401,22 @@ mod tests {
         let mut component = component_with_observer(selected);
 
         assert_eq!(component.focused_field, FocusField::Year);
-        component.process_input_event(key_event(KeyCode::Tab));
+        component.process_event(key_event(KeyCode::Tab));
         assert_eq!(component.focused_field, FocusField::Month);
-        component.process_input_event(key_event(KeyCode::Tab));
+        component.process_event(key_event(KeyCode::Tab));
         assert_eq!(component.focused_field, FocusField::Day);
-        component.process_input_event(key_event(KeyCode::Tab));
+        component.process_event(key_event(KeyCode::Tab));
         assert_eq!(component.focused_field, FocusField::Calendar);
-        component.process_input_event(key_event(KeyCode::Tab));
+        component.process_event(key_event(KeyCode::Tab));
         assert_eq!(component.focused_field, FocusField::Cancel);
 
-        component.process_input_event(key_event(KeyCode::BackTab));
+        component.process_event(key_event(KeyCode::BackTab));
         assert_eq!(component.focused_field, FocusField::Calendar);
-        component.process_input_event(key_event(KeyCode::BackTab));
+        component.process_event(key_event(KeyCode::BackTab));
         assert_eq!(component.focused_field, FocusField::Day);
-        component.process_input_event(key_event(KeyCode::BackTab));
+        component.process_event(key_event(KeyCode::BackTab));
         assert_eq!(component.focused_field, FocusField::Month);
-        component.process_input_event(key_event(KeyCode::BackTab));
+        component.process_event(key_event(KeyCode::BackTab));
         assert_eq!(component.focused_field, FocusField::Year);
     }
 
@@ -428,13 +425,13 @@ mod tests {
         let selected = Rc::new(RefCell::new(None));
         let mut component = component_with_observer(selected);
 
-        component.process_input_event(key_event(KeyCode::Char('l')));
+        component.process_event(key_event(KeyCode::Char('l')));
         assert_eq!(component.focused_field, FocusField::Month);
-        component.process_input_event(key_event(KeyCode::Char('l')));
+        component.process_event(key_event(KeyCode::Char('l')));
         assert_eq!(component.focused_field, FocusField::Day);
-        component.process_input_event(key_event(KeyCode::Char('h')));
+        component.process_event(key_event(KeyCode::Char('h')));
         assert_eq!(component.focused_field, FocusField::Month);
-        component.process_input_event(key_event(KeyCode::Char('h')));
+        component.process_event(key_event(KeyCode::Char('h')));
         assert_eq!(component.focused_field, FocusField::Year);
     }
 
@@ -446,7 +443,7 @@ mod tests {
                 let mut component = component_with_observer(selected);
                 component.focused_field = field;
 
-                component.process_input_event(key_event(key));
+                component.process_event(key_event(key));
 
                 assert_eq!(component.focused_field, FocusField::Calendar);
                 assert_eq!(
@@ -463,7 +460,7 @@ mod tests {
         let mut component = component_with_observer(selected);
         component.focused_field = FocusField::Calendar;
 
-        component.process_input_event(key_event(KeyCode::Char('l')));
+        component.process_event(key_event(KeyCode::Char('l')));
         assert_eq!(
             component.focused_date,
             local_datetime("2026-02-17T00:00:00+09:00")
@@ -472,7 +469,7 @@ mod tests {
             component.display_start,
             local_datetime("2026-02-15T00:00:00+09:00")
         );
-        component.process_input_event(key_event(KeyCode::Char('h')));
+        component.process_event(key_event(KeyCode::Char('h')));
         assert_eq!(
             component.focused_date,
             local_datetime("2026-02-16T00:00:00+09:00")
@@ -481,7 +478,7 @@ mod tests {
             component.display_start,
             local_datetime("2026-02-15T00:00:00+09:00")
         );
-        component.process_input_event(key_event(KeyCode::Char('j')));
+        component.process_event(key_event(KeyCode::Char('j')));
         assert_eq!(
             component.focused_date,
             local_datetime("2026-02-23T00:00:00+09:00")
@@ -490,7 +487,7 @@ mod tests {
             component.display_start,
             local_datetime("2026-02-22T00:00:00+09:00")
         );
-        component.process_input_event(key_event(KeyCode::Char('k')));
+        component.process_event(key_event(KeyCode::Char('k')));
         assert_eq!(
             component.focused_date,
             local_datetime("2026-02-16T00:00:00+09:00")
@@ -507,7 +504,7 @@ mod tests {
         let mut component = component_with_observer(selected);
         component.focused_field = FocusField::Calendar;
 
-        component.process_input_event(key_event_with_modifiers(
+        component.process_event(key_event_with_modifiers(
             KeyCode::Char('D'),
             KeyModifiers::shift(),
         ));
@@ -520,7 +517,7 @@ mod tests {
             local_datetime("2026-03-16T00:00:00+09:00")
         );
 
-        component.process_input_event(key_event_with_modifiers(
+        component.process_event(key_event_with_modifiers(
             KeyCode::Char('U'),
             KeyModifiers::shift(),
         ));
@@ -539,9 +536,9 @@ mod tests {
         let selected = Rc::new(RefCell::new(None));
         let mut component = component_with_observer(selected.clone());
         component.focused_field = FocusField::Calendar;
-        component.process_input_event(key_event(KeyCode::Char('l')));
+        component.process_event(key_event(KeyCode::Char('l')));
 
-        let result = component.process_input_event(key_event(KeyCode::Enter));
+        let result = component.process_event(key_event(KeyCode::Enter));
 
         assert!(matches!(result, Some(EventProcessResult::Entered)));
         assert_eq!(
@@ -561,7 +558,7 @@ mod tests {
         component.day_textarea.delete_line_by_head();
         component.day_textarea.insert_str("30");
 
-        let result = component.process_input_event(key_event(KeyCode::Enter));
+        let result = component.process_event(key_event(KeyCode::Enter));
 
         assert!(matches!(result, Some(EventProcessResult::Entered)));
         assert_eq!(
@@ -579,7 +576,7 @@ mod tests {
         component.day_textarea.delete_line_by_head();
         component.day_textarea.insert_str("30");
 
-        let result = component.process_input_event(key_event(KeyCode::Enter));
+        let result = component.process_event(key_event(KeyCode::Enter));
 
         assert!(result.is_none());
         assert_eq!(*selected.borrow(), None);
@@ -591,7 +588,7 @@ mod tests {
         let mut component = component_with_observer(selected.clone());
         component.focused_field = FocusField::Cancel;
 
-        let result = component.process_input_event(key_event(KeyCode::Enter));
+        let result = component.process_event(key_event(KeyCode::Enter));
 
         assert!(matches!(result, Some(EventProcessResult::Canceled)));
         assert_eq!(*selected.borrow(), None);

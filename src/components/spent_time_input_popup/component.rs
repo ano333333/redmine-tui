@@ -1,9 +1,7 @@
-use crossterm::event::Event;
 use ratatui::layout::Position;
 use ratatui::style::{Modifier, Style};
 use ratatui_textarea::{Input, Key, TextArea};
 
-use crate::inputs::native::convert_key;
 use crate::inputs::{InputEvent, KeyCode, KeyEvent};
 use crate::stores::Store;
 use crate::vos::TimeEntityActivityId;
@@ -83,14 +81,7 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
         }
     }
 
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-        self.process_input_event(convert_key(key)?)
-    }
-
-    fn process_input_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         let InputEvent::Key(key) = event;
         let action = self.interpret_key_event(key);
         self.process_action(action)
@@ -212,6 +203,12 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
             KeyCode::Enter => Key::Enter,
             KeyCode::Esc => Key::Esc,
             KeyCode::Tab | KeyCode::BackTab => Key::Tab,
+            KeyCode::Backspace => Key::Backspace,
+            KeyCode::Delete => Key::Delete,
+            KeyCode::Left => Key::Left,
+            KeyCode::Right => Key::Right,
+            KeyCode::Home => Key::Home,
+            KeyCode::End => Key::End,
         };
         Input {
             key: textarea_key,
@@ -330,7 +327,7 @@ mod tests {
         let store = store_with_time_entity_activities();
         let mut component = SpentTimeInputPopupComponent::new(&store);
 
-        let result = component.process_input_event(key_event(KeyCode::Enter));
+        let result = component.process_event(key_event(KeyCode::Enter));
 
         assert!(matches!(
             result,
@@ -345,7 +342,10 @@ mod tests {
         let store = store_with_time_entity_activities();
         let mut component = SpentTimeInputPopupComponent::new(&store);
 
-        let result = component.process_event(Event::Resize(80, 24));
+        let result = component.process_event(InputEvent::Key(KeyEvent::new(
+            KeyCode::Char('x'),
+            KeyModifiers::none(),
+        )));
 
         assert!(result.is_none());
         assert_eq!(component.focused_field, FocusField::Activity);
@@ -380,59 +380,59 @@ mod tests {
 
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Char('l')))
+                .process_event(key_event(KeyCode::Char('l')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Hours);
 
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Char('j')))
+                .process_event(key_event(KeyCode::Char('j')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Memo);
 
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Char('j')))
+                .process_event(key_event(KeyCode::Char('j')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Submit);
 
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Char('j')))
+                .process_event(key_event(KeyCode::Char('j')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Submit);
 
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Char('k')))
+                .process_event(key_event(KeyCode::Char('k')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Memo);
 
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Char('k')))
+                .process_event(key_event(KeyCode::Char('k')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Activity);
 
-        component.process_input_event(key_event(KeyCode::Char('l')));
+        component.process_event(key_event(KeyCode::Char('l')));
         assert_eq!(component.focused_field, FocusField::Hours);
 
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Char('h')))
+                .process_event(key_event(KeyCode::Char('h')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Activity);
 
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Char('k')))
+                .process_event(key_event(KeyCode::Char('k')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Activity);
@@ -442,13 +442,9 @@ mod tests {
     fn enter_on_hours_toggles_edit_mode_and_inputs_text() {
         let store = store_with_time_entity_activities();
         let mut component = SpentTimeInputPopupComponent::new(&store);
-        component.process_input_event(key_event(KeyCode::Char('l')));
+        component.process_event(key_event(KeyCode::Char('l')));
 
-        assert!(
-            component
-                .process_input_event(key_event(KeyCode::Enter))
-                .is_none()
-        );
+        assert!(component.process_event(key_event(KeyCode::Enter)).is_none());
         assert_eq!(component.focused_field, FocusField::Hours);
         assert_eq!(
             component.input_mode,
@@ -457,7 +453,7 @@ mod tests {
 
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Char('1')))
+                .process_event(key_event(KeyCode::Char('1')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Hours);
@@ -465,22 +461,18 @@ mod tests {
 
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Char('j')))
+                .process_event(key_event(KeyCode::Char('j')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Hours);
         assert_eq!(component.hours_textarea.lines()[0], "1j");
 
-        assert!(
-            component
-                .process_input_event(key_event(KeyCode::Enter))
-                .is_none()
-        );
+        assert!(component.process_event(key_event(KeyCode::Enter)).is_none());
         assert_eq!(component.input_mode, InputMode::Navigating);
 
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Char('j')))
+                .process_event(key_event(KeyCode::Char('j')))
                 .is_none()
         );
         assert_eq!(component.focused_field, FocusField::Memo);
@@ -490,13 +482,9 @@ mod tests {
     fn enter_on_memo_toggles_edit_mode_and_inputs_text() {
         let store = store_with_time_entity_activities();
         let mut component = SpentTimeInputPopupComponent::new(&store);
-        component.process_input_event(key_event(KeyCode::Char('j')));
+        component.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(
-            component
-                .process_input_event(key_event(KeyCode::Enter))
-                .is_none()
-        );
+        assert!(component.process_event(key_event(KeyCode::Enter)).is_none());
         assert_eq!(component.focused_field, FocusField::Memo);
         assert_eq!(
             component.input_mode,
@@ -505,16 +493,12 @@ mod tests {
 
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Char('a')))
+                .process_event(key_event(KeyCode::Char('a')))
                 .is_none()
         );
         assert_eq!(component.memo_textarea.lines()[0], "a");
 
-        assert!(
-            component
-                .process_input_event(key_event(KeyCode::Enter))
-                .is_none()
-        );
+        assert!(component.process_event(key_event(KeyCode::Enter)).is_none());
         assert_eq!(component.input_mode, InputMode::Navigating);
     }
 
@@ -522,11 +506,11 @@ mod tests {
     fn enter_on_submit_returns_submitted() {
         let store = store_with_time_entity_activities();
         let mut component = SpentTimeInputPopupComponent::new(&store);
-        component.process_input_event(key_event(KeyCode::Char('j')));
-        component.process_input_event(key_event(KeyCode::Char('j')));
-        component.process_input_event(key_event(KeyCode::Char('j')));
+        component.process_event(key_event(KeyCode::Char('j')));
+        component.process_event(key_event(KeyCode::Char('j')));
+        component.process_event(key_event(KeyCode::Char('j')));
 
-        let result = component.process_input_event(key_event(KeyCode::Enter));
+        let result = component.process_event(key_event(KeyCode::Enter));
 
         assert!(matches!(result, Some(EventProcessResult::Submited)));
         assert_eq!(component.focused_field, FocusField::Submit);
@@ -538,11 +522,11 @@ mod tests {
         let store = store_with_time_entity_activities();
 
         let mut component = SpentTimeInputPopupComponent::new(&store);
-        let esc_result = component.process_input_event(key_event(KeyCode::Esc));
+        let esc_result = component.process_event(key_event(KeyCode::Esc));
         assert!(matches!(esc_result, Some(EventProcessResult::Quited)));
 
         let mut component = SpentTimeInputPopupComponent::new(&store);
-        let ctrl_c_result = component.process_input_event(key_event_with_modifiers(
+        let ctrl_c_result = component.process_event(key_event_with_modifiers(
             KeyCode::Char('c'),
             KeyModifiers::control(),
         ));

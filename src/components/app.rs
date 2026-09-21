@@ -3,7 +3,6 @@ use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 
-use crossterm::event::Event;
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 
@@ -20,6 +19,7 @@ use crate::components::issue_select_popup::component::{
 use crate::components::remote_journal_conflict_popup::{
     EventProcessResult as RemoteJournalConflictEventProcessResult, RemoteJournalConflictComponent,
 };
+use crate::inputs::{InputEvent, KeyCode};
 use crate::stores::{Action, Dispatcher, IssueAction, JournalAction, RemoteJournalState, Store};
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
@@ -148,8 +148,8 @@ impl<'a> AppComponent<'a> {
         app
     }
 
-    /// crosstermの同期イベントを処理する。updateとrenderがこの順で後続する
-    pub fn process_event(&mut self, event: Event, dispatcher: Rc<RefCell<Dispatcher>>) {
+    /// 共通の入力イベントを同期的に処理する。updateとrenderがこの順で後続する
+    pub fn process_event(&mut self, event: InputEvent, dispatcher: Rc<RefCell<Dispatcher>>) {
         if self.popup_components.back().is_some() {
             self.process_popup_event(event, dispatcher);
         } else if self.issue_component.is_some() {
@@ -158,7 +158,7 @@ impl<'a> AppComponent<'a> {
     }
 
     /// 最前面のpopupへイベントを渡し、結果に応じてpopup stackを更新する。
-    fn process_popup_event(&mut self, event: Event, dispatcher: Rc<RefCell<Dispatcher>>) {
+    fn process_popup_event(&mut self, event: InputEvent, dispatcher: Rc<RefCell<Dispatcher>>) {
         let popup_component_rc = self
             .popup_components
             .back()
@@ -166,7 +166,7 @@ impl<'a> AppComponent<'a> {
             .clone();
         match &mut *(popup_component_rc.borrow_mut()) {
             PopupComponent::SelectBox(popup_component) => {
-                let result = popup_component.process_event(event, self.dispatcher.clone());
+                let result = popup_component.process_event(event);
                 match result {
                     Some(SelectBoxPopupEventProcessResult::Entered)
                     | Some(SelectBoxPopupEventProcessResult::Quited) => {
@@ -281,7 +281,7 @@ impl<'a> AppComponent<'a> {
     }
 
     /// IssueComponentへイベントを渡し、結果に応じてpopupの開閉やeffectの設置を行う。
-    fn process_issue_event(&mut self, event: Event, dispatcher: Rc<RefCell<Dispatcher>>) {
+    fn process_issue_event(&mut self, event: InputEvent, dispatcher: Rc<RefCell<Dispatcher>>) {
         let (result, issue_id) = {
             let issue_component = self
                 .issue_component
@@ -591,11 +591,15 @@ impl<'a> AppComponent<'a> {
     }
 
     /// popupへ先にキーを渡し、未処理のqだけをアプリ終了として返す。
-    pub fn handle_key_event(&mut self, event: Event, dispatcher: Rc<RefCell<Dispatcher>>) -> bool {
+    pub fn handle_key_event(
+        &mut self,
+        event: InputEvent,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+    ) -> bool {
         // FIXME: handle_key_eventが「内部で処理したが他のコンポーネントに影響がない」値を返すようにする
         let is_q = matches!(
             event,
-            Event::Key(key) if key.code == crossterm::event::KeyCode::Char('q')
+            InputEvent::Key(key) if key.code == KeyCode::Char('q')
         );
         let popup_before = self.popup_components.back().cloned();
         self.process_event(event, dispatcher);
@@ -866,13 +870,13 @@ mod tests {
     use super::*;
 
     use crate::entities::{Issue, ProjectIssuesPage};
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::libs::yaml::parse_journal_yaml;
     use crate::stores::{
         JournalAction, NoticeAction, NoticeId, ProjectIssuesAction, RemoteJournalState,
     };
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crate::vos::{IssuePropertyDiff, PriorityId, ProjectId, TrackerId};
-    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
     const AREA: Rect = Rect {
         x: 0,
@@ -907,12 +911,12 @@ mod tests {
         assert!(widget.messages.is_empty());
     }
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
-    fn ctrl_s_event() -> Event {
-        Event::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL))
+    fn ctrl_s_event() -> InputEvent {
+        InputEvent::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::control()))
     }
 
     fn edit_first_journal(dispatcher: &Rc<RefCell<Dispatcher>>) {

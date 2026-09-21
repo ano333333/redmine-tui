@@ -1,8 +1,7 @@
-use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::entities::IssueStatusExt;
-use crate::inputs::native::convert_key;
+use crate::inputs::InputEvent;
 use crate::stores::Store;
 use crate::vos::IssueId;
 
@@ -52,13 +51,8 @@ impl ChildrenListComponent {
         self.focus_state.focus_event(event);
     }
 
-    pub fn process_event(&mut self, event: &Event) -> Option<EventProcessResult> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-        // 上位Componentの入力契約がcrosstermの間だけ、共通入力へ移行済みのFocusStateとの境界で変換する。
-        let event = convert_key(*key)?;
-        self.focus_state.process_event(&event)
+    pub fn process_event(&mut self, event: &InputEvent) -> Option<EventProcessResult> {
+        self.focus_state.process_event(event)
     }
 
     pub fn get_cursor_position(&self) -> Position {
@@ -104,10 +98,10 @@ fn create_child_rows<'a>(store: &'a Store, child_ids: &[IssueId]) -> Vec<ChildIs
 mod tests {
     use super::*;
     use crate::entities::IssueStatus;
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::stores::{Action, IssueAction};
     use crate::test_support::{render_snapshot, sync_fixture_entities};
     use crate::widgets::gutter::GUTTER_WIDTH;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Position;
 
     const ISSUE_ID: u16 = 3;
@@ -140,8 +134,8 @@ mod tests {
         store
     }
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
     /// `cursor` は一覧内の位置で渡す。縦線による字下げはここで足す。

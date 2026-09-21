@@ -1,7 +1,6 @@
-use crossterm::event::Event;
 use ratatui::layout::Position;
 
-use crate::inputs::native::convert_key;
+use crate::inputs::InputEvent;
 use crate::stores::{LocalJournalEntry, LocalJournalState};
 
 use super::journals_list_item::focus_state;
@@ -57,12 +56,7 @@ impl LocalJournalItemComponent {
             .update(width, 0, self.comment_line_count, !self.editable);
     }
 
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-        // 上位Componentの入力契約がcrosstermの間だけ、共通入力へ移行済みのFocusStateとの境界で変換する。
-        let event = convert_key(key)?;
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         match self.focus_state.process_event(event)? {
             focus_state::EventProcessResult::CursorLeavedFromBelow { x } => {
                 Some(EventProcessResult::CursorLeavedFromBelow { x })
@@ -116,15 +110,15 @@ impl LocalJournalItemComponent {
 
 #[cfg(test)]
 mod tests {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
     use crate::entities::LocalJournal;
     use crate::stores::LocalJournalState;
     use crate::vos::IssueId;
 
-    fn key_event(code: KeyCode, modifiers: KeyModifiers) -> Event {
-        Event::Key(KeyEvent::new(code, modifiers))
+    fn key_event(code: KeyCode, modifiers: KeyModifiers) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, modifiers))
     }
 
     #[test]
@@ -140,7 +134,7 @@ mod tests {
         component.update(&entry, 32);
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
 
-        match component.process_event(key_event(KeyCode::Char('e'), KeyModifiers::NONE)) {
+        match component.process_event(key_event(KeyCode::Char('e'), KeyModifiers::none())) {
             Some(EventProcessResult::EditRequested { notes }) => assert_eq!(notes, "local notes"),
             _ => panic!("expected edit request"),
         }
@@ -160,7 +154,7 @@ mod tests {
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
 
         assert!(matches!(
-            component.process_event(key_event(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            component.process_event(key_event(KeyCode::Char('s'), KeyModifiers::control())),
             Some(EventProcessResult::SaveRequested)
         ));
     }
@@ -180,11 +174,11 @@ mod tests {
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('e'), KeyModifiers::NONE))
+                .process_event(key_event(KeyCode::Char('e'), KeyModifiers::none()))
                 .is_none()
         );
         assert!(matches!(
-            component.process_event(key_event(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            component.process_event(key_event(KeyCode::Char('s'), KeyModifiers::control())),
             Some(EventProcessResult::SaveSuppressed)
         ));
     }

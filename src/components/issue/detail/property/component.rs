@@ -1,10 +1,9 @@
 use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
 use super::widget::PropertyWidget;
-use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::entities::{IssueAggregate, IssueStatus};
-use crate::inputs::native::convert_key;
+use crate::inputs::InputEvent;
 use crate::stores::Store;
 use crate::vos::IssueId;
 
@@ -21,12 +20,8 @@ impl PropertyComponent {
         }
     }
 
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-        // 上位Componentの入力契約がcrosstermの間だけ、共通入力へ移行済みのFocusStateとの境界で変換する。
-        self.focus_state.process_event(convert_key(key)?)
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
+        self.focus_state.process_event(event)
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
@@ -127,10 +122,10 @@ fn create_property_widget<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::stores::{Action, IssueAction};
     use crate::test_support::{render_snapshot, sync_fixture_entities};
     use crate::widgets::gutter::GUTTER_WIDTH;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Position;
 
     /// 値列の開始桁。WIDTH(=40)は2カラムに畳まない幅なので、常に左カラム。
@@ -152,8 +147,8 @@ mod tests {
     /// フォーカス可能な最後の項目インデックス(末尾の余白行は含まない)。
     const FOCUSABLE_LAST_LINE: u16 = FIELD_COUNT - 1;
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
     fn store_with_property_issue() -> Store {

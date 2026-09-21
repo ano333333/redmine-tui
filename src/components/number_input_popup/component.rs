@@ -1,8 +1,8 @@
-use crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::style::{Modifier, Style};
-use ratatui_textarea::TextArea;
+use ratatui_textarea::{Input, Key, TextArea};
 
 use super::widget::NumberInputPopupWidget;
+use crate::inputs::{InputEvent, KeyCode, KeyEvent};
 
 pub enum EventProcessResult {
     Entered,
@@ -45,10 +45,8 @@ impl<'a> NumberInputPopupComponent<'a> {
         }
     }
 
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        let Event::Key(key) = event else {
-            return None;
-        };
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
+        let InputEvent::Key(key) = event;
 
         let action = self.interpret_key_event(key)?;
         self.process_action(action)
@@ -80,6 +78,28 @@ impl<'a> NumberInputPopupComponent<'a> {
         }
     }
 
+    // Componentの入力をplatform非依存に保ち、Textareaへ渡すこの境界でだけ専用型へ変換する。
+    fn textarea_input(key: KeyEvent) -> Input {
+        let textarea_key = match key.code {
+            KeyCode::Char(c) => Key::Char(c),
+            KeyCode::Enter => Key::Enter,
+            KeyCode::Esc => Key::Esc,
+            KeyCode::Tab | KeyCode::BackTab => Key::Tab,
+            KeyCode::Backspace => Key::Backspace,
+            KeyCode::Delete => Key::Delete,
+            KeyCode::Left => Key::Left,
+            KeyCode::Right => Key::Right,
+            KeyCode::Home => Key::Home,
+            KeyCode::End => Key::End,
+        };
+        Input {
+            key: textarea_key,
+            ctrl: key.modifiers.is_control(),
+            alt: false,
+            shift: key.modifiers.is_shift() || key.code == KeyCode::BackTab,
+        }
+    }
+
     fn process_action(&mut self, action: Action) -> Option<EventProcessResult> {
         match action {
             Action::Confirm => {
@@ -92,7 +112,7 @@ impl<'a> NumberInputPopupComponent<'a> {
             }
             Action::Cancel => Some(EventProcessResult::Canceled),
             Action::InputKey(key) => {
-                self.textarea.input(key);
+                self.textarea.input(Self::textarea_input(key));
                 self.is_invalid = false;
                 None
             }
@@ -125,12 +145,11 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crossterm::event::KeyModifiers;
-
+    use crate::inputs::KeyModifiers;
     use crate::test_support::render_snapshot;
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
     fn component_with_observer(
@@ -200,7 +219,7 @@ mod tests {
         let mut component = component_with_observer(Some(1.0), entered);
 
         component.process_event(key_event(KeyCode::Tab));
-        component.process_event(key_event(KeyCode::Up));
+        component.process_event(key_event(KeyCode::BackTab));
         component.process_event(key_event(KeyCode::Left));
         component.process_event(key_event(KeyCode::Char('5')));
 

@@ -1,11 +1,10 @@
 use super::focus_state;
 use super::focus_state::FocusState;
 use super::widget::{BodyWidget, BodyWidgetState};
-use crossterm::event::Event;
 use ratatui::layout::Position;
 
 use crate::entities::IssueAggregate;
-use crate::inputs::native::convert_key;
+use crate::inputs::InputEvent;
 use crate::vos::IssueId;
 
 pub enum EventProcessResult {
@@ -31,12 +30,7 @@ impl BodyComponent {
         }
     }
 
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-        // 上位Componentの入力契約がcrosstermの間だけ、共通入力へ移行済みのFocusStateとの境界で変換する。
-        let event = convert_key(key)?;
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         self.focus_state
             .process_event(event)
             .map(|result| match result {
@@ -83,11 +77,9 @@ impl BodyComponent {
 mod tests {
     use super::super::focus_state::FocusEvent;
     use super::*;
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::test_support::{render_snapshot, sample_issue_aggregate};
     use crate::widgets::gutter::GUTTER_WIDTH;
-
-    /// BodyWidgetが末尾に空ける、縦線を引かない余白行。
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Position;
 
     /// BodyWidgetが末尾に空ける、縦線を引かない余白行。
@@ -103,8 +95,8 @@ mod tests {
     /// 同上(NARROW_WIDTH - 2)。
     const NARROW_LINE_COUNT: u16 = 8;
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
     fn issue_with_body(body: &str) -> IssueAggregate {

@@ -30,6 +30,12 @@ pub fn convert_key(key: CrosstermKeyEvent) -> Option<InputEvent> {
                 CrosstermKeyCode::Esc => KeyCode::Esc,
                 CrosstermKeyCode::Tab => KeyCode::Tab,
                 CrosstermKeyCode::BackTab => KeyCode::BackTab,
+                CrosstermKeyCode::Backspace => KeyCode::Backspace,
+                CrosstermKeyCode::Delete => KeyCode::Delete,
+                CrosstermKeyCode::Left => KeyCode::Left,
+                CrosstermKeyCode::Right => KeyCode::Right,
+                CrosstermKeyCode::Home => KeyCode::Home,
+                CrosstermKeyCode::End => KeyCode::End,
                 _ => return None,
             };
             Some(InputEvent::Key(KeyEvent::new(code, KeyModifiers::none())))
@@ -94,9 +100,21 @@ mod tests {
             (ckey_mods(CKey::Tab, CMods::CONTROL), None),
             (ckey(CKey::Up), None),
             (ckey(CKey::Down), None),
-            (ckey(CKey::Left), None),
-            (ckey(CKey::Right), None),
-            (ckey(CKey::Backspace), None),
+            (
+                ckey(CKey::Backspace),
+                event(KeyCode::Backspace, KeyModifiers::none()),
+            ),
+            (
+                ckey(CKey::Delete),
+                event(KeyCode::Delete, KeyModifiers::none()),
+            ),
+            (ckey(CKey::Left), event(KeyCode::Left, KeyModifiers::none())),
+            (
+                ckey(CKey::Right),
+                event(KeyCode::Right, KeyModifiers::none()),
+            ),
+            (ckey(CKey::Home), event(KeyCode::Home, KeyModifiers::none())),
+            (ckey(CKey::End), event(KeyCode::End, KeyModifiers::none())),
             (ckey_mods(CKey::Backspace, CMods::SHIFT), None),
             (ckey(CKey::F(1)), None),
         ];

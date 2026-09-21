@@ -1,6 +1,6 @@
-use crossterm::event::Event;
 use ratatui::layout::Position;
 
+use crate::inputs::{InputEvent, KeyCode};
 use crate::stores::{LocalJournalEntry, RemoteJournalEntry, Store};
 use crate::vos::{EntityIdValue, IssueId, JournalId};
 
@@ -66,16 +66,13 @@ impl JournalsListComponent {
         }
     }
 
-    pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
+    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         if self.create_button_focused {
             return match event {
-                Event::Key(key)
-                    if key.code == crossterm::event::KeyCode::Enter
-                        && self.local_item.is_none() =>
-                {
+                InputEvent::Key(key) if key.code == KeyCode::Enter && self.local_item.is_none() => {
                     Some(EventProcessResult::CreateLocalJournalRequested)
                 }
-                Event::Key(key) if key.code == crossterm::event::KeyCode::Char('k') => {
+                InputEvent::Key(key) if key.code == KeyCode::Char('k') => {
                     let Some(item) = self
                         .item_count()
                         .checked_sub(1)
@@ -88,7 +85,7 @@ impl JournalsListComponent {
                     self.focus_item(item, ChildFocusEvent::CursorEnteredFromBelow { x: 0 });
                     None
                 }
-                Event::Key(key) if key.code == crossterm::event::KeyCode::Char('j') => {
+                InputEvent::Key(key) if key.code == KeyCode::Char('j') => {
                     Some(EventProcessResult::CursorLeavedFromBelow)
                 }
                 _ => None,
@@ -376,8 +373,8 @@ impl JournalsListComponent {
 
 #[cfg(test)]
 mod tests {
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::stores::RemoteJournalState;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
     use crate::entities::Journal;
@@ -391,12 +388,12 @@ mod tests {
 
     const WIDE_WIDTH: u16 = 32;
 
-    fn key_event(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key_event(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
-    fn ctrl_s_event() -> Event {
-        Event::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL))
+    fn ctrl_s_event() -> InputEvent {
+        InputEvent::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::control()))
     }
 
     fn entry_state(store: &Store) -> &RemoteJournalState {

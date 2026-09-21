@@ -1,6 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crossterm::event::{Event, KeyCode};
 use ratatui::{
     Frame,
     layout::{Position, Rect},
@@ -8,6 +7,7 @@ use ratatui::{
 };
 
 use crate::{
+    inputs::{InputEvent, KeyCode},
     stores::{Dispatcher, IssueFetchState, Store},
     vos::IssueId,
 };
@@ -61,7 +61,7 @@ impl IssueComponent {
 
     pub fn process_event(
         &mut self,
-        event: Event,
+        event: InputEvent,
         dispatcher: Rc<RefCell<Dispatcher>>,
     ) -> Option<EventProcessResult> {
         // Detail gets the first opportunity so future overlapping shortcuts keep
@@ -79,23 +79,22 @@ impl IssueComponent {
 
     fn process_own_event(
         &self,
-        event: &Event,
+        event: &InputEvent,
         dispatcher: &Rc<RefCell<Dispatcher>>,
     ) -> Option<EventProcessResult> {
-        if let Event::Key(key) = event {
-            if key.code == KeyCode::Char('y') {
-                return Some(EventProcessResult::OpenIssueSelectPopup);
-            }
-            if key.code == KeyCode::Char('r') {
-                let failed = matches!(
-                    dispatcher
-                        .borrow()
-                        .store()
-                        .try_get_issue_fetch_state(self.issue_id),
-                    Some(IssueFetchState::FetchFailed { .. })
-                );
-                return failed.then_some(EventProcessResult::FetchRequested { id: self.issue_id });
-            }
+        let InputEvent::Key(key) = event;
+        if key.code == KeyCode::Char('y') {
+            return Some(EventProcessResult::OpenIssueSelectPopup);
+        }
+        if key.code == KeyCode::Char('r') {
+            let failed = matches!(
+                dispatcher
+                    .borrow()
+                    .store()
+                    .try_get_issue_fetch_state(self.issue_id),
+                Some(IssueFetchState::FetchFailed { .. })
+            );
+            return failed.then_some(EventProcessResult::FetchRequested { id: self.issue_id });
         }
 
         None
@@ -149,11 +148,11 @@ impl IssueComponent {
 #[cfg(test)]
 mod tests {
     use super::{EventProcessResult, IssueComponent, IssueWidget};
+    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::{
         stores::{Dispatcher, IssueAction},
         test_support::render_snapshot,
     };
-    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
     use std::{
         cell::{Cell, RefCell},
         rc::Rc,
@@ -176,12 +175,12 @@ mod tests {
         IssueComponent::new(borrow.store(), id)
     }
 
-    fn key(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    fn key(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
-    fn modified_key(code: KeyCode, modifiers: KeyModifiers) -> Event {
-        Event::Key(KeyEvent::new(code, modifiers))
+    fn modified_key(code: KeyCode, modifiers: KeyModifiers) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, modifiers))
     }
 
     #[test]
@@ -380,7 +379,7 @@ mod tests {
         let (mut component, _) = component(&d, 3);
 
         assert_eq!(
-            component.process_event(modified_key(KeyCode::Char('s'), KeyModifiers::CONTROL), d,),
+            component.process_event(modified_key(KeyCode::Char('s'), KeyModifiers::control()), d,),
             Some(EventProcessResult::Detail(
                 super::detail::EventProcessResult::StartIssueUpload,
             )),

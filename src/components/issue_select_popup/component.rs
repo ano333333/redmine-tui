@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 
-use crossterm::event::Event;
 use ratatui::layout::Rect;
 
 use crate::inputs::InputEvent;
-use crate::inputs::native::convert_key;
 use crate::stores::{ProjectIssuesPageState, Store};
 use crate::vos::{IssueId, ProjectId};
 
@@ -109,14 +107,7 @@ impl IssueSelectPopupComponent {
         );
     }
 
-    pub fn process_event(&mut self, event: Event, store: &Store) -> Option<EventProcessResult> {
-        let Event::Key(key) = event else {
-            return None;
-        };
-        self.process_input_event(convert_key(key)?, store)
-    }
-
-    fn process_input_event(
+    pub fn process_event(
         &mut self,
         event: InputEvent,
         store: &Store,
@@ -555,9 +546,9 @@ mod tests {
         );
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let _ = component.take_effect();
-        component.process_input_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store);
 
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
         assert!(matches!(
             component.take_effect(),
             Some(Effect::FetchProjectIssuesPage { page: requested_page, .. }) if requested_page == page(2)
@@ -582,7 +573,7 @@ mod tests {
             .into(),
         );
         component.update(&store, AREA);
-        component.process_input_event(key_event(KeyCode::Char('r')), &store);
+        component.process_event(key_event(KeyCode::Char('r')), &store);
         assert!(matches!(
             component.take_effect(),
             Some(Effect::FetchProjectIssuesPage { page: requested_page, .. }) if requested_page == page(2)
@@ -613,7 +604,7 @@ mod tests {
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let _ = component.take_effect();
 
-        component.process_input_event(key_event(KeyCode::Char('r')), &store);
+        component.process_event(key_event(KeyCode::Char('r')), &store);
 
         assert!(matches!(
             component.take_effect(),
@@ -643,9 +634,9 @@ mod tests {
         );
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let _ = component.take_effect();
-        component.process_input_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store);
 
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
 
         assert!(matches!(
             component.take_effect(),
@@ -675,9 +666,9 @@ mod tests {
         );
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let _ = component.take_effect();
-        component.process_input_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store);
 
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
 
         assert!(matches!(
             component.take_effect(),
@@ -711,9 +702,9 @@ mod tests {
         );
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let _ = component.take_effect();
-        component.process_input_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store);
 
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
 
         assert!(component.take_effect().is_none());
         assert_eq!(component.create_widget(&store).issues[0].issue_id, 1);
@@ -737,7 +728,7 @@ mod tests {
                 if project_id == 1 && requested_page == page(1)
         ));
 
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
 
         assert!(matches!(
             component.take_effect(),
@@ -776,12 +767,12 @@ mod tests {
         );
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let _ = component.take_effect();
-        component.process_input_event(key_event(KeyCode::Char('l')), &store);
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
         let _ = component.take_effect();
 
-        component.process_input_event(key_event(KeyCode::Char('h')), &store);
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('h')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
         assert_eq!(component.create_widget(&store).issues[0].issue_id, 42);
         assert!(matches!(
             component.take_effect(),
@@ -789,7 +780,7 @@ mod tests {
                 if project_id == 2 && requested_page == page(1)
         ));
 
-        component.process_input_event(key_event(KeyCode::Char('k')), &store);
+        component.process_event(key_event(KeyCode::Char('k')), &store);
         assert_eq!(component.create_widget(&store).issues[0].issue_id, 11);
         assert!(matches!(
             component.take_effect(),
@@ -820,9 +811,9 @@ mod tests {
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let _ = component.take_effect();
 
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
         let _ = component.take_effect();
-        component.process_input_event(key_event(KeyCode::Char('k')), &store);
+        component.process_event(key_event(KeyCode::Char('k')), &store);
 
         assert!(matches!(
             component.take_effect(),
@@ -860,14 +851,14 @@ mod tests {
         );
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let _ = component.take_effect();
-        component.process_input_event(key_event(KeyCode::Char('l')), &store);
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
         let _ = component.take_effect();
-        component.process_input_event(key_event(KeyCode::Char('h')), &store);
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('h')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
         let _ = component.take_effect();
 
-        component.process_input_event(key_event(KeyCode::Char('k')), &store);
+        component.process_event(key_event(KeyCode::Char('k')), &store);
 
         assert!(matches!(
             component.take_effect(),
@@ -894,17 +885,17 @@ mod tests {
             Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page, .. })
                 if project_id == 1 && requested_page == page(1)
         ));
-        component.process_input_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store);
         assert_eq!(
             component.create_widget(&store).focused_column,
             IssueSelectPopupFocusColumn::Project
         );
         assert!(
             component
-                .process_input_event(key_event(KeyCode::Enter), &store)
+                .process_event(key_event(KeyCode::Enter), &store)
                 .is_none()
         );
-        component.process_input_event(key_event(KeyCode::Char('r')), &store);
+        component.process_event(key_event(KeyCode::Char('r')), &store);
         assert!(component.take_effect().is_none());
     }
 
@@ -921,8 +912,8 @@ mod tests {
         );
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let _ = component.take_effect();
-        component.process_input_event(key_event(KeyCode::Char('l')), &store);
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
         let _ = component.take_effect();
         let request_id = crate::stores::ProjectIssuesRequestId::new();
         store.consume_action(
@@ -949,13 +940,13 @@ mod tests {
         );
         component.update(&store, AREA);
 
-        component.process_input_event(key_event(KeyCode::Char('h')), &store);
-        component.process_input_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('h')), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store);
         assert_eq!(
             component.create_widget(&store).focused_column,
             IssueSelectPopupFocusColumn::Issue
         );
-        component.process_input_event(key_event(KeyCode::Char('k')), &store);
+        component.process_event(key_event(KeyCode::Char('k')), &store);
 
         assert!(matches!(
             component.take_effect(),
@@ -984,13 +975,13 @@ mod tests {
         );
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let _ = component.take_effect();
-        component.process_input_event(key_event(KeyCode::Char('l')), &store);
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
         let _ = component.take_effect();
 
         load_project_page(&mut store, 1, 1, Vec::new(), 0, 0);
 
-        component.process_input_event(key_event(KeyCode::Char('k')), &store);
+        component.process_event(key_event(KeyCode::Char('k')), &store);
         let _ = component.take_effect();
         component.update(&store, AREA);
 
@@ -1032,8 +1023,8 @@ mod tests {
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let _ = component.take_effect();
 
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
-        component.process_input_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store);
         let widget = component.create_widget(&store);
 
         assert_eq!(widget.focused_project_index, 1);
@@ -1045,7 +1036,7 @@ mod tests {
         let store = store();
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
 
-        let result = component.process_input_event(key_event(KeyCode::Char('q')), &store);
+        let result = component.process_event(key_event(KeyCode::Char('q')), &store);
 
         assert!(matches!(result, Some(EventProcessResult::Quited)));
     }
@@ -1055,9 +1046,9 @@ mod tests {
         let store = store();
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
 
-        component.process_input_event(key_event(KeyCode::Char('l')), &store);
-        component.process_input_event(key_event(KeyCode::Char('j')), &store);
-        let result = component.process_input_event(key_event(KeyCode::Enter), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store);
+        let result = component.process_event(key_event(KeyCode::Enter), &store);
 
         match result {
             Some(EventProcessResult::Selected { issue_id }) => {
