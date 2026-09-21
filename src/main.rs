@@ -104,8 +104,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
         let now = std::time::Instant::now();
-        let tick = chrono::Duration::from_std(now.duration_since(last_tick))
-            .unwrap_or_else(|_| chrono::Duration::zero());
+        let tick = tick_since(last_tick, now);
         last_tick = now;
         dispatcher.borrow_mut().update_store(tick);
         let size = terminal.size().expect("failed to get terminal size");
@@ -124,6 +123,7 @@ fn main() -> ExitCode {
                 &runtime,
                 worker_action_tx.clone(),
                 client.clone(),
+                &mut last_tick,
             )
         {
             tracing::event!(
@@ -168,6 +168,12 @@ fn main() -> ExitCode {
     ratatui::restore();
     trace_dbg!("done");
     ExitCode::SUCCESS
+}
+
+/// `now`が`last`より前でないことを前提とし、`chrono::Duration`の範囲外ならゼロを返す。
+fn tick_since(last: std::time::Instant, now: std::time::Instant) -> chrono::Duration {
+    chrono::Duration::from_std(now.duration_since(last))
+        .unwrap_or_else(|_| chrono::Duration::zero())
 }
 
 fn init_tokio_runtime() -> Result<Runtime> {
@@ -282,6 +288,7 @@ fn handle_app_effect(
     runtime: &Runtime,
     sender: mpsc::Sender<Action>,
     client: Arc<DefaultRedmineClient>,
+    last_tick: &mut std::time::Instant,
 ) -> Result<()> {
     match effect {
         AppEffect::FetchIssue(id) => {
@@ -291,7 +298,11 @@ fn handle_app_effect(
             start_project_issues_page_fetch(dispatcher, runtime, sender, client, project_id, page);
         }
         AppEffect::OpenEditor(request) => {
-            let response = run_editor(terminal, request)?;
+            let response = run_editor(terminal, request);
+            // editor失敗時の滞在時間も次のNotice tickへ混ぜないよう、errorを返す前にresetする。
+            *last_tick = std::time::Instant::now();
+            // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
+            let response = response?;
             app_component.handle_editor_response(response);
             let size = terminal.size().expect("failed to get terminal size");
             let rect = Rect::new(0, 0, size.width, size.height);
@@ -558,6 +569,22 @@ mod tests {
     #[test]
     fn area_from_terminal_size_uses_the_latest_dimensions() {
         assert_eq!(area_from_terminal_size(120, 40), Rect::new(0, 0, 120, 40));
+    }
+
+    #[test]
+    fn tick_since_returns_zero_for_the_same_instant() {
+        let now = std::time::Instant::now();
+
+        assert_eq!(tick_since(now, now), chrono::Duration::zero());
+    }
+
+    #[test]
+    fn tick_since_returns_a_positive_duration_after_elapsed_time() {
+        let last = std::time::Instant::now();
+        std::thread::sleep(Duration::from_millis(10));
+        let now = std::time::Instant::now();
+
+        assert!(tick_since(last, now) > chrono::Duration::zero());
     }
 
     #[test]
