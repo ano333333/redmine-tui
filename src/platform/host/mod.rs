@@ -6,7 +6,7 @@ use std::{future::Future, io, time::Duration};
 
 use ratatui::{Frame, layout::Rect};
 
-use super::{editor::TextEditor, input::InputEvent};
+use super::input::InputEvent;
 
 pub mod native;
 
@@ -20,9 +20,10 @@ pub enum HostEvent {
 }
 
 /// 共通runnerが一つのloopでnative/Webを駆動するために必要なplatform操作。
+///
+/// editorのFutureはeditorへの参照を完了まで保持するため、editorはhostに所有させず
+/// runnerへ別引数で渡す。これにより編集中もhostを可変借用して待機・復帰できる。
 pub trait PlatformHost {
-    type Editor: TextEditor;
-
     fn area(&mut self) -> Rect;
     /// host生成時を起点とする単調な経過時間を返す。
     fn elapsed(&self) -> Duration;
@@ -37,5 +38,4 @@ pub trait PlatformHost {
     fn suspend_for_editor(&mut self) -> io::Result<()>;
     /// editor終了後に描画可能な状態へ戻す。途中で失敗しても残りの復帰操作を試みる。
     fn resume_after_editor(&mut self) -> io::Result<()>;
-    fn editor(&self) -> &Self::Editor;
 }

@@ -12,13 +12,12 @@ use crossterm::{
 use ratatui::{DefaultTerminal, Frame, layout::Rect};
 
 use super::{HostEvent, PlatformHost};
-use crate::platform::{editor::native::NativeTextEditor, input::native::convert_key};
+use crate::platform::input::native::convert_key;
 
 static PANIC_HOOK_INSTALLED: AtomicBool = AtomicBool::new(false);
 
 pub struct NativePlatformHost {
     terminal: DefaultTerminal,
-    editor: NativeTextEditor,
     // Noticeの表示時間をwall clockの補正から独立させるため、経過時間は単調時計で測る。
     started_at: Instant,
 }
@@ -27,18 +26,15 @@ impl NativePlatformHost {
     pub fn new(terminal: DefaultTerminal) -> Self {
         Self {
             terminal,
-            editor: NativeTextEditor::from_environment(),
             started_at: Instant::now(),
         }
     }
 }
 
 impl PlatformHost for NativePlatformHost {
-    type Editor = NativeTextEditor;
-
     fn area(&mut self) -> Rect {
         let size = self.terminal.size().expect("failed to get terminal size");
-        Rect::new(0, 0, size.width, size.height)
+        area_from_terminal_size(size.width, size.height)
     }
 
     fn elapsed(&self) -> Duration {
@@ -82,10 +78,6 @@ impl PlatformHost for NativePlatformHost {
             &mut clear_terminal,
         ])
     }
-
-    fn editor(&self) -> &Self::Editor {
-        &self.editor
-    }
 }
 
 fn host_event(event: Event) -> HostEvent {
@@ -95,7 +87,11 @@ fn host_event(event: Event) -> HostEvent {
     }
 }
 
-pub(crate) fn run_terminal_operations(
+fn area_from_terminal_size(width: u16, height: u16) -> Rect {
+    Rect::new(0, 0, width, height)
+}
+
+fn run_terminal_operations(
     operations: &mut [&mut dyn FnMut() -> io::Result<()>],
 ) -> io::Result<()> {
     // 途中の失敗後もraw modeを戻せるよう、後続のterminal復帰操作はすべて試みる。
@@ -110,7 +106,7 @@ pub(crate) fn run_terminal_operations(
     first_error.map_or(Ok(()), Err)
 }
 
-pub(crate) fn run_terminal_operations_with_rollback(
+fn run_terminal_operations_with_rollback(
     operations: &mut [(
         &mut dyn FnMut() -> io::Result<()>,
         &mut dyn FnMut() -> io::Result<()>,
@@ -149,6 +145,11 @@ mod tests {
 
     use super::*;
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+
+    #[test]
+    fn area_from_terminal_size_uses_the_latest_dimensions() {
+        assert_eq!(area_from_terminal_size(120, 40), Rect::new(0, 0, 120, 40));
+    }
 
     #[test]
     fn host_event_converts_or_ignores_crossterm_events() {

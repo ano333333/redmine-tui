@@ -11,11 +11,7 @@ mod usecases;
 mod vos;
 mod widgets;
 
-use crossterm::{
-    event::{self, Event},
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
+use crossterm::event::{self, Event};
 use ratatui::{Frame, layout::Rect};
 use std::{cell::RefCell, io, process::ExitCode, rc::Rc, sync::Arc};
 
@@ -23,8 +19,9 @@ use self::{
     clients::redmine::{DefaultRedmineClient, RedmineClient},
     components::{AppComponent, app::AppEffect},
     platform::editor::{EditorOutcome, TextEditor, native::NativeTextEditor},
-    platform::host::native::{
-        install_panic_hook, run_terminal_operations, run_terminal_operations_with_rollback,
+    platform::host::{
+        PlatformHost,
+        native::{NativePlatformHost, install_panic_hook},
     },
     platform::input::native::convert_key,
     platform::redmine_config::redmine_connection_config_from_env,
@@ -86,16 +83,12 @@ fn main() -> ExitCode {
     }
     trace_dbg!("start");
     install_panic_hook();
-    let mut terminal = ratatui::init();
+    let mut host = NativePlatformHost::new(ratatui::init());
     // 以降のどのreturnでもterminalを復帰する。local変数は宣言の逆順にdropされるため、
     // editor sessionを先に停止できるようこのguardはそれより前に宣言する。
     let _terminal_restore = TerminalRestoreGuard;
     let mut app_component = AppComponent::new(dispatcher.clone(), None);
-    app_component.update(
-        dispatcher.clone(),
-        dispatcher.borrow().store(),
-        terminal.get_frame().area(),
-    );
+    app_component.update(dispatcher.clone(), dispatcher.borrow().store(), host.area());
     let tick_rate = std::time::Duration::from_millis(TICK_RATE_MS);
     let mut last_tick = std::time::Instant::now();
     let editor = NativeTextEditor::from_environment();
@@ -116,15 +109,7 @@ fn main() -> ExitCode {
                 Some(outcome) => outcome,
             };
             editor_session = None;
-            let mut enter_alternate_screen = || execute!(std::io::stdout(), EnterAlternateScreen);
-            let mut enable_raw = || enable_raw_mode();
-            let mut clear_terminal = || terminal.clear();
-            let terminal_result = run_terminal_operations(&mut [
-                &mut enter_alternate_screen,
-                &mut enable_raw,
-                &mut clear_terminal,
-            ]);
-            match terminal_result {
+            match host.resume_after_editor() {
                 Ok(()) => match outcome {
                     Ok(outcome) => app_component.handle_editor_response(outcome),
                     Err(error) => {
@@ -146,12 +131,7 @@ fn main() -> ExitCode {
                 }
             }
             // editor中にStoreへ適用したActionを、描画再開前にComponentへ反映する。
-            let size = terminal.size().expect("failed to get terminal size");
-            app_component.update(
-                dispatcher.clone(),
-                dispatcher.borrow().store(),
-                area_from_terminal_size(size.width, size.height),
-            );
+            app_component.update(dispatcher.clone(), dispatcher.borrow().store(), host.area());
             // editor滞在時間を次のNotice tickへ混ぜないよう、通常loopへ戻る前にresetする。
             last_tick = std::time::Instant::now();
         }
@@ -163,12 +143,7 @@ fn main() -> ExitCode {
         let tick = tick_since(last_tick, now);
         last_tick = now;
         dispatcher.borrow_mut().update_store(tick);
-        let size = terminal.size().expect("failed to get terminal size");
-        update(
-            dispatcher.clone(),
-            &mut app_component,
-            area_from_terminal_size(size.width, size.height),
-        );
+        update(dispatcher.clone(), &mut app_component, host.area());
         let effect = app_component.take_effect();
         if let Some(effect) = effect {
             handle_app_effect(
@@ -179,15 +154,13 @@ fn main() -> ExitCode {
                 client.clone(),
                 &editor,
                 &mut editor_session,
+                &mut host,
             );
         }
         if editor_session.is_some() {
             continue;
         }
-        if let Some(e) = terminal
-            .draw(|f| draw(f, &app_component, dispatcher.clone()))
-            .err()
-        {
+        if let Err(e) = host.draw(|f| draw(f, &app_component, dispatcher.clone())) {
             trace_dbg!(level: tracing::Level::ERROR, "failed to draw frame");
             eprintln!("{e}");
             return ExitCode::FAILURE;
@@ -195,13 +168,8 @@ fn main() -> ExitCode {
         if event::poll(tick_rate).unwrap() {
             match event::read() {
                 Ok(event) => {
-                    let size = terminal.size().expect("failed to get terminal size");
-                    if !handle_key_event(
-                        event,
-                        &mut app_component,
-                        dispatcher.clone(),
-                        area_from_terminal_size(size.width, size.height),
-                    ) {
+                    if !handle_key_event(event, &mut app_component, dispatcher.clone(), host.area())
+                    {
                         break;
                     }
                 }
@@ -263,10 +231,6 @@ fn update(dispatcher: Rc<RefCell<Dispatcher>>, app_component: &mut AppComponent,
     }
 }
 
-fn area_from_terminal_size(width: u16, height: u16) -> Rect {
-    Rect::new(0, 0, width, height)
-}
-
 fn handle_key_event(
     event: Event,
     app_component: &mut AppComponent,
@@ -292,6 +256,7 @@ fn handle_app_effect<'a, S: BackgroundSpawner>(
     client: Arc<DefaultRedmineClient>,
     editor: &'a NativeTextEditor,
     editor_session: &mut Option<EditorSession<'a>>,
+    host: &mut NativePlatformHost,
 ) {
     match effect {
         AppEffect::FetchIssue(id) => {
@@ -304,14 +269,7 @@ fn handle_app_effect<'a, S: BackgroundSpawner>(
             // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
             // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
             // FIXME: 実terminalとexternal editor processを使い、アプリ終了時にterminal状態が復元されeditor processがkillされることをE2E testで確認する。
-            let mut disable_raw = || disable_raw_mode();
-            let mut leave_alternate_screen = || execute!(std::io::stdout(), LeaveAlternateScreen);
-            let mut enable_raw = || enable_raw_mode();
-            let mut enter_alternate_screen = || execute!(std::io::stdout(), EnterAlternateScreen);
-            if let Err(error) = run_terminal_operations_with_rollback(&mut [
-                (&mut disable_raw, &mut enable_raw),
-                (&mut leave_alternate_screen, &mut enter_alternate_screen),
-            ]) {
+            if let Err(error) = host.suspend_for_editor() {
                 handle_editor_failure(
                     app_component,
                     dispatcher,
@@ -541,11 +499,6 @@ mod tests {
         fn try_recv_completion(&self) -> Option<BackgroundCompletion> {
             self.completions.borrow_mut().pop_front()
         }
-    }
-
-    #[test]
-    fn area_from_terminal_size_uses_the_latest_dimensions() {
-        assert_eq!(area_from_terminal_size(120, 40), Rect::new(0, 0, 120, 40));
     }
 
     #[test]
