@@ -38,6 +38,7 @@ use self::{
     components::{AppComponent, app::AppEffect},
     platform::editor::{EditorOutcome, TextEditor, native::NativeTextEditor},
     platform::input::native::convert_key,
+    platform::runtime,
     stores::{Action, Dispatcher, NoticeAction, NoticeId},
     usecases::redmine::{
         continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
@@ -346,20 +347,12 @@ where
     });
 }
 
-/// panic payload が通常使われる文字列型でなければ、型を外部へ露出せず共通文言を返す。
+/// Tokioのpanic payloadを共通runtime表現へ渡し、payloadを取得できない場合も共通文言を返す。
 fn join_error_panic_message(error: JoinError) -> String {
     let Some(payload) = error.try_into_panic().ok() else {
         return "worker task panicked".to_string();
     };
-    payload.downcast_ref::<&str>().map_or_else(
-        || {
-            payload
-                .downcast_ref::<String>()
-                .cloned()
-                .unwrap_or_else(|| "worker task panicked".to_string())
-        },
-        |message| message.to_string(),
-    )
+    runtime::panic_message(payload.as_ref())
 }
 
 fn update(dispatcher: Rc<RefCell<Dispatcher>>, app_component: &mut AppComponent, area: Rect) {
