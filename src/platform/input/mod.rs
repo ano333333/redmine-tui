@@ -66,6 +66,7 @@ impl KeyModifiers {
     }
 }
 
+#[cfg(feature = "native")]
 pub mod native;
 
 #[cfg(test)]

@@ -8,6 +8,7 @@ use ratatui::{Frame, layout::Rect};
 
 use super::input::InputEvent;
 
+#[cfg(feature = "native")]
 pub mod native;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

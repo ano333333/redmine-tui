@@ -1,9 +1,15 @@
+#[cfg(feature = "native")]
 use directories::ProjectDirs;
+#[cfg(feature = "native")]
 use lazy_static::lazy_static;
+#[cfg(feature = "native")]
 use std::{io::Result, path::PathBuf};
+#[cfg(feature = "native")]
 use tracing_error::ErrorLayer;
+#[cfg(feature = "native")]
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
+#[cfg(feature = "native")]
 lazy_static! {
     pub static ref PROJECT_NAME: String = env!("CARGO_CRATE_NAME").to_uppercase().to_string();
     pub static ref DATA_FOLDER: Option<PathBuf> =
@@ -14,10 +20,12 @@ lazy_static! {
     pub static ref LOG_FILE: String = format!("{}.log", env!("CARGO_PKG_NAME"));
 }
 
+#[cfg(feature = "native")]
 fn project_directory() -> Option<ProjectDirs> {
     ProjectDirs::from("com", "kdheepak", env!("CARGO_PKG_NAME"))
 }
 
+#[cfg(feature = "native")]
 pub fn get_data_dir() -> PathBuf {
     let directory = if let Some(s) = DATA_FOLDER.clone() {
         s
@@ -29,6 +37,7 @@ pub fn get_data_dir() -> PathBuf {
     directory
 }
 
+#[cfg(feature = "native")]
 pub fn initialize_logging() -> Result<()> {
     let directory = get_data_dir();
     std::fs::create_dir_all(directory.clone())?;

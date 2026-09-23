@@ -12,8 +12,10 @@ mod usecases;
 mod vos;
 mod widgets;
 
+#[cfg(feature = "native")]
 use std::{cell::RefCell, process::ExitCode, rc::Rc, sync::Arc};
 
+#[cfg(feature = "native")]
 use self::{
     clients::redmine::DefaultRedmineClient,
     platform::editor::native::NativeTextEditor,
@@ -25,14 +27,17 @@ use self::{
     usecases::redmine::load_initial_entities,
 };
 
+#[cfg(feature = "native")]
 struct TerminalRestoreGuard;
 
+#[cfg(feature = "native")]
 impl Drop for TerminalRestoreGuard {
     fn drop(&mut self) {
         ratatui::restore();
     }
 }
 
+#[cfg(feature = "native")]
 fn main() -> ExitCode {
     let spawner = match TokioBackgroundSpawner::new() {
         Ok(spawner) => spawner,
@@ -83,3 +88,7 @@ fn main() -> ExitCode {
         }
     }
 }
+
+#[cfg(not(feature = "native"))]
+// Web entryを追加するまでは、native依存なしのbinaryを検査するための空entryとする。
+fn main() {}

@@ -1,3 +1,4 @@
+#[cfg(feature = "native")]
 pub mod native;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -5,6 +5,7 @@ use std::task::{Context, Poll, Waker};
 
 use crate::stores::Action;
 
+#[cfg(feature = "native")]
 pub(crate) mod tokio_spawner;
 
 /// background taskからrunnerへ返す、実行環境に依存しない完了通知。
