@@ -13,6 +13,9 @@ use crate::{
 pub(crate) mod effect;
 pub(crate) mod lifecycle;
 
+#[cfg(test)]
+mod tests;
+
 use effect::{EditorSession, handle_app_effect, handle_editor_failure};
 use lifecycle::{
     consume_editor_worker_actions, draw, handle_host_event, move_worker_action, tick_since, update,
