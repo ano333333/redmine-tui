@@ -1,7 +1,10 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::Style;
 use ratatui::text::Text;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
+
+use super::theme::{ACCENT, BADGE_BG};
 
 /// Storeやfocus状態に依存せず、渡された一時通知を右上へ重ねて描画するWidget。
 pub struct ToastWidget {
@@ -70,7 +73,10 @@ impl Widget for ToastWidget {
                 width: area.width,
                 height,
             };
-            let block = Block::default().borders(Borders::ALL);
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .style(Style::default().bg(BADGE_BG))
+                .border_style(Style::default().fg(ACCENT));
             let inner = block.inner(toast_area);
             block.render(toast_area, buf);
             paragraph.render(inner, buf);
