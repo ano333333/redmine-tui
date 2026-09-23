@@ -46,7 +46,7 @@
 
  native: crossterm / Tokio / HTTP / external editor / file log
  Web:    DomBackend / spawn_local / memory mock / textarea / console</code></pre>
-<p>共通層はcrossterm、Ratzilla、DOM、Tokio runtime、filesystem、process、HTTP実装へ直接依存しない。初期実装では単一Cargo packageを維持し、必要ならnative/Web runnerと<code>lib.rs</code>を追加するが、ComponentやStoreの大規模な再編は行わない。</p>
+<p>共通層はcrossterm、Ratzilla、DOM、Tokio runtime、filesystem、process、HTTP実装へ直接依存しない。初期実装では単一Cargo packageと単一binaryを維持する。<code>lib.rs</code>は追加せず、<code>main.rs</code>から<code>cfg(target_arch)</code>でnative/Webのentry moduleへ分岐する。ComponentやStoreの大規模な再編は行わない。</p>
 <h3>build targetと配信</h3>
 <p>nativeをdefault、Webを明示的なfeatureとtargetで選択する。</p>
 <pre><code>[features]
@@ -54,10 +54,10 @@ default = [&quot;native&quot;]
 native = [&quot;dep:crossterm&quot;, &quot;ratatui/crossterm&quot;]
 web-demo = [&quot;dep:ratzilla&quot;, &quot;dep:wasm-bindgen&quot;, &quot;dep:wasm-bindgen-futures&quot;]</code></pre>
 <p>実際の依存解決に応じてtarget-specific dependenciesも使い、native専用依存をWASMへ入れない。nativeと<code>web-demo</code>の同時指定、または非WASM targetでの<code>web-demo</code>は<code>compile_error!</code>で拒否する。</p>
-<p>Web成果物はTrunkでbuildし、repository名を含むGitHub Pagesのbase pathを設定する。GitHub Actionsが静的な<code>dist/</code>をPagesへdeployする。公開成果物へRedmine URLやAPI keyを埋め込まない。</p>
+<p>Web成果物はTrunkでbinary crateをWASMとしてbuildし、repository名を含むGitHub Pagesのbase pathを設定する。GitHub Actionsが静的な<code>dist/</code>をPagesへdeployする。公開成果物へRedmine URLやAPI keyを埋め込まない。</p>
 <h3>描画backendとrunner</h3>
 <p>nativeはRatatui/crossterm backend、WebはRatzilla <code>DomBackend</code>を使う。WidgetはRatatuiの<code>Frame</code>、<code>Buffer</code>、<code>Rect</code>だけを利用し、backend型を知らない状態を維持する。</p>
-<p>nativeのpoll loopとWebのcallback/render loopをplatform runnerへ分離する。両runnerは次のapplication lifecycleを守る。</p>
+<p>native/Webは一つの共通async runner loopを共有し、platform差はrunnerが呼ぶplatform interfaceへ閉じ込める。runner loopは1周ごとに次のapplication lifecycleを守る。</p>
 <ol>
 <li>completion、tick、resize、入力を受理する。</li>
 <li>completion Actionをdispatchする。</li>
@@ -67,6 +67,8 @@ web-demo = [&quot;dep:ratzilla&quot;, &quot;dep:wasm-bindgen&quot;, &quot;dep:wa
 <li>描画可能ならrenderする。</li>
 </ol>
 <p>物理的なcallback時刻ではなくrunnerの受理順をアプリケーション上の順序とする。Dispatcher、Store、ComponentはWebでもbrowser main threadだけが更新し、DOM callbackやtaskから直接変更しない。</p>
+<p>platform interfaceは、timeout付きの入力待ち、描画、描画領域、単調時計、editor前後のterminal/DOM操作を提供する。nativeは入力待ちで<code>crossterm::event::poll</code>を同期に呼び、runner全体をTokio adapterの<code>block_on</code>で駆動する。これにより現在のpoll loopと同じ順序とtick間隔を維持する。Webはrunnerを<code>spawn_local</code>で起動する。Ratzillaのkey callbackはeventをqueueへ積むだけにし、入力待ちはqueueとtimerのうち早い方を待つ。描画はRatzillaのrender loop（<code>draw_web</code>）に委ねず、runnerが<code>Terminal::draw</code>を呼ぶ。runnerはawait点でだけbrowserへ制御を返し、browser event loopをblockしない。</p>
+<p>editorのFutureはwakerを登録しない場合があるため、runnerはeditor中もtickごとにpollして完了を確認する。<code>std::time::Instant</code>は<code>wasm32-unknown-unknown</code>で使用できないため、経過時間はplatformの単調時計で計測する。</p>
 <h3>InputEvent</h3>
 <p>Componentが直接受け取る<code>crossterm::event::Event</code>をアプリ固有の<code>InputEvent</code>へ置き換える。native adapterはcrossterm eventを、Web adapterはRatzilla eventを変換する。</p>
 <pre><code>pub enum InputEvent {
@@ -114,7 +116,7 @@ pub trait TextEditor {
 <p>現在、Issue descriptionとRemote Journalはupload中のeditor開始を完全には抑止していないため、WASM対応の準備として制御を追加する。Storeのpanicは防御的検査として維持する。Local Journal新規作成では<code>CreateLocal</code>をconsumeしてからeditorを開く。</p>
 <h3>native editor</h3>
 <p>nativeは一時ファイルと<code>$VISUAL</code>、<code>$EDITOR</code>、<code>nvim</code>による現在の仕様を維持するが、子processの終了は非同期に待つ。<code>std::process::Command::status</code>によるmain thread停止は維持しない。</p>
-<p>raw mode解除、alternate screen離脱、再入場、raw mode再有効化、clearはnative runnerが管理する。editor中はcrossterm入力と描画を止め、editor completionとworker completionを待つ。全終了経路でterminalと一時ファイルをcleanupするguardを使う。正常終了は<code>Submitted</code>、起動失敗または非zero終了は<code>Err</code>とする。</p>
+<p>raw mode解除、alternate screen離脱、再入場、raw mode再有効化、clearはnative platform interfaceが管理する。editor中はcrossterm入力と描画を止め、editor completionとworker completionを待つ。全終了経路でterminalと一時ファイルをcleanupするguardを使う。正常終了は<code>Submitted</code>、起動失敗または非zero終了は<code>Err</code>とする。</p>
 <h3>Web textareaとRatzilla focus</h3>
 <p>Webは<code>textarea</code>を含むmodalをRatzilla gridの外側へ追加する。初期値を設定してtextareaへDOM focusを移し、Submit/Cancel callbackでFutureを完了させる。IME composition中のEnter/Escapeを誤認せず、完了後はDOM node、listener、Rust closureを解放する。</p>
 <p>Ratzilla cursor、Componentの論理focus、browserのDOM focusは別に扱う。<code>DomBackend::on_key_event</code>はgridへ<code>tabindex=&quot;0&quot;</code>とkey listenerを設定する。textareaがfocusを持つ間はRatzilla入力をComponentへ配送せず、editorが消費するeventの伝播も停止する。</p>
@@ -173,7 +175,7 @@ pub trait TextEditor {
 <section id="consequences"><h2>Consequences</h2>
 <ul>
 <li>Componentはcrosstermではなく<code>InputEvent</code>へ依存する。</li>
-<li><code>main.rs</code>のplatform処理をnative/Web runnerとportへ分離する。</li>
+<li><code>main.rs</code>のloopを共通runnerへ移し、platform処理をnative/Webのplatform interfaceとportへ分離する。</li>
 <li><code>RedmineClient</code>とusecaseの<code>Send + Sync</code>契約は維持し、Webのbackground Futureも同じ契約で起動する。</li>
 <li>editor中もStoreはcompletionを受理するが、Component更新と描画は終了まで遅延する。</li>
 <li>Noticeは通常画面の表示経過時間で期限切れになる。</li>
@@ -187,6 +189,10 @@ pub trait TextEditor {
 <section id="alternatives"><h2>Alternatives Considered</h2>
 <h3>xterm.jsとANSI出力</h3>
 <p>ANSI、入力、resize、日本語幅、IME、mouseのbridgeが必要になる。操作サンプルにはRatzillaの方が単純なため採用しない。</p>
+<h3>native/Webでrunner loopを分離する</h3>
+<p>nativeのpoll loopとWebのcallback/render loopを別々に実装すると、lifecycleの順序を二重に実装することになり、両者の差異をtestで検出しにくい。共通async loopにしても、nativeは同期pollのまま同じ順序とtick間隔を維持でき、Webはawait点でbrowserへ制御を返せる。そのため一つのloopを共有する。</p>
+<h3><code>lib.rs</code>を導入する</h3>
+<p>Trunkはbinary crateをbuildできるため、cdylibと<code>#[wasm_bindgen(start)]</code>は必要ない。lib化すると、dev-dependencyに依存するtest支援codeをbinary testから参照できなくなり、公開項目がdead_code検出の対象外になる。そのため採用しない。</p>
 <h3>platform event型を共通型として使用する</h3>
 <p>一方の型へ他方を擬装するかComponentへ条件コンパイルが広がるため、独自<code>InputEvent</code>を使う。</p>
 <h3>browserから実Redmineへ接続する</h3>
