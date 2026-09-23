@@ -14,12 +14,12 @@ mod widgets;
 
 use crossterm::event::{self, Event};
 use ratatui::{Frame, layout::Rect};
-use std::{cell::RefCell, io, process::ExitCode, rc::Rc, sync::Arc};
+use std::{cell::RefCell, process::ExitCode, rc::Rc, sync::Arc};
 
 use self::{
     clients::redmine::DefaultRedmineClient,
-    components::{AppComponent, app::AppEffect},
-    platform::editor::{EditorOutcome, TextEditor, native::NativeTextEditor},
+    components::AppComponent,
+    platform::editor::native::NativeTextEditor,
     platform::host::{
         PlatformHost,
         native::{NativePlatformHost, install_panic_hook},
@@ -27,20 +27,14 @@ use self::{
     platform::input::native::convert_key,
     platform::redmine_config::redmine_connection_config_from_env,
     platform::runtime::{
-        BackgroundCompletion, BackgroundSpawner, LocalTask, tokio_spawner::TokioBackgroundSpawner,
+        BackgroundCompletion, BackgroundSpawner, tokio_spawner::TokioBackgroundSpawner,
     },
-    runner::effect::{
-        continue_remote_journal_upload_action, start_issue_fetch,
-        start_local_journal_upload_action, start_project_issues_page_fetch,
-        start_remote_journal_upload_action,
-    },
-    stores::{Action, Dispatcher, NoticeAction, NoticeId},
-    usecases::redmine::{load_initial_entities, start_issue_upload, upload_issue_action},
+    runner::effect::{EditorSession, handle_app_effect, handle_editor_failure},
+    stores::{Action, Dispatcher},
+    usecases::redmine::load_initial_entities,
 };
 
 const TICK_RATE_MS: u64 = 250;
-
-type EditorSession<'a> = LocalTask<'a, io::Result<EditorOutcome>>;
 
 struct TerminalRestoreGuard;
 
@@ -249,91 +243,6 @@ fn handle_key_event(
     should_continue
 }
 
-fn handle_app_effect<'a, S: BackgroundSpawner>(
-    effect: AppEffect,
-    app_component: &mut AppComponent,
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<DefaultRedmineClient>,
-    editor: &'a NativeTextEditor,
-    editor_session: &mut Option<EditorSession<'a>>,
-    host: &mut NativePlatformHost,
-) {
-    match effect {
-        AppEffect::FetchIssue(id) => {
-            start_issue_fetch(dispatcher, spawner, client, id);
-        }
-        AppEffect::FetchProjectIssuesPage { project_id, page } => {
-            start_project_issues_page_fetch(dispatcher, spawner, client, project_id, page);
-        }
-        AppEffect::OpenEditor(request) => {
-            // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
-            // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
-            // FIXME: 実terminalとexternal editor processを使い、アプリ終了時にterminal状態が復元されeditor processがkillされることをE2E testで確認する。
-            if let Err(error) = host.suspend_for_editor() {
-                handle_editor_failure(
-                    app_component,
-                    dispatcher,
-                    &error,
-                    "failed to leave terminal for editor",
-                );
-            } else {
-                *editor_session = Some(LocalTask::new(editor.edit(request)));
-            }
-        }
-        AppEffect::StartIssueUpload(id) => {
-            let future = start_issue_upload(dispatcher, client, id);
-            spawner.spawn(future);
-        }
-        AppEffect::ContinueIssueUpload { id, diffs } => {
-            spawner.spawn(async move { upload_issue_action(client.as_ref(), id, &diffs).await });
-        }
-        AppEffect::StartRemoteJournalUpload {
-            issue_id,
-            journal_id,
-        } => {
-            start_remote_journal_upload_action(dispatcher, spawner, client, issue_id, journal_id);
-        }
-        AppEffect::StartLocalJournalUpload { issue_id } => {
-            start_local_journal_upload_action(dispatcher, spawner, client, issue_id);
-        }
-        AppEffect::ContinueRemoteJournalUpload {
-            issue_id,
-            journal_id,
-            resolved_notes,
-        } => {
-            continue_remote_journal_upload_action(
-                dispatcher,
-                spawner,
-                client,
-                issue_id,
-                journal_id,
-                resolved_notes,
-            );
-        }
-    }
-}
-
-fn handle_editor_failure(
-    app_component: &mut AppComponent,
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    error: &dyn std::fmt::Display,
-    message: &'static str,
-) {
-    app_component.handle_editor_response(EditorOutcome::Failed);
-    tracing::event!(target: module_path!(), tracing::Level::ERROR, error = %error, "{message}");
-    dispatcher
-        .borrow_mut()
-        .dispatch(editor_failure_notice_action(error));
-}
-
-fn editor_failure_notice_action(error: &dyn std::fmt::Display) -> NoticeAction {
-    NoticeAction::Push {
-        id: NoticeId::new(),
-        message: format!("エディタによる編集に失敗しました: {error}"),
-    }
-}
-
 fn draw(frame: &mut Frame, app_component: &AppComponent, dispatcher: Rc<RefCell<Dispatcher>>) {
     app_component.render(dispatcher.borrow().store(), frame, frame.area());
 }
@@ -351,7 +260,13 @@ fn consume_initial_actions(dispatcher: Rc<RefCell<Dispatcher>>, actions: Vec<Act
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::app::AppEffect;
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::runner::effect::{
+        start_issue_fetch, start_local_journal_upload_action, start_project_issues_page_fetch,
+        start_remote_journal_upload_action,
+    };
+    use crate::usecases::redmine::{start_issue_upload, upload_issue_action};
     use std::{
         collections::VecDeque,
         future::Future,
