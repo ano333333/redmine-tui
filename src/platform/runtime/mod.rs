@@ -3,6 +3,8 @@ use std::future::Future;
 
 use crate::stores::Action;
 
+pub(crate) mod tokio_spawner;
+
 /// background taskからrunnerへ返す、実行環境に依存しない完了通知。
 ///
 /// task側ではStoreを更新せず、runnerがこの通知をUI thread上でAction dispatchへ接続する。

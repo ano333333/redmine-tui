@@ -28,17 +28,14 @@ use std::{
     sync::{Arc, atomic, mpsc},
     task::{Context, Poll, Waker},
 };
-use tokio::{
-    runtime::{Builder as TokioRuntimeBuilder, Runtime},
-    task::JoinError,
-};
+use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime};
 
 use self::{
     clients::redmine::{DefaultRedmineClient, RedmineClient},
     components::{AppComponent, app::AppEffect},
     platform::editor::{EditorOutcome, TextEditor, native::NativeTextEditor},
     platform::input::native::convert_key,
-    platform::runtime,
+    platform::runtime::tokio_spawner,
     stores::{Action, Dispatcher, NoticeAction, NoticeId},
     usecases::redmine::{
         continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
@@ -325,34 +322,8 @@ fn spawn_action_task<F>(runtime: &Runtime, sender: mpsc::Sender<Action>, future:
 where
     F: Future<Output = Vec<Action>> + Send + 'static,
 {
-    let handle = runtime.spawn(future);
-    runtime.spawn(async move {
-        match handle.await {
-            Ok(actions) => {
-                for action in actions {
-                    sender
-                        .send(action)
-                        .expect("Failed to send Action with mpsc::channel");
-                }
-            }
-            Err(error) if error.is_panic() => {
-                sender
-                    .send(Action::WorkerPanicked {
-                        message: join_error_panic_message(error),
-                    })
-                    .expect("Failed to send Action with mpsc::channel");
-            }
-            Err(_) => {}
-        }
-    });
-}
-
-/// Tokioのpanic payloadを共通runtime表現へ渡し、payloadを取得できない場合も共通文言を返す。
-fn join_error_panic_message(error: JoinError) -> String {
-    let Some(payload) = error.try_into_panic().ok() else {
-        return "worker task panicked".to_string();
-    };
-    runtime::panic_message(payload.as_ref())
+    // 呼び出し側をBackgroundSpawnerへ移行するまでは既存APIを残し、Tokio固有処理だけをadapterへ集約する。
+    tokio_spawner::spawn_action_task(runtime, sender, future);
 }
 
 fn update(dispatcher: Rc<RefCell<Dispatcher>>, app_component: &mut AppComponent, area: Rect) {
