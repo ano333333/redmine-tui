@@ -1,5 +1,6 @@
 use std::{
     env, fs,
+    future::Future,
     io::Result,
     path::PathBuf,
     process::{Child, Command, ExitStatus},
@@ -9,7 +10,6 @@ use std::{
 
 use super::{EditorOutcome, EditorRequest, TextEditor};
 
-/// 返すFutureはwakerを登録しないため、完了まで定期的にpollするrunnerでのみ使用する。
 pub struct NativeTextEditor {
     program: String,
     temp_dir: PathBuf,
@@ -37,18 +37,79 @@ impl NativeTextEditor {
 }
 
 impl TextEditor for NativeTextEditor {
+    /// 返すFutureはwakerを登録しないため、完了まで定期的にpollするrunnerでのみ使用する。
     fn edit(
         &self,
         request: EditorRequest,
     ) -> impl std::future::Future<Output = Result<EditorOutcome>> {
         let path = editor_path(&self.temp_dir);
-        let mut child = start_editor(&self.program, &path, request.initial_text).map_err(Some);
-        std::future::poll_fn(move |_| match &mut child {
-            Ok(child) => poll_editor(child, &path),
-            Err(error) => Poll::Ready(Err(error
-                .take()
-                .expect("editor future polled after completion"))),
-        })
+        let (child, start_error) = match start_editor(&self.program, &path, request.initial_text) {
+            Ok(child) => (Some(child), None),
+            Err(error) => (None, Some(error)),
+        };
+        NativeEditorSession {
+            temp_file: TemporaryEditorFile { path: path.clone() },
+            child,
+            start_error,
+        }
+    }
+}
+
+struct TemporaryEditorFile {
+    path: PathBuf,
+}
+
+impl Drop for TemporaryEditorFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+struct NativeEditorSession {
+    temp_file: TemporaryEditorFile,
+    child: Option<Child>,
+    start_error: Option<std::io::Error>,
+}
+
+impl Future for NativeEditorSession {
+    type Output = Result<EditorOutcome>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> Poll<Self::Output> {
+        if let Some(error) = self.start_error.take() {
+            return Poll::Ready(Err(error));
+        }
+        let child = self
+            .child
+            .as_mut()
+            .expect("editor future polled after completion");
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                self.child = None;
+                if let Err(error) = ensure_editor_exit_status(status) {
+                    return Poll::Ready(Err(error));
+                }
+                Poll::Ready(
+                    fs::read_to_string(&self.temp_file.path)
+                        .map(|edited_text| EditorOutcome::Submitted { edited_text }),
+                )
+            }
+            Ok(None) => Poll::Pending,
+            Err(error) => Poll::Ready(Err(error)),
+        }
+    }
+}
+
+impl Drop for NativeEditorSession {
+    fn drop(&mut self) {
+        // アプリ終了後もeditorがterminalを奪い合わないよう停止させる。
+        // Drop::dropはfieldのdropより先に走るため、wait完了後にtemp_fileが削除される。
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
@@ -66,24 +127,6 @@ fn editor_path(temp_dir: &PathBuf) -> PathBuf {
 fn start_editor(program: &str, path: &PathBuf, initial_text: String) -> Result<Child> {
     fs::write(path, initial_text)?;
     Command::new(program).arg(path).spawn()
-}
-
-fn poll_editor(child: &mut Child, path: &PathBuf) -> Poll<Result<EditorOutcome>> {
-    match child.try_wait() {
-        Ok(Some(status)) => {
-            if let Err(error) = ensure_editor_exit_status(status) {
-                return Poll::Ready(Err(error));
-            }
-            let edited_text = match fs::read_to_string(path) {
-                Ok(edited_text) => edited_text,
-                Err(error) => return Poll::Ready(Err(error)),
-            };
-            let _ = fs::remove_file(path);
-            Poll::Ready(Ok(EditorOutcome::Submitted { edited_text }))
-        }
-        Ok(None) => Poll::Pending,
-        Err(error) => Poll::Ready(Err(error)),
-    }
 }
 
 fn ensure_editor_exit_status(status: ExitStatus) -> Result<()> {
@@ -167,7 +210,8 @@ mod tests {
             )
             .is_err()
         );
-        fs::remove_dir_all(temp_dir).unwrap();
+        assert!(fs::read_dir(&temp_dir).unwrap().next().is_none());
+        fs::remove_dir(temp_dir).unwrap();
     }
 
     #[test]
@@ -185,6 +229,41 @@ mod tests {
             )
             .is_err()
         );
-        fs::remove_dir_all(temp_dir).unwrap();
+        assert!(fs::read_dir(&temp_dir).unwrap().next().is_none());
+        fs::remove_dir(temp_dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dropping_editor_session_kills_the_child_and_removes_the_temporary_file() {
+        let temp_dir = test_temp_dir("drop");
+        let editor = NativeTextEditor::with_program("sh", temp_dir.clone());
+        let mut future = Box::pin(editor.edit(EditorRequest {
+            initial_text: "echo $$ > \"$(dirname \"$0\")/editor.pid\"\nexec sleep 30".to_string(),
+        }));
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
+
+        assert!(matches!(future.as_mut().poll(&mut context), Poll::Pending));
+        let pid_path = temp_dir.join("editor.pid");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !pid_path.exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let pid = fs::read_to_string(&pid_path).expect("editor child should write its pid");
+
+        drop(future);
+
+        assert!(
+            !Command::new("kill")
+                .arg("-0")
+                .arg(pid.trim())
+                .status()
+                .unwrap()
+                .success()
+        );
+        fs::remove_file(pid_path).unwrap();
+        assert!(fs::read_dir(&temp_dir).unwrap().next().is_none());
+        fs::remove_dir(temp_dir).unwrap();
     }
 }

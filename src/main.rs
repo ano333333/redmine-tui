@@ -55,6 +55,14 @@ const REDMINE_PORT_ENV: &str = "REDMINE_PORT";
 
 type EditorSession<'a> = Pin<Box<dyn Future<Output = io::Result<EditorOutcome>> + 'a>>;
 
+struct TerminalRestoreGuard;
+
+impl Drop for TerminalRestoreGuard {
+    fn drop(&mut self) {
+        ratatui::restore();
+    }
+}
+
 fn main() -> ExitCode {
     let runtime = match init_tokio_runtime() {
         Ok(runtime) => runtime,
@@ -91,6 +99,9 @@ fn main() -> ExitCode {
     let (worker_action_tx, worker_action_rx) = mpsc::channel::<Action>();
     install_panic_hook();
     let mut terminal = ratatui::init();
+    // 以降のどのreturnでもterminalを復帰する。local変数は宣言の逆順にdropされるため、
+    // editor sessionを先に停止できるようこのguardはそれより前に宣言する。
+    let _terminal_restore = TerminalRestoreGuard;
     let mut app_component = AppComponent::new(dispatcher.clone(), None);
     app_component.update(
         dispatcher.clone(),
@@ -121,9 +132,14 @@ fn main() -> ExitCode {
                 Poll::Ready(outcome) => outcome,
             };
             editor_session = None;
-            let terminal_result = execute!(std::io::stdout(), EnterAlternateScreen)
-                .and_then(|_| enable_raw_mode())
-                .and_then(|_| terminal.clear());
+            let mut enter_alternate_screen = || execute!(std::io::stdout(), EnterAlternateScreen);
+            let mut enable_raw = || enable_raw_mode();
+            let mut clear_terminal = || terminal.clear();
+            let terminal_result = run_terminal_operations(&mut [
+                &mut enter_alternate_screen,
+                &mut enable_raw,
+                &mut clear_terminal,
+            ]);
             match terminal_result {
                 Ok(()) => match outcome {
                     Ok(outcome) => app_component.handle_editor_response(outcome),
@@ -214,9 +230,43 @@ fn main() -> ExitCode {
             }
         }
     }
-    ratatui::restore();
     trace_dbg!("done");
     ExitCode::SUCCESS
+}
+
+fn run_terminal_operations(
+    operations: &mut [&mut dyn FnMut() -> io::Result<()>],
+) -> io::Result<()> {
+    // 途中の失敗後もraw modeを戻せるよう、後続のterminal復帰操作はすべて試みる。
+    let mut first_error = None;
+    for operation in operations {
+        if let Err(error) = operation() {
+            if first_error.is_none() {
+                first_error = Some(error);
+            }
+        }
+    }
+    first_error.map_or(Ok(()), Err)
+}
+
+fn run_terminal_operations_with_rollback(
+    operations: &mut [(
+        &mut dyn FnMut() -> io::Result<()>,
+        &mut dyn FnMut() -> io::Result<()>,
+    )],
+) -> io::Result<()> {
+    let mut completed = 0;
+    for (operation, _) in operations.iter_mut() {
+        if let Err(error) = operation() {
+            // 中途状態のterminalをTUIで操作可能な状態へ戻すため、完了済みの操作だけを逆順に戻す。
+            for (_, rollback) in operations[..completed].iter_mut().rev() {
+                let _ = rollback();
+            }
+            return Err(error);
+        }
+        completed += 1;
+    }
+    Ok(())
 }
 
 /// `now`が`last`より前でないことを前提とし、`chrono::Duration`の範囲外ならゼロを返す。
@@ -360,9 +410,15 @@ fn handle_app_effect<'a>(
         AppEffect::OpenEditor(request) => {
             // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
             // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
-            if let Err(error) =
-                disable_raw_mode().and_then(|_| execute!(std::io::stdout(), LeaveAlternateScreen))
-            {
+            // FIXME: 実terminalとexternal editor processを使い、アプリ終了時にterminal状態が復元されeditor processがkillされることをE2E testで確認する。
+            let mut disable_raw = || disable_raw_mode();
+            let mut leave_alternate_screen = || execute!(std::io::stdout(), LeaveAlternateScreen);
+            let mut enable_raw = || enable_raw_mode();
+            let mut enter_alternate_screen = || execute!(std::io::stdout(), EnterAlternateScreen);
+            if let Err(error) = run_terminal_operations_with_rollback(&mut [
+                (&mut disable_raw, &mut enable_raw),
+                (&mut leave_alternate_screen, &mut enter_alternate_screen),
+            ]) {
                 handle_editor_failure(
                     app_component,
                     dispatcher,
@@ -610,6 +666,104 @@ mod tests {
         let now = std::time::Instant::now();
 
         assert!(tick_since(last, now) > chrono::Duration::zero());
+    }
+
+    #[test]
+    fn terminal_operations_run_every_operation_and_return_the_first_error() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let first_calls = calls.clone();
+        let mut first = move || {
+            first_calls.borrow_mut().push("first");
+            Err(io::Error::other("first failure"))
+        };
+        let second_calls = calls.clone();
+        let mut second = move || {
+            second_calls.borrow_mut().push("second");
+            Err(io::Error::other("second failure"))
+        };
+        let third_calls = calls.clone();
+        let mut third = move || {
+            third_calls.borrow_mut().push("third");
+            Ok(())
+        };
+
+        let error = run_terminal_operations(&mut [&mut first, &mut second, &mut third])
+            .expect_err("the first operation should fail");
+
+        assert_eq!(error.to_string(), "first failure");
+        assert_eq!(*calls.borrow(), ["first", "second", "third"]);
+    }
+
+    #[test]
+    fn terminal_operations_succeed_when_every_operation_succeeds() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let first_calls = calls.clone();
+        let mut first = move || {
+            first_calls.borrow_mut().push("first");
+            Ok(())
+        };
+        let second_calls = calls.clone();
+        let mut second = move || {
+            second_calls.borrow_mut().push("second");
+            Ok(())
+        };
+
+        assert!(run_terminal_operations(&mut [&mut first, &mut second]).is_ok());
+        assert_eq!(*calls.borrow(), ["first", "second"]);
+    }
+
+    #[test]
+    fn terminal_operations_rollback_only_completed_operations_after_a_failure() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let first_calls = calls.clone();
+        let mut first = move || {
+            first_calls.borrow_mut().push("first");
+            Ok(())
+        };
+        let first_rollback_calls = calls.clone();
+        let mut first_rollback = move || {
+            first_rollback_calls.borrow_mut().push("first rollback");
+            Ok(())
+        };
+        let second_calls = calls.clone();
+        let mut second = move || {
+            second_calls.borrow_mut().push("second");
+            Err(io::Error::other("second failure"))
+        };
+        let second_rollback_calls = calls.clone();
+        let mut second_rollback = move || {
+            second_rollback_calls.borrow_mut().push("second rollback");
+            Ok(())
+        };
+
+        let error = run_terminal_operations_with_rollback(&mut [
+            (&mut first, &mut first_rollback),
+            (&mut second, &mut second_rollback),
+        ])
+        .expect_err("the second operation should fail");
+
+        assert_eq!(error.to_string(), "second failure");
+        assert_eq!(*calls.borrow(), ["first", "second", "first rollback"]);
+    }
+
+    #[test]
+    fn terminal_operations_do_not_rollback_after_all_operations_succeed() {
+        let calls = Rc::new(RefCell::new(Vec::new()));
+        let operation_calls = calls.clone();
+        let mut operation = move || {
+            operation_calls.borrow_mut().push("operation");
+            Ok(())
+        };
+        let rollback_calls = calls.clone();
+        let mut rollback = move || {
+            rollback_calls.borrow_mut().push("rollback");
+            Ok(())
+        };
+
+        assert!(
+            run_terminal_operations_with_rollback(&mut [(&mut operation, &mut rollback)]).is_ok()
+        );
+        assert_eq!(*calls.borrow(), ["operation"]);
     }
 
     #[test]
