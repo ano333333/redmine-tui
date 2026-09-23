@@ -132,8 +132,6 @@ impl Store {
             }
             Action::Journal(action) => self.journal_store.consume_action(action),
             Action::Notice(action) => self.notice_store.consume_action(action),
-            // main loop が直接処理する終了通知であり、Store の状態には反映しない。
-            Action::WorkerPanicked { .. } => {}
             Action::SyncUsers { users } => {
                 self.users = users.into_iter().map(|user| (user.id, user)).collect();
             }
@@ -414,10 +412,6 @@ pub enum Action {
     },
     Journal(JournalAction),
     Notice(NoticeAction),
-    /// worker task の panic を main loop へ伝え、プロセスを異常終了させる。
-    WorkerPanicked {
-        message: String,
-    },
 }
 
 impl From<IssueAction> for Action {

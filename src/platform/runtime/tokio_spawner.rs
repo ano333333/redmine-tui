@@ -58,28 +58,6 @@ impl BackgroundSpawner for TokioBackgroundSpawner {
     }
 }
 
-/// 呼び出し側の段階移行中も従来の`Action` channelを維持しつつ、完了変換をadapterへ集約する互換経路。
-pub(crate) fn spawn_action_task<F>(runtime: &Runtime, sender: mpsc::Sender<Action>, task: F)
-where
-    F: Future<Output = Vec<Action>> + Send + 'static,
-{
-    let handle = runtime.spawn(task);
-    runtime.spawn(async move {
-        let Some(completion) = completion_from_join_result(handle.await) else {
-            return;
-        };
-        let actions = match completion {
-            BackgroundCompletion::Succeeded(actions) => actions,
-            BackgroundCompletion::Panicked { message } => vec![Action::WorkerPanicked { message }],
-        };
-        for action in actions {
-            sender
-                .send(action)
-                .expect("Failed to send Action with mpsc::channel");
-        }
-    });
-}
-
 fn completion_from_join_result(
     result: Result<Vec<Action>, JoinError>,
 ) -> Option<BackgroundCompletion> {
@@ -104,6 +82,7 @@ fn join_error_panic_message(error: JoinError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stores::{NoticeAction, NoticeId};
     use std::{
         thread,
         time::{Duration, Instant},
@@ -128,12 +107,14 @@ mod tests {
         let spawner = TokioBackgroundSpawner::new().unwrap();
         spawner.spawn(async {
             vec![
-                Action::WorkerPanicked {
+                Action::Notice(NoticeAction::Push {
+                    id: NoticeId::new(),
                     message: "first".to_string(),
-                },
-                Action::WorkerPanicked {
+                }),
+                Action::Notice(NoticeAction::Push {
+                    id: NoticeId::new(),
                     message: "second".to_string(),
-                },
+                }),
             ]
         });
 
@@ -141,8 +122,8 @@ mod tests {
             panic!("expected successful completion");
         };
         assert!(matches!(&actions[..], [
-            Action::WorkerPanicked { message: first },
-            Action::WorkerPanicked { message: second },
+            Action::Notice(NoticeAction::Push { message: first, .. }),
+            Action::Notice(NoticeAction::Push { message: second, .. }),
         ] if first == "first" && second == "second"));
     }
 

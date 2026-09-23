@@ -93,6 +93,7 @@ impl From<Box<dyn Any + Send>> for BackgroundCompletion {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stores::{NoticeAction, NoticeId};
     use std::cell::{Cell, RefCell};
     use std::collections::VecDeque;
     use std::pin::Pin;
@@ -138,6 +139,13 @@ mod tests {
         }
     }
 
+    fn dummy_action(message: &str) -> Action {
+        Action::Notice(NoticeAction::Push {
+            id: NoticeId::new(),
+            message: message.to_string(),
+        })
+    }
+
     struct ControlledTask {
         started: Arc<AtomicBool>,
         ready: Arc<AtomicBool>,
@@ -159,20 +167,18 @@ mod tests {
 
     #[test]
     fn maps_success_value_to_succeeded() {
-        let completion = BackgroundCompletion::from(vec![
-            Action::WorkerPanicked {
-                message: "first".to_string(),
-            },
-            Action::WorkerPanicked {
-                message: "second".to_string(),
-            },
-        ]);
+        let completion =
+            BackgroundCompletion::from(vec![dummy_action("first"), dummy_action("second")]);
         let BackgroundCompletion::Succeeded(actions) = completion else {
             panic!("expected successful completion")
         };
         assert_eq!(actions.len(), 2);
-        assert!(matches!(&actions[0], Action::WorkerPanicked { message } if message == "first"));
-        assert!(matches!(&actions[1], Action::WorkerPanicked { message } if message == "second"));
+        assert!(
+            matches!(&actions[0], Action::Notice(NoticeAction::Push { message, .. }) if message == "first")
+        );
+        assert!(
+            matches!(&actions[1], Action::Notice(NoticeAction::Push { message, .. }) if message == "second")
+        );
     }
 
     #[test]
@@ -204,16 +210,12 @@ mod tests {
         spawner.spawn(ControlledTask {
             started: Arc::clone(&first_started),
             ready: Arc::clone(&first_ready),
-            actions: vec![Action::WorkerPanicked {
-                message: "first".to_string(),
-            }],
+            actions: vec![dummy_action("first")],
         });
         spawner.spawn(ControlledTask {
             started: Arc::clone(&second_started),
             ready: Arc::clone(&second_ready),
-            actions: vec![Action::WorkerPanicked {
-                message: "second".to_string(),
-            }],
+            actions: vec![dummy_action("second")],
         });
 
         assert!(first_started.load(Ordering::SeqCst));
@@ -234,10 +236,10 @@ mod tests {
             panic!("expected first completion")
         };
         assert!(
-            matches!(&second_actions[..], [Action::WorkerPanicked { message }] if message == "second")
+            matches!(&second_actions[..], [Action::Notice(NoticeAction::Push { message, .. })] if message == "second")
         );
         assert!(
-            matches!(&first_actions[..], [Action::WorkerPanicked { message }] if message == "first")
+            matches!(&first_actions[..], [Action::Notice(NoticeAction::Push { message, .. })] if message == "first")
         );
         assert!(spawner.try_recv_completion().is_none());
     }

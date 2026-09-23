@@ -19,20 +19,20 @@ use crossterm::{
 use ratatui::{Frame, layout::Rect};
 use std::{
     cell::RefCell,
-    env,
-    io::{self, Result},
+    env, io,
     process::ExitCode,
     rc::Rc,
-    sync::{Arc, atomic, mpsc},
+    sync::{Arc, atomic},
 };
-use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime};
 
 use self::{
     clients::redmine::{DefaultRedmineClient, RedmineClient},
     components::{AppComponent, app::AppEffect},
     platform::editor::{EditorOutcome, TextEditor, native::NativeTextEditor},
     platform::input::native::convert_key,
-    platform::runtime::{LocalTask, tokio_spawner},
+    platform::runtime::{
+        BackgroundCompletion, BackgroundSpawner, LocalTask, tokio_spawner::TokioBackgroundSpawner,
+    },
     stores::{Action, Dispatcher, NoticeAction, NoticeId},
     usecases::redmine::{
         continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
@@ -59,8 +59,8 @@ impl Drop for TerminalRestoreGuard {
 }
 
 fn main() -> ExitCode {
-    let runtime = match init_tokio_runtime() {
-        Ok(runtime) => runtime,
+    let spawner = match TokioBackgroundSpawner::new() {
+        Ok(spawner) => spawner,
         Err(error) => {
             eprintln!("{error}");
             return ExitCode::FAILURE;
@@ -78,7 +78,7 @@ fn main() -> ExitCode {
         config.host_url,
         config.access_token,
     ));
-    let actions = match runtime.block_on(load_initial_entities(client.as_ref())) {
+    let actions = match spawner.block_on(load_initial_entities(client.as_ref())) {
         Ok(actions) => actions,
         Err(error) => {
             eprintln!("failed to load initial entities from Redmine: {error}");
@@ -91,7 +91,6 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     trace_dbg!("start");
-    let (worker_action_tx, worker_action_rx) = mpsc::channel::<Action>();
     install_panic_hook();
     let mut terminal = ratatui::init();
     // 以降のどのreturnでもterminalを復帰する。local変数は宣言の逆順にdropされるため、
@@ -111,9 +110,7 @@ fn main() -> ExitCode {
         // editor中もworker完了はStoreへ取り込むが、Component更新・描画・入力と
         // Noticeの経過時間更新はeditor終了まで遅延する。
         if let Some(session) = editor_session.as_mut() {
-            if let Some(message) =
-                consume_editor_worker_actions(&worker_action_rx, dispatcher.clone())
-            {
+            if let Some(message) = consume_editor_worker_actions(&spawner, dispatcher.clone()) {
                 eprintln!("worker task panicked: {message}");
                 return ExitCode::FAILURE;
             }
@@ -164,7 +161,7 @@ fn main() -> ExitCode {
             // editor滞在時間を次のNotice tickへ混ぜないよう、通常loopへ戻る前にresetする。
             last_tick = std::time::Instant::now();
         }
-        if let Some(message) = move_worker_action(&worker_action_rx, dispatcher.clone()) {
+        if let Some(message) = move_worker_action(&spawner, dispatcher.clone()) {
             eprintln!("worker task panicked: {message}");
             return ExitCode::FAILURE;
         }
@@ -184,8 +181,7 @@ fn main() -> ExitCode {
                 effect,
                 &mut app_component,
                 dispatcher.clone(),
-                &runtime,
-                worker_action_tx.clone(),
+                &spawner,
                 client.clone(),
                 &editor,
                 &mut editor_session,
@@ -268,10 +264,6 @@ fn tick_since(last: std::time::Instant, now: std::time::Instant) -> chrono::Dura
         .unwrap_or_else(|_| chrono::Duration::zero())
 }
 
-fn init_tokio_runtime() -> Result<Runtime> {
-    TokioRuntimeBuilder::new_multi_thread().enable_all().build()
-}
-
 /// panic 時にも端末を raw mode のまま残さず、既定の hook による報告は維持する。
 fn install_panic_hook() {
     // hook を重ねると、以前の custom hook を default_hook として再度呼び出してしまう。
@@ -285,40 +277,37 @@ fn install_panic_hook() {
     }));
 }
 
-fn move_worker_action(
-    tx: &mpsc::Receiver<Action>,
+fn move_worker_action<S: BackgroundSpawner>(
+    spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
 ) -> Option<String> {
     let mut worker_panic_message = None;
-    while let Ok(action) = tx.try_recv() {
-        if let Action::WorkerPanicked { message } = action {
-            worker_panic_message = Some(message);
-        } else {
-            dispatcher.borrow_mut().dispatch(action);
+    while let Some(completion) = spawner.try_recv_completion() {
+        match completion {
+            BackgroundCompletion::Succeeded(actions) => {
+                // completionの受理順とtaskが生成したActionの順序を保ってmain thread上でdispatchする。
+                for action in actions {
+                    dispatcher.borrow_mut().dispatch(action);
+                }
+            }
+            BackgroundCompletion::Panicked { message } => {
+                // Storeへ通常のActionとして流さず、runnerへ返してプロセスの異常終了を判断させる。
+                worker_panic_message = Some(message);
+            }
         }
     }
     worker_panic_message
 }
 
-fn consume_editor_worker_actions(
-    tx: &mpsc::Receiver<Action>,
+fn consume_editor_worker_actions<S: BackgroundSpawner>(
+    spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
 ) -> Option<String> {
-    let worker_panic_message = move_worker_action(tx, dispatcher.clone());
+    let worker_panic_message = move_worker_action(spawner, dispatcher.clone());
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
     worker_panic_message
-}
-
-/// 非同期処理の完了 Action を生成順に main loop へ送り、panic は終了通知へ変換する。
-/// task の cancellation はアプリの異常を意味しないため通知しない。
-fn spawn_action_task<F>(runtime: &Runtime, sender: mpsc::Sender<Action>, future: F)
-where
-    F: Future<Output = Vec<Action>> + Send + 'static,
-{
-    // 呼び出し側をBackgroundSpawnerへ移行するまでは既存APIを残し、Tokio固有処理だけをadapterへ集約する。
-    tokio_spawner::spawn_action_task(runtime, sender, future);
 }
 
 fn update(dispatcher: Rc<RefCell<Dispatcher>>, app_component: &mut AppComponent, area: Rect) {
@@ -349,22 +338,21 @@ fn handle_key_event(
     should_continue
 }
 
-fn handle_app_effect<'a>(
+fn handle_app_effect<'a, S: BackgroundSpawner>(
     effect: AppEffect,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
-    runtime: &Runtime,
-    sender: mpsc::Sender<Action>,
+    spawner: &S,
     client: Arc<DefaultRedmineClient>,
     editor: &'a NativeTextEditor,
     editor_session: &mut Option<EditorSession<'a>>,
 ) {
     match effect {
         AppEffect::FetchIssue(id) => {
-            start_issue_fetch(dispatcher, runtime, sender, client, id);
+            start_issue_fetch(dispatcher, spawner, client, id);
         }
         AppEffect::FetchProjectIssuesPage { project_id, page } => {
-            start_project_issues_page_fetch(dispatcher, runtime, sender, client, project_id, page);
+            start_project_issues_page_fetch(dispatcher, spawner, client, project_id, page);
         }
         AppEffect::OpenEditor(request) => {
             // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
@@ -390,23 +378,19 @@ fn handle_app_effect<'a>(
         }
         AppEffect::StartIssueUpload(id) => {
             let future = start_issue_upload(dispatcher, client, id);
-            spawn_action_task(runtime, sender, future);
+            spawner.spawn(future);
         }
         AppEffect::ContinueIssueUpload { id, diffs } => {
-            spawn_action_task(runtime, sender, async move {
-                upload_issue_action(client.as_ref(), id, &diffs).await
-            });
+            spawner.spawn(async move { upload_issue_action(client.as_ref(), id, &diffs).await });
         }
         AppEffect::StartRemoteJournalUpload {
             issue_id,
             journal_id,
         } => {
-            start_remote_journal_upload_action(
-                dispatcher, runtime, sender, client, issue_id, journal_id,
-            );
+            start_remote_journal_upload_action(dispatcher, spawner, client, issue_id, journal_id);
         }
         AppEffect::StartLocalJournalUpload { issue_id } => {
-            start_local_journal_upload_action(dispatcher, runtime, sender, client, issue_id);
+            start_local_journal_upload_action(dispatcher, spawner, client, issue_id);
         }
         AppEffect::ContinueRemoteJournalUpload {
             issue_id,
@@ -415,8 +399,7 @@ fn handle_app_effect<'a>(
         } => {
             continue_remote_journal_upload_action(
                 dispatcher,
-                runtime,
-                sender,
+                spawner,
                 client,
                 issue_id,
                 journal_id,
@@ -439,10 +422,9 @@ fn handle_editor_failure(
         .dispatch(editor_failure_notice_action(error));
 }
 
-fn start_remote_journal_upload_action<C>(
+fn start_remote_journal_upload_action<S: BackgroundSpawner, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
-    runtime: &Runtime,
-    sender: mpsc::Sender<Action>,
+    spawner: &S,
     client: Arc<C>,
     issue_id: IssueId,
     journal_id: JournalId,
@@ -450,26 +432,24 @@ fn start_remote_journal_upload_action<C>(
     C: RedmineClient + Send + Sync + 'static,
 {
     let future = start_remote_journal_upload(dispatcher, client, issue_id, journal_id);
-    spawn_action_task(runtime, sender, future);
+    spawner.spawn(future);
 }
 
-fn start_local_journal_upload_action<C>(
+fn start_local_journal_upload_action<S: BackgroundSpawner, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
-    runtime: &Runtime,
-    sender: mpsc::Sender<Action>,
+    spawner: &S,
     client: Arc<C>,
     issue_id: IssueId,
 ) where
     C: RedmineClient + Send + Sync + 'static,
 {
     let future = start_local_journal_upload(dispatcher, client, issue_id);
-    spawn_action_task(runtime, sender, future);
+    spawner.spawn(future);
 }
 
-fn continue_remote_journal_upload_action<C>(
+fn continue_remote_journal_upload_action<S: BackgroundSpawner, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
-    runtime: &Runtime,
-    sender: mpsc::Sender<Action>,
+    spawner: &S,
     client: Arc<C>,
     issue_id: IssueId,
     journal_id: JournalId,
@@ -479,13 +459,12 @@ fn continue_remote_journal_upload_action<C>(
 {
     let future =
         continue_remote_journal_upload(dispatcher, client, issue_id, journal_id, resolved_notes);
-    spawn_action_task(runtime, sender, future);
+    spawner.spawn(future);
 }
 
-fn start_project_issues_page_fetch<C>(
+fn start_project_issues_page_fetch<S: BackgroundSpawner, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
-    runtime: &Runtime,
-    sender: mpsc::Sender<Action>,
+    spawner: &S,
     client: Arc<C>,
     project_id: vos::ProjectId,
     page: std::num::NonZeroUsize,
@@ -493,13 +472,12 @@ fn start_project_issues_page_fetch<C>(
     C: RedmineClient + Send + Sync + 'static,
 {
     let future = fetch_project_issues_page(dispatcher, client, project_id, page);
-    spawn_action_task(runtime, sender, async move { vec![future.await.into()] });
+    spawner.spawn(async move { vec![future.await.into()] });
 }
 
-fn start_issue_fetch<C>(
+fn start_issue_fetch<S: BackgroundSpawner, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
-    runtime: &Runtime,
-    sender: mpsc::Sender<Action>,
+    spawner: &S,
     client: Arc<C>,
     id: IssueId,
 ) where
@@ -510,7 +488,7 @@ fn start_issue_fetch<C>(
     };
 
     // Issueが取得済みになる前にJournalを同期するため、usecaseが定めた順序を維持する。
-    spawn_action_task(runtime, sender, future);
+    spawner.spawn(future);
 }
 
 fn editor_failure_notice_action(error: &dyn std::fmt::Display) -> NoticeAction {
@@ -591,7 +569,12 @@ fn consume_initial_actions(dispatcher: Rc<RefCell<Dispatcher>>, actions: Vec<Act
 mod tests {
     use super::*;
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
-    use std::{sync::Mutex, time::Duration};
+    use std::{
+        collections::VecDeque,
+        future::Future,
+        sync::Mutex,
+        time::{Duration, Instant},
+    };
 
     use crate::clients::redmine::base::FetchedIssue;
     use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
@@ -605,6 +588,67 @@ mod tests {
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId};
     use ratatui::{Terminal, backend::TestBackend, widgets::Widget};
+
+    fn recv_completion(spawner: &TokioBackgroundSpawner) -> BackgroundCompletion {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if let Some(completion) = spawner.try_recv_completion() {
+                return completion;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "completion did not arrive in time"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn recv_actions(spawner: &TokioBackgroundSpawner, expected: usize) -> Vec<Action> {
+        let mut actions = Vec::new();
+        while actions.len() < expected {
+            match recv_completion(spawner) {
+                BackgroundCompletion::Succeeded(mut completed) => actions.append(&mut completed),
+                BackgroundCompletion::Panicked { message } => {
+                    panic!("worker task panicked: {message}")
+                }
+            }
+        }
+        actions
+    }
+
+    struct CompletionSpawner {
+        completions: RefCell<VecDeque<BackgroundCompletion>>,
+    }
+
+    impl CompletionSpawner {
+        fn new(actions: Vec<Action>) -> Self {
+            Self::from_completions(vec![BackgroundCompletion::Succeeded(actions)])
+        }
+
+        fn from_completions(completions: Vec<BackgroundCompletion>) -> Self {
+            Self {
+                completions: RefCell::new(completions.into_iter().collect()),
+            }
+        }
+
+        fn panicked(message: &str) -> BackgroundCompletion {
+            BackgroundCompletion::Panicked {
+                message: message.to_string(),
+            }
+        }
+    }
+
+    impl BackgroundSpawner for CompletionSpawner {
+        fn spawn<F>(&self, _: F)
+        where
+            F: Future<Output = Vec<Action>> + Send + 'static,
+        {
+        }
+
+        fn try_recv_completion(&self) -> Option<BackgroundCompletion> {
+            self.completions.borrow_mut().pop_front()
+        }
+    }
 
     #[test]
     fn area_from_terminal_size_uses_the_latest_dimensions() {
@@ -814,7 +858,7 @@ mod tests {
     #[test]
     fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion_to_worker_channel()
      {
-        let runtime = init_tokio_runtime().unwrap();
+        let spawner = TokioBackgroundSpawner::new().unwrap();
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         let mut app = AppComponent::new(dispatcher.clone(), Some(42.into()));
         let client = Arc::new(IssueUploadClient::new(sample_issue_aggregate(
@@ -826,7 +870,6 @@ mod tests {
             None,
             0,
         )));
-        let (sender, receiver) = mpsc::channel::<Action>();
 
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
         let effect = app
@@ -835,7 +878,7 @@ mod tests {
         let AppEffect::FetchIssue(id) = effect else {
             panic!("test app only has a fetch effect")
         };
-        start_issue_fetch(dispatcher.clone(), &runtime, sender, client, id);
+        start_issue_fetch(dispatcher.clone(), &spawner, client, id);
 
         assert!(app.take_effect().is_none());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
@@ -844,27 +887,34 @@ mod tests {
             dispatcher.borrow().store().try_get_issue_fetch_state(42),
             None
         );
-        let first_completion = receiver
-            .recv_timeout(Duration::from_secs(1))
-            .expect("first fetch completion should be sent by the runtime task");
+        let mut actions = recv_actions(&spawner, 2).into_iter();
+        let first_completion = actions.next().expect("first completion");
         assert!(matches!(
-            first_completion,
+            &first_completion,
             Action::Journal(JournalAction::SyncFetched { issue_id, journals })
-                if issue_id == IssueId::new(42) && journals.is_empty()
+                if *issue_id == IssueId::new(42) && journals.is_empty()
         ));
-        let completion = receiver
-            .recv_timeout(Duration::from_secs(1))
-            .expect("fetch completion should be sent by the runtime task");
+        let completion = actions.next().expect("second completion");
         assert!(matches!(
-            completion,
+            &completion,
             Action::Issue(IssueAction::FetchSucceeded { id, issue })
-                if id == IssueId::new(42) && issue.issue.id == IssueId::new(42)
+                if *id == IssueId::new(42) && issue.issue.id == IssueId::new(42)
         ));
         assert_eq!(
             dispatcher.borrow().consume_actinos_len(),
             1,
             "the spawned future must not dispatch or consume actions itself"
         );
+        for action in [first_completion, completion] {
+            dispatcher.borrow_mut().dispatch(action);
+        }
+        while dispatcher.borrow().consume_actinos_len() > 0 {
+            dispatcher.borrow_mut().consume_action();
+        }
+        assert!(matches!(
+            dispatcher.borrow().store().try_get_issue_state(42),
+            Some(crate::stores::IssueState::Synced)
+        ));
     }
 
     #[test]
@@ -914,7 +964,7 @@ mod tests {
 
     #[test]
     fn project_page_effect_queues_start_loading_and_routes_only_completion_to_worker_channel() {
-        let runtime = init_tokio_runtime().unwrap();
+        let spawner = TokioBackgroundSpawner::new().unwrap();
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher.borrow_mut());
         while dispatcher.borrow().consume_actinos_len() > 0 {
@@ -931,7 +981,6 @@ mod tests {
             None,
             0,
         )));
-        let (sender, receiver) = mpsc::channel::<Action>();
         let effect = app
             .take_effect()
             .expect("initial popup effect should be taken at the common loop point");
@@ -939,14 +988,7 @@ mod tests {
             panic!("initial popup should request a project issue page")
         };
 
-        start_project_issues_page_fetch(
-            dispatcher.clone(),
-            &runtime,
-            sender,
-            client,
-            project_id,
-            page,
-        );
+        start_project_issues_page_fetch(dispatcher.clone(), &spawner, client, project_id, page);
 
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         assert!(
@@ -956,9 +998,7 @@ mod tests {
                 .get_project_issues_page_state(1, std::num::NonZeroUsize::MIN)
                 .is_none()
         );
-        let completion = receiver
-            .recv_timeout(Duration::from_secs(1))
-            .expect("page completion should be sent by the runtime task");
+        let completion = recv_actions(&spawner, 1).remove(0);
         assert!(matches!(
             completion,
             Action::ProjectIssues(stores::ProjectIssuesAction::LoadSucceeded {
@@ -1006,10 +1046,10 @@ mod tests {
 
     #[test]
     fn load_initial_entities_returns_redmine_client_error() {
-        let runtime = init_tokio_runtime().unwrap();
+        let spawner = TokioBackgroundSpawner::new().unwrap();
         let client = FailingClient;
 
-        let error = match runtime.block_on(load_initial_entities(&client)) {
+        let error = match spawner.block_on(load_initial_entities(&client)) {
             Ok(_) => panic!("load initial entities succeeded"),
             Err(error) => error,
         };
@@ -1153,68 +1193,25 @@ mod tests {
     }
 
     #[test]
-    fn spawn_action_task_reports_a_panic_as_worker_panicked() {
-        let runtime = init_tokio_runtime().unwrap();
-        let (sender, receiver) = mpsc::channel::<Action>();
-
-        spawn_action_task(&runtime, sender, async { panic!("worker panic marker") });
-
-        let action = receiver
-            .recv_timeout(Duration::from_secs(2))
-            .expect("worker panic should be reported through the channel");
-        let Action::WorkerPanicked { message } = action else {
-            panic!("expected WorkerPanicked action")
-        };
-        assert!(message.contains("worker panic marker"));
-    }
-
-    #[test]
-    fn spawn_action_task_sends_the_action_when_the_task_succeeds() {
-        let runtime = init_tokio_runtime().unwrap();
-        let (sender, receiver) = mpsc::channel::<Action>();
-
-        spawn_action_task(&runtime, sender, async {
-            vec![
-                IssueAction::FailUpload {
-                    id: 7.into(),
-                    message: "upload failed".to_string(),
+    fn background_completion_panic_is_reported_by_the_main_loop_acceptor() {
+        let spawner = CompletionSpawner::from_completions(vec![
+            BackgroundCompletion::Succeeded(vec![
+                NoticeAction::Push {
+                    id: NoticeId::new(),
+                    message: "completed before panic".to_string(),
                 }
                 .into(),
-            ]
-        });
+            ]),
+            CompletionSpawner::panicked("worker panic marker"),
+        ]);
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
 
-        let received = receiver
-            .recv_timeout(Duration::from_secs(2))
-            .expect("action should be sent through the channel");
-        assert!(matches!(
-            received,
-            Action::Issue(IssueAction::FailUpload { id, message })
-                if id == IssueId::new(7) && message == "upload failed"
-        ));
-    }
+        let message = move_worker_action(&spawner, dispatcher.clone());
 
-    #[test]
-    fn spawn_action_task_reports_an_assert_inside_an_async_usecase() {
-        async fn inner_usecase(precondition_met: bool) -> Vec<Action> {
-            tokio::task::yield_now().await;
-            assert!(precondition_met, "usecase precondition violated");
-            Vec::new()
-        }
-        let runtime = init_tokio_runtime().unwrap();
-        let (sender, receiver) = mpsc::channel::<Action>();
-
-        spawn_action_task(&runtime, sender, async { inner_usecase(false).await });
-
-        let action = receiver
-            .recv_timeout(Duration::from_secs(2))
-            .expect("assert inside an async usecase should be reported");
-        let Action::WorkerPanicked { message } = action else {
-            panic!("expected WorkerPanicked action")
-        };
-        assert!(
-            message.contains("usecase precondition violated"),
-            "got: {message}"
-        );
+        assert_eq!(message.as_deref(), Some("worker panic marker"));
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        dispatcher.borrow_mut().consume_action();
+        assert_eq!(dispatcher.borrow().store().get_notices().len(), 1);
     }
 
     #[test]
@@ -1513,16 +1510,14 @@ mod tests {
         }));
         dispatcher.consume_action();
         let dispatcher = Rc::new(RefCell::new(dispatcher));
-        let (sender, receiver) = mpsc::channel::<Action>();
-        sender
-            .send(Action::Journal(JournalAction::FailRemoteUpload {
+        let spawner =
+            CompletionSpawner::new(vec![Action::Journal(JournalAction::FailRemoteUpload {
                 issue_id: IssueId::new(3),
                 journal_id: JournalId::new(1),
                 message: "network error: offline".to_string(),
-            }))
-            .unwrap();
+            })]);
 
-        let panic_message = move_worker_action(&receiver, dispatcher.clone());
+        let panic_message = move_worker_action(&spawner, dispatcher.clone());
 
         assert!(panic_message.is_none());
         while dispatcher.borrow().consume_actinos_len() > 0 {
@@ -1555,16 +1550,14 @@ mod tests {
         }));
         dispatcher.consume_action();
         let dispatcher = Rc::new(RefCell::new(dispatcher));
-        let (sender, receiver) = mpsc::channel::<Action>();
-        sender
-            .send(Action::Journal(JournalAction::CompleteRemoteUpload {
+        let spawner =
+            CompletionSpawner::new(vec![Action::Journal(JournalAction::CompleteRemoteUpload {
                 issue_id: IssueId::new(3),
                 journal_id: JournalId::new(1),
                 notes: "edited notes".to_string(),
-            }))
-            .unwrap();
+            })]);
 
-        let panic_message = move_worker_action(&receiver, dispatcher.clone());
+        let panic_message = move_worker_action(&spawner, dispatcher.clone());
 
         assert!(panic_message.is_none());
         while dispatcher.borrow().consume_actinos_len() > 0 {
@@ -1584,18 +1577,15 @@ mod tests {
     #[test]
     fn editor_worker_actions_are_consumed_without_component_updates() {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-        let (sender, receiver) = mpsc::channel::<Action>();
-        sender
-            .send(
-                NoticeAction::Push {
-                    id: NoticeId::new(),
-                    message: "completed while editing".to_string(),
-                }
-                .into(),
-            )
-            .unwrap();
+        let spawner = CompletionSpawner::new(vec![
+            NoticeAction::Push {
+                id: NoticeId::new(),
+                message: "completed while editing".to_string(),
+            }
+            .into(),
+        ]);
 
-        let panic_message = consume_editor_worker_actions(&receiver, dispatcher.clone());
+        let panic_message = consume_editor_worker_actions(&spawner, dispatcher.clone());
 
         assert!(panic_message.is_none());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
@@ -1604,7 +1594,7 @@ mod tests {
 
     #[test]
     fn start_remote_journal_upload_action_routes_the_upload_completion_to_worker_channel() {
-        let runtime = init_tokio_runtime().unwrap();
+        let spawner = TokioBackgroundSpawner::new().unwrap();
         let mut dispatcher = Dispatcher::new();
         start_edited_journal_upload(&mut dispatcher, 3, "first journal notes marker");
         let dispatcher = Rc::new(RefCell::new(dispatcher));
@@ -1612,21 +1602,17 @@ mod tests {
             sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
             vec![sample_journal(3)],
         ));
-        let (sender, receiver) = mpsc::channel::<Action>();
 
         start_remote_journal_upload_action(
             dispatcher.clone(),
-            &runtime,
-            sender,
+            &spawner,
             client.clone(),
             IssueId::new(3),
             JournalId::new(1),
         );
 
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-        let completion = receiver
-            .recv_timeout(Duration::from_secs(2))
-            .expect("upload completion should be sent by the runtime task");
+        let completion = recv_actions(&spawner, 1).remove(0);
         assert!(matches!(
             completion,
             Action::Journal(JournalAction::CompleteRemoteUpload { issue_id, journal_id, .. })
@@ -1640,7 +1626,7 @@ mod tests {
 
     #[test]
     fn start_remote_journal_upload_action_routes_the_failure_completion_to_worker_channel() {
-        let runtime = init_tokio_runtime().unwrap();
+        let spawner = TokioBackgroundSpawner::new().unwrap();
         let mut dispatcher = Dispatcher::new();
         start_edited_journal_upload(&mut dispatcher, 3, "first journal notes marker");
         let dispatcher = Rc::new(RefCell::new(dispatcher));
@@ -1650,27 +1636,19 @@ mod tests {
         );
         client.update_journal_result = Err(IssueUploadClient::network_error());
         let client = Arc::new(client);
-        let (sender, receiver) = mpsc::channel::<Action>();
 
         start_remote_journal_upload_action(
             dispatcher.clone(),
-            &runtime,
-            sender,
+            &spawner,
             client.clone(),
             IssueId::new(3),
             JournalId::new(1),
         );
 
-        let notice = receiver
-            .recv_timeout(Duration::from_secs(2))
-            .expect("failure notice should be sent by the runtime task");
-        assert!(matches!(
-            notice,
-            Action::Notice(crate::stores::NoticeAction::Push { .. })
-        ));
-        let completion = receiver
-            .recv_timeout(Duration::from_secs(2))
-            .expect("upload failure should be sent by the runtime task");
+        let mut actions = recv_actions(&spawner, 2).into_iter();
+        let notice = actions.next().expect("failure notice");
+        assert!(matches!(notice, Action::Notice(NoticeAction::Push { .. })));
+        let completion = actions.next().expect("upload failure");
         assert!(matches!(
             completion,
             Action::Journal(JournalAction::FailRemoteUpload { issue_id, journal_id, .. })
@@ -1703,7 +1681,7 @@ mod tests {
 
     #[test]
     fn start_local_journal_upload_action_routes_the_upload_completion_to_worker_channel() {
-        let runtime = init_tokio_runtime().unwrap();
+        let spawner = TokioBackgroundSpawner::new().unwrap();
         let mut dispatcher = Dispatcher::new();
         start_local_journal(&mut dispatcher, 3, "local notes");
         let dispatcher = Rc::new(RefCell::new(dispatcher));
@@ -1711,20 +1689,16 @@ mod tests {
             sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
             vec![sample_journal(3)],
         ));
-        let (sender, receiver) = mpsc::channel::<Action>();
 
         start_local_journal_upload_action(
             dispatcher.clone(),
-            &runtime,
-            sender,
+            &spawner,
             client.clone(),
             IssueId::new(3),
         );
 
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-        let completion = receiver
-            .recv_timeout(Duration::from_secs(2))
-            .expect("upload completion should be sent by the runtime task");
+        let completion = recv_actions(&spawner, 1).remove(0);
         let Action::Journal(JournalAction::CompleteLocalUploadWithFetched { issue_id, journals }) =
             completion
         else {
@@ -1746,7 +1720,7 @@ mod tests {
 
     #[test]
     fn start_local_journal_upload_action_routes_the_failure_completion_to_worker_channel() {
-        let runtime = init_tokio_runtime().unwrap();
+        let spawner = TokioBackgroundSpawner::new().unwrap();
         let mut dispatcher = Dispatcher::new();
         start_local_journal(&mut dispatcher, 3, "local notes");
         let dispatcher = Rc::new(RefCell::new(dispatcher));
@@ -1756,26 +1730,18 @@ mod tests {
         );
         client.update_issue_notes_result = Err(IssueUploadClient::network_error());
         let client = Arc::new(client);
-        let (sender, receiver) = mpsc::channel::<Action>();
 
         start_local_journal_upload_action(
             dispatcher.clone(),
-            &runtime,
-            sender,
+            &spawner,
             client.clone(),
             IssueId::new(3),
         );
 
-        let notice = receiver
-            .recv_timeout(Duration::from_secs(2))
-            .expect("failure notice should be sent by the runtime task");
-        assert!(matches!(
-            notice,
-            Action::Notice(crate::stores::NoticeAction::Push { .. })
-        ));
-        let completion = receiver
-            .recv_timeout(Duration::from_secs(2))
-            .expect("upload failure should be sent by the runtime task");
+        let mut actions = recv_actions(&spawner, 2).into_iter();
+        let notice = actions.next().expect("failure notice");
+        assert!(matches!(notice, Action::Notice(NoticeAction::Push { .. })));
+        let completion = actions.next().expect("upload failure");
         assert!(matches!(
             completion,
             Action::Journal(JournalAction::FailLocalUpload { issue_id, .. })
@@ -1893,23 +1859,14 @@ mod tests {
     }
 
     fn route_worker_actions(
-        receiver: &mpsc::Receiver<Action>,
+        spawner: &TokioBackgroundSpawner,
         expected: usize,
         dispatcher: Rc<RefCell<Dispatcher>>,
         app: &mut AppComponent<'_>,
     ) {
-        // worker完了Actionをmain loopと同じ順序でStoreとComponentへ反映する。
-        let (relay_sender, relay_receiver) = mpsc::channel();
-        for _ in 0..expected {
-            relay_sender
-                .send(
-                    receiver
-                        .recv_timeout(Duration::from_secs(2))
-                        .expect("worker action should be sent"),
-                )
-                .unwrap();
-        }
-        assert!(move_worker_action(&relay_receiver, dispatcher.clone()).is_none());
+        let actions = recv_actions(spawner, expected);
+        let acceptor = CompletionSpawner::new(actions);
+        assert!(move_worker_action(&acceptor, dispatcher.clone()).is_none());
         update(dispatcher, app, Rect::new(0, 0, 80, 24));
     }
 
@@ -1944,21 +1901,20 @@ mod tests {
 
     #[test]
     fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clears_failure() {
-        let runtime = init_tokio_runtime().unwrap();
+        let spawner = TokioBackgroundSpawner::new().unwrap();
         let (initial_dispatcher, server_issue) = edited_issue_dispatcher();
         let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
         let mut app = journal_upload_app(dispatcher.clone());
         let client = Arc::new(IssueUploadClient::failing_update(server_issue));
-        let (sender, receiver) = mpsc::channel();
 
         press_ctrl_s(&mut app, dispatcher.clone());
         let Some(AppEffect::StartIssueUpload(id)) = app.take_effect() else {
             panic!("expected issue upload effect");
         };
         let future = start_issue_upload(dispatcher.clone(), client.clone(), id);
-        spawn_action_task(&runtime, sender.clone(), future);
+        spawner.spawn(future);
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-        route_worker_actions(&receiver, 2, dispatcher.clone(), &mut app);
+        route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
 
         let store = dispatcher.borrow();
         assert!(matches!(
@@ -1979,7 +1935,7 @@ mod tests {
             panic!("expected retry issue upload effect");
         };
         let future = start_issue_upload(dispatcher.clone(), client, id);
-        spawn_action_task(&runtime, sender, future);
+        spawner.spawn(future);
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
         assert_eq!(
             dispatcher.borrow().store().try_get_issue_upload_failure(id),
@@ -1999,7 +1955,7 @@ mod tests {
     // FIXME: E2Eで良い粒度なので移行する
     #[test]
     fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
-        let runtime = init_tokio_runtime().unwrap();
+        let spawner = TokioBackgroundSpawner::new().unwrap();
         let initial_dispatcher = edited_remote_journal_dispatcher();
         let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
         let mut app = journal_upload_app(dispatcher.clone());
@@ -2017,12 +1973,10 @@ mod tests {
             vec![parse_journal_yaml(JournalId::new(1))],
         ));
         *client.get_failures_remaining.lock().unwrap() = 1;
-        let (sender, receiver) = mpsc::channel();
 
         start_remote_journal_upload_action(
             dispatcher.clone(),
-            &runtime,
-            sender.clone(),
+            &spawner,
             client.clone(),
             issue_id,
             journal_id,
@@ -2031,7 +1985,7 @@ mod tests {
         press_ctrl_s(&mut app, dispatcher.clone());
         // upload中の重複Ctrl+Sはeffectを生成せず、usecase呼び出し前に正常なno-opとなる。
         assert!(app.take_effect().is_none());
-        route_worker_actions(&receiver, 2, dispatcher.clone(), &mut app);
+        route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
         assert_toast_contains(
             &app,
             dispatcher.clone(),
@@ -2048,14 +2002,13 @@ mod tests {
         };
         start_remote_journal_upload_action(
             dispatcher.clone(),
-            &runtime,
-            sender,
+            &spawner,
             client.clone(),
             issue_id,
             journal_id,
         );
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-        route_worker_actions(&receiver, 1, dispatcher.clone(), &mut app);
+        route_worker_actions(&spawner, 1, dispatcher.clone(), &mut app);
 
         assert!(matches!(
             dispatcher
@@ -2072,7 +2025,7 @@ mod tests {
     // Remote PUTの失敗をtoastで通知した後もfocusを維持し、再保存でSyncedへ戻ることを検証する。
     #[test]
     fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
-        let runtime = init_tokio_runtime().unwrap();
+        let spawner = TokioBackgroundSpawner::new().unwrap();
         let initial_dispatcher = edited_remote_journal_dispatcher();
         let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
         let mut app = journal_upload_app(dispatcher.clone());
@@ -2082,7 +2035,6 @@ mod tests {
             vec![parse_journal_yaml(JournalId::new(1))],
         ));
         *client.journal_failures_remaining.lock().unwrap() = 1;
-        let (sender, receiver) = mpsc::channel();
 
         for expected_actions in [2, 1] {
             press_ctrl_s(&mut app, dispatcher.clone());
@@ -2095,14 +2047,13 @@ mod tests {
             };
             start_remote_journal_upload_action(
                 dispatcher.clone(),
-                &runtime,
-                sender.clone(),
+                &spawner,
                 client.clone(),
                 issue_id,
                 journal_id,
             );
             update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-            route_worker_actions(&receiver, expected_actions, dispatcher.clone(), &mut app);
+            route_worker_actions(&spawner, expected_actions, dispatcher.clone(), &mut app);
             if expected_actions == 2 {
                 assert_toast_contains(
                     &app,
@@ -2123,7 +2074,7 @@ mod tests {
     // Local PUTの失敗をtoastで通知した後もfocusを維持し、再保存を完了できることを検証する。
     #[test]
     fn local_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
-        let runtime = init_tokio_runtime().unwrap();
+        let spawner = TokioBackgroundSpawner::new().unwrap();
         let initial_dispatcher = local_journal_dispatcher();
         let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
         let mut app = journal_upload_app(dispatcher.clone());
@@ -2133,7 +2084,6 @@ mod tests {
             vec![sample_journal(3)],
         ));
         *client.local_failures_remaining.lock().unwrap() = 1;
-        let (sender, receiver) = mpsc::channel();
 
         for expected_actions in [2, 1] {
             press_ctrl_s(&mut app, dispatcher.clone());
@@ -2142,13 +2092,12 @@ mod tests {
             };
             start_local_journal_upload_action(
                 dispatcher.clone(),
-                &runtime,
-                sender.clone(),
+                &spawner,
                 client.clone(),
                 issue_id,
             );
             update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-            route_worker_actions(&receiver, expected_actions, dispatcher.clone(), &mut app);
+            route_worker_actions(&spawner, expected_actions, dispatcher.clone(), &mut app);
             if expected_actions == 2 {
                 assert_toast_contains(
                     &app,
@@ -2172,7 +2121,7 @@ mod tests {
     // Local PUT成功後の確認GET失敗を部分成功として通知し、同じ入力位置から再保存できることを検証する。
     #[test]
     fn local_confirmation_get_failure_warns_about_possible_success_and_retry_succeeds() {
-        let runtime = init_tokio_runtime().unwrap();
+        let spawner = TokioBackgroundSpawner::new().unwrap();
         let initial_dispatcher = local_journal_dispatcher();
         let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
         let mut app = journal_upload_app(dispatcher.clone());
@@ -2182,7 +2131,6 @@ mod tests {
             vec![sample_journal(3)],
         ));
         *client.get_failures_remaining.lock().unwrap() = 1;
-        let (sender, receiver) = mpsc::channel();
 
         for expected_actions in [2, 1] {
             press_ctrl_s(&mut app, dispatcher.clone());
@@ -2191,13 +2139,12 @@ mod tests {
             };
             start_local_journal_upload_action(
                 dispatcher.clone(),
-                &runtime,
-                sender.clone(),
+                &spawner,
                 client.clone(),
                 issue_id,
             );
             update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-            route_worker_actions(&receiver, expected_actions, dispatcher.clone(), &mut app);
+            route_worker_actions(&spawner, expected_actions, dispatcher.clone(), &mut app);
             if expected_actions == 2 {
                 assert_toast_contains(&app, dispatcher.clone(), "保存は完了した可能性がありますが");
             }
