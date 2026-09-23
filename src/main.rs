@@ -36,7 +36,7 @@ use self::{
     clients::redmine::{DefaultRedmineClient, RedmineClient},
     components::{
         AppComponent,
-        app::{AppEffect, EditorRequest, EditorResponse},
+        app::{AppEffect, EditorOutcome, EditorRequest},
     },
     inputs::native::convert_key,
     stores::{Action, Dispatcher, NoticeAction, NoticeId},
@@ -302,8 +302,13 @@ fn handle_app_effect(
             // editor失敗時の滞在時間も次のNotice tickへ混ぜないよう、errorを返す前にresetする。
             *last_tick = std::time::Instant::now();
             // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
-            let response = response?;
-            app_component.handle_editor_response(response);
+            match response {
+                Ok(outcome) => app_component.handle_editor_response(outcome),
+                Err(err) => {
+                    app_component.handle_editor_response(EditorOutcome::Failed);
+                    return Err(err);
+                }
+            }
             let size = terminal.size().expect("failed to get terminal size");
             let rect = Rect::new(0, 0, size.width, size.height);
             app_component.update(dispatcher.clone(), dispatcher.borrow().store(), rect);
@@ -421,7 +426,7 @@ fn start_issue_fetch<C>(
     spawn_action_task(runtime, sender, future);
 }
 
-fn run_editor(terminal: &mut DefaultTerminal, request: EditorRequest) -> Result<EditorResponse> {
+fn run_editor(terminal: &mut DefaultTerminal, request: EditorRequest) -> Result<EditorOutcome> {
     // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
     let filename = format!(
         "redmine-tui-editor-{}.md",
@@ -454,7 +459,7 @@ fn run_editor(terminal: &mut DefaultTerminal, request: EditorRequest) -> Result<
 
     let edited = fs::read_to_string(&path)?;
     let _ = fs::remove_file(&path);
-    Ok(EditorResponse {
+    Ok(EditorOutcome::Submitted {
         edited_text: edited,
     })
 }

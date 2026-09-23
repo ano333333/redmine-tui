@@ -56,8 +56,14 @@ pub struct EditorRequest {
     pub initial_text: String,
 }
 
-pub struct EditorResponse {
-    pub edited_text: String,
+pub enum EditorOutcome {
+    Submitted {
+        edited_text: String,
+    },
+    /// Web editorなど、明示的なキャンセル操作を持つeditorが返す。native editorは常に`Submitted`を返す。
+    Cancelled,
+    /// editor error時にcontextを解放するための完了通知。元のerrorは呼び出し側が別途伝播する。
+    Failed,
 }
 
 pub enum AppEffect {
@@ -754,14 +760,19 @@ impl<'a> AppComponent<'a> {
         self.pending_effect.take()
     }
 
-    pub fn handle_editor_response(&mut self, response: EditorResponse) {
-        match self.pending_editor_context.take() {
+    pub fn handle_editor_response(&mut self, outcome: EditorOutcome) {
+        // CancelledやFailedを含むすべての完了経路でeditor contextを解放する。
+        let context = self.pending_editor_context.take();
+        let EditorOutcome::Submitted { edited_text } = outcome else {
+            return;
+        };
+        match context {
             Some(PendingEditorContext::IssueBody { id }) => {
                 self.dispatcher
                     .borrow_mut()
                     .dispatch(IssueAction::UpdateDescription {
                         id,
-                        body: response.edited_text,
+                        body: edited_text,
                     });
             }
             Some(PendingEditorContext::RemoteJournal {
@@ -772,7 +783,7 @@ impl<'a> AppComponent<'a> {
                     JournalAction::EditRemoteNotes {
                         issue_id,
                         journal_id,
-                        notes: response.edited_text,
+                        notes: edited_text,
                     },
                 ));
             }
@@ -780,7 +791,7 @@ impl<'a> AppComponent<'a> {
                 self.dispatcher.borrow_mut().dispatch(Action::Journal(
                     JournalAction::EditLocalNotes {
                         issue_id,
-                        notes: response.edited_text,
+                        notes: edited_text,
                     },
                 ));
             }
@@ -971,6 +982,50 @@ mod tests {
         store.consume_action(IssueAction::StartUpload { id }.into());
 
         assert!(!can_start_editing(&context, &store));
+    }
+
+    #[test]
+    fn submitted_empty_issue_body_is_applied_and_releases_editor_context() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.pending_editor_context = Some(PendingEditorContext::IssueBody { id: 3.into() });
+
+        app.handle_editor_response(EditorOutcome::Submitted {
+            edited_text: String::new(),
+        });
+
+        assert!(app.pending_editor_context.is_none());
+        dispatcher.borrow_mut().consume_action();
+        assert_eq!(
+            dispatcher.borrow().store().get_issue(3).0.issue.description,
+            ""
+        );
+    }
+
+    #[test]
+    fn cancelled_or_failed_editor_releases_context_without_dispatching_for_each_context() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        for failed in [false, true] {
+            for context in [
+                PendingEditorContext::IssueBody { id: 3.into() },
+                PendingEditorContext::RemoteJournal {
+                    issue_id: 3.into(),
+                    journal_id: 1.into(),
+                },
+                PendingEditorContext::LocalJournal { issue_id: 3.into() },
+            ] {
+                app.pending_editor_context = Some(context);
+                let outcome = if failed {
+                    EditorOutcome::Failed
+                } else {
+                    EditorOutcome::Cancelled
+                };
+                app.handle_editor_response(outcome);
+                assert!(app.pending_editor_context.is_none());
+            }
+        }
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
     }
 
     #[test]
@@ -1685,7 +1740,7 @@ mod tests {
         };
         assert_eq!(request.initial_text, "");
 
-        app.handle_editor_response(EditorResponse {
+        app.handle_editor_response(EditorOutcome::Submitted {
             edited_text: "updated notes".to_string(),
         });
         dispatcher.borrow_mut().consume_action();
@@ -1725,7 +1780,7 @@ mod tests {
                 .is_some()
         );
 
-        app.handle_editor_response(EditorResponse {
+        app.handle_editor_response(EditorOutcome::Submitted {
             edited_text: "local notes".to_string(),
         });
         dispatcher.borrow_mut().consume_action();
@@ -1765,7 +1820,7 @@ mod tests {
         };
         assert_eq!(request.initial_text, "initial local notes");
 
-        app.handle_editor_response(EditorResponse {
+        app.handle_editor_response(EditorOutcome::Submitted {
             edited_text: "updated local notes".to_string(),
         });
         dispatcher.borrow_mut().consume_action();
