@@ -17,7 +17,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Frame, layout::Rect};
-use std::{cell::RefCell, env, io, process::ExitCode, rc::Rc, sync::Arc};
+use std::{cell::RefCell, io, process::ExitCode, rc::Rc, sync::Arc};
 
 use self::{
     clients::redmine::{DefaultRedmineClient, RedmineClient},
@@ -27,6 +27,7 @@ use self::{
         install_panic_hook, run_terminal_operations, run_terminal_operations_with_rollback,
     },
     platform::input::native::convert_key,
+    platform::redmine_config::redmine_connection_config_from_env,
     platform::runtime::{
         BackgroundCompletion, BackgroundSpawner, LocalTask, tokio_spawner::TokioBackgroundSpawner,
     },
@@ -40,9 +41,6 @@ use self::{
 };
 
 const TICK_RATE_MS: u64 = 250;
-const REDMINE_API_KEY_ENV: &str = "REDMINE_API_KEY";
-const REDMINE_URL_ENV: &str = "REDMINE_URL";
-const REDMINE_PORT_ENV: &str = "REDMINE_PORT";
 
 type EditorSession<'a> = LocalTask<'a, io::Result<EditorOutcome>>;
 
@@ -450,59 +448,6 @@ fn draw(frame: &mut Frame, app_component: &AppComponent, dispatcher: Rc<RefCell<
     app_component.render(dispatcher.borrow().store(), frame, frame.area());
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct RedmineConnectionConfig {
-    host_url: String,
-    access_token: String,
-}
-
-fn redmine_connection_config_from_env() -> std::result::Result<RedmineConnectionConfig, String> {
-    read_redmine_connection_config(|name| match env::var(name) {
-        Ok(value) => Ok(Some(value)),
-        Err(env::VarError::NotPresent) => Ok(None),
-        Err(env::VarError::NotUnicode(_)) => Err(format!("{name} is not valid Unicode")),
-    })
-}
-
-fn read_redmine_connection_config<F>(
-    mut read_env: F,
-) -> std::result::Result<RedmineConnectionConfig, String>
-where
-    F: FnMut(&'static str) -> std::result::Result<Option<String>, String>,
-{
-    let access_token = required_env_value(read_env(REDMINE_API_KEY_ENV)?, REDMINE_API_KEY_ENV)?;
-    let host_url = read_env(REDMINE_URL_ENV)?
-        .filter(|value| !value.is_empty())
-        .map(Ok)
-        .unwrap_or_else(|| default_redmine_url(&mut read_env))?;
-
-    Ok(RedmineConnectionConfig {
-        host_url,
-        access_token,
-    })
-}
-
-fn required_env_value(
-    value: Option<String>,
-    name: &'static str,
-) -> std::result::Result<String, String> {
-    match value {
-        Some(value) if value.is_empty() => Err(format!("{name} is empty")),
-        Some(value) => Ok(value),
-        None => Err(format!("{name} is not set")),
-    }
-}
-
-fn default_redmine_url<F>(read_env: &mut F) -> std::result::Result<String, String>
-where
-    F: FnMut(&'static str) -> std::result::Result<Option<String>, String>,
-{
-    let port = read_env(REDMINE_PORT_ENV)?
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "8080".to_string());
-    Ok(format!("http://127.0.0.1:{port}"))
-}
-
 fn consume_initial_actions(dispatcher: Rc<RefCell<Dispatcher>>, actions: Vec<Action>) {
     let mut d = dispatcher.borrow_mut();
     for action in actions {
@@ -859,39 +804,6 @@ mod tests {
                 && page == std::num::NonZeroUsize::MIN
         ));
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-    }
-
-    #[test]
-    fn redmine_connection_config_requires_api_key() {
-        let error = expect_string_error(read_redmine_connection_config(|_| Ok(None)));
-
-        assert_eq!(error, "REDMINE_API_KEY is not set");
-    }
-
-    #[test]
-    fn redmine_connection_config_rejects_empty_api_key() {
-        let error = expect_string_error(read_redmine_connection_config(|name| {
-            Ok(match name {
-                REDMINE_API_KEY_ENV => Some(String::new()),
-                _ => None,
-            })
-        }));
-
-        assert_eq!(error, "REDMINE_API_KEY is empty");
-    }
-
-    #[test]
-    fn redmine_connection_config_uses_default_url_when_url_is_not_set() {
-        let config = read_redmine_connection_config(|name| {
-            Ok(match name {
-                REDMINE_API_KEY_ENV => Some("secret-token".to_string()),
-                _ => None,
-            })
-        })
-        .unwrap();
-
-        assert_eq!(config.access_token, "secret-token");
-        assert_eq!(config.host_url, "http://127.0.0.1:8080");
     }
 
     #[test]
@@ -1312,13 +1224,6 @@ mod tests {
             )),
             details: vec![],
             notes: "first journal notes marker".to_string(),
-        }
-    }
-
-    fn expect_string_error<T>(result: std::result::Result<T, String>) -> String {
-        match result {
-            Ok(_) => panic!("redmine connection config read succeeded"),
-            Err(error) => error,
         }
     }
 
