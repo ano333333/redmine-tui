@@ -30,6 +30,11 @@ fn main() -> std::process::ExitCode {
     entry::native::run()
 }
 
-#[cfg(not(feature = "native"))]
-// Web entryを追加するまでは、native依存なしのbinaryを検査するための空entryとする。
+#[cfg(feature = "web-demo")]
+fn main() {
+    entry::web::run();
+}
+
+#[cfg(all(not(feature = "native"), not(feature = "web-demo")))]
+// compile_error!に加えてmain不在の診断が重ならないよう、無効な構成にもentryを置く。
 fn main() {}

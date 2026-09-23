@@ -2,3 +2,6 @@
 
 #[cfg(feature = "native")]
 pub(crate) mod native;
+
+#[cfg(feature = "web-demo")]
+pub(crate) mod web;
