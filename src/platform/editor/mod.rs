@@ -1,3 +1,5 @@
+pub mod native;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InteractionMode {
     Application,
@@ -22,5 +24,8 @@ pub enum EditorOutcome {
 ///
 /// Web実装はDOM要素やJS callbackなど`!Send`な値を保持したまま完了を待つため、返すFutureに`Send`を要求しない。
 pub trait TextEditor {
-    fn edit(&self, request: EditorRequest) -> impl std::future::Future<Output = EditorOutcome>;
+    fn edit(
+        &self,
+        request: EditorRequest,
+    ) -> impl std::future::Future<Output = std::io::Result<EditorOutcome>>;
 }

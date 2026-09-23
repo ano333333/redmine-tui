@@ -16,16 +16,17 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{DefaultTerminal, Frame, layout::Rect};
+use ratatui::{Frame, layout::Rect};
 use std::{
     cell::RefCell,
-    env, fs,
+    env,
     future::Future,
-    io::Result,
-    process::{Command, ExitCode, ExitStatus},
+    io::{self, Result},
+    pin::Pin,
+    process::ExitCode,
     rc::Rc,
     sync::{Arc, atomic, mpsc},
-    time::{SystemTime, UNIX_EPOCH},
+    task::{Context, Poll, Waker},
 };
 use tokio::{
     runtime::{Builder as TokioRuntimeBuilder, Runtime},
@@ -35,7 +36,7 @@ use tokio::{
 use self::{
     clients::redmine::{DefaultRedmineClient, RedmineClient},
     components::{AppComponent, app::AppEffect},
-    platform::editor::{EditorOutcome, EditorRequest},
+    platform::editor::{EditorOutcome, TextEditor, native::NativeTextEditor},
     platform::input::native::convert_key,
     stores::{Action, Dispatcher, NoticeAction, NoticeId},
     usecases::redmine::{
@@ -51,6 +52,8 @@ static PANIC_HOOK_INSTALLED: atomic::AtomicBool = atomic::AtomicBool::new(false)
 const REDMINE_API_KEY_ENV: &str = "REDMINE_API_KEY";
 const REDMINE_URL_ENV: &str = "REDMINE_URL";
 const REDMINE_PORT_ENV: &str = "REDMINE_PORT";
+
+type EditorSession<'a> = Pin<Box<dyn Future<Output = io::Result<EditorOutcome>> + 'a>>;
 
 fn main() -> ExitCode {
     let runtime = match init_tokio_runtime() {
@@ -96,7 +99,62 @@ fn main() -> ExitCode {
     );
     let tick_rate = std::time::Duration::from_millis(TICK_RATE_MS);
     let mut last_tick = std::time::Instant::now();
+    let editor = NativeTextEditor::from_environment();
+    let mut editor_session: Option<EditorSession<'_>> = None;
     loop {
+        // editor中もworker完了はStoreへ取り込むが、Component更新・描画・入力と
+        // Noticeの経過時間更新はeditor終了まで遅延する。
+        if let Some(session) = editor_session.as_mut() {
+            if let Some(message) =
+                consume_editor_worker_actions(&worker_action_rx, dispatcher.clone())
+            {
+                eprintln!("worker task panicked: {message}");
+                return ExitCode::FAILURE;
+            }
+            let waker = Waker::noop();
+            let mut context = Context::from_waker(waker);
+            let outcome = match session.as_mut().poll(&mut context) {
+                Poll::Pending => {
+                    std::thread::sleep(tick_rate);
+                    continue;
+                }
+                Poll::Ready(outcome) => outcome,
+            };
+            editor_session = None;
+            let terminal_result = execute!(std::io::stdout(), EnterAlternateScreen)
+                .and_then(|_| enable_raw_mode())
+                .and_then(|_| terminal.clear());
+            match terminal_result {
+                Ok(()) => match outcome {
+                    Ok(outcome) => app_component.handle_editor_response(outcome),
+                    Err(error) => {
+                        handle_editor_failure(
+                            &mut app_component,
+                            dispatcher.clone(),
+                            &error,
+                            "editor failed",
+                        );
+                    }
+                },
+                Err(error) => {
+                    handle_editor_failure(
+                        &mut app_component,
+                        dispatcher.clone(),
+                        &error,
+                        "failed to restore terminal after editor",
+                    );
+                }
+            }
+            // editor中にStoreへ適用したActionを、描画再開前にComponentへ反映する。
+            let size = terminal.size().expect("failed to get terminal size");
+            app_component.update(
+                dispatcher.clone(),
+                dispatcher.borrow().store(),
+                area_from_terminal_size(size.width, size.height),
+            );
+            // editor滞在時間を次のNotice tickへ混ぜないよう、通常loopへ戻る前にresetする。
+            last_tick = std::time::Instant::now();
+        }
         if let Some(message) = move_worker_action(&worker_action_rx, dispatcher.clone()) {
             eprintln!("worker task panicked: {message}");
             return ExitCode::FAILURE;
@@ -112,27 +170,20 @@ fn main() -> ExitCode {
             area_from_terminal_size(size.width, size.height),
         );
         let effect = app_component.take_effect();
-        if let Some(effect) = effect
-            && let Err(err) = handle_app_effect(
+        if let Some(effect) = effect {
+            handle_app_effect(
                 effect,
-                &mut terminal,
                 &mut app_component,
                 dispatcher.clone(),
                 &runtime,
                 worker_action_tx.clone(),
                 client.clone(),
-                &mut last_tick,
-            )
-        {
-            tracing::event!(
-                target: module_path!(),
-                tracing::Level::ERROR,
-                error = %err,
-                "failed to handle app effect"
+                &editor,
+                &mut editor_session,
             );
-            dispatcher
-                .borrow_mut()
-                .dispatch(editor_failure_notice_action(&err));
+        }
+        if editor_session.is_some() {
+            continue;
         }
         if let Some(e) = terminal
             .draw(|f| draw(f, &app_component, dispatcher.clone()))
@@ -202,6 +253,17 @@ fn move_worker_action(
         } else {
             dispatcher.borrow_mut().dispatch(action);
         }
+    }
+    worker_panic_message
+}
+
+fn consume_editor_worker_actions(
+    tx: &mpsc::Receiver<Action>,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+) -> Option<String> {
+    let worker_panic_message = move_worker_action(tx, dispatcher.clone());
+    while dispatcher.borrow().consume_actinos_len() > 0 {
+        dispatcher.borrow_mut().consume_action();
     }
     worker_panic_message
 }
@@ -278,16 +340,16 @@ fn handle_key_event(
     should_continue
 }
 
-fn handle_app_effect(
+fn handle_app_effect<'a>(
     effect: AppEffect,
-    terminal: &mut DefaultTerminal,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
     runtime: &Runtime,
     sender: mpsc::Sender<Action>,
     client: Arc<DefaultRedmineClient>,
-    last_tick: &mut std::time::Instant,
-) -> Result<()> {
+    editor: &'a NativeTextEditor,
+    editor_session: &mut Option<EditorSession<'a>>,
+) {
     match effect {
         AppEffect::FetchIssue(id) => {
             start_issue_fetch(dispatcher, runtime, sender, client, id);
@@ -296,20 +358,20 @@ fn handle_app_effect(
             start_project_issues_page_fetch(dispatcher, runtime, sender, client, project_id, page);
         }
         AppEffect::OpenEditor(request) => {
-            let response = run_editor(terminal, request);
-            // editor失敗時の滞在時間も次のNotice tickへ混ぜないよう、errorを返す前にresetする。
-            *last_tick = std::time::Instant::now();
             // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
-            match response {
-                Ok(outcome) => app_component.handle_editor_response(outcome),
-                Err(err) => {
-                    app_component.handle_editor_response(EditorOutcome::Failed);
-                    return Err(err);
-                }
+            // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
+            if let Err(error) =
+                disable_raw_mode().and_then(|_| execute!(std::io::stdout(), LeaveAlternateScreen))
+            {
+                handle_editor_failure(
+                    app_component,
+                    dispatcher,
+                    &error,
+                    "failed to leave terminal for editor",
+                );
+            } else {
+                *editor_session = Some(Box::pin(editor.edit(request)));
             }
-            let size = terminal.size().expect("failed to get terminal size");
-            let rect = Rect::new(0, 0, size.width, size.height);
-            app_component.update(dispatcher.clone(), dispatcher.borrow().store(), rect);
         }
         AppEffect::StartIssueUpload(id) => {
             let future = start_issue_upload(dispatcher, client, id);
@@ -347,7 +409,19 @@ fn handle_app_effect(
             );
         }
     }
-    Ok(())
+}
+
+fn handle_editor_failure(
+    app_component: &mut AppComponent,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    error: &dyn std::fmt::Display,
+    message: &'static str,
+) {
+    app_component.handle_editor_response(EditorOutcome::Failed);
+    tracing::event!(target: module_path!(), tracing::Level::ERROR, error = %error, "{message}");
+    dispatcher
+        .borrow_mut()
+        .dispatch(editor_failure_notice_action(error));
 }
 
 fn start_remote_journal_upload_action<C>(
@@ -422,58 +496,6 @@ fn start_issue_fetch<C>(
 
     // Issueが取得済みになる前にJournalを同期するため、usecaseが定めた順序を維持する。
     spawn_action_task(runtime, sender, future);
-}
-
-fn run_editor(terminal: &mut DefaultTerminal, request: EditorRequest) -> Result<EditorOutcome> {
-    // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
-    let filename = format!(
-        "redmine-tui-editor-{}.md",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    );
-    let path = env::temp_dir().join(filename);
-    fs::write(&path, &request.initial_text)?;
-
-    // FIXME: nvim以外に対応
-    let editor = env::var("VISUAL")
-        .ok()
-        .filter(|value| !value.is_empty())
-        .or_else(|| env::var("EDITOR").ok().filter(|value| !value.is_empty()))
-        .unwrap_or_else(|| "nvim".to_string());
-
-    disable_raw_mode()?;
-    execute!(std::io::stdout(), LeaveAlternateScreen)?;
-    let status = Command::new(&editor).arg(&path).status();
-    let reenter_result = execute!(std::io::stdout(), EnterAlternateScreen);
-    let raw_mode_result = enable_raw_mode();
-    terminal.clear()?;
-
-    // editor失敗時もTUIを操作可能な状態へ戻してからエラーを返す。
-    reenter_result?;
-    raw_mode_result?;
-    ensure_editor_exit_status(status?)?;
-
-    let edited = fs::read_to_string(&path)?;
-    let _ = fs::remove_file(&path);
-    Ok(EditorOutcome::Submitted {
-        edited_text: edited,
-    })
-}
-
-fn ensure_editor_exit_status(status: ExitStatus) -> Result<()> {
-    if status.success() {
-        Ok(())
-    } else {
-        Err(std::io::Error::other(format!(
-            "editor exited with non-zero status: {}",
-            status.code().map_or_else(
-                || "terminated without an exit code".to_string(),
-                |code| code.to_string()
-            )
-        )))
-    }
 }
 
 fn editor_failure_notice_action(error: &dyn std::fmt::Display) -> NoticeAction {
@@ -1444,6 +1466,27 @@ mod tests {
                 .state,
             crate::stores::RemoteJournalState::Synced
         ));
+    }
+
+    #[test]
+    fn editor_worker_actions_are_consumed_without_component_updates() {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        let (sender, receiver) = mpsc::channel::<Action>();
+        sender
+            .send(
+                NoticeAction::Push {
+                    id: NoticeId::new(),
+                    message: "completed while editing".to_string(),
+                }
+                .into(),
+            )
+            .unwrap();
+
+        let panic_message = consume_editor_worker_actions(&receiver, dispatcher.clone());
+
+        assert!(panic_message.is_none());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+        assert_eq!(dispatcher.borrow().store().get_notices().len(), 1);
     }
 
     #[test]
