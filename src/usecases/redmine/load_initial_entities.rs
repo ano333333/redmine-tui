@@ -13,7 +13,7 @@ pub async fn load_initial_entities<C: RedmineClient>(
         target_versions,
         categories,
         time_entity_activities,
-    ) = tokio::join!(
+    ) = futures::join!(
         load_users(client),
         load_issue_statuses(client),
         load_priorities(client),

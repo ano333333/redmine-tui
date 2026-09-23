@@ -2684,6 +2684,7 @@ dependencies = [
  "color-eyre",
  "crossterm",
  "directories",
+ "futures",
  "insta",
  "lazy_static",
  "ratatui",
