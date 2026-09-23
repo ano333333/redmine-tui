@@ -2,50 +2,88 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Paragraph, Widget, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap};
 
-const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
-const MESSAGE: &str = "Journal本文とサーバー内容が競合しています。採用する値を選択してください。";
-const CHOICE_LABELS: [&str; 3] = ["編集前の値", "ローカル値", "サーバー値"];
+use crate::widgets::VerticalScrollWidget;
+use crate::widgets::theme::{ACCENT, FOCUS_BG};
+
+const MESSAGE: &str = "Journal本文が競合しています。採用する方を選択してください。";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-/// 競合したJournal本文で採用する値の出所。
 pub enum RemoteJournalConflictChoice {
-    Before,
     Local,
     Server,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-/// Remote Journal競合popupの操作ボタン。
 pub enum RemoteJournalConflictButton {
     Cancel,
     Continue,
 }
 
-/// 編集前、ローカル編集後、サーバー現在値を縦に並べる競合解決Widget。
+pub struct RemoteJournalConflictPopupWidget<'a> {
+    content: VerticalScrollWidget<'a>,
+}
+
+impl<'a> RemoteJournalConflictPopupWidget<'a> {
+    pub fn new(content: VerticalScrollWidget<'a>) -> Self {
+        Self { content }
+    }
+
+    pub fn popup_area(area: Rect) -> Rect {
+        let width = area.width.saturating_mul(9) / 10;
+        let height = area.height.saturating_mul(4) / 5;
+        Rect {
+            x: area.x + area.width.saturating_sub(width) / 2,
+            y: area.y + area.height.saturating_sub(height) / 2,
+            width,
+            height,
+        }
+    }
+
+    pub fn content_area(area: Rect) -> Rect {
+        Block::default()
+            .borders(Borders::ALL)
+            .inner(Self::popup_area(area))
+    }
+}
+
+impl Widget for RemoteJournalConflictPopupWidget<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let popup_area = Self::popup_area(area);
+        if popup_area.width < 3 || popup_area.height < 3 {
+            return;
+        }
+        Clear.render(popup_area, buf);
+        let block = Block::default().borders(Borders::ALL);
+        let content_area = block.inner(popup_area);
+        block.render(popup_area, buf);
+        self.content.render(content_area, buf);
+    }
+}
+
+/// ローカルとサーバーの本文を左右で比較するWidget。
 pub struct RemoteJournalConflictWidget {
-    notes: [String; 3],
+    local: String,
+    server: String,
     selected_choice: RemoteJournalConflictChoice,
     focused_button: Option<RemoteJournalConflictButton>,
 }
 
 impl RemoteJournalConflictWidget {
-    /// 3つの本文と現在の採用値からWidgetを作成する。
     pub fn new(
-        before: impl Into<String>,
         local: impl Into<String>,
         server: impl Into<String>,
         selected_choice: RemoteJournalConflictChoice,
     ) -> Self {
         Self {
-            notes: [before.into(), local.into(), server.into()],
+            local: local.into(),
+            server: server.into(),
             selected_choice,
             focused_button: None,
         }
     }
 
-    /// フォーカス表示するボタンを指定したWidgetを返す。
     pub fn with_focused_button(
         mut self,
         focused_button: Option<RemoteJournalConflictButton>,
@@ -54,35 +92,40 @@ impl RemoteJournalConflictWidget {
         self
     }
 
-    /// 指定幅で全体を描画するために必要な行数を返す。
     pub fn line_count(&self, width: u16) -> usize {
         if width == 0 {
             return 0;
         }
-
-        let choice_line_count = self
-            .notes
-            .iter()
-            .map(|notes| 1 + notes_line_count(notes, width))
-            .sum::<usize>();
-
+        let [local, server] = choice_areas(Rect::new(0, 0, width, 1));
+        let choices = markdown_line_count(&self.local, local.width)
+            .max(markdown_line_count(&self.server, server.width));
         Paragraph::new(MESSAGE)
             .line_count(width)
             .saturating_add(1)
-            .saturating_add(choice_line_count)
+            .saturating_add(1)
+            .saturating_add(choices)
             .saturating_add(1)
             .saturating_add(3)
     }
 
-    /// 指定した選択肢の仮想バッファ上のカーソル位置を返す。
-    pub fn cursor_position_for_choice(&self, choice_index: usize, width: u16) -> Position {
+    pub fn cursor_position_for_choice(
+        &self,
+        choice: RemoteJournalConflictChoice,
+        width: u16,
+    ) -> Position {
+        let [local, server] = choice_areas(Rect::new(0, 0, width, 1));
         Position {
-            x: 1,
-            y: self.choice_notes_y(choice_index, width),
+            x: match choice {
+                RemoteJournalConflictChoice::Local => local.x,
+                RemoteJournalConflictChoice::Server => server.x,
+            },
+            y: Paragraph::new(MESSAGE)
+                .line_count(width)
+                .saturating_add(1)
+                .saturating_add(1) as u16,
         }
     }
 
-    /// 指定したボタンの仮想バッファ上のカーソル位置を返す。
     pub fn cursor_position_for_button(
         &self,
         button: RemoteJournalConflictButton,
@@ -93,37 +136,6 @@ impl RemoteJournalConflictWidget {
             y: self.line_count(width).saturating_sub(2) as u16,
         }
     }
-
-    fn choice_notes_y(&self, choice_index: usize, width: u16) -> u16 {
-        if width == 0 {
-            return 0;
-        }
-
-        let before = self
-            .notes
-            .iter()
-            .take(choice_index)
-            .map(|notes| 1 + notes_line_count(notes, width))
-            .sum::<usize>();
-        Paragraph::new(MESSAGE)
-            .line_count(width)
-            .saturating_add(1)
-            .saturating_add(before)
-            .saturating_add(1) as u16
-    }
-
-    fn choice_at(&self, choice_index: usize) -> RemoteJournalConflictChoice {
-        match choice_index {
-            0 => RemoteJournalConflictChoice::Before,
-            1 => RemoteJournalConflictChoice::Local,
-            2 => RemoteJournalConflictChoice::Server,
-            _ => panic!("choice index must be 0..=2"),
-        }
-    }
-
-    fn notes_line_count(&self, choice_index: usize, width: u16) -> usize {
-        notes_line_count(&self.notes[choice_index], width)
-    }
 }
 
 impl Widget for RemoteJournalConflictWidget {
@@ -131,80 +143,100 @@ impl Widget for RemoteJournalConflictWidget {
         if area.width == 0 || area.height == 0 {
             return;
         }
-
-        let message_line_count = Paragraph::new(MESSAGE).line_count(area.width) as u16;
-        let constraints = [
-            Constraint::Length(message_line_count),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(self.notes_line_count(0, area.width) as u16),
-            Constraint::Length(1),
-            Constraint::Length(self.notes_line_count(1, area.width) as u16),
-            Constraint::Length(1),
-            Constraint::Length(self.notes_line_count(2, area.width) as u16),
-            Constraint::Length(1),
-            Constraint::Length(3),
-        ];
-        let areas = Layout::default()
+        let message_lines = Paragraph::new(MESSAGE).line_count(area.width) as u16;
+        let [local, server] = choice_areas(Rect::new(0, 0, area.width, 1));
+        let choice_lines = markdown_line_count(&self.local, local.width)
+            .max(markdown_line_count(&self.server, server.width)) as u16;
+        let rows = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(constraints)
+            .constraints([
+                Constraint::Length(message_lines),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(choice_lines),
+                Constraint::Length(1),
+                Constraint::Length(3),
+            ])
             .split(area);
 
         Paragraph::new(MESSAGE)
             .wrap(Wrap { trim: false })
-            .render(areas[0], buf);
-
-        for choice_index in 0..3 {
-            let focused = self.choice_at(choice_index) == self.selected_choice;
-            render_choice(
-                CHOICE_LABELS[choice_index],
-                &self.notes[choice_index],
-                areas[2 + choice_index * 2],
-                areas[3 + choice_index * 2],
-                focused,
-                buf,
-            );
-        }
-
-        if let Some(button_area) = areas.last() {
-            render_buttons(*button_area, buf, self.focused_button);
-        }
+            .render(rows[0], buf);
+        let [local_label, server_label] = choice_areas(rows[2]);
+        render_label("LOCAL · あなたの変更", local_label, buf, Color::LightGreen);
+        render_label(
+            "REMOTE · サーバーの変更",
+            server_label,
+            buf,
+            Color::LightBlue,
+        );
+        let [local_area, server_area] = choice_areas(rows[3]);
+        render_choice(
+            &self.local,
+            local_area,
+            buf,
+            Color::LightGreen,
+            self.selected_choice == RemoteJournalConflictChoice::Local,
+        );
+        render_choice(
+            &self.server,
+            server_area,
+            buf,
+            Color::LightBlue,
+            self.selected_choice == RemoteJournalConflictChoice::Server,
+        );
+        render_buttons(rows[5], buf, self.focused_button);
     }
 }
 
-fn render_choice(
-    label: &str,
-    notes: &str,
-    label_area: Rect,
-    notes_area: Rect,
-    focused: bool,
-    buf: &mut Buffer,
-) {
-    if label_area.width > 0 && label_area.height > 0 {
-        Paragraph::new(Line::styled(
-            label,
-            Style::default().add_modifier(Modifier::BOLD),
-        ))
-        .wrap(Wrap { trim: false })
-        .render(label_area, buf);
-    }
+fn choice_areas(area: Rect) -> [Rect; 2] {
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(50),
+            Constraint::Length(1),
+            Constraint::Percentage(50),
+        ])
+        .split(area);
+    [cols[0], cols[2]]
+}
 
-    if notes_area.width > 0 && notes_area.height > 0 {
-        let style = focus_style(focused);
-        for y in notes_area.y..notes_area.y.saturating_add(notes_area.height) {
-            let blank = " ".repeat(notes_area.width as usize);
-            buf.set_line(
-                notes_area.x,
-                y,
-                &Line::styled(blank, style),
-                notes_area.width,
-            );
-        }
-        Paragraph::new(tui_markdown::from_str(notes))
-            .style(style)
-            .wrap(Wrap { trim: false })
-            .render(notes_area, buf);
+fn render_label(text: &'static str, area: Rect, buf: &mut Buffer, color: Color) {
+    Paragraph::new(Line::styled(
+        text,
+        Style::default()
+            .fg(color)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+    ))
+    .render(area, buf);
+}
+
+fn render_choice(text: &str, area: Rect, buf: &mut Buffer, color: Color, selected: bool) {
+    if area.width == 0 || area.height == 0 {
+        return;
     }
+    let style = if selected {
+        Style::default()
+            .fg(color)
+            .bg(FOCUS_BG)
+            .add_modifier(Modifier::BOLD)
+    } else if color == Color::LightGreen {
+        Style::default().fg(Color::Green)
+    } else {
+        Style::default().fg(Color::Blue)
+    };
+    for y in area.y..area.y.saturating_add(area.height) {
+        buf.set_line(
+            area.x,
+            y,
+            &Line::styled(" ".repeat(area.width as usize), style),
+            area.width,
+        );
+    }
+    Paragraph::new(tui_markdown::from_str(text))
+        .style(style)
+        .wrap(Wrap { trim: false })
+        .render(area, buf);
 }
 
 fn render_buttons(
@@ -212,68 +244,50 @@ fn render_buttons(
     buf: &mut Buffer,
     focused_button: Option<RemoteJournalConflictButton>,
 ) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Fill(1),
-            Constraint::Length(14),
-            Constraint::Length(1),
             Constraint::Length(10),
+            Constraint::Length(1),
+            Constraint::Length(14),
         ])
         .split(area);
-
-    render_button(
-        "キャンセル",
-        cols[1],
-        buf,
-        focused_button == Some(RemoteJournalConflictButton::Cancel),
-    );
     render_button(
         "続行",
-        cols[3],
+        cols[1],
         buf,
         focused_button == Some(RemoteJournalConflictButton::Continue),
+    );
+    render_button(
+        "キャンセル",
+        cols[3],
+        buf,
+        focused_button == Some(RemoteJournalConflictButton::Cancel),
     );
 }
 
 fn render_button(text: &'static str, area: Rect, buf: &mut Buffer, focused: bool) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    Paragraph::new(Line::from(text))
+    let style = if focused {
+        Style::default().fg(ACCENT)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    Paragraph::new(Line::styled(format!(" {text} "), style))
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(button_border_style(focused)),
+                .border_type(BorderType::Rounded)
+                .border_style(style),
         )
         .render(area, buf);
 }
 
-fn notes_line_count(notes: &str, width: u16) -> usize {
+fn markdown_line_count(text: &str, width: u16) -> usize {
     if width == 0 {
-        return 0;
-    }
-    Paragraph::new(tui_markdown::from_str(notes)).line_count(width)
-}
-
-fn focus_style(focused: bool) -> Style {
-    if focused {
-        Style::default().bg(FOCUS_BG)
+        0
     } else {
-        Style::default()
-    }
-}
-
-fn button_border_style(focused: bool) -> Style {
-    if focused {
-        Style::default().fg(Color::LightGreen)
-    } else {
-        Style::default()
+        Paragraph::new(tui_markdown::from_str(text)).line_count(width)
     }
 }
 
@@ -282,15 +296,14 @@ fn button_x(button: RemoteJournalConflictButton, width: u16) -> u16 {
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Fill(1),
-            Constraint::Length(14),
-            Constraint::Length(1),
             Constraint::Length(10),
+            Constraint::Length(1),
+            Constraint::Length(14),
         ])
         .split(Rect::new(0, 0, width, 3));
-
     match button {
-        RemoteJournalConflictButton::Cancel => cols[1].x.saturating_add(1),
-        RemoteJournalConflictButton::Continue => cols[3].x.saturating_add(1),
+        RemoteJournalConflictButton::Continue => cols[1].x.saturating_add(1),
+        RemoteJournalConflictButton::Cancel => cols[3].x.saturating_add(1),
     }
 }
 
@@ -300,50 +313,33 @@ mod tests {
     use crate::test_support::render_snapshot;
 
     #[test]
-    fn snapshot_remote_journal_conflict_widget_renders_message_choices_and_buttons() {
+    fn snapshot_remote_journal_conflict_widget_renders_side_by_side_choices() {
         let widget = RemoteJournalConflictWidget::new(
-            "# Before\n\n- old item",
             "# Local\n\n- edited item",
             "# Server\n\n- remote item",
             RemoteJournalConflictChoice::Local,
-        )
-        .with_focused_button(None);
-
+        );
         render_snapshot(
-            "remote_journal_conflict_widget_full_area_with_message_choices_and_buttons",
+            "remote_journal_conflict_widget_side_by_side_choices",
             120,
-            28,
+            24,
             widget,
         );
     }
 
     #[test]
-    fn line_count_includes_message_choice_labels_and_buttons() {
-        let widget = RemoteJournalConflictWidget::new(
-            "before notes",
-            "local notes",
-            "server notes",
-            RemoteJournalConflictChoice::Local,
-        );
-
-        assert_eq!(widget.line_count(80), 12);
-    }
-
-    #[test]
-    fn line_count_grows_with_multiline_notes() {
+    fn line_count_uses_taller_side_of_comparison() {
         let one_line = RemoteJournalConflictWidget::new(
-            "before notes",
             "local notes",
             "server notes",
             RemoteJournalConflictChoice::Local,
         );
         let multi_line = RemoteJournalConflictWidget::new(
-            "before notes\n\nline two\nline three",
-            "local notes",
+            "local notes\n\nline two\nline three",
             "server notes",
             RemoteJournalConflictChoice::Local,
         );
-
+        assert_eq!(one_line.line_count(80), 8);
         assert!(multi_line.line_count(80) > one_line.line_count(80));
     }
 }

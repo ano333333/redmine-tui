@@ -1897,7 +1897,7 @@ mod tests {
     fn continue_on_remote_journal_conflict_popup_requests_continue_remote_journal_upload() {
         let (dispatcher, mut app) = app_with_remote_journal_conflict_popup();
 
-        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
 
         assert!(app.popup_components.is_empty());
@@ -1918,7 +1918,7 @@ mod tests {
     fn re_conflict_reopens_remote_journal_conflict_popup_with_new_server_notes() {
         let (dispatcher, mut app) = app_with_remote_journal_conflict_popup();
 
-        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
         assert!(app.popup_components.is_empty());
 
@@ -1936,9 +1936,9 @@ mod tests {
         assert_eq!(app.popup_components.len(), 1);
 
         // Serverを選択してContinueし、新しいserver値がcomponentへ渡っていることを確認する。
-        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
-        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
         app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
 
         let Some(AppEffect::ContinueRemoteJournalUpload { resolved_notes, .. }) = app.take_effect()

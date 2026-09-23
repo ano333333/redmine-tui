@@ -5,7 +5,9 @@ use crate::vos::JournalNotesDiff;
 use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
 
 use super::focus_state::{EventProcessResult as RawEventProcessResult, FocusState, FocusTarget};
-use super::widget::{RemoteJournalConflictChoice, RemoteJournalConflictWidget};
+use super::widget::{
+    RemoteJournalConflictChoice, RemoteJournalConflictPopupWidget, RemoteJournalConflictWidget,
+};
 
 /// Remote Journal競合popupのキー操作結果。
 pub enum EventProcessResult {
@@ -33,15 +35,17 @@ impl RemoteJournalConflictComponent {
             diff,
             server_notes,
             selected_choice: RemoteJournalConflictChoice::Local,
-            focus_state: FocusState::new(3, 1),
+            focus_state: FocusState::new(2, 0),
             vertical_scroll_state: VerticalScrollWidgetState::new(),
         }
     }
 
     /// 描画領域に合わせて、現在のフォーカスが見えるようスクロール状態を更新する。
     pub fn update(&mut self, area: Rect) {
-        let cursor = self.cursor_global_position(area.width);
-        self.vertical_scroll_state.update(cursor, area.height);
+        let content_area = RemoteJournalConflictPopupWidget::content_area(area);
+        let cursor = self.cursor_global_position(content_area.width);
+        self.vertical_scroll_state
+            .update(cursor, content_area.height);
     }
 
     /// キーイベントを処理し、popupの終了やupload再試行が必要な場合は結果を返す。
@@ -61,32 +65,35 @@ impl RemoteJournalConflictComponent {
     }
 
     /// 現在の採用値、フォーカス、スクロール状態を反映したWidgetを作成する。
-    pub fn create_widget(&self, area: Rect) -> VerticalScrollWidget<'_> {
+    pub fn create_widget(&self, area: Rect) -> RemoteJournalConflictPopupWidget<'_> {
+        let content_area = RemoteJournalConflictPopupWidget::content_area(area);
         let widget = RemoteJournalConflictWidget::new(
-            self.diff.before.clone(),
             self.diff.after.clone(),
             self.server_notes.clone(),
             self.selected_choice,
         )
         .with_focused_button(self.focus_state.focused_button());
-        let line_count = widget.line_count(area.width) as u16;
+        let line_count = widget.line_count(content_area.width) as u16;
         let mut scroll_widget = VerticalScrollWidget::new(
             &self.vertical_scroll_state,
-            Size::new(area.width, area.height),
+            Size::new(content_area.width, content_area.height),
         );
         scroll_widget.render_widget(widget, line_count);
-        scroll_widget
+        RemoteJournalConflictPopupWidget::new(scroll_widget)
     }
 
     /// スクロール適用後の画面上カーソル位置を返す。
     ///
     /// カーソルが描画領域外にある場合は `None` を返す。
     pub fn cursor_position(&self, area: Rect) -> Option<Position> {
-        let cursor = self.cursor_global_position(area.width);
+        let content_area = RemoteJournalConflictPopupWidget::content_area(area);
+        let cursor = self.cursor_global_position(content_area.width);
         let position = self
             .vertical_scroll_state
-            .calc_cursor_area_position(cursor, area);
-        if position.y >= area.y && position.y < area.y.saturating_add(area.height) {
+            .calc_cursor_area_position(cursor, content_area);
+        if position.y >= content_area.y
+            && position.y < content_area.y.saturating_add(content_area.height)
+        {
             Some(position)
         } else {
             None
@@ -95,14 +102,13 @@ impl RemoteJournalConflictComponent {
 
     fn cursor_global_position(&self, width: u16) -> Position {
         let widget = RemoteJournalConflictWidget::new(
-            self.diff.before.clone(),
             self.diff.after.clone(),
             self.server_notes.clone(),
             self.selected_choice,
         );
         match self.focus_state.target() {
             FocusTarget::Choice(choice_index) => {
-                widget.cursor_position_for_choice(choice_index, width)
+                widget.cursor_position_for_choice(self.choice_at(choice_index), width)
             }
             FocusTarget::Button(button) => widget.cursor_position_for_button(button, width),
         }
@@ -110,16 +116,14 @@ impl RemoteJournalConflictComponent {
 
     fn choice_at(&self, choice_index: usize) -> RemoteJournalConflictChoice {
         match choice_index {
-            0 => RemoteJournalConflictChoice::Before,
-            1 => RemoteJournalConflictChoice::Local,
-            2 => RemoteJournalConflictChoice::Server,
-            _ => panic!("choice index must be 0..=2"),
+            0 => RemoteJournalConflictChoice::Local,
+            1 => RemoteJournalConflictChoice::Server,
+            _ => panic!("choice index must be 0..=1"),
         }
     }
 
     fn selected_notes(&self) -> String {
         match self.selected_choice {
-            RemoteJournalConflictChoice::Before => self.diff.before.clone(),
             RemoteJournalConflictChoice::Local => self.diff.after.clone(),
             RemoteJournalConflictChoice::Server => self.server_notes.clone(),
         }
@@ -158,17 +162,28 @@ mod tests {
         )
     }
 
-    fn widget_position(target: FocusTarget, width: u16) -> Position {
+    fn widget_position(target: FocusTarget, _width: u16) -> Position {
+        let content_area = RemoteJournalConflictPopupWidget::content_area(AREA);
         let widget = RemoteJournalConflictWidget::new(
-            "before notes",
             "local notes",
             "server notes",
             RemoteJournalConflictChoice::Local,
         );
-        match target {
-            FocusTarget::Choice(index) => widget.cursor_position_for_choice(index, width),
-            FocusTarget::Button(button) => widget.cursor_position_for_button(button, width),
-        }
+        let mut position = match target {
+            FocusTarget::Choice(0) => widget
+                .cursor_position_for_choice(RemoteJournalConflictChoice::Local, content_area.width),
+            FocusTarget::Choice(1) => widget.cursor_position_for_choice(
+                RemoteJournalConflictChoice::Server,
+                content_area.width,
+            ),
+            FocusTarget::Choice(_) => panic!("choice index must be 0..=1"),
+            FocusTarget::Button(button) => {
+                widget.cursor_position_for_button(button, content_area.width)
+            }
+        };
+        position.x = position.x.saturating_add(content_area.x);
+        position.y = position.y.saturating_add(content_area.y);
+        position
     }
 
     #[test]
@@ -178,35 +193,35 @@ mod tests {
 
         assert_eq!(
             component.cursor_position(AREA),
-            Some(widget_position(FocusTarget::Choice(1), AREA.width))
+            Some(widget_position(FocusTarget::Choice(0), AREA.width))
         );
     }
 
     #[test]
-    fn j_and_k_move_cursor_between_choices() {
+    fn h_and_l_move_cursor_between_choices() {
         let mut component = component();
         component.update(AREA);
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('j')))
-                .is_none()
-        );
-        component.update(AREA);
-        assert_eq!(
-            component.cursor_position(AREA),
-            Some(widget_position(FocusTarget::Choice(2), AREA.width))
-        );
-
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('k')))
+                .process_event(key_event(KeyCode::Char('l')))
                 .is_none()
         );
         component.update(AREA);
         assert_eq!(
             component.cursor_position(AREA),
             Some(widget_position(FocusTarget::Choice(1), AREA.width))
+        );
+
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('h')))
+                .is_none()
+        );
+        component.update(AREA);
+        assert_eq!(
+            component.cursor_position(AREA),
+            Some(widget_position(FocusTarget::Choice(0), AREA.width))
         );
     }
 
@@ -223,7 +238,12 @@ mod tests {
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('h')))
+                .process_event(key_event(KeyCode::Char('j')))
+                .is_none()
+        );
+        assert!(
+            component
+                .process_event(key_event(KeyCode::Char('l')))
                 .is_none()
         );
         component.update(AREA);
@@ -234,7 +254,7 @@ mod tests {
 
         assert!(
             component
-                .process_event(key_event(KeyCode::Char('l')))
+                .process_event(key_event(KeyCode::Char('h')))
                 .is_none()
         );
         component.update(AREA);
@@ -245,11 +265,10 @@ mod tests {
     }
 
     #[test]
-    fn j_from_last_choice_focuses_continue_button() {
+    fn j_from_choice_focuses_continue_button() {
         let mut component = component();
         component.update(AREA);
 
-        component.process_event(key_event(KeyCode::Char('j')));
         component.process_event(key_event(KeyCode::Char('j')));
         component.update(AREA);
 
@@ -263,9 +282,9 @@ mod tests {
     fn enter_on_choice_changes_selected_notes() {
         let mut component = component();
 
-        component.process_event(key_event(KeyCode::Char('j')));
+        component.process_event(key_event(KeyCode::Char('l')));
         component.process_event(key_event(KeyCode::Enter));
-        let result = component.process_event(key_event(KeyCode::Char('l')));
+        let result = component.process_event(key_event(KeyCode::Char('j')));
         assert!(result.is_none());
 
         let Some(EventProcessResult::Continued { resolved_notes }) =
@@ -294,7 +313,8 @@ mod tests {
     fn enter_on_cancel_requests_popup_close() {
         let mut component = component();
 
-        component.process_event(key_event(KeyCode::Char('h')));
+        component.process_event(key_event(KeyCode::Char('j')));
+        component.process_event(key_event(KeyCode::Char('l')));
         assert!(matches!(
             component.process_event(key_event(KeyCode::Enter)),
             Some(EventProcessResult::Canceled)
@@ -305,7 +325,7 @@ mod tests {
     fn enter_on_continue_returns_local_notes_by_default() {
         let mut component = component();
 
-        component.process_event(key_event(KeyCode::Char('l')));
+        component.process_event(key_event(KeyCode::Char('j')));
         let result = component.process_event(key_event(KeyCode::Enter));
 
         let Some(EventProcessResult::Continued { resolved_notes }) = result else {
@@ -324,7 +344,7 @@ mod tests {
             "server notes".to_string(),
         );
         component.update(AREA);
-        for _ in 0..4 {
+        for _ in 0..2 {
             component.process_event(key_event(KeyCode::Char('j')));
             component.update(AREA);
         }
@@ -340,7 +360,6 @@ mod tests {
     fn snapshot_create_widget_renders_vertical_scroll_widget_with_button_focus() {
         let mut component = component();
         component.process_event(key_event(KeyCode::Char('j')));
-        component.process_event(key_event(KeyCode::Char('l')));
         component.update(AREA);
 
         render_snapshot(
