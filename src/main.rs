@@ -17,18 +17,15 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Frame, layout::Rect};
-use std::{
-    cell::RefCell,
-    env, io,
-    process::ExitCode,
-    rc::Rc,
-    sync::{Arc, atomic},
-};
+use std::{cell::RefCell, env, io, process::ExitCode, rc::Rc, sync::Arc};
 
 use self::{
     clients::redmine::{DefaultRedmineClient, RedmineClient},
     components::{AppComponent, app::AppEffect},
     platform::editor::{EditorOutcome, TextEditor, native::NativeTextEditor},
+    platform::host::native::{
+        install_panic_hook, run_terminal_operations, run_terminal_operations_with_rollback,
+    },
     platform::input::native::convert_key,
     platform::runtime::{
         BackgroundCompletion, BackgroundSpawner, LocalTask, tokio_spawner::TokioBackgroundSpawner,
@@ -43,7 +40,6 @@ use self::{
 };
 
 const TICK_RATE_MS: u64 = 250;
-static PANIC_HOOK_INSTALLED: atomic::AtomicBool = atomic::AtomicBool::new(false);
 const REDMINE_API_KEY_ENV: &str = "REDMINE_API_KEY";
 const REDMINE_URL_ENV: &str = "REDMINE_URL";
 const REDMINE_PORT_ENV: &str = "REDMINE_PORT";
@@ -223,58 +219,10 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn run_terminal_operations(
-    operations: &mut [&mut dyn FnMut() -> io::Result<()>],
-) -> io::Result<()> {
-    // 途中の失敗後もraw modeを戻せるよう、後続のterminal復帰操作はすべて試みる。
-    let mut first_error = None;
-    for operation in operations {
-        if let Err(error) = operation() {
-            if first_error.is_none() {
-                first_error = Some(error);
-            }
-        }
-    }
-    first_error.map_or(Ok(()), Err)
-}
-
-fn run_terminal_operations_with_rollback(
-    operations: &mut [(
-        &mut dyn FnMut() -> io::Result<()>,
-        &mut dyn FnMut() -> io::Result<()>,
-    )],
-) -> io::Result<()> {
-    let mut completed = 0;
-    for (operation, _) in operations.iter_mut() {
-        if let Err(error) = operation() {
-            // 中途状態のterminalをTUIで操作可能な状態へ戻すため、完了済みの操作だけを逆順に戻す。
-            for (_, rollback) in operations[..completed].iter_mut().rev() {
-                let _ = rollback();
-            }
-            return Err(error);
-        }
-        completed += 1;
-    }
-    Ok(())
-}
-
 /// `now`が`last`より前でないことを前提とし、`chrono::Duration`の範囲外ならゼロを返す。
 fn tick_since(last: std::time::Instant, now: std::time::Instant) -> chrono::Duration {
     chrono::Duration::from_std(now.duration_since(last))
         .unwrap_or_else(|_| chrono::Duration::zero())
-}
-
-/// panic 時にも端末を raw mode のまま残さず、既定の hook による報告は維持する。
-fn install_panic_hook() {
-    // hook を重ねると、以前の custom hook を default_hook として再度呼び出してしまう。
-    if PANIC_HOOK_INSTALLED.swap(true, atomic::Ordering::SeqCst) {
-        return;
-    }
-    let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        ratatui::restore();
-        default_hook(info);
-    }));
 }
 
 fn move_worker_action<S: BackgroundSpawner>(
@@ -669,104 +617,6 @@ mod tests {
         let now = std::time::Instant::now();
 
         assert!(tick_since(last, now) > chrono::Duration::zero());
-    }
-
-    #[test]
-    fn terminal_operations_run_every_operation_and_return_the_first_error() {
-        let calls = Rc::new(RefCell::new(Vec::new()));
-        let first_calls = calls.clone();
-        let mut first = move || {
-            first_calls.borrow_mut().push("first");
-            Err(io::Error::other("first failure"))
-        };
-        let second_calls = calls.clone();
-        let mut second = move || {
-            second_calls.borrow_mut().push("second");
-            Err(io::Error::other("second failure"))
-        };
-        let third_calls = calls.clone();
-        let mut third = move || {
-            third_calls.borrow_mut().push("third");
-            Ok(())
-        };
-
-        let error = run_terminal_operations(&mut [&mut first, &mut second, &mut third])
-            .expect_err("the first operation should fail");
-
-        assert_eq!(error.to_string(), "first failure");
-        assert_eq!(*calls.borrow(), ["first", "second", "third"]);
-    }
-
-    #[test]
-    fn terminal_operations_succeed_when_every_operation_succeeds() {
-        let calls = Rc::new(RefCell::new(Vec::new()));
-        let first_calls = calls.clone();
-        let mut first = move || {
-            first_calls.borrow_mut().push("first");
-            Ok(())
-        };
-        let second_calls = calls.clone();
-        let mut second = move || {
-            second_calls.borrow_mut().push("second");
-            Ok(())
-        };
-
-        assert!(run_terminal_operations(&mut [&mut first, &mut second]).is_ok());
-        assert_eq!(*calls.borrow(), ["first", "second"]);
-    }
-
-    #[test]
-    fn terminal_operations_rollback_only_completed_operations_after_a_failure() {
-        let calls = Rc::new(RefCell::new(Vec::new()));
-        let first_calls = calls.clone();
-        let mut first = move || {
-            first_calls.borrow_mut().push("first");
-            Ok(())
-        };
-        let first_rollback_calls = calls.clone();
-        let mut first_rollback = move || {
-            first_rollback_calls.borrow_mut().push("first rollback");
-            Ok(())
-        };
-        let second_calls = calls.clone();
-        let mut second = move || {
-            second_calls.borrow_mut().push("second");
-            Err(io::Error::other("second failure"))
-        };
-        let second_rollback_calls = calls.clone();
-        let mut second_rollback = move || {
-            second_rollback_calls.borrow_mut().push("second rollback");
-            Ok(())
-        };
-
-        let error = run_terminal_operations_with_rollback(&mut [
-            (&mut first, &mut first_rollback),
-            (&mut second, &mut second_rollback),
-        ])
-        .expect_err("the second operation should fail");
-
-        assert_eq!(error.to_string(), "second failure");
-        assert_eq!(*calls.borrow(), ["first", "second", "first rollback"]);
-    }
-
-    #[test]
-    fn terminal_operations_do_not_rollback_after_all_operations_succeed() {
-        let calls = Rc::new(RefCell::new(Vec::new()));
-        let operation_calls = calls.clone();
-        let mut operation = move || {
-            operation_calls.borrow_mut().push("operation");
-            Ok(())
-        };
-        let rollback_calls = calls.clone();
-        let mut rollback = move || {
-            rollback_calls.borrow_mut().push("rollback");
-            Ok(())
-        };
-
-        assert!(
-            run_terminal_operations_with_rollback(&mut [(&mut operation, &mut rollback)]).is_ok()
-        );
-        assert_eq!(*calls.borrow(), ["operation"]);
     }
 
     #[test]
