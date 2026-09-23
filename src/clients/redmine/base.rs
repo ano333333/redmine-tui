@@ -69,14 +69,22 @@ pub struct FetchedIssue {
     pub journals: Vec<Journal>,
 }
 
-#[allow(async_fn_in_trait)]
+/// Redmineとの通信をplatform固有の実装から分離する境界。
+///
+/// 各メソッドのFutureはbackground taskとして実行するため`Send`を契約とする。
+/// 実装は、awaitをまたいで非`Send`な値を保持してはならない。
 pub trait RedmineClient {
-    async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError>;
+    fn get_categories(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<Category>, RedmineClientError>> + Send;
     fn get_issue(
         &self,
         id: IssueId,
     ) -> impl std::future::Future<Output = Result<FetchedIssue, RedmineClientError>> + Send;
-    async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError>;
+    fn update_issue(
+        &self,
+        issue: &IssueAggregate,
+    ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
     /// Redmine上の既存Journalのnotes全体を指定値で置き換える。
     fn update_journal_notes(
         &self,
@@ -91,20 +99,32 @@ pub trait RedmineClient {
         issue_id: IssueId,
         notes: &str,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
-    async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError>;
-    async fn get_priorities(&self) -> Result<Vec<Priority>, RedmineClientError>;
-    async fn get_projects(&self) -> Result<Vec<Project>, RedmineClientError>;
+    fn get_issue_statuses(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<IssueStatus>, RedmineClientError>> + Send;
+    fn get_priorities(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<Priority>, RedmineClientError>> + Send;
+    fn get_projects(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<Project>, RedmineClientError>> + Send;
     fn get_project_issues(
         &self,
         project_id: ProjectId,
         page: NonZeroUsize,
     ) -> impl std::future::Future<Output = Result<ProjectIssuesPage, RedmineClientError>> + Send;
-    async fn get_target_versions(&self) -> Result<Vec<TargetVersion>, RedmineClientError>;
-    async fn get_time_entity_activities(
+    fn get_target_versions(
         &self,
-    ) -> Result<Vec<TimeEntityActivity>, RedmineClientError>;
-    async fn get_trackers(&self) -> Result<Vec<Tracker>, RedmineClientError>;
-    async fn get_users(&self) -> Result<Vec<User>, RedmineClientError>;
+    ) -> impl std::future::Future<Output = Result<Vec<TargetVersion>, RedmineClientError>> + Send;
+    fn get_time_entity_activities(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<TimeEntityActivity>, RedmineClientError>> + Send;
+    fn get_trackers(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<Tracker>, RedmineClientError>> + Send;
+    fn get_users(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<User>, RedmineClientError>> + Send;
 }
 
 #[cfg(test)]
@@ -113,15 +133,29 @@ mod tests {
 
     fn assert_send<T: Send>(_: T) {}
 
-    fn assert_project_issues_future_is_send<C: RedmineClient>(client: &C) {
+    fn assert_redmine_client_futures_are_send<C: RedmineClient>(client: &C) {
+        let issue =
+            crate::test_support::sample_issue_aggregate(1, "title", 1.into(), None, None, None, 0);
+        assert_send(client.get_categories());
+        assert_send(client.get_issue(IssueId::new(1)));
+        assert_send(client.update_issue(&issue));
+        assert_send(client.update_journal_notes(JournalId::new(1), "notes"));
+        assert_send(client.update_issue_notes(IssueId::new(1), "notes"));
+        assert_send(client.get_issue_statuses());
+        assert_send(client.get_priorities());
+        assert_send(client.get_projects());
+        assert_send(client.get_target_versions());
+        assert_send(client.get_time_entity_activities());
+        assert_send(client.get_trackers());
+        assert_send(client.get_users());
         assert_send(client.get_project_issues(ProjectId::new(1), NonZeroUsize::new(1).unwrap()));
     }
 
     #[test]
-    fn project_issues_future_is_send() {
+    fn redmine_client_futures_are_send() {
         let client =
             crate::clients::redmine::DefaultRedmineClient::new("http://example.test", "token");
 
-        assert_project_issues_future_is_send(&client);
+        assert_redmine_client_futures_are_send(&client);
     }
 }
