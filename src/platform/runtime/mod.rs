@@ -1,5 +1,7 @@
 use std::any::Any;
 use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll, Waker};
 
 use crate::stores::Action;
 
@@ -24,6 +26,41 @@ pub trait BackgroundSpawner {
 
     /// 完了済みの通知を受理順に1件だけ取り出し、未完了なら直ちに`None`を返す。
     fn try_recv_completion(&self) -> Option<BackgroundCompletion>;
+}
+
+/// UI thread上で、frame/loopごとの明示的なpollによって進めるlocal task。
+///
+/// editorのように呼び出し元から借用する非`Send` Futureを保持できるよう、
+/// `BackgroundSpawner`の`Send + 'static`契約とは分離している。
+pub struct LocalTask<'a, T> {
+    future: Option<Pin<Box<dyn Future<Output = T> + 'a>>>,
+}
+
+impl<'a, T> LocalTask<'a, T> {
+    pub fn new(future: impl Future<Output = T> + 'a) -> Self {
+        Self {
+            future: Some(Box::pin(future)),
+        }
+    }
+
+    /// taskを1回pollし、未完了なら`None`、完了時はoutputを返す。
+    ///
+    /// noop wakerはtaskを再度scheduleしないため、runnerがloopごとに呼び出す必要がある。
+    /// 完了後の再pollはrunnerの状態管理違反としてpanicする。
+    pub fn poll_completion(&mut self) -> Option<T> {
+        let future = self
+            .future
+            .as_mut()
+            .expect("LocalTask polled after completion");
+        let mut context = Context::from_waker(Waker::noop());
+        match future.as_mut().poll(&mut context) {
+            Poll::Pending => None,
+            Poll::Ready(output) => {
+                self.future = None;
+                Some(output)
+            }
+        }
+    }
 }
 
 /// 通常の文字列panic payloadをmessageへ変換し、それ以外の型には共通文言を返す。
@@ -56,9 +93,10 @@ impl From<Box<dyn Any + Send>> for BackgroundCompletion {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::collections::VecDeque;
     use std::pin::Pin;
+    use std::rc::Rc;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::task::{Context, Poll, Waker};
@@ -202,5 +240,37 @@ mod tests {
             matches!(&first_actions[..], [Action::WorkerPanicked { message }] if message == "first")
         );
         assert!(spawner.try_recv_completion().is_none());
+    }
+
+    #[test]
+    fn local_task_polls_non_send_borrowing_future_until_completion() {
+        let borrowed = String::from("borrowed");
+        let borrowed = &borrowed;
+        let ready = Rc::new(Cell::new(false));
+        let retained = Rc::new(String::from("non-send"));
+        let ready_for_future = Rc::clone(&ready);
+        let retained_for_future = Rc::clone(&retained);
+        let mut task = LocalTask::new(async move {
+            std::future::poll_fn(move |_| {
+                if ready_for_future.get() {
+                    Poll::Ready(format!("{borrowed}:{}", retained_for_future))
+                } else {
+                    Poll::Pending
+                }
+            })
+            .await
+        });
+
+        assert_eq!(task.poll_completion(), None);
+        ready.set(true);
+        assert_eq!(task.poll_completion().as_deref(), Some("borrowed:non-send"));
+    }
+
+    #[test]
+    #[should_panic(expected = "LocalTask polled after completion")]
+    fn local_task_rejects_poll_after_completion() {
+        let mut task = LocalTask::new(async { 1_u8 });
+        assert_eq!(task.poll_completion(), Some(1));
+        task.poll_completion();
     }
 }

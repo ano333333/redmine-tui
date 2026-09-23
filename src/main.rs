@@ -20,13 +20,10 @@ use ratatui::{Frame, layout::Rect};
 use std::{
     cell::RefCell,
     env,
-    future::Future,
     io::{self, Result},
-    pin::Pin,
     process::ExitCode,
     rc::Rc,
     sync::{Arc, atomic, mpsc},
-    task::{Context, Poll, Waker},
 };
 use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime};
 
@@ -35,7 +32,7 @@ use self::{
     components::{AppComponent, app::AppEffect},
     platform::editor::{EditorOutcome, TextEditor, native::NativeTextEditor},
     platform::input::native::convert_key,
-    platform::runtime::tokio_spawner,
+    platform::runtime::{LocalTask, tokio_spawner},
     stores::{Action, Dispatcher, NoticeAction, NoticeId},
     usecases::redmine::{
         continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
@@ -51,7 +48,7 @@ const REDMINE_API_KEY_ENV: &str = "REDMINE_API_KEY";
 const REDMINE_URL_ENV: &str = "REDMINE_URL";
 const REDMINE_PORT_ENV: &str = "REDMINE_PORT";
 
-type EditorSession<'a> = Pin<Box<dyn Future<Output = io::Result<EditorOutcome>> + 'a>>;
+type EditorSession<'a> = LocalTask<'a, io::Result<EditorOutcome>>;
 
 struct TerminalRestoreGuard;
 
@@ -120,14 +117,12 @@ fn main() -> ExitCode {
                 eprintln!("worker task panicked: {message}");
                 return ExitCode::FAILURE;
             }
-            let waker = Waker::noop();
-            let mut context = Context::from_waker(waker);
-            let outcome = match session.as_mut().poll(&mut context) {
-                Poll::Pending => {
+            let outcome = match session.poll_completion() {
+                None => {
                     std::thread::sleep(tick_rate);
                     continue;
                 }
-                Poll::Ready(outcome) => outcome,
+                Some(outcome) => outcome,
             };
             editor_session = None;
             let mut enter_alternate_screen = || execute!(std::io::stdout(), EnterAlternateScreen);
@@ -390,7 +385,7 @@ fn handle_app_effect<'a>(
                     "failed to leave terminal for editor",
                 );
             } else {
-                *editor_session = Some(Box::pin(editor.edit(request)));
+                *editor_session = Some(LocalTask::new(editor.edit(request)));
             }
         }
         AppEffect::StartIssueUpload(id) => {
