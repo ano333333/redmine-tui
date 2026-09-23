@@ -1,7 +1,7 @@
 use ratatui::layout::{Position, Rect, Size};
 
 use crate::entities::IssueAggregate;
-use crate::inputs::InputEvent;
+use crate::platform::input::InputEvent;
 use crate::vos::{EntityIdValue, IssuePropertyDiff};
 use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
 
@@ -322,7 +322,7 @@ fn property_name(diff: &IssuePropertyDiff) -> &'static str {
 mod tests {
     use super::*;
 
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::{Position, Rect};
 
     use crate::test_support::render_snapshot;

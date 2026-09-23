@@ -2,7 +2,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui_textarea::{Input, Key, TextArea};
 
 use super::widget::NumberInputPopupWidget;
-use crate::inputs::{InputEvent, KeyCode, KeyEvent};
+use crate::platform::input::{InputEvent, KeyCode, KeyEvent};
 
 pub enum EventProcessResult {
     Entered,
@@ -145,7 +145,7 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use crate::inputs::KeyModifiers;
+    use crate::platform::input::KeyModifiers;
     use crate::test_support::render_snapshot;
 
     fn key_event(code: KeyCode) -> InputEvent {

@@ -1,6 +1,6 @@
 use ratatui::layout::Position;
 
-use crate::inputs::InputEvent;
+use crate::platform::input::InputEvent;
 use crate::stores::{LocalJournalEntry, LocalJournalState};
 
 use super::journals_list_item::focus_state;
@@ -111,7 +111,7 @@ impl LocalJournalItemComponent {
 
 #[cfg(test)]
 mod tests {
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
     use crate::entities::LocalJournal;

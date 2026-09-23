@@ -7,7 +7,7 @@ use super::focus_state::{EventProcessResult as RawEventProcessResult, FocusState
 use super::widget::{
     RemoteJournalConflictChoice, RemoteJournalConflictPopupWidget, RemoteJournalConflictWidget,
 };
-use crate::inputs::InputEvent;
+use crate::platform::input::InputEvent;
 
 /// Remote Journal競合popupのキー操作結果。
 pub enum EventProcessResult {
@@ -134,7 +134,7 @@ impl RemoteJournalConflictComponent {
 mod tests {
     use super::*;
 
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::{Position, Rect};
 
     use crate::components::remote_journal_conflict_popup::widget::RemoteJournalConflictButton;

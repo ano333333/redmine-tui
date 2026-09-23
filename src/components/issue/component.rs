@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::{
-    inputs::{InputEvent, KeyCode},
+    platform::input::{InputEvent, KeyCode},
     stores::{Dispatcher, IssueFetchState, Store},
     vos::IssueId,
 };
@@ -148,7 +148,7 @@ impl IssueComponent {
 #[cfg(test)]
 mod tests {
     use super::{EventProcessResult, IssueComponent, IssueWidget};
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::{
         stores::{Dispatcher, IssueAction},
         test_support::render_snapshot,

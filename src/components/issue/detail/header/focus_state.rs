@@ -1,6 +1,6 @@
 use ratatui::layout::Position;
 
-use crate::inputs::{InputEvent, KeyCode};
+use crate::platform::input::{InputEvent, KeyCode};
 
 pub enum FocusEvent {
     Focused,
@@ -85,7 +85,7 @@ impl FocusState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inputs::{InputEvent, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyEvent, KeyModifiers};
 
     fn key_event(code: KeyCode) -> InputEvent {
         InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))

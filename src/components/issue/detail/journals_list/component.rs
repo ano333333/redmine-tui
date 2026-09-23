@@ -1,6 +1,6 @@
 use ratatui::layout::Position;
 
-use crate::inputs::{InputEvent, KeyCode};
+use crate::platform::input::{InputEvent, KeyCode};
 use crate::stores::{LocalJournalEntry, RemoteJournalEntry, Store};
 use crate::vos::{EntityIdValue, IssueId, JournalId};
 
@@ -377,7 +377,7 @@ impl JournalsListComponent {
 
 #[cfg(test)]
 mod tests {
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::stores::RemoteJournalState;
 
     use super::*;

@@ -4,7 +4,7 @@ use super::widget::{BodyWidget, BodyWidgetState};
 use ratatui::layout::Position;
 
 use crate::entities::IssueAggregate;
-use crate::inputs::InputEvent;
+use crate::platform::input::InputEvent;
 use crate::vos::IssueId;
 
 pub enum EventProcessResult {
@@ -77,7 +77,7 @@ impl BodyComponent {
 mod tests {
     use super::super::focus_state::FocusEvent;
     use super::*;
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::test_support::{render_snapshot, sample_issue_aggregate};
     use crate::widgets::gutter::GUTTER_WIDTH;
     use ratatui::layout::Position;

@@ -19,7 +19,7 @@ use crate::components::issue_select_popup::component::{
 use crate::components::remote_journal_conflict_popup::{
     EventProcessResult as RemoteJournalConflictEventProcessResult, RemoteJournalConflictComponent,
 };
-use crate::inputs::{InputEvent, KeyCode};
+use crate::platform::input::{InputEvent, KeyCode};
 use crate::stores::{
     Action, Dispatcher, IssueAction, IssueState, JournalAction, LocalJournalState,
     RemoteJournalState, Store,
@@ -915,8 +915,8 @@ mod tests {
     use super::*;
 
     use crate::entities::{Issue, ProjectIssuesPage};
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::libs::yaml::parse_journal_yaml;
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::stores::{
         JournalAction, NoticeAction, NoticeId, ProjectIssuesAction, RemoteJournalState,
     };

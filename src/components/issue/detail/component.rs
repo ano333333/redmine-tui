@@ -5,7 +5,7 @@ use ratatui::Frame;
 use ratatui::layout::{Offset, Position, Rect};
 use ratatui::widgets::Widget;
 
-use crate::inputs::{InputEvent, KeyCode};
+use crate::platform::input::{InputEvent, KeyCode};
 use crate::stores::{Dispatcher, IssueState, Store};
 use crate::vos::{IssueId, JournalId};
 
@@ -72,7 +72,7 @@ pub enum EventProcessResult {
 mod tests {
     use super::*;
 
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::stores::IssueAction;
 
     fn key_event(code: KeyCode) -> InputEvent {

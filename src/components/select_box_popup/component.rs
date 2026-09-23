@@ -1,4 +1,4 @@
-use crate::inputs::{InputEvent, KeyCode};
+use crate::platform::input::{InputEvent, KeyCode};
 
 use super::SelectBoxPopupWidget;
 
@@ -74,9 +74,9 @@ mod tests {
     use std::rc::Rc;
 
     fn key_event(code: KeyCode) -> InputEvent {
-        InputEvent::Key(crate::inputs::KeyEvent::new(
+        InputEvent::Key(crate::platform::input::KeyEvent::new(
             code,
-            crate::inputs::KeyModifiers::none(),
+            crate::platform::input::KeyModifiers::none(),
         ))
     }
 

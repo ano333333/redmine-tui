@@ -3,7 +3,7 @@ use super::widget::PropertyWidget;
 use ratatui::layout::Position;
 
 use crate::entities::{IssueAggregate, IssueStatus};
-use crate::inputs::InputEvent;
+use crate::platform::input::InputEvent;
 use crate::stores::Store;
 use crate::vos::IssueId;
 
@@ -122,7 +122,7 @@ fn create_property_widget<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::stores::{Action, IssueAction};
     use crate::test_support::{render_snapshot, sync_fixture_entities};
     use crate::widgets::gutter::GUTTER_WIDTH;

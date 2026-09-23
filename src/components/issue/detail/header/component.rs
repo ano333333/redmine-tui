@@ -2,7 +2,7 @@ use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
 use super::widget::{HeaderWidget, TitleDecorater};
 use ratatui::layout::Position;
 
-use crate::inputs::InputEvent;
+use crate::platform::input::InputEvent;
 use crate::stores::{IssueState, Store};
 use crate::vos::IssueId;
 

@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 
 use ratatui::layout::Rect;
 
-use crate::inputs::InputEvent;
+use crate::platform::input::InputEvent;
 use crate::stores::{ProjectIssuesPageState, Store};
 use crate::vos::{IssueId, ProjectId};
 
@@ -335,7 +335,7 @@ impl IssueSelectPopupComponent {
 mod tests {
     use super::*;
 
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 
     use crate::components::issue_select_popup::widget::IssueSelectPopupFocusColumn;
     use crate::entities::{Issue, ProjectIssuesPage};

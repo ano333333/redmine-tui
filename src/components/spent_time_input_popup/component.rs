@@ -2,7 +2,7 @@ use ratatui::layout::Position;
 use ratatui::style::{Modifier, Style};
 use ratatui_textarea::{Input, Key, TextArea};
 
-use crate::inputs::{InputEvent, KeyCode, KeyEvent};
+use crate::platform::input::{InputEvent, KeyCode, KeyEvent};
 use crate::stores::Store;
 use crate::vos::TimeEntityActivityId;
 
@@ -270,7 +270,7 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inputs::KeyModifiers;
+    use crate::platform::input::KeyModifiers;
     use crate::test_support::sync_fixture_entities;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;

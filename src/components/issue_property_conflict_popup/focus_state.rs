@@ -1,4 +1,4 @@
-use crate::inputs::{InputEvent, KeyCode};
+use crate::platform::input::{InputEvent, KeyCode};
 
 use super::widget::{IssuePropertyConflictButton, IssuePropertyConflictFocus};
 
@@ -183,7 +183,7 @@ impl FocusState {
 mod tests {
     use super::*;
 
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 
     fn key_event(code: KeyCode) -> InputEvent {
         InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))

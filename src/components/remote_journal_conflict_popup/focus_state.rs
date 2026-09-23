@@ -1,5 +1,5 @@
 use super::widget::RemoteJournalConflictButton;
-use crate::inputs::{InputEvent, KeyCode};
+use crate::platform::input::{InputEvent, KeyCode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Remote Journal競合popup内でフォーカスされている対象。
@@ -145,7 +145,7 @@ impl FocusState {
 mod tests {
     use super::*;
 
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 
     fn key_event(code: KeyCode) -> InputEvent {
         InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))

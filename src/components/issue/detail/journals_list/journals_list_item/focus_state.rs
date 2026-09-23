@@ -2,7 +2,7 @@ use std::cmp::min;
 
 use ratatui::layout::Position;
 
-use crate::inputs::{InputEvent, KeyCode};
+use crate::platform::input::{InputEvent, KeyCode};
 use crate::widgets::gutter::GUTTER_WIDTH;
 
 pub enum FocusEvent {
@@ -244,7 +244,7 @@ impl FocusState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inputs::{InputEvent, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyEvent, KeyModifiers};
 
     const WIDE_WIDTH: u16 = 32;
     const NARROW_WIDTH: u16 = 18;

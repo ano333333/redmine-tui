@@ -3,7 +3,7 @@ use ratatui::layout::Position;
 use super::widget::HEADER_LINES;
 use crate::widgets::gutter::GUTTER_WIDTH;
 
-use crate::inputs::{InputEvent, KeyCode};
+use crate::platform::input::{InputEvent, KeyCode};
 use crate::vos::IssueId;
 
 pub enum FocusEvent {
@@ -113,7 +113,7 @@ impl FocusState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inputs::{InputEvent, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyEvent, KeyModifiers};
 
     fn key_event(code: KeyCode) -> InputEvent {
         InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))

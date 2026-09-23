@@ -1,7 +1,7 @@
 use ratatui::layout::Position;
 
 use crate::entities::IssueStatusExt;
-use crate::inputs::InputEvent;
+use crate::platform::input::InputEvent;
 use crate::stores::Store;
 use crate::vos::IssueId;
 
@@ -98,7 +98,7 @@ fn create_child_rows<'a>(store: &'a Store, child_ids: &[IssueId]) -> Vec<ChildIs
 mod tests {
     use super::*;
     use crate::entities::IssueStatus;
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::stores::{Action, IssueAction};
     use crate::test_support::{render_snapshot, sync_fixture_entities};
     use crate::widgets::gutter::GUTTER_WIDTH;

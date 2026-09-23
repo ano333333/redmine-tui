@@ -1,7 +1,7 @@
 use chrono::{DateTime, Datelike, Days, Local, Months, NaiveDate, TimeZone};
 use ratatui_textarea::TextArea;
 
-use crate::inputs::{InputEvent, KeyCode, KeyEvent};
+use crate::platform::input::{InputEvent, KeyCode, KeyEvent};
 
 use super::widget::DatePickerPopupWidget;
 
@@ -331,7 +331,7 @@ fn local_date(year: i32, month: u32, day: u32) -> Option<DateTime<Local>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::test_support::local_datetime;
     use std::cell::RefCell;
     use std::rc::Rc;

@@ -1,9 +1,9 @@
 mod clients;
 mod components;
 mod entities;
-mod inputs;
 mod libs;
 mod logging;
+mod platform;
 mod stores;
 #[cfg(test)]
 mod test_support;
@@ -38,7 +38,7 @@ use self::{
         AppComponent,
         app::{AppEffect, EditorOutcome, EditorRequest},
     },
-    inputs::native::convert_key,
+    platform::input::native::convert_key,
     stores::{Action, Dispatcher, NoticeAction, NoticeId},
     usecases::redmine::{
         continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
@@ -555,7 +555,7 @@ fn consume_initial_actions(dispatcher: Rc<RefCell<Dispatcher>>, actions: Vec<Act
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inputs::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use std::{sync::Mutex, time::Duration};
 
     use crate::clients::redmine::base::FetchedIssue;
