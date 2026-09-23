@@ -1,19 +1,35 @@
 //! runner loopから呼ぶapplication lifecycleの共通処理。
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use ratatui::{Frame, layout::Rect};
 
 use crate::{
     components::AppComponent,
+    platform::host::HostEvent,
     platform::runtime::{BackgroundCompletion, BackgroundSpawner},
     stores::{Action, Dispatcher},
 };
 
-/// `now`が`last`より前でないことを前提とし、`chrono::Duration`の範囲外ならゼロを返す。
-pub(crate) fn tick_since(last: std::time::Instant, now: std::time::Instant) -> chrono::Duration {
-    chrono::Duration::from_std(now.duration_since(last))
+/// `now`が`last`より前、または`chrono::Duration`の範囲外ならゼロを返す。
+pub(crate) fn tick_since(last: Duration, now: Duration) -> chrono::Duration {
+    chrono::Duration::from_std(now.saturating_sub(last))
         .unwrap_or_else(|_| chrono::Duration::zero())
+}
+
+pub(crate) fn handle_host_event(
+    event: HostEvent,
+    app_component: &mut AppComponent,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    area: Rect,
+) -> bool {
+    let should_continue = match event {
+        HostEvent::Input(event) => app_component.handle_key_event(event, dispatcher.clone()),
+        HostEvent::Ignored => true,
+    };
+    update(dispatcher.clone(), app_component, area);
+    app_component.update(dispatcher.clone(), dispatcher.borrow().store(), area);
+    should_continue
 }
 
 pub(crate) fn move_worker_action<S: BackgroundSpawner>(

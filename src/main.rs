@@ -12,31 +12,18 @@ mod usecases;
 mod vos;
 mod widgets;
 
-use crossterm::event::{self, Event};
-use ratatui::layout::Rect;
 use std::{cell::RefCell, process::ExitCode, rc::Rc, sync::Arc};
 
 use self::{
     clients::redmine::DefaultRedmineClient,
-    components::AppComponent,
     platform::editor::native::NativeTextEditor,
-    platform::host::{
-        PlatformHost,
-        native::{NativePlatformHost, install_panic_hook},
-    },
-    platform::input::native::convert_key,
+    platform::host::native::{NativePlatformHost, install_panic_hook},
     platform::redmine_config::redmine_connection_config_from_env,
     platform::runtime::tokio_spawner::TokioBackgroundSpawner,
-    runner::effect::{EditorSession, handle_app_effect, handle_editor_failure},
-    runner::lifecycle::{
-        consume_editor_worker_actions, consume_initial_actions, draw, move_worker_action,
-        tick_since, update,
-    },
+    runner::{RunError, lifecycle::consume_initial_actions, run},
     stores::Dispatcher,
     usecases::redmine::load_initial_entities,
 };
-
-const TICK_RATE_MS: u64 = 250;
 
 struct TerminalRestoreGuard;
 
@@ -81,133 +68,36 @@ fn main() -> ExitCode {
     trace_dbg!("start");
     install_panic_hook();
     let mut host = NativePlatformHost::new(ratatui::init());
-    // 以降のどのreturnでもterminalを復帰する。local変数は宣言の逆順にdropされるため、
-    // editor sessionを先に停止できるようこのguardはそれより前に宣言する。
+    // runのFutureが保持するeditor sessionを先に破棄し、以降のどのreturnでもterminalを復帰する。
     let _terminal_restore = TerminalRestoreGuard;
-    let mut app_component = AppComponent::new(dispatcher.clone(), None);
-    app_component.update(dispatcher.clone(), dispatcher.borrow().store(), host.area());
-    let tick_rate = std::time::Duration::from_millis(TICK_RATE_MS);
-    let mut last_tick = std::time::Instant::now();
     let editor = NativeTextEditor::from_environment();
-    let mut editor_session: Option<EditorSession<'_>> = None;
-    loop {
-        // editor中もworker完了はStoreへ取り込むが、Component更新・描画・入力と
-        // Noticeの経過時間更新はeditor終了まで遅延する。
-        if let Some(session) = editor_session.as_mut() {
-            if let Some(message) = consume_editor_worker_actions(&spawner, dispatcher.clone()) {
-                eprintln!("worker task panicked: {message}");
-                return ExitCode::FAILURE;
-            }
-            let outcome = match session.poll_completion() {
-                None => {
-                    std::thread::sleep(tick_rate);
-                    continue;
-                }
-                Some(outcome) => outcome,
-            };
-            editor_session = None;
-            match host.resume_after_editor() {
-                Ok(()) => match outcome {
-                    Ok(outcome) => app_component.handle_editor_response(outcome),
-                    Err(error) => {
-                        handle_editor_failure(
-                            &mut app_component,
-                            dispatcher.clone(),
-                            &error,
-                            "editor failed",
-                        );
-                    }
-                },
-                Err(error) => {
-                    handle_editor_failure(
-                        &mut app_component,
-                        dispatcher.clone(),
-                        &error,
-                        "failed to restore terminal after editor",
-                    );
-                }
-            }
-            // editor中にStoreへ適用したActionを、描画再開前にComponentへ反映する。
-            app_component.update(dispatcher.clone(), dispatcher.borrow().store(), host.area());
-            // editor滞在時間を次のNotice tickへ混ぜないよう、通常loopへ戻る前にresetする。
-            last_tick = std::time::Instant::now();
-        }
-        if let Some(message) = move_worker_action(&spawner, dispatcher.clone()) {
+    match spawner.block_on(run(&mut host, &editor, &spawner, client, dispatcher)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(RunError::WorkerPanicked(message)) => {
             eprintln!("worker task panicked: {message}");
-            return ExitCode::FAILURE;
+            ExitCode::FAILURE
         }
-        let now = std::time::Instant::now();
-        let tick = tick_since(last_tick, now);
-        last_tick = now;
-        dispatcher.borrow_mut().update_store(tick);
-        update(dispatcher.clone(), &mut app_component, host.area());
-        let effect = app_component.take_effect();
-        if let Some(effect) = effect {
-            handle_app_effect(
-                effect,
-                &mut app_component,
-                dispatcher.clone(),
-                &spawner,
-                client.clone(),
-                &editor,
-                &mut editor_session,
-                &mut host,
-            );
-        }
-        if editor_session.is_some() {
-            continue;
-        }
-        if let Err(e) = host.draw(|f| draw(f, &app_component, dispatcher.clone())) {
-            trace_dbg!(level: tracing::Level::ERROR, "failed to draw frame");
-            eprintln!("{e}");
-            return ExitCode::FAILURE;
-        }
-        if event::poll(tick_rate).unwrap() {
-            match event::read() {
-                Ok(event) => {
-                    if !handle_key_event(event, &mut app_component, dispatcher.clone(), host.area())
-                    {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    trace_dbg!(level: tracing::Level::ERROR, "failed to read event");
-                    eprintln!("{e}");
-                    return ExitCode::FAILURE;
-                }
-            }
+        Err(RunError::Draw(error) | RunError::Input(error)) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
         }
     }
-    trace_dbg!("done");
-    ExitCode::SUCCESS
-}
-
-fn handle_key_event(
-    event: Event,
-    app_component: &mut AppComponent,
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    area: Rect,
-) -> bool {
-    let should_continue = match event {
-        Event::Key(key) => convert_key(key).map_or(true, |event| {
-            app_component.handle_key_event(event, dispatcher.clone())
-        }),
-        _ => true,
-    };
-    update(dispatcher.clone(), app_component, area);
-    app_component.update(dispatcher.clone(), dispatcher.borrow().store(), area);
-    should_continue
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::AppComponent;
     use crate::components::app::AppEffect;
+    use crate::platform::host::HostEvent;
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::platform::runtime::{BackgroundCompletion, BackgroundSpawner};
     use crate::runner::effect::{
         start_issue_fetch, start_local_journal_upload_action, start_project_issues_page_fetch,
         start_remote_journal_upload_action,
+    };
+    use crate::runner::lifecycle::{
+        consume_editor_worker_actions, handle_host_event, move_worker_action, tick_since, update,
     };
     use crate::stores::Action;
     use crate::usecases::redmine::{start_issue_upload, upload_issue_action};
@@ -229,7 +119,7 @@ mod tests {
     use crate::test_support::sample_issue_aggregate;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId, JournalId};
-    use ratatui::{Terminal, backend::TestBackend, widgets::Widget};
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect, widgets::Widget};
 
     fn recv_completion(spawner: &TokioBackgroundSpawner) -> BackgroundCompletion {
         let deadline = Instant::now() + Duration::from_secs(2);
@@ -294,16 +184,22 @@ mod tests {
 
     #[test]
     fn tick_since_returns_zero_for_the_same_instant() {
-        let now = std::time::Instant::now();
+        let now = Duration::ZERO;
 
         assert_eq!(tick_since(now, now), chrono::Duration::zero());
     }
 
     #[test]
+    fn tick_since_returns_zero_when_now_is_before_last() {
+        let last = Duration::from_millis(10);
+
+        assert_eq!(tick_since(last, Duration::ZERO), chrono::Duration::zero());
+    }
+
+    #[test]
     fn tick_since_returns_a_positive_duration_after_elapsed_time() {
-        let last = std::time::Instant::now();
-        std::thread::sleep(Duration::from_millis(10));
-        let now = std::time::Instant::now();
+        let last = Duration::ZERO;
+        let now = Duration::from_millis(10);
 
         assert!(tick_since(last, now) > chrono::Duration::zero());
     }
@@ -358,21 +254,21 @@ mod tests {
             });
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
 
-        assert!(handle_key_event(
-            Event::Key(crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char('l'),
-                crossterm::event::KeyModifiers::NONE,
-            )),
+        assert!(handle_host_event(
+            HostEvent::Input(InputEvent::Key(KeyEvent::new(
+                KeyCode::Char('l'),
+                KeyModifiers::none(),
+            ))),
             &mut app,
             dispatcher.clone(),
             Rect::new(0, 0, 80, 24),
         ));
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
-        assert!(handle_key_event(
-            Event::Key(crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char('j'),
-                crossterm::event::KeyModifiers::NONE,
-            )),
+        assert!(handle_host_event(
+            HostEvent::Input(InputEvent::Key(KeyEvent::new(
+                KeyCode::Char('j'),
+                KeyModifiers::none(),
+            ))),
             &mut app,
             dispatcher.clone(),
             Rect::new(0, 0, 80, 24),
