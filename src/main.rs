@@ -13,7 +13,7 @@ mod vos;
 mod widgets;
 
 use crossterm::event::{self, Event};
-use ratatui::{Frame, layout::Rect};
+use ratatui::layout::Rect;
 use std::{cell::RefCell, process::ExitCode, rc::Rc, sync::Arc};
 
 use self::{
@@ -26,11 +26,13 @@ use self::{
     },
     platform::input::native::convert_key,
     platform::redmine_config::redmine_connection_config_from_env,
-    platform::runtime::{
-        BackgroundCompletion, BackgroundSpawner, tokio_spawner::TokioBackgroundSpawner,
-    },
+    platform::runtime::tokio_spawner::TokioBackgroundSpawner,
     runner::effect::{EditorSession, handle_app_effect, handle_editor_failure},
-    stores::{Action, Dispatcher},
+    runner::lifecycle::{
+        consume_editor_worker_actions, consume_initial_actions, draw, move_worker_action,
+        tick_since, update,
+    },
+    stores::Dispatcher,
     usecases::redmine::load_initial_entities,
 };
 
@@ -180,52 +182,6 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// `now`が`last`より前でないことを前提とし、`chrono::Duration`の範囲外ならゼロを返す。
-fn tick_since(last: std::time::Instant, now: std::time::Instant) -> chrono::Duration {
-    chrono::Duration::from_std(now.duration_since(last))
-        .unwrap_or_else(|_| chrono::Duration::zero())
-}
-
-fn move_worker_action<S: BackgroundSpawner>(
-    spawner: &S,
-    dispatcher: Rc<RefCell<Dispatcher>>,
-) -> Option<String> {
-    let mut worker_panic_message = None;
-    while let Some(completion) = spawner.try_recv_completion() {
-        match completion {
-            BackgroundCompletion::Succeeded(actions) => {
-                // completionの受理順とtaskが生成したActionの順序を保ってmain thread上でdispatchする。
-                for action in actions {
-                    dispatcher.borrow_mut().dispatch(action);
-                }
-            }
-            BackgroundCompletion::Panicked { message } => {
-                // Storeへ通常のActionとして流さず、runnerへ返してプロセスの異常終了を判断させる。
-                worker_panic_message = Some(message);
-            }
-        }
-    }
-    worker_panic_message
-}
-
-fn consume_editor_worker_actions<S: BackgroundSpawner>(
-    spawner: &S,
-    dispatcher: Rc<RefCell<Dispatcher>>,
-) -> Option<String> {
-    let worker_panic_message = move_worker_action(spawner, dispatcher.clone());
-    while dispatcher.borrow().consume_actinos_len() > 0 {
-        dispatcher.borrow_mut().consume_action();
-    }
-    worker_panic_message
-}
-
-fn update(dispatcher: Rc<RefCell<Dispatcher>>, app_component: &mut AppComponent, area: Rect) {
-    while dispatcher.borrow().consume_actinos_len() > 0 {
-        dispatcher.borrow_mut().consume_action();
-        app_component.update(dispatcher.clone(), dispatcher.borrow().store(), area);
-    }
-}
-
 fn handle_key_event(
     event: Event,
     app_component: &mut AppComponent,
@@ -243,29 +199,17 @@ fn handle_key_event(
     should_continue
 }
 
-fn draw(frame: &mut Frame, app_component: &AppComponent, dispatcher: Rc<RefCell<Dispatcher>>) {
-    app_component.render(dispatcher.borrow().store(), frame, frame.area());
-}
-
-fn consume_initial_actions(dispatcher: Rc<RefCell<Dispatcher>>, actions: Vec<Action>) {
-    let mut d = dispatcher.borrow_mut();
-    for action in actions {
-        d.dispatch(action);
-    }
-    while d.consume_actinos_len() > 0 {
-        d.consume_action();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::components::app::AppEffect;
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
+    use crate::platform::runtime::{BackgroundCompletion, BackgroundSpawner};
     use crate::runner::effect::{
         start_issue_fetch, start_local_journal_upload_action, start_project_issues_page_fetch,
         start_remote_journal_upload_action,
     };
+    use crate::stores::Action;
     use crate::usecases::redmine::{start_issue_upload, upload_issue_action};
     use std::{
         collections::VecDeque,
