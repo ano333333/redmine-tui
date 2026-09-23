@@ -19,6 +19,7 @@ use crate::components::issue_select_popup::component::{
 use crate::components::remote_journal_conflict_popup::{
     EventProcessResult as RemoteJournalConflictEventProcessResult, RemoteJournalConflictComponent,
 };
+use crate::platform::editor::{EditorOutcome, EditorRequest, InteractionMode};
 use crate::platform::input::{InputEvent, KeyCode};
 use crate::stores::{
     Action, Dispatcher, IssueAction, IssueState, JournalAction, LocalJournalState,
@@ -51,20 +52,6 @@ use super::select_box_popup::{
 use super::spent_time_input_popup::{
     EventProcessResult as SpentTimeInputPopupEventProcessResult, SpentTimeInputPopupComponent,
 };
-
-pub struct EditorRequest {
-    pub initial_text: String,
-}
-
-pub enum EditorOutcome {
-    Submitted {
-        edited_text: String,
-    },
-    /// Web editorなど、明示的なキャンセル操作を持つeditorが返す。native editorは常に`Submitted`を返す。
-    Cancelled,
-    /// editor error時にcontextを解放するための完了通知。元のerrorは呼び出し側が別途伝播する。
-    Failed,
-}
 
 pub enum AppEffect {
     FetchIssue(IssueId),
@@ -105,10 +92,17 @@ enum PendingEditorContext {
     },
 }
 
-/// Storeの状態遷移違反を防ぐため、editor effectを生成できる状態かを最終確認する。
+/// Storeの状態遷移違反とeditor sessionの二重起動を防ぐため、editor effectを生成できる状態かを最終確認する。
 ///
 /// 各Componentの操作可否判定はUIイベントを抑制する責務として残し、この境界でも検査する。
-fn can_start_editing(context: &PendingEditorContext, store: &Store) -> bool {
+fn can_start_editing(
+    context: &PendingEditorContext,
+    interaction_mode: InteractionMode,
+    store: &Store,
+) -> bool {
+    if interaction_mode == InteractionMode::Editing {
+        return false;
+    }
     match context {
         PendingEditorContext::IssueBody { id } => {
             !matches!(store.try_get_issue_state(*id), Some(IssueState::Uploading))
@@ -151,6 +145,7 @@ pub struct AppComponent<'a> {
     dispatcher: Rc<RefCell<Dispatcher>>,
     pending_effect: Option<AppEffect>,
     pending_editor_context: Option<PendingEditorContext>,
+    interaction_mode: InteractionMode,
 }
 
 impl<'a> AppComponent<'a> {
@@ -169,6 +164,7 @@ impl<'a> AppComponent<'a> {
             dispatcher,
             pending_effect: None,
             pending_editor_context: None,
+            interaction_mode: InteractionMode::Application,
         };
         if let Some(result) = issue_result {
             app.handle_issue_component_result(result);
@@ -181,6 +177,10 @@ impl<'a> AppComponent<'a> {
 
     /// 共通の入力イベントを同期的に処理する。updateとrenderがこの順で後続する
     pub fn process_event(&mut self, event: InputEvent, dispatcher: Rc<RefCell<Dispatcher>>) {
+        // editor session中の入力はeditorが占有するため、Componentの状態を変更しない。
+        if self.interaction_mode == InteractionMode::Editing {
+            return;
+        }
         if self.popup_components.back().is_some() {
             self.process_popup_event(event, dispatcher);
         } else if self.issue_component.is_some() {
@@ -334,10 +334,11 @@ impl<'a> AppComponent<'a> {
                 IssueDetailEventProcessResult::EditIssueBodyRequested { id, body },
             )) => {
                 let context = PendingEditorContext::IssueBody { id };
-                if can_start_editing(&context, dispatcher.borrow().store()) {
+                if can_start_editing(&context, self.interaction_mode, dispatcher.borrow().store()) {
                     self.pending_editor_context = Some(context);
                     self.pending_effect =
                         Some(AppEffect::OpenEditor(EditorRequest { initial_text: body }));
+                    self.interaction_mode = InteractionMode::Editing;
                 }
             }
             Some(IssueEventProcessResult::Detail(
@@ -521,34 +522,40 @@ impl<'a> AppComponent<'a> {
                     issue_id,
                     journal_id: id,
                 };
-                if can_start_editing(&context, dispatcher.borrow().store()) {
+                if can_start_editing(&context, self.interaction_mode, dispatcher.borrow().store()) {
                     self.pending_editor_context = Some(context);
                     self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
                         initial_text: notes,
                     }));
+                    self.interaction_mode = InteractionMode::Editing;
                 }
             }
             Some(IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::EditLocalJournalRequested { issue_id, notes },
             )) => {
                 let context = PendingEditorContext::LocalJournal { issue_id };
-                if can_start_editing(&context, dispatcher.borrow().store()) {
+                if can_start_editing(&context, self.interaction_mode, dispatcher.borrow().store()) {
                     self.pending_editor_context = Some(context);
                     self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
                         initial_text: notes,
                     }));
+                    self.interaction_mode = InteractionMode::Editing;
                 }
             }
             Some(IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::CreateLocalJournalRequested { issue_id },
             )) => {
-                self.dispatcher
-                    .borrow_mut()
-                    .dispatch(Action::Journal(JournalAction::CreateLocal { issue_id }));
-                self.pending_editor_context = Some(PendingEditorContext::LocalJournal { issue_id });
-                self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
-                    initial_text: String::new(),
-                }));
+                if self.interaction_mode == InteractionMode::Application {
+                    self.dispatcher
+                        .borrow_mut()
+                        .dispatch(Action::Journal(JournalAction::CreateLocal { issue_id }));
+                    self.pending_editor_context =
+                        Some(PendingEditorContext::LocalJournal { issue_id });
+                    self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                        initial_text: String::new(),
+                    }));
+                    self.interaction_mode = InteractionMode::Editing;
+                }
             }
             // 子Componentが正常なno-opとして消費済みなので、App全体ではupload状態を再判定しない。
             Some(IssueEventProcessResult::Detail(IssueDetailEventProcessResult::Suppressed)) => {}
@@ -760,8 +767,13 @@ impl<'a> AppComponent<'a> {
         self.pending_effect.take()
     }
 
+    pub fn interaction_mode(&self) -> InteractionMode {
+        self.interaction_mode
+    }
+
     pub fn handle_editor_response(&mut self, outcome: EditorOutcome) {
-        // CancelledやFailedを含むすべての完了経路でeditor contextを解放する。
+        // CancelledやFailedを含むすべての完了経路で通常入力へ戻し、editor contextを解放する。
+        self.interaction_mode = InteractionMode::Application;
         let context = self.pending_editor_context.take();
         let EditorOutcome::Submitted { edited_text } = outcome else {
             return;
@@ -970,7 +982,11 @@ mod tests {
         let mut store = Store::new();
         store.consume_action(IssueAction::Load { id }.into());
 
-        assert!(can_start_editing(&context, &store));
+        assert!(can_start_editing(
+            &context,
+            InteractionMode::Application,
+            &store
+        ));
 
         store.consume_action(
             IssueAction::UpdateDescription {
@@ -981,7 +997,11 @@ mod tests {
         );
         store.consume_action(IssueAction::StartUpload { id }.into());
 
-        assert!(!can_start_editing(&context, &store));
+        assert!(!can_start_editing(
+            &context,
+            InteractionMode::Application,
+            &store
+        ));
     }
 
     #[test]
@@ -995,6 +1015,7 @@ mod tests {
         });
 
         assert!(app.pending_editor_context.is_none());
+        assert_eq!(app.interaction_mode(), InteractionMode::Application);
         dispatcher.borrow_mut().consume_action();
         assert_eq!(
             dispatcher.borrow().store().get_issue(3).0.issue.description,
@@ -1016,6 +1037,7 @@ mod tests {
                 PendingEditorContext::LocalJournal { issue_id: 3.into() },
             ] {
                 app.pending_editor_context = Some(context);
+                app.interaction_mode = InteractionMode::Editing;
                 let outcome = if failed {
                     EditorOutcome::Failed
                 } else {
@@ -1023,6 +1045,7 @@ mod tests {
                 };
                 app.handle_editor_response(outcome);
                 assert!(app.pending_editor_context.is_none());
+                assert_eq!(app.interaction_mode(), InteractionMode::Application);
             }
         }
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
@@ -1045,7 +1068,11 @@ mod tests {
             .into(),
         );
 
-        assert!(can_start_editing(&context, &store));
+        assert!(can_start_editing(
+            &context,
+            InteractionMode::Application,
+            &store
+        ));
 
         store.consume_action(
             JournalAction::EditRemoteNotes {
@@ -1056,7 +1083,11 @@ mod tests {
             .into(),
         );
 
-        assert!(can_start_editing(&context, &store));
+        assert!(can_start_editing(
+            &context,
+            InteractionMode::Application,
+            &store
+        ));
 
         store.consume_action(
             JournalAction::StartRemoteUpload {
@@ -1066,7 +1097,11 @@ mod tests {
             .into(),
         );
 
-        assert!(!can_start_editing(&context, &store));
+        assert!(!can_start_editing(
+            &context,
+            InteractionMode::Application,
+            &store
+        ));
     }
 
     #[test]
@@ -1075,15 +1110,27 @@ mod tests {
         let context = PendingEditorContext::LocalJournal { issue_id };
         let mut store = Store::new();
 
-        assert!(!can_start_editing(&context, &store));
+        assert!(!can_start_editing(
+            &context,
+            InteractionMode::Application,
+            &store
+        ));
 
         store.consume_action(JournalAction::CreateLocal { issue_id }.into());
 
-        assert!(can_start_editing(&context, &store));
+        assert!(can_start_editing(
+            &context,
+            InteractionMode::Application,
+            &store
+        ));
 
         store.consume_action(JournalAction::StartLocalUpload { issue_id }.into());
 
-        assert!(!can_start_editing(&context, &store));
+        assert!(!can_start_editing(
+            &context,
+            InteractionMode::Application,
+            &store
+        ));
     }
 
     fn edit_first_journal(dispatcher: &Rc<RefCell<Dispatcher>>) {
@@ -1301,7 +1348,33 @@ mod tests {
             app.issue_component.as_ref().unwrap().issue_id(),
             IssueId::new(3)
         );
+        assert_eq!(app.interaction_mode(), InteractionMode::Application);
         assert!(app.take_effect().is_none());
+    }
+
+    #[test]
+    fn e_key_on_issue_body_opens_editor_and_enters_editing_mode() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+
+        focus_property_line(&mut app, dispatcher.clone(), 15);
+        app.process_event(key_event(KeyCode::Char('e')), dispatcher);
+
+        assert_eq!(app.interaction_mode(), InteractionMode::Editing);
+        assert!(matches!(app.take_effect(), Some(AppEffect::OpenEditor(_))));
+    }
+
+    #[test]
+    fn editing_mode_ignores_input_without_opening_popup_or_effect() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.interaction_mode = InteractionMode::Editing;
+
+        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
+
+        assert!(app.popup_components.is_empty());
+        assert!(app.take_effect().is_none());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
     }
 
     #[test]
@@ -1735,14 +1808,20 @@ mod tests {
         focus_first_journal_notes(&mut app, dispatcher.clone());
         app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
 
+        assert_eq!(app.interaction_mode(), InteractionMode::Editing);
         let Some(AppEffect::OpenEditor(request)) = app.take_effect() else {
             panic!("Journal本文編集時はエディタ起動effectが必要です");
         };
         assert_eq!(request.initial_text, "");
 
+        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
+        assert!(app.take_effect().is_none());
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+
         app.handle_editor_response(EditorOutcome::Submitted {
             edited_text: "updated notes".to_string(),
         });
+        assert_eq!(app.interaction_mode(), InteractionMode::Application);
         dispatcher.borrow_mut().consume_action();
 
         let dispatcher_ref = dispatcher.borrow();

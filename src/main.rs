@@ -34,10 +34,8 @@ use tokio::{
 
 use self::{
     clients::redmine::{DefaultRedmineClient, RedmineClient},
-    components::{
-        AppComponent,
-        app::{AppEffect, EditorOutcome, EditorRequest},
-    },
+    components::{AppComponent, app::AppEffect},
+    platform::editor::{EditorOutcome, EditorRequest},
     platform::input::native::convert_key,
     stores::{Action, Dispatcher, NoticeAction, NoticeId},
     usecases::redmine::{
