@@ -4,6 +4,7 @@ mod entities;
 mod libs;
 mod logging;
 mod platform;
+mod runner;
 mod stores;
 #[cfg(test)]
 mod test_support;
@@ -16,7 +17,7 @@ use ratatui::{Frame, layout::Rect};
 use std::{cell::RefCell, io, process::ExitCode, rc::Rc, sync::Arc};
 
 use self::{
-    clients::redmine::{DefaultRedmineClient, RedmineClient},
+    clients::redmine::DefaultRedmineClient,
     components::{AppComponent, app::AppEffect},
     platform::editor::{EditorOutcome, TextEditor, native::NativeTextEditor},
     platform::host::{
@@ -28,13 +29,13 @@ use self::{
     platform::runtime::{
         BackgroundCompletion, BackgroundSpawner, LocalTask, tokio_spawner::TokioBackgroundSpawner,
     },
-    stores::{Action, Dispatcher, NoticeAction, NoticeId},
-    usecases::redmine::{
-        continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
-        load_initial_entities, start_issue_upload, start_local_journal_upload,
-        start_remote_journal_upload, upload_issue_action,
+    runner::effect::{
+        continue_remote_journal_upload_action, start_issue_fetch,
+        start_local_journal_upload_action, start_project_issues_page_fetch,
+        start_remote_journal_upload_action,
     },
-    vos::{IssueId, JournalId},
+    stores::{Action, Dispatcher, NoticeAction, NoticeId},
+    usecases::redmine::{load_initial_entities, start_issue_upload, upload_issue_action},
 };
 
 const TICK_RATE_MS: u64 = 250;
@@ -326,75 +327,6 @@ fn handle_editor_failure(
         .dispatch(editor_failure_notice_action(error));
 }
 
-fn start_remote_journal_upload_action<S: BackgroundSpawner, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    issue_id: IssueId,
-    journal_id: JournalId,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    let future = start_remote_journal_upload(dispatcher, client, issue_id, journal_id);
-    spawner.spawn(future);
-}
-
-fn start_local_journal_upload_action<S: BackgroundSpawner, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    issue_id: IssueId,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    let future = start_local_journal_upload(dispatcher, client, issue_id);
-    spawner.spawn(future);
-}
-
-fn continue_remote_journal_upload_action<S: BackgroundSpawner, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    issue_id: IssueId,
-    journal_id: JournalId,
-    resolved_notes: String,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    let future =
-        continue_remote_journal_upload(dispatcher, client, issue_id, journal_id, resolved_notes);
-    spawner.spawn(future);
-}
-
-fn start_project_issues_page_fetch<S: BackgroundSpawner, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    project_id: vos::ProjectId,
-    page: std::num::NonZeroUsize,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    let future = fetch_project_issues_page(dispatcher, client, project_id, page);
-    spawner.spawn(async move { vec![future.await.into()] });
-}
-
-fn start_issue_fetch<S: BackgroundSpawner, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    id: IssueId,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    let Some(future) = fetch_issue(dispatcher, client, id) else {
-        return;
-    };
-
-    // Issueが取得済みになる前にJournalを同期するため、usecaseが定めた順序を維持する。
-    spawner.spawn(future);
-}
-
 fn editor_failure_notice_action(error: &dyn std::fmt::Display) -> NoticeAction {
     NoticeAction::Push {
         id: NoticeId::new(),
@@ -437,7 +369,7 @@ mod tests {
     use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId, ProjectIssuesAction};
     use crate::test_support::sample_issue_aggregate;
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
-    use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId};
+    use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId, JournalId};
     use ratatui::{Terminal, backend::TestBackend, widgets::Widget};
 
     fn recv_completion(spawner: &TokioBackgroundSpawner) -> BackgroundCompletion {
