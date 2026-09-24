@@ -86,28 +86,28 @@ pub fn dispatch_fixture_entity_actions(dispatcher: &mut Dispatcher) {
 fn fixture_entity_actions() -> Vec<Action> {
     vec![
         Action::SyncUsers {
-            users: parse_users_yaml().into_values().collect(),
+            users: parse_users_yaml(),
         },
         Action::SyncIssueStatuses {
-            issue_statuses: parse_issue_statuses_yaml().into_values().collect(),
+            issue_statuses: parse_issue_statuses_yaml(),
         },
         Action::SyncPriorities {
-            priorities: parse_priorities_yaml().into_values().collect(),
+            priorities: parse_priorities_yaml(),
         },
         Action::SyncProjects {
-            projects: parse_projects_yaml().into_values().collect(),
+            projects: parse_projects_yaml(),
         },
         Action::SyncTrackers {
-            trackers: parse_trackers_yaml().into_values().collect(),
+            trackers: parse_trackers_yaml(),
         },
         Action::SyncTargetVersions {
-            target_versions: parse_target_versions_yaml().into_values().collect(),
+            target_versions: parse_target_versions_yaml(),
         },
         Action::SyncCategories {
-            categories: parse_categories_yaml().into_values().collect(),
+            categories: parse_categories_yaml(),
         },
         Action::SyncTimeEntityActivities {
-            time_entity_activities: parse_time_entity_activities_yaml().into_values().collect(),
+            time_entity_activities: parse_time_entity_activities_yaml(),
         },
     ]
 }

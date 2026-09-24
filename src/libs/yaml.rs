@@ -5,24 +5,21 @@ use std::fs;
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use yaml_rust::{Yaml, YamlLoader};
 
-#[cfg(test)]
-use std::collections::HashMap;
-
-#[cfg(test)]
 use crate::entities::{
     Category, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::entities::{Issue, IssueAggregate, Journal};
-#[cfg(test)]
-use crate::vos::TimeEntityActivityId;
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId,
-    PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
+    PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
 fn read_yaml(path: &str) -> Yaml {
-    let yaml_all = fs::read_to_string(path).expect(format!("failed to load {}", path).as_str());
-    parse_yaml(yaml_all.as_str())
+    parse_yaml(&read_fixture(path))
+}
+
+fn read_fixture(path: &str) -> String {
+    fs::read_to_string(path).expect(format!("failed to load {}", path).as_str())
 }
 
 fn parse_yaml(yaml: &str) -> Yaml {
@@ -245,154 +242,171 @@ pub fn parse_issue_yaml(id: u16) -> IssueAggregate {
     }
 }
 
-#[cfg(test)]
-pub fn parse_users_yaml() -> HashMap<UserId, User> {
-    let yaml = read_yaml("datas/users.yml");
-    let entries = yaml["users"].as_vec().expect("no users");
-
-    entries
-        .iter()
-        .map(|entry| {
-            let user = User {
-                id: UserId::new(as_u16(entry, "id")),
-                name: as_string(entry, "name"),
-            };
-            (user.id, user)
-        })
-        .collect()
-}
-
-#[cfg(test)]
-pub fn parse_issue_statuses_yaml() -> HashMap<IssueStatusId, IssueStatus> {
-    let yaml = read_yaml("datas/issue_statuses.yml");
-    let entries = yaml["issue_statuses"].as_vec().expect("no issue_statuses");
-
-    entries
-        .iter()
-        .map(|entry| {
-            let status = IssueStatus {
-                id: IssueStatusId::new(as_u16(entry, "id")),
-                name: as_string(entry, "name"),
-                is_closed: as_bool(entry, "is_closed"),
-            };
-            (status.id, status)
-        })
-        .collect()
-}
-
-#[cfg(test)]
-pub fn parse_priorities_yaml() -> HashMap<PriorityId, Priority> {
-    let yaml = read_yaml("datas/priorities.yml");
-    let entries = yaml["priorities"].as_vec().expect("no priorities");
-
-    entries
-        .iter()
-        .map(|entry| {
-            let priority = Priority {
-                id: PriorityId::new(as_u16(entry, "id")),
-                name: as_string(entry, "name"),
-            };
-            (priority.id, priority)
-        })
-        .collect()
-}
-
-#[cfg(test)]
-pub fn parse_projects_yaml() -> HashMap<ProjectId, Project> {
-    let yaml = read_yaml("datas/projects.yml");
-    let entries = yaml["projects"].as_vec().expect("no projects");
-
-    entries
-        .iter()
-        .map(|entry| {
-            let project = Project {
-                id: ProjectId::new(as_u16(entry, "id")),
-                name: as_string(entry, "name"),
-            };
-            (project.id, project)
-        })
-        .collect()
-}
-
-#[cfg(test)]
-pub fn parse_trackers_yaml() -> HashMap<TrackerId, Tracker> {
-    let yaml = read_yaml("datas/trackers.yml");
-    let entries = yaml["trackers"].as_vec().expect("no trackers");
-
-    entries
-        .iter()
-        .map(|entry| {
-            let tracker = Tracker {
-                id: TrackerId::new(as_u16(entry, "id")),
-                name: as_string(entry, "name"),
-            };
-            (tracker.id, tracker)
-        })
-        .collect()
-}
-
-#[cfg(test)]
-pub fn parse_target_versions_yaml() -> HashMap<TargetVersionId, TargetVersion> {
-    let yaml = read_yaml("datas/target_versions.yml");
-    let entries = yaml["target_versions"]
+fn parse_master_entries<T>(yaml: &Yaml, key: &str, parse: impl Fn(&Yaml) -> T) -> Vec<T> {
+    yaml[key]
         .as_vec()
-        .expect("no target_versions");
-
-    entries
+        .expect(format!("no {}", key).as_str())
         .iter()
-        .map(|entry| {
-            let target_version = TargetVersion {
-                id: TargetVersionId::new(as_u16(entry, "id")),
-                name: as_string(entry, "name"),
-                project_id: ProjectId::new(as_u16(entry, "project_id")),
-            };
-            (target_version.id, target_version)
-        })
+        .map(parse)
         .collect()
 }
 
-#[cfg(test)]
-pub fn parse_categories_yaml() -> HashMap<CategoryId, Category> {
-    let yaml = read_yaml("datas/categories.yml");
-    let entries = yaml["categories"].as_vec().expect("no categories");
+pub fn parse_users(yaml: &str) -> Vec<User> {
+    let yaml = parse_yaml(yaml);
+    parse_master_entries(&yaml, "users", |entry| User {
+        id: UserId::new(as_u16(entry, "id")),
+        name: as_string(entry, "name"),
+    })
+}
 
-    entries
-        .iter()
-        .map(|entry| {
-            let category = Category {
-                id: CategoryId::new(as_u16(entry, "id")),
-                name: as_string(entry, "name"),
-                project_id: ProjectId::new(as_u16(entry, "project_id")),
-            };
-            (category.id, category)
-        })
-        .collect()
+pub fn parse_issue_statuses(yaml: &str) -> Vec<IssueStatus> {
+    let yaml = parse_yaml(yaml);
+    parse_master_entries(&yaml, "issue_statuses", |entry| IssueStatus {
+        id: IssueStatusId::new(as_u16(entry, "id")),
+        name: as_string(entry, "name"),
+        is_closed: as_bool(entry, "is_closed"),
+    })
+}
+
+pub fn parse_priorities(yaml: &str) -> Vec<Priority> {
+    let yaml = parse_yaml(yaml);
+    parse_master_entries(&yaml, "priorities", |entry| Priority {
+        id: PriorityId::new(as_u16(entry, "id")),
+        name: as_string(entry, "name"),
+    })
+}
+
+pub fn parse_projects(yaml: &str) -> Vec<Project> {
+    let yaml = parse_yaml(yaml);
+    parse_master_entries(&yaml, "projects", |entry| Project {
+        id: ProjectId::new(as_u16(entry, "id")),
+        name: as_string(entry, "name"),
+    })
+}
+
+pub fn parse_trackers(yaml: &str) -> Vec<Tracker> {
+    let yaml = parse_yaml(yaml);
+    parse_master_entries(&yaml, "trackers", |entry| Tracker {
+        id: TrackerId::new(as_u16(entry, "id")),
+        name: as_string(entry, "name"),
+    })
+}
+
+pub fn parse_target_versions(yaml: &str) -> Vec<TargetVersion> {
+    let yaml = parse_yaml(yaml);
+    parse_master_entries(&yaml, "target_versions", |entry| TargetVersion {
+        id: TargetVersionId::new(as_u16(entry, "id")),
+        name: as_string(entry, "name"),
+        project_id: ProjectId::new(as_u16(entry, "project_id")),
+    })
+}
+
+pub fn parse_categories(yaml: &str) -> Vec<Category> {
+    let yaml = parse_yaml(yaml);
+    parse_master_entries(&yaml, "categories", |entry| Category {
+        id: CategoryId::new(as_u16(entry, "id")),
+        name: as_string(entry, "name"),
+        project_id: ProjectId::new(as_u16(entry, "project_id")),
+    })
+}
+
+pub fn parse_time_entity_activities(yaml: &str) -> Vec<TimeEntityActivity> {
+    let yaml = parse_yaml(yaml);
+    parse_master_entries(&yaml, "time_entity_activities", |entry| {
+        TimeEntityActivity {
+            id: TimeEntityActivityId::new(as_u16(entry, "id")),
+            name: as_string(entry, "name"),
+            is_default: as_bool(entry, "is_default"),
+        }
+    })
 }
 
 #[cfg(test)]
-pub fn parse_time_entity_activities_yaml() -> HashMap<TimeEntityActivityId, TimeEntityActivity> {
-    let yaml = read_yaml("datas/time_entity_activities.yml");
-    let entries = yaml["time_entity_activities"]
-        .as_vec()
-        .expect("no time_entity_activities");
+pub fn parse_users_yaml() -> Vec<User> {
+    parse_users(&read_fixture("datas/users.yml"))
+}
 
-    entries
-        .iter()
-        .map(|entry| {
-            let act = TimeEntityActivity {
-                id: TimeEntityActivityId::new(as_u16(entry, "id")),
-                name: as_string(entry, "name"),
-                is_default: as_bool(entry, "is_default"),
-            };
-            (act.id, act)
-        })
-        .collect()
+#[cfg(test)]
+pub fn parse_issue_statuses_yaml() -> Vec<IssueStatus> {
+    parse_issue_statuses(&read_fixture("datas/issue_statuses.yml"))
+}
+
+#[cfg(test)]
+pub fn parse_priorities_yaml() -> Vec<Priority> {
+    parse_priorities(&read_fixture("datas/priorities.yml"))
+}
+
+#[cfg(test)]
+pub fn parse_projects_yaml() -> Vec<Project> {
+    parse_projects(&read_fixture("datas/projects.yml"))
+}
+
+#[cfg(test)]
+pub fn parse_trackers_yaml() -> Vec<Tracker> {
+    parse_trackers(&read_fixture("datas/trackers.yml"))
+}
+
+#[cfg(test)]
+pub fn parse_target_versions_yaml() -> Vec<TargetVersion> {
+    parse_target_versions(&read_fixture("datas/target_versions.yml"))
+}
+
+#[cfg(test)]
+pub fn parse_categories_yaml() -> Vec<Category> {
+    parse_categories(&read_fixture("datas/categories.yml"))
+}
+
+#[cfg(test)]
+pub fn parse_time_entity_activities_yaml() -> Vec<TimeEntityActivity> {
+    parse_time_entity_activities(&read_fixture("datas/time_entity_activities.yml"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_journal_yaml;
+    use super::{
+        parse_categories, parse_issue_statuses, parse_journal_yaml, parse_priorities,
+        parse_projects, parse_target_versions, parse_time_entity_activities, parse_trackers,
+        parse_users,
+    };
     use crate::vos::{IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId};
+
+    #[test]
+    fn parse_master_fixtures_preserves_order_and_values() {
+        let users = parse_users(include_str!("../../datas/users.yml"));
+        assert_eq!(users.len(), 2);
+        assert_eq!(users[0].name, "user1");
+
+        let statuses = parse_issue_statuses(include_str!("../../datas/issue_statuses.yml"));
+        assert_eq!(statuses.len(), 6);
+        assert_eq!(statuses[4].name, "完了(closed)");
+        assert!(statuses[4].is_closed);
+
+        let priorities = parse_priorities(include_str!("../../datas/priorities.yml"));
+        assert_eq!(priorities.len(), 4);
+        assert_eq!(priorities[0].name, "major");
+
+        let projects = parse_projects(include_str!("../../datas/projects.yml"));
+        assert_eq!(projects.len(), 2);
+        assert_eq!(projects[0].name, "Sample Project");
+
+        let trackers = parse_trackers(include_str!("../../datas/trackers.yml"));
+        assert_eq!(trackers.len(), 3);
+        assert_eq!(trackers[1].name, "Feature");
+
+        let versions = parse_target_versions(include_str!("../../datas/target_versions.yml"));
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].name, "v1.2.3");
+
+        let categories = parse_categories(include_str!("../../datas/categories.yml"));
+        assert_eq!(categories.len(), 1);
+        assert_eq!(categories[0].name, "category1");
+
+        let activities =
+            parse_time_entity_activities(include_str!("../../datas/time_entity_activities.yml"));
+        assert_eq!(activities.len(), 3);
+        assert_eq!(activities[0].name, "設計");
+        assert!(activities[0].is_default);
+    }
 
     #[test]
     fn parse_journal_yaml_reads_all_fields_from_fixture() {
