@@ -284,31 +284,22 @@ impl IssueStore {
                     after: done_ratio,
                 })
             }),
-            IssueAction::UpdateStartDate { id, start_date } => {
-                let issue = self.assert_can_update_issue(id);
+            IssueAction::UpdateStartDate { id, start_date } => self.update_issue(id, |issue| {
                 let before = issue.start_date;
                 issue.start_date = start_date;
-                self.issue_property_diffs.entry(id).or_default().push(
-                    IssuePropertyDiff::StartDate(IssueStartDateDiff {
-                        before,
-                        after: start_date,
-                    }),
-                );
-                self.issue_states.insert(id, IssueState::Edited);
-            }
-            IssueAction::UpdateDueDate { id, due_date } => {
-                let issue = self.assert_can_update_issue(id);
+                IssuePropertyDiff::StartDate(IssueStartDateDiff {
+                    before,
+                    after: start_date,
+                })
+            }),
+            IssueAction::UpdateDueDate { id, due_date } => self.update_issue(id, |issue| {
                 let before = issue.due_date;
                 issue.due_date = due_date;
-                self.issue_property_diffs
-                    .entry(id)
-                    .or_default()
-                    .push(IssuePropertyDiff::DueDate(IssueDueDateDiff {
-                        before,
-                        after: due_date,
-                    }));
-                self.issue_states.insert(id, IssueState::Edited);
-            }
+                IssuePropertyDiff::DueDate(IssueDueDateDiff {
+                    before,
+                    after: due_date,
+                })
+            }),
         }
     }
 
