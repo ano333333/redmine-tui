@@ -1,3 +1,5 @@
+//! fixtureのYAMLを読み込み、Redmineのdomain dataへ変換する。
+
 use std::fs;
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
@@ -20,7 +22,11 @@ use crate::vos::{
 
 fn read_yaml(path: &str) -> Yaml {
     let yaml_all = fs::read_to_string(path).expect(format!("failed to load {}", path).as_str());
-    let yaml_all = YamlLoader::load_from_str(yaml_all.as_str()).expect("");
+    parse_yaml(yaml_all.as_str())
+}
+
+fn parse_yaml(yaml: &str) -> Yaml {
+    let yaml_all = YamlLoader::load_from_str(yaml).expect("");
     yaml_all.iter().next().unwrap().clone()
 }
 
