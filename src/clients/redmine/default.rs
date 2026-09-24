@@ -4,7 +4,7 @@ use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::clients::redmine::base::FetchedIssue;
+use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT};
 use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
     Category, Issue, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage,
@@ -22,7 +22,6 @@ mod value_conversion;
 
 // FIXME: ユーザーを全列挙しないことを前提としたStore管理
 const PAGE_LIMIT: usize = 100;
-const PROJECT_ISSUES_PAGE_LIMIT: usize = 50;
 
 pub struct DefaultRedmineClient {
     host_url: String,

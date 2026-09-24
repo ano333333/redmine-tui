@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
-use crate::clients::redmine::base::FetchedIssue;
+use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT};
 use crate::clients::redmine::{RedmineClient, RedmineClientError};
 use crate::entities::{
     Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, TargetVersion,
@@ -98,11 +98,42 @@ impl RedmineClient for DemoRedmineClient {
 
     fn get_project_issues(
         &self,
-        _project_id: ProjectId,
-        _page: NonZeroUsize,
+        project_id: ProjectId,
+        page: NonZeroUsize,
     ) -> impl std::future::Future<Output = Result<ProjectIssuesPage, RedmineClientError>> + Send
     {
-        async { todo!() }
+        let offset = page
+            .get()
+            .checked_sub(1)
+            .and_then(|value| value.checked_mul(PROJECT_ISSUES_PAGE_LIMIT))
+            .ok_or_else(|| RedmineClientError::Client {
+                reason: format!("project issue page {} has an invalid offset", page.get()),
+            });
+        let result = offset.map(|offset| {
+            let mut issues: Vec<_> = {
+                let state = self.state.lock().expect("demo fixture state lock poisoned");
+                state
+                    .issues
+                    .values()
+                    .filter(|aggregate| aggregate.issue.project_id == project_id)
+                    .map(|aggregate| aggregate.issue.clone())
+                    .collect()
+            };
+            issues.sort_by_key(|issue| std::cmp::Reverse(issue.id));
+            let total_count = issues.len();
+            let issues = issues
+                .into_iter()
+                .skip(offset)
+                .take(PROJECT_ISSUES_PAGE_LIMIT)
+                .collect();
+            ProjectIssuesPage {
+                issues,
+                total_count,
+                offset,
+                limit: PROJECT_ISSUES_PAGE_LIMIT,
+            }
+        });
+        async move { result }
     }
 
     fn get_target_versions(
@@ -138,9 +169,51 @@ impl RedmineClient for DemoRedmineClient {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use crate::clients::redmine::RedmineClient;
     use crate::clients::redmine::demo::DemoRedmineClient;
+    use crate::vos::{EntityIdValue, ProjectId};
     use tokio::runtime::Builder;
+
+    #[test]
+    fn project_issue_pages_filter_sort_and_report_metadata() {
+        let client = DemoRedmineClient::new();
+        let runtime = Builder::new_current_thread().build().unwrap();
+        let first_page = runtime
+            .block_on(client.get_project_issues(ProjectId::new(1), NonZeroUsize::new(1).unwrap()))
+            .unwrap();
+        assert_eq!(
+            first_page
+                .issues
+                .iter()
+                .map(|issue| issue.id.get())
+                .collect::<Vec<_>>(),
+            vec![3, 2, 1]
+        );
+        assert!(
+            first_page
+                .issues
+                .iter()
+                .all(|issue| issue.project_id == ProjectId::new(1))
+        );
+        assert_eq!(first_page.total_count, 3);
+        assert_eq!(first_page.offset, 0);
+        assert_eq!(first_page.limit, 50);
+
+        let other_project = runtime
+            .block_on(client.get_project_issues(ProjectId::new(2), NonZeroUsize::new(1).unwrap()))
+            .unwrap();
+        assert!(other_project.issues.is_empty());
+        assert_eq!(other_project.total_count, 0);
+
+        let outside_range = runtime
+            .block_on(client.get_project_issues(ProjectId::new(1), NonZeroUsize::new(2).unwrap()))
+            .unwrap();
+        assert!(outside_range.issues.is_empty());
+        assert_eq!(outside_range.total_count, 3);
+        assert_eq!(outside_range.offset, 50);
+    }
 
     #[test]
     fn master_getters_return_embedded_fixture_values() {

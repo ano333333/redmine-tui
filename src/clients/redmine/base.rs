@@ -8,6 +8,8 @@ use crate::entities::{
 };
 use crate::vos::{IssueId, JournalId, ProjectId};
 
+pub(crate) const PROJECT_ISSUES_PAGE_LIMIT: usize = 50;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RedmineHttpError {
     pub method: String,
