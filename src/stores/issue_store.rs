@@ -19,6 +19,33 @@ pub enum IssueState {
     Uploading,
 }
 
+#[derive(Debug)]
+enum IssueEntry {
+    Fetching,
+    FetchFailed {
+        message: String,
+    },
+    Synced {
+        issue: IssueAggregate,
+    },
+    Edited {
+        issue: IssueAggregate,
+        diffs: Vec<IssuePropertyDiff>,
+        failure: Option<String>,
+    },
+    Uploading {
+        issue: IssueAggregate,
+        diffs: Vec<IssuePropertyDiff>,
+        conflict: Option<IssueUploadConflict>,
+    },
+}
+
+#[derive(Debug)]
+struct IssueUploadConflict {
+    server_issue: IssueAggregate,
+    conflicts: Vec<IssuePropertyDiff>,
+}
+
 pub enum IssueAction {
     Load {
         id: IssueId,
@@ -89,74 +116,56 @@ pub enum IssueAction {
 }
 
 pub(super) struct IssueStore {
-    issues: HashMap<IssueId, IssueAggregate>,
-    issue_states: HashMap<IssueId, IssueState>,
-    issue_property_diffs: HashMap<IssueId, Vec<IssuePropertyDiff>>,
-    issue_upload_conflicts: HashMap<IssueId, (IssueAggregate, Vec<IssuePropertyDiff>)>,
-    issue_upload_failures: HashMap<IssueId, String>,
+    entries: HashMap<IssueId, IssueEntry>,
 }
 
 impl IssueStore {
     pub(super) fn new() -> Self {
         Self {
-            issues: HashMap::new(),
-            issue_states: HashMap::new(),
-            issue_property_diffs: HashMap::new(),
-            issue_upload_conflicts: HashMap::new(),
-            issue_upload_failures: HashMap::new(),
+            entries: HashMap::new(),
         }
     }
 
     pub(super) fn consume_action(&mut self, action: IssueAction) {
         match action {
             IssueAction::Load { id } => {
-                if !self.issues.contains_key(&id) && !self.issue_states.contains_key(&id) {
-                    self.issues.insert(id, parse_issue_yaml(id.get()));
-                    self.issue_states.insert(id, IssueState::Synced);
-                    self.issue_property_diffs.entry(id).or_default();
+                if !self.entries.contains_key(&id) {
+                    self.entries.insert(
+                        id,
+                        IssueEntry::Synced {
+                            issue: parse_issue_yaml(id.get()),
+                        },
+                    );
                 }
             }
             IssueAction::Sync { issue } => {
                 let id = issue.issue.id;
-                if let Some(state) = self.get_issue_state(id)
-                    && !matches!(state, IssueState::Edited | IssueState::Uploading)
-                {
-                    panic!("cannot sync issue {id} while it is {state:?}");
+                let state = self.derived_state(id);
+                if let Some(state) = state {
+                    if !matches!(state, IssueState::Edited | IssueState::Uploading) {
+                        panic!("cannot sync issue {id} while it is {state:?}");
+                    }
                 }
-                if self.issues.contains_key(&id) && !self.issue_states.contains_key(&id) {
-                    panic!("cannot sync issue {id} without an issue state");
-                }
-                self.issues.insert(id, issue);
-                self.issue_property_diffs.remove(&id);
-                self.issue_upload_conflicts.remove(&id);
-                self.issue_upload_failures.remove(&id);
-                self.issue_states.insert(id, IssueState::Synced);
+                self.entries.insert(id, IssueEntry::Synced { issue });
             }
             IssueAction::StartFetching { id } => {
                 // UIとfetch usecaseはstateがNoneまたはFetchFailedの場合にだけこのActionを発行する。
                 // Fetchingや取得済み状態への着弾は呼び出し側の不変条件違反として拒否する。
-                let state = self.get_issue_state(id);
-                let can_start = match state {
-                    None => !self.issues.contains_key(&id),
-                    Some(IssueState::FetchFailed { .. }) => true,
-                    Some(_) => false,
-                };
-                if !can_start {
+                let state = self.derived_state(id);
+                if !matches!(state, None | Some(IssueState::FetchFailed { .. })) {
                     panic!("cannot start fetching issue {id} while it is {state:?}");
                 }
-                self.issues.remove(&id);
-                self.issue_property_diffs.remove(&id);
-                self.issue_upload_conflicts.remove(&id);
-                self.issue_upload_failures.remove(&id);
-                self.issue_states.insert(id, IssueState::Fetching);
+                self.entries.insert(id, IssueEntry::Fetching);
             }
             IssueAction::FetchSucceeded { id, issue } => {
                 // 新しい同期結果やローカル編集を遅延した成功で上書きしないよう、
                 // Fetching以外への着弾は制御破綻として拒否する。
-                match self.get_issue_state(id) {
-                    Some(IssueState::Fetching) => {}
-                    Some(state) => panic!("fetch succeeded while issue {id} is {state:?}"),
-                    None => panic!("fetch succeeded for issue {id} without an issue state"),
+                let state = self.derived_state(id);
+                if !matches!(state, Some(IssueState::Fetching)) {
+                    match state {
+                        None => panic!("fetch succeeded for issue {id} without an issue state"),
+                        Some(state) => panic!("fetch succeeded while issue {id} is {state:?}"),
+                    }
                 }
                 let actual_id = issue.issue.id;
                 if actual_id != id {
@@ -164,72 +173,141 @@ impl IssueStore {
                         "fetch succeeded with mismatched issue id: requested {id}, got {actual_id}"
                     );
                 }
-                self.issues.insert(id, issue);
-                self.issue_property_diffs.remove(&id);
-                self.issue_upload_conflicts.remove(&id);
-                self.issue_upload_failures.remove(&id);
-                self.issue_states.insert(id, IssueState::Synced);
+                self.entries.insert(id, IssueEntry::Synced { issue });
             }
             IssueAction::FetchFailed { id, message } => {
                 // 新しい同期結果やローカル編集を遅延した失敗で破棄しないよう、
                 // Fetching以外への着弾は制御破綻として拒否する。
-                match self.get_issue_state(id) {
-                    Some(IssueState::Fetching) => {}
-                    Some(state) => panic!("fetch failed while issue {id} is {state:?}"),
-                    None => panic!("fetch failed for issue {id} without an issue state"),
+                let state = self.derived_state(id);
+                if !matches!(state, Some(IssueState::Fetching)) {
+                    match state {
+                        None => panic!("fetch failed for issue {id} without an issue state"),
+                        Some(state) => panic!("fetch failed while issue {id} is {state:?}"),
+                    }
                 }
-                self.issues.remove(&id);
-                self.issue_property_diffs.remove(&id);
-                self.issue_upload_conflicts.remove(&id);
-                self.issue_upload_failures.remove(&id);
-                self.issue_states
-                    .insert(id, IssueState::FetchFailed { message });
+                self.entries.insert(id, IssueEntry::FetchFailed { message });
             }
             IssueAction::StartUpload { id } => {
-                let state = self.state_or_synced(id);
-                if state != &IssueState::Edited {
+                let state = self.derived_state(id).unwrap_or(IssueState::Synced);
+                if !matches!(state, IssueState::Edited) {
                     panic!("cannot start issue upload while issue {id} is {state:?}");
                 }
-                self.issue_upload_conflicts.remove(&id);
-                self.issue_upload_failures.remove(&id);
-                self.issue_states.insert(id, IssueState::Uploading);
+                let entry = self.entries.remove(&id);
+                match entry {
+                    Some(IssueEntry::Edited { issue, diffs, .. }) => {
+                        self.entries.insert(
+                            id,
+                            IssueEntry::Uploading {
+                                issue,
+                                diffs,
+                                conflict: None,
+                            },
+                        );
+                    }
+                    Some(entry) => {
+                        self.entries.insert(id, entry);
+                    }
+                    None => {}
+                };
             }
             IssueAction::CancelUpload { id } => {
-                let state = self.state_or_synced(id);
-                if state != &IssueState::Uploading {
+                let state = self.derived_state(id).unwrap_or(IssueState::Synced);
+                if !matches!(state, IssueState::Uploading) {
                     panic!("cannot cancel issue upload while issue {id} is {state:?}");
                 }
-                // Uploadingへ入るStartUploadが以前のfailureを破棄済みなので、ここではclear不要。
-                self.issue_upload_conflicts.remove(&id);
-                self.issue_states.insert(id, IssueState::Edited);
+                let entry = self.entries.remove(&id);
+                match entry {
+                    Some(IssueEntry::Uploading { issue, diffs, .. }) => {
+                        self.entries.insert(
+                            id,
+                            IssueEntry::Edited {
+                                issue,
+                                diffs,
+                                failure: None,
+                            },
+                        );
+                    }
+                    Some(entry) => {
+                        self.entries.insert(id, entry);
+                    }
+                    None => {}
+                };
             }
             IssueAction::ClearUploadConflicts { id } => {
-                let state = self.state_or_synced(id);
-                if state != &IssueState::Uploading {
+                let state = self.derived_state(id).unwrap_or(IssueState::Synced);
+                if !matches!(state, IssueState::Uploading) {
                     panic!("cannot clear issue upload conflicts while issue {id} is {state:?}");
                 }
-                self.issue_upload_conflicts.remove(&id);
+                let entry = self.entries.remove(&id);
+                match entry {
+                    Some(IssueEntry::Uploading { issue, diffs, .. }) => {
+                        self.entries.insert(
+                            id,
+                            IssueEntry::Uploading {
+                                issue,
+                                diffs,
+                                conflict: None,
+                            },
+                        );
+                    }
+                    Some(entry) => {
+                        self.entries.insert(id, entry);
+                    }
+                    None => {}
+                };
             }
             IssueAction::FailUpload { id, message } => {
-                let state = self.state_or_synced(id);
-                if state != &IssueState::Uploading {
+                let state = self.derived_state(id).unwrap_or(IssueState::Synced);
+                if !matches!(state, IssueState::Uploading) {
                     panic!("cannot fail issue upload while issue {id} is {state:?}");
                 }
-                self.issue_upload_conflicts.remove(&id);
-                self.issue_upload_failures.insert(id, message);
-                self.issue_states.insert(id, IssueState::Edited);
+                let entry = self.entries.remove(&id);
+                match entry {
+                    Some(IssueEntry::Uploading { issue, diffs, .. }) => {
+                        self.entries.insert(
+                            id,
+                            IssueEntry::Edited {
+                                issue,
+                                diffs,
+                                failure: Some(message),
+                            },
+                        );
+                    }
+                    Some(entry) => {
+                        self.entries.insert(id, entry);
+                    }
+                    None => {}
+                };
             }
             IssueAction::UploadConflictsDetected {
                 server_issue,
                 conflicts,
             } => {
                 let id = server_issue.issue.id;
-                let state = self.state_or_synced(id);
-                if state != &IssueState::Uploading {
+                let state = self.derived_state(id).unwrap_or(IssueState::Synced);
+                if !matches!(state, IssueState::Uploading) {
                     panic!("cannot retain issue upload conflicts while issue {id} is {state:?}");
                 }
-                self.issue_upload_conflicts
-                    .insert(id, (server_issue, conflicts));
+                let entry = self.entries.remove(&id);
+                match entry {
+                    Some(IssueEntry::Uploading { issue, diffs, .. }) => {
+                        self.entries.insert(
+                            id,
+                            IssueEntry::Uploading {
+                                issue,
+                                diffs,
+                                conflict: Some(IssueUploadConflict {
+                                    server_issue,
+                                    conflicts,
+                                }),
+                            },
+                        );
+                    }
+                    Some(entry) => {
+                        self.entries.insert(id, entry);
+                    }
+                    None => {}
+                };
             }
             IssueAction::UpdateDescription { id, body } => self.update_issue(id, |issue| {
                 let before = issue.issue.description.clone();
@@ -308,45 +386,79 @@ impl IssueStore {
         issue_id: impl Into<IssueId>,
     ) -> Option<(&IssueAggregate, IssueState)> {
         let issue_id = issue_id.into();
-        let issue = self.issues.get(&issue_id)?;
-        Some((issue, self.get_issue_state(issue_id)?))
+        match self.entries.get(&issue_id) {
+            Some(IssueEntry::Synced { issue }) => return Some((issue, IssueState::Synced)),
+            Some(IssueEntry::Edited { issue, .. }) => return Some((issue, IssueState::Edited)),
+            Some(IssueEntry::Uploading { issue, .. }) => {
+                return Some((issue, IssueState::Uploading));
+            }
+            _ => {}
+        }
+        None
     }
 
     pub(super) fn get_issues(&self) -> impl Iterator<Item = (&IssueId, &IssueAggregate)> {
-        self.issues.iter()
+        self.entries.iter().filter_map(|(id, entry)| {
+            if let IssueEntry::Synced { issue }
+            | IssueEntry::Edited { issue, .. }
+            | IssueEntry::Uploading { issue, .. } = entry
+            {
+                Some((id, issue))
+            } else {
+                None
+            }
+        })
     }
 
     pub(super) fn get_issue_property_diffs(
         &self,
         issue_id: impl Into<IssueId>,
     ) -> &[IssuePropertyDiff] {
-        self.issue_property_diffs
-            .get(&issue_id.into())
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+        match self.entries.get(&issue_id.into()) {
+            Some(IssueEntry::Edited { diffs, .. }) => &diffs[..],
+            Some(IssueEntry::Uploading { diffs, .. }) => &diffs[..],
+            _ => &[],
+        }
     }
 
     pub(super) fn get_issue_upload_conflict(
         &self,
         id: IssueId,
     ) -> Option<(&IssueAggregate, &[IssuePropertyDiff])> {
-        self.issue_upload_conflicts
-            .get(&id)
-            .map(|(issue, conflicts)| (issue, conflicts.as_slice()))
+        match self.entries.get(&id) {
+            Some(IssueEntry::Uploading {
+                conflict: Some(conflict),
+                ..
+            }) => Some((&conflict.server_issue, &conflict.conflicts[..])),
+            _ => None,
+        }
     }
 
     pub(super) fn get_issue_upload_failure(&self, id: IssueId) -> Option<&str> {
-        self.issue_upload_failures.get(&id).map(String::as_str)
+        match self.entries.get(&id) {
+            Some(IssueEntry::Edited {
+                failure: Some(failure),
+                ..
+            }) => Some(failure.as_str()),
+            _ => None,
+        }
     }
 
     pub(super) fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<IssueState> {
-        self.issue_states.get(&issue_id.into()).cloned()
+        self.derived_state(issue_id.into())
     }
 
-    fn state_or_synced(&self, issue_id: impl Into<IssueId>) -> &IssueState {
-        self.issue_states
-            .get(&issue_id.into())
-            .unwrap_or(&IssueState::Synced)
+    fn derived_state(&self, id: IssueId) -> Option<IssueState> {
+        match self.entries.get(&id) {
+            None => None,
+            Some(IssueEntry::Fetching) => Some(IssueState::Fetching),
+            Some(IssueEntry::FetchFailed { message }) => Some(IssueState::FetchFailed {
+                message: message.clone(),
+            }),
+            Some(IssueEntry::Synced { .. }) => Some(IssueState::Synced),
+            Some(IssueEntry::Edited { .. }) => Some(IssueState::Edited),
+            Some(IssueEntry::Uploading { .. }) => Some(IssueState::Uploading),
+        }
     }
 
     fn update_issue(
@@ -354,22 +466,51 @@ impl IssueStore {
         id: IssueId,
         edit: impl FnOnce(&mut IssueAggregate) -> IssuePropertyDiff,
     ) {
-        let issue = self.assert_can_update_issue(id);
-        let diff = edit(issue);
-        self.issue_property_diffs.entry(id).or_default().push(diff);
-        self.issue_states.insert(id, IssueState::Edited);
-    }
-
-    fn assert_can_update_issue(&mut self, id: IssueId) -> &mut IssueAggregate {
-        // stateが未登録ならSyncedとみなすため、先にentityの欠損を状態異常として拒否する。
-        let issue = self
-            .issues
-            .get_mut(&id)
-            .unwrap_or_else(|| panic!("cannot update missing issue {id}"));
-        let state = self.issue_states.get(&id).unwrap_or(&IssueState::Synced);
-        if state == &IssueState::Uploading {
-            panic!("cannot update issue while issue {id} is {state:?}");
+        match self.entries.get(&id) {
+            Some(IssueEntry::Synced { .. }) | Some(IssueEntry::Edited { .. }) => {}
+            Some(IssueEntry::Uploading { .. }) => {
+                panic!("cannot update issue while issue {id} is Uploading");
+            }
+            Some(IssueEntry::Fetching) => {
+                panic!("cannot update issue while issue {id} is Fetching")
+            }
+            Some(IssueEntry::FetchFailed { .. }) => {
+                panic!("cannot update issue while issue {id} is FetchFailed")
+            }
+            None => panic!("cannot update missing issue {id}"),
         }
-        issue
+        let entry = self.entries.remove(&id).unwrap();
+        match entry {
+            IssueEntry::Synced { mut issue } => {
+                let diff = edit(&mut issue);
+                self.entries.insert(
+                    id,
+                    IssueEntry::Edited {
+                        issue,
+                        diffs: vec![diff],
+                        failure: None,
+                    },
+                );
+            }
+            IssueEntry::Edited {
+                mut issue,
+                mut diffs,
+                failure,
+            } => {
+                let diff = edit(&mut issue);
+                diffs.push(diff);
+                self.entries.insert(
+                    id,
+                    IssueEntry::Edited {
+                        issue,
+                        diffs,
+                        failure,
+                    },
+                );
+            }
+            _ => {
+                unreachable!("update_issue受理検査により、遷移先はSynced / Edited以外が存在しない")
+            }
+        }
     }
 }

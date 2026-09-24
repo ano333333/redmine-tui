@@ -265,6 +265,35 @@ fn start_issue_upload_marks_issue_uploading_and_retains_diffs() {
 }
 
 #[test]
+fn uploading_issue_update_panics_and_retains_the_entry() {
+    let mut store = Store::new();
+    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: 1.into(),
+            body: "edited body".to_string(),
+        }
+        .into(),
+    );
+    store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
+
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        store.consume_action(
+            IssueAction::UpdateDescription {
+                id: 1.into(),
+                body: "late edit".to_string(),
+            }
+            .into(),
+        );
+    }))
+    .is_err();
+
+    assert!(panicked);
+    assert_eq!(store.get_issue(1).unwrap().1, IssueState::Uploading);
+    assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
+}
+
+#[test]
 fn issue_upload_conflicts_are_retained_while_uploading() {
     let mut store = Store::new();
     store.consume_action(IssueAction::Load { id: 1.into() }.into());
@@ -529,6 +558,58 @@ fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs_and_message() {
     store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
 
     assert_eq!(store.get_issue_upload_failure(1.into()), None);
+}
+
+#[test]
+fn update_after_failed_upload_appends_diff_and_retains_failure() {
+    let mut store = Store::new();
+    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: 1.into(),
+            body: "edited body".to_string(),
+        }
+        .into(),
+    );
+    store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
+    store.consume_action(
+        IssueAction::FailUpload {
+            id: 1.into(),
+            message: "temporary failure".to_string(),
+        }
+        .into(),
+    );
+    let original_diff = store
+        .get_issue_property_diffs(IssueId::new(1))
+        .first()
+        .cloned()
+        .unwrap();
+
+    store.consume_action(
+        IssueAction::UpdateStatus {
+            id: 1.into(),
+            status_id: 2.into(),
+        }
+        .into(),
+    );
+
+    let (issue, state) = store.get_issue(1).expect("issue should be loaded");
+    assert_eq!(issue.issue.status_id, IssueStatusId::new(2));
+    assert_eq!(state, IssueState::Edited);
+    let diffs = store.get_issue_property_diffs(IssueId::new(1));
+    assert_eq!(diffs.len(), 2);
+    assert_eq!(diffs[0], original_diff);
+    assert_eq!(
+        diffs[1],
+        IssuePropertyDiff::StatusId(IssueStatusIdDiff {
+            before: 3.into(),
+            after: 2.into(),
+        })
+    );
+    assert_eq!(
+        store.get_issue_upload_failure(1.into()),
+        Some("temporary failure")
+    );
 }
 
 #[test]
