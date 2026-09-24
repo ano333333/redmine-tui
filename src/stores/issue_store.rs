@@ -231,45 +231,24 @@ impl IssueStore {
                 self.issue_upload_conflicts
                     .insert(id, (server_issue, conflicts));
             }
-            IssueAction::UpdateDescription { id, body } => {
-                self.assert_can_update_issue(id);
-                let issue = self
-                    .issues
-                    .get_mut(&id)
-                    .expect("assert_can_update_issue already asserted the issue exists");
+            IssueAction::UpdateDescription { id, body } => self.update_issue(id, |issue| {
                 let before = issue.issue.description.clone();
                 issue.issue.description = body.clone();
-                self.issue_property_diffs.entry(id).or_default().push(
-                    IssuePropertyDiff::Description(IssueDescriptionDiff {
-                        before,
-                        after: body,
-                    }),
-                );
-                self.issue_states.insert(id, IssueState::Edited);
-            }
-            IssueAction::UpdateStatus { id, status_id } => {
-                self.assert_can_update_issue(id);
-                let issue = self
-                    .issues
-                    .get_mut(&id)
-                    .expect("assert_can_update_issue already asserted the issue exists");
+                IssuePropertyDiff::Description(IssueDescriptionDiff {
+                    before,
+                    after: body,
+                })
+            }),
+            IssueAction::UpdateStatus { id, status_id } => self.update_issue(id, |issue| {
                 let before = issue.issue.status_id;
                 issue.issue.status_id = status_id;
-                self.issue_property_diffs
-                    .entry(id)
-                    .or_default()
-                    .push(IssuePropertyDiff::StatusId(IssueStatusIdDiff {
-                        before,
-                        after: status_id,
-                    }));
-                self.issue_states.insert(id, IssueState::Edited);
-            }
+                IssuePropertyDiff::StatusId(IssueStatusIdDiff {
+                    before,
+                    after: status_id,
+                })
+            }),
             IssueAction::UpdateAssignedTo { id, assigned_to_id } => {
-                self.assert_can_update_issue(id);
-                let issue = self
-                    .issues
-                    .get_mut(&id)
-                    .expect("assert_can_update_issue already asserted the issue exists");
+                let issue = self.assert_can_update_issue(id);
                 let before = issue.assigned_to_id;
                 issue.assigned_to_id = assigned_to_id;
                 self.issue_property_diffs.entry(id).or_default().push(
@@ -284,11 +263,7 @@ impl IssueStore {
                 id,
                 target_version_id,
             } => {
-                self.assert_can_update_issue(id);
-                let issue = self
-                    .issues
-                    .get_mut(&id)
-                    .expect("assert_can_update_issue already asserted the issue exists");
+                let issue = self.assert_can_update_issue(id);
                 let before = issue.target_version_id;
                 issue.target_version_id = target_version_id;
                 self.issue_property_diffs.entry(id).or_default().push(
@@ -300,11 +275,7 @@ impl IssueStore {
                 self.issue_states.insert(id, IssueState::Edited);
             }
             IssueAction::UpdateCategory { id, category_id } => {
-                self.assert_can_update_issue(id);
-                let issue = self
-                    .issues
-                    .get_mut(&id)
-                    .expect("assert_can_update_issue already asserted the issue exists");
+                let issue = self.assert_can_update_issue(id);
                 let before = issue.category_id;
                 issue.category_id = category_id;
                 self.issue_property_diffs.entry(id).or_default().push(
@@ -316,11 +287,7 @@ impl IssueStore {
                 self.issue_states.insert(id, IssueState::Edited);
             }
             IssueAction::UpdateDoneRatio { id, done_ratio } => {
-                self.assert_can_update_issue(id);
-                let issue = self
-                    .issues
-                    .get_mut(&id)
-                    .expect("assert_can_update_issue already asserted the issue exists");
+                let issue = self.assert_can_update_issue(id);
                 let before = issue.done_ratio;
                 issue.done_ratio = done_ratio;
                 self.issue_property_diffs.entry(id).or_default().push(
@@ -332,11 +299,7 @@ impl IssueStore {
                 self.issue_states.insert(id, IssueState::Edited);
             }
             IssueAction::UpdateStartDate { id, start_date } => {
-                self.assert_can_update_issue(id);
-                let issue = self
-                    .issues
-                    .get_mut(&id)
-                    .expect("assert_can_update_issue already asserted the issue exists");
+                let issue = self.assert_can_update_issue(id);
                 let before = issue.start_date;
                 issue.start_date = start_date;
                 self.issue_property_diffs.entry(id).or_default().push(
@@ -348,11 +311,7 @@ impl IssueStore {
                 self.issue_states.insert(id, IssueState::Edited);
             }
             IssueAction::UpdateDueDate { id, due_date } => {
-                self.assert_can_update_issue(id);
-                let issue = self
-                    .issues
-                    .get_mut(&id)
-                    .expect("assert_can_update_issue already asserted the issue exists");
+                let issue = self.assert_can_update_issue(id);
                 let before = issue.due_date;
                 issue.due_date = due_date;
                 self.issue_property_diffs
@@ -413,15 +372,27 @@ impl IssueStore {
             .unwrap_or(&IssueState::Synced)
     }
 
-    fn assert_can_update_issue(&self, id: impl Into<IssueId>) {
-        let id = id.into();
+    fn update_issue(
+        &mut self,
+        id: IssueId,
+        edit: impl FnOnce(&mut IssueAggregate) -> IssuePropertyDiff,
+    ) {
+        let issue = self.assert_can_update_issue(id);
+        let diff = edit(issue);
+        self.issue_property_diffs.entry(id).or_default().push(diff);
+        self.issue_states.insert(id, IssueState::Edited);
+    }
+
+    fn assert_can_update_issue(&mut self, id: IssueId) -> &mut IssueAggregate {
         // stateが未登録ならSyncedとみなすため、先にentityの欠損を状態異常として拒否する。
-        if !self.issues.contains_key(&id) {
-            panic!("cannot update missing issue {id}");
-        }
-        let state = self.state_or_synced(id);
+        let issue = self
+            .issues
+            .get_mut(&id)
+            .unwrap_or_else(|| panic!("cannot update missing issue {id}"));
+        let state = self.issue_states.get(&id).unwrap_or(&IssueState::Synced);
         if state == &IssueState::Uploading {
             panic!("cannot update issue while issue {id} is {state:?}");
         }
+        issue
     }
 }
