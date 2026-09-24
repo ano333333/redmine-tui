@@ -21,8 +21,6 @@ pub use notice_store::{Notice, NoticeAction, NoticeId};
 #[cfg(test)]
 mod issue_store_tests;
 #[cfg(test)]
-mod journal_state_tests;
-#[cfg(test)]
 mod journal_store_tests;
 #[cfg(test)]
 mod notice_store_tests;

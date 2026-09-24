@@ -548,7 +548,7 @@ fn sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
 }
 
 #[test]
-fn upload_success_sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
+fn sync_issue_after_failed_upload_replaces_issue_clears_diffs_and_failure_and_marks_synced() {
     let mut store = Store::new();
     store.consume_action(
         IssueAction::Sync {
@@ -605,6 +605,54 @@ fn upload_success_sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
     assert_eq!(state, &IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
     assert_eq!(store.get_issue_upload_failure(9.into()), None);
+}
+
+#[test]
+fn uploading_issue_sync_replaces_issue_clears_diffs_and_marks_synced() {
+    let mut store = Store::new();
+    store.consume_action(
+        IssueAction::Sync {
+            issue: sample_issue_aggregate(
+                9,
+                "server issue before upload",
+                1.into(),
+                None,
+                None,
+                None,
+                0,
+            ),
+        }
+        .into(),
+    );
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: 9.into(),
+            body: "local edit".to_string(),
+        }
+        .into(),
+    );
+    store.consume_action(IssueAction::StartUpload { id: 9.into() }.into());
+
+    store.consume_action(
+        IssueAction::Sync {
+            issue: sample_issue_aggregate(
+                9,
+                "server issue after upload",
+                1.into(),
+                None,
+                None,
+                None,
+                0,
+            ),
+        }
+        .into(),
+    );
+
+    let (issue, state) = store.get_issue(9).expect("issue should be synced");
+    assert_eq!(issue.issue.subject, "server issue after upload");
+    assert_eq!(issue.issue.description, "body");
+    assert_eq!(state, &IssueState::Synced);
+    assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
 }
 
 #[test]
