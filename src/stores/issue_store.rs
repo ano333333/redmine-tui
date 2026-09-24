@@ -248,32 +248,26 @@ impl IssueStore {
                 })
             }),
             IssueAction::UpdateAssignedTo { id, assigned_to_id } => {
-                let issue = self.assert_can_update_issue(id);
-                let before = issue.assigned_to_id;
-                issue.assigned_to_id = assigned_to_id;
-                self.issue_property_diffs.entry(id).or_default().push(
+                self.update_issue(id, |issue| {
+                    let before = issue.assigned_to_id;
+                    issue.assigned_to_id = assigned_to_id;
                     IssuePropertyDiff::AssignedToId(IssueAssignedToIdDiff {
                         before,
                         after: assigned_to_id,
-                    }),
-                );
-                self.issue_states.insert(id, IssueState::Edited);
+                    })
+                })
             }
             IssueAction::UpdateTargetVersion {
                 id,
                 target_version_id,
-            } => {
-                let issue = self.assert_can_update_issue(id);
+            } => self.update_issue(id, |issue| {
                 let before = issue.target_version_id;
                 issue.target_version_id = target_version_id;
-                self.issue_property_diffs.entry(id).or_default().push(
-                    IssuePropertyDiff::TargetVersionId(IssueTargetVersionIdDiff {
-                        before,
-                        after: target_version_id,
-                    }),
-                );
-                self.issue_states.insert(id, IssueState::Edited);
-            }
+                IssuePropertyDiff::TargetVersionId(IssueTargetVersionIdDiff {
+                    before,
+                    after: target_version_id,
+                })
+            }),
             IssueAction::UpdateCategory { id, category_id } => {
                 let issue = self.assert_can_update_issue(id);
                 let before = issue.category_id;
