@@ -1,6 +1,7 @@
 use crate::components::AppComponent;
 use crate::components::app::AppEffect;
-use crate::platform::host::HostEvent;
+use crate::platform::editor::{EditorOutcome, EditorRequest, TextEditor};
+use crate::platform::host::{HostEvent, PlatformHost};
 use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use crate::platform::runtime::tokio_spawner::TokioBackgroundSpawner;
 use crate::platform::runtime::{BackgroundCompletion, BackgroundSpawner};
@@ -17,6 +18,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 use std::{
     collections::VecDeque,
     future::Future,
+    io,
     sync::Mutex,
     time::{Duration, Instant},
 };
@@ -1538,4 +1540,150 @@ impl RedmineClient for FailingClient {
     async fn get_users(&self) -> std::result::Result<Vec<User>, RedmineClientError> {
         Err(self.unauthorized())
     }
+}
+
+struct RunnerEditor;
+
+impl TextEditor for RunnerEditor {
+    async fn edit(&self, _: EditorRequest) -> io::Result<EditorOutcome> {
+        Ok(EditorOutcome::Cancelled)
+    }
+}
+
+struct DrawRecord {
+    notices: Vec<String>,
+    rendered: String,
+}
+
+struct RunnerHost {
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    area: Rect,
+    times: RefCell<VecDeque<Duration>>,
+    events: VecDeque<io::Result<Option<HostEvent>>>,
+    draws: Vec<DrawRecord>,
+    input_observations: Vec<Vec<String>>,
+}
+
+impl RunnerHost {
+    fn new(dispatcher: Rc<RefCell<Dispatcher>>) -> Self {
+        Self {
+            dispatcher,
+            area: Rect::new(0, 0, 80, 24),
+            times: RefCell::new(VecDeque::from([Duration::ZERO, Duration::ZERO])),
+            events: VecDeque::new(),
+            draws: Vec::new(),
+            input_observations: Vec::new(),
+        }
+    }
+
+    fn messages(&self) -> Vec<String> {
+        self.dispatcher
+            .borrow()
+            .store()
+            .get_notices()
+            .iter()
+            .map(|notice| notice.message.clone())
+            .collect()
+    }
+}
+
+impl PlatformHost for RunnerHost {
+    fn area(&mut self) -> Rect {
+        self.area
+    }
+
+    fn elapsed(&self) -> Duration {
+        self.times
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or(Duration::ZERO)
+    }
+
+    fn draw(&mut self, render: impl FnOnce(&mut ratatui::Frame)) -> io::Result<()> {
+        let mut terminal =
+            Terminal::new(TestBackend::new(self.area.width, self.area.height)).unwrap();
+        terminal.draw(render).unwrap();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        self.draws.push(DrawRecord {
+            notices: self.messages(),
+            rendered,
+        });
+        Ok(())
+    }
+
+    async fn next_event(&mut self, _: Duration) -> io::Result<Option<HostEvent>> {
+        self.input_observations.push(self.messages());
+        self.events.pop_front().expect("scripted event")
+    }
+
+    async fn wait(&mut self, _: Duration) {}
+
+    fn suspend_for_editor(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn resume_after_editor(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn runner_notice(message: &str) -> Action {
+    NoticeAction::Push {
+        id: NoticeId::new(),
+        message: message.to_string(),
+    }
+    .into()
+}
+
+fn quit_event() -> HostEvent {
+    // 起動時のpopupが最初のqを閉じるため、終了するtestでは二回送る。
+    HostEvent::Input(InputEvent::Key(KeyEvent::new(
+        KeyCode::Char('q'),
+        KeyModifiers::none(),
+    )))
+}
+
+#[tokio::test]
+async fn run_accepts_completion_actions_then_ticks_updates_draws_and_reads_input() {
+    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+    crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher.borrow_mut());
+    while dispatcher.borrow().consume_actinos_len() > 0 {
+        dispatcher.borrow_mut().consume_action();
+    }
+    dispatcher.borrow_mut().dispatch(runner_notice("expired"));
+    dispatcher.borrow_mut().consume_action();
+    let spawner = CompletionSpawner::from_completions(vec![
+        BackgroundCompletion::Succeeded(vec![runner_notice("first"), runner_notice("second")]),
+        BackgroundCompletion::Succeeded(vec![runner_notice("third")]),
+    ]);
+    let mut host = RunnerHost::new(dispatcher.clone());
+    // 同じ周のcompletionはtick適用後にconsumeされるため、既存Noticeだけが期限切れになることを確かめる。
+    host.times = RefCell::new(VecDeque::from([Duration::ZERO, Duration::from_secs(5)]));
+    host.events.push_back(Ok(Some(quit_event())));
+    host.events.push_back(Ok(Some(quit_event())));
+
+    let result = super::run(
+        &mut host,
+        &RunnerEditor,
+        &spawner,
+        Arc::new(FailingClient),
+        dispatcher,
+    )
+    .await;
+
+    assert!(result.is_ok());
+    assert_eq!(host.draws.len(), 2);
+    assert_eq!(host.draws[0].notices, ["first", "second", "third"]);
+    assert_eq!(
+        host.input_observations,
+        [["first", "second", "third"], ["first", "second", "third"]]
+    );
+    assert!(host.draws[0].rendered.contains("third"));
+    assert!(!host.draws[0].rendered.contains("expired"));
 }
