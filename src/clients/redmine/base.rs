@@ -126,36 +126,3 @@ pub trait RedmineClient {
         &self,
     ) -> impl std::future::Future<Output = Result<Vec<User>, RedmineClientError>> + Send;
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn assert_send<T: Send>(_: T) {}
-
-    fn assert_redmine_client_futures_are_send<C: RedmineClient>(client: &C) {
-        let issue =
-            crate::test_support::sample_issue_aggregate(1, "title", 1.into(), None, None, None, 0);
-        assert_send(client.get_categories());
-        assert_send(client.get_issue(IssueId::new(1)));
-        assert_send(client.update_issue(&issue));
-        assert_send(client.update_journal_notes(JournalId::new(1), "notes"));
-        assert_send(client.update_issue_notes(IssueId::new(1), "notes"));
-        assert_send(client.get_issue_statuses());
-        assert_send(client.get_priorities());
-        assert_send(client.get_projects());
-        assert_send(client.get_target_versions());
-        assert_send(client.get_time_entity_activities());
-        assert_send(client.get_trackers());
-        assert_send(client.get_users());
-        assert_send(client.get_project_issues(ProjectId::new(1), NonZeroUsize::new(1).unwrap()));
-    }
-
-    #[test]
-    fn redmine_client_futures_are_send() {
-        let client =
-            crate::clients::redmine::DefaultRedmineClient::new("http://example.test", "token");
-
-        assert_redmine_client_futures_are_send(&client);
-    }
-}
