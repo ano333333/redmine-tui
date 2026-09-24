@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT, RedmineHttpError};
 use crate::clients::redmine::{RedmineClient, RedmineClientError};
 use crate::entities::{
-    Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, TargetVersion,
-    TimeEntityActivity, Tracker, User,
+    Category, IssueAggregate, IssueStatus, Journal, Priority, Project, ProjectIssuesPage,
+    TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{EntityIdValue, IssueId, JournalId, ProjectId};
 
@@ -17,6 +17,18 @@ pub struct DemoRedmineClient {
 }
 
 impl DemoRedmineClient {
+    // 呼び出し側のエラー処理を実HTTPクライアントと揃えるため、404のcontextを付ける。
+    fn not_found(method: &str, url: String) -> RedmineClientError {
+        RedmineClientError::NotFound {
+            context: RedmineHttpError {
+                method: method.to_string(),
+                url,
+                status_code: 404,
+                response_body: String::new(),
+            },
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             state: Arc::new(Mutex::new(DemoFixtureState::initial())),
@@ -57,15 +69,7 @@ impl RedmineClient for DemoRedmineClient {
         };
         async move {
             let Some((aggregate, journals)) = snapshot else {
-                // 呼び出し側のエラー処理を実HTTPクライアントと揃えるため、404のcontextを付ける。
-                return Err(RedmineClientError::NotFound {
-                    context: RedmineHttpError {
-                        method: String::from("GET"),
-                        url: format!("/issues/{}.json", id.get()),
-                        status_code: 404,
-                        response_body: String::new(),
-                    },
-                });
+                return Err(Self::not_found("GET", format!("/issues/{}.json", id.get())));
             };
             Ok(FetchedIssue {
                 aggregate,
@@ -76,25 +80,84 @@ impl RedmineClient for DemoRedmineClient {
 
     fn update_issue(
         &self,
-        _issue: &IssueAggregate,
+        issue: &IssueAggregate,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send {
-        async { todo!() }
+        // デモでは渡されたaggregateだけを保存し、実Redmineの更新時に付く履歴や更新日時は生成しない。
+        let result = {
+            let mut state = self.state.lock().expect("demo fixture state lock poisoned");
+            match state.issues.get_mut(&issue.issue.id) {
+                Some(stored) => {
+                    *stored = issue.clone();
+                    Ok(())
+                }
+                None => Err(Self::not_found(
+                    "PUT",
+                    format!("/issues/{}.json", issue.issue.id.get()),
+                )),
+            }
+        };
+        async move { result }
     }
 
     fn update_journal_notes(
         &self,
-        _journal_id: JournalId,
-        _notes: &str,
+        journal_id: JournalId,
+        notes: &str,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send {
-        async { todo!() }
+        let result = {
+            let mut state = self.state.lock().expect("demo fixture state lock poisoned");
+            state
+                .journals
+                .values_mut()
+                .flat_map(|journals| journals.iter_mut())
+                .find(|journal| journal.id == journal_id)
+                .map(|journal| journal.notes = notes.to_string())
+                .ok_or_else(|| {
+                    Self::not_found("PUT", format!("/journals/{}.json", journal_id.get()))
+                })
+        };
+        async move { result }
     }
 
     fn update_issue_notes(
         &self,
-        _issue_id: IssueId,
-        _notes: &str,
+        issue_id: IssueId,
+        notes: &str,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send {
-        async { todo!() }
+        let result = {
+            let mut state = self.state.lock().expect("demo fixture state lock poisoned");
+            if !state.issues.contains_key(&issue_id) {
+                Err(Self::not_found(
+                    "PUT",
+                    format!("/issues/{}.json", issue_id.get()),
+                ))
+            } else {
+                let next_id = state
+                    .journals
+                    .values()
+                    .flatten()
+                    .map(|journal| journal.id.get())
+                    .max()
+                    .unwrap_or(0)
+                    + 1;
+                let user = state
+                    .users
+                    .first()
+                    .expect("demo fixture has no users")
+                    .name
+                    .clone();
+                state.journals.entry(issue_id).or_default().push(Journal {
+                    id: JournalId::new(next_id),
+                    issue_id,
+                    user,
+                    updated_on: Some(chrono::Local::now()),
+                    details: Vec::new(),
+                    notes: notes.to_string(),
+                });
+                Ok(())
+            }
+        };
+        async move { result }
     }
 
     fn get_issue_statuses(
@@ -192,11 +255,19 @@ impl RedmineClient for DemoRedmineClient {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::num::NonZeroUsize;
+    use std::rc::Rc;
+    use std::sync::Arc;
 
     use crate::clients::redmine::demo::DemoRedmineClient;
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
-    use crate::vos::{EntityIdValue, IssueId, ProjectId};
+    use crate::stores::{Action, Dispatcher, IssueAction, JournalAction};
+    use crate::usecases::redmine::{
+        start_local_journal_upload, start_remote_journal_upload, upload_issue_action,
+    };
+    use crate::vos::issue_property_diff::IssueSubjectDiff;
+    use crate::vos::{EntityIdValue, IssueId, IssuePropertyDiff, JournalId, ProjectId};
     use tokio::runtime::Builder;
 
     #[test]
@@ -311,6 +382,209 @@ mod tests {
         assert!(matches!(
             runtime.block_on(client.get_issue(IssueId::new(999))),
             Err(RedmineClientError::NotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn updates_are_visible_to_subsequent_gets() {
+        let client = DemoRedmineClient::new();
+        let runtime = Builder::new_current_thread().build().unwrap();
+        let mut issue = runtime
+            .block_on(client.get_issue(IssueId::new(3)))
+            .unwrap()
+            .aggregate;
+        let updated_on = issue.updated_on;
+        issue.issue.subject = "changed subject".into();
+        runtime.block_on(client.update_issue(&issue)).unwrap();
+        let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
+        assert_eq!(fetched.aggregate.issue.subject, "changed subject");
+        assert_eq!(fetched.aggregate.updated_on, updated_on);
+        assert_eq!(fetched.journals.len(), 3);
+
+        runtime
+            .block_on(client.update_journal_notes(JournalId::new(2), "remote replacement"))
+            .unwrap();
+        let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
+        assert_eq!(fetched.journals[1].notes, "remote replacement");
+
+        runtime
+            .block_on(client.update_issue_notes(IssueId::new(3), "local addition"))
+            .unwrap();
+        let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
+        assert_eq!(fetched.journals.len(), 4);
+        let added = fetched.journals.last().unwrap();
+        assert_eq!(added.id.get(), 4);
+        assert_eq!(added.issue_id, IssueId::new(3));
+        assert_eq!(added.user, "user1");
+        assert_eq!(added.notes, "local addition");
+    }
+
+    #[test]
+    fn updates_report_not_found() {
+        let client = DemoRedmineClient::new();
+        let runtime = Builder::new_current_thread().build().unwrap();
+        let mut issue = runtime
+            .block_on(client.get_issue(IssueId::new(3)))
+            .unwrap()
+            .aggregate;
+        issue.issue.id = IssueId::new(999);
+        for result in [
+            runtime.block_on(client.update_issue(&issue)),
+            runtime.block_on(client.update_journal_notes(JournalId::new(999), "missing")),
+            runtime.block_on(client.update_issue_notes(IssueId::new(999), "missing")),
+        ] {
+            assert!(matches!(result, Err(RedmineClientError::NotFound { .. })));
+        }
+    }
+
+    #[test]
+    fn issue_upload_action_succeeds_and_detects_conflicts() {
+        let client = DemoRedmineClient::new();
+        let runtime = Builder::new_current_thread().build().unwrap();
+        let original = runtime
+            .block_on(client.get_issue(IssueId::new(3)))
+            .unwrap()
+            .aggregate
+            .issue
+            .subject;
+        let diff = IssuePropertyDiff::Subject(IssueSubjectDiff {
+            before: original.clone(),
+            after: "local edit".into(),
+        });
+        let actions = runtime.block_on(upload_issue_action(
+            &client,
+            IssueId::new(3),
+            &[diff.clone()],
+        ));
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::Issue(IssueAction::Sync { .. })]
+        ));
+        assert_eq!(
+            runtime
+                .block_on(client.get_issue(IssueId::new(3)))
+                .unwrap()
+                .aggregate
+                .issue
+                .subject,
+            "local edit"
+        );
+
+        let client = DemoRedmineClient::new();
+        let mut server = runtime
+            .block_on(client.get_issue(IssueId::new(3)))
+            .unwrap()
+            .aggregate;
+        server.issue.subject = "server edit".into();
+        runtime.block_on(client.update_issue(&server)).unwrap();
+        let actions = runtime.block_on(upload_issue_action(&client, IssueId::new(3), &[diff]));
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::Issue(IssueAction::UploadConflictsDetected { .. })]
+        ));
+    }
+
+    fn journal_dispatcher(
+        client: &DemoRedmineClient,
+        runtime: &tokio::runtime::Runtime,
+    ) -> Rc<RefCell<Dispatcher>> {
+        let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
+        let mut dispatcher = Dispatcher::new();
+        dispatcher.dispatch(IssueAction::Sync {
+            issue: fetched.aggregate,
+        });
+        dispatcher.consume_action();
+        dispatcher.dispatch(JournalAction::SyncFetched {
+            issue_id: IssueId::new(3),
+            journals: fetched.journals,
+        });
+        dispatcher.consume_action();
+        Rc::new(RefCell::new(dispatcher))
+    }
+
+    #[test]
+    fn local_journal_upload_adds_a_journal() {
+        let client = Arc::new(DemoRedmineClient::new());
+        let runtime = Builder::new_current_thread().build().unwrap();
+        let dispatcher = journal_dispatcher(&client, &runtime);
+        dispatcher
+            .borrow_mut()
+            .dispatch(JournalAction::CreateLocal {
+                issue_id: IssueId::new(3),
+            });
+        dispatcher.borrow_mut().consume_action();
+        dispatcher
+            .borrow_mut()
+            .dispatch(JournalAction::EditLocalNotes {
+                issue_id: IssueId::new(3),
+                notes: "uploaded local".into(),
+            });
+        dispatcher.borrow_mut().consume_action();
+        let actions = runtime.block_on(start_local_journal_upload(
+            dispatcher.clone(),
+            client.clone(),
+            IssueId::new(3),
+        ));
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::Journal(
+                JournalAction::CompleteLocalUploadWithFetched { .. }
+            )]
+        ));
+        let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
+        assert_eq!(fetched.journals.last().unwrap().notes, "uploaded local");
+    }
+
+    #[test]
+    fn remote_journal_upload_succeeds_and_detects_conflict() {
+        let runtime = Builder::new_current_thread().build().unwrap();
+        let client = Arc::new(DemoRedmineClient::new());
+        let dispatcher = journal_dispatcher(&client, &runtime);
+        dispatcher
+            .borrow_mut()
+            .dispatch(JournalAction::EditRemoteNotes {
+                issue_id: IssueId::new(3),
+                journal_id: JournalId::new(2),
+                notes: "uploaded remote".into(),
+            });
+        dispatcher.borrow_mut().consume_action();
+        let actions = runtime.block_on(start_remote_journal_upload(
+            dispatcher,
+            client.clone(),
+            IssueId::new(3),
+            JournalId::new(2),
+        ));
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::Journal(JournalAction::CompleteRemoteUpload { .. })]
+        ));
+        let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
+        assert_eq!(fetched.journals[1].notes, "uploaded remote");
+
+        let client = Arc::new(DemoRedmineClient::new());
+        let dispatcher = journal_dispatcher(&client, &runtime);
+        dispatcher
+            .borrow_mut()
+            .dispatch(JournalAction::EditRemoteNotes {
+                issue_id: IssueId::new(3),
+                journal_id: JournalId::new(2),
+                notes: "uploaded remote".into(),
+            });
+        dispatcher.borrow_mut().consume_action();
+        runtime
+            .block_on(client.update_journal_notes(JournalId::new(2), "server edit"))
+            .unwrap();
+        let actions = runtime.block_on(start_remote_journal_upload(
+            dispatcher,
+            client,
+            IssueId::new(3),
+            JournalId::new(2),
+        ));
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::Journal(
+                JournalAction::DetectRemoteUploadConflict { .. }
+            )]
         ));
     }
 }
