@@ -194,8 +194,20 @@ pub fn parse_journal_detail_attr_yaml(yaml: &yaml_rust::Yaml) -> JournalDetailAt
 
 pub fn parse_issue_yaml(id: u16) -> IssueAggregate {
     let path = format!("datas/issues/{}.yml", id);
-    let yaml = read_yaml(path.as_str());
-    let id = IssueId::new(as_u16(&yaml, "id"));
+    parse_issue(IssueId::new(id), &read_fixture(path.as_str()))
+}
+
+/// fixture内のIDが要求IDと異なる場合は、fixtureの不整合としてpanicする。
+pub fn parse_issue(id: IssueId, yaml: &str) -> IssueAggregate {
+    let yaml = parse_yaml(yaml);
+    let parsed_id = as_u16(&yaml, "id");
+    assert_eq!(
+        parsed_id,
+        id.get(),
+        "issue id mismatch: {} != {}",
+        parsed_id,
+        id
+    );
     let subject = as_string(&yaml, "subject");
     let author_id = UserId::new(as_u16(&yaml, "author_id"));
     let created_on = as_local_datetime(&yaml, "created_on");
@@ -364,7 +376,7 @@ pub fn parse_time_entity_activities_yaml() -> Vec<TimeEntityActivity> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_categories, parse_issue_statuses, parse_journal_yaml, parse_priorities,
+        parse_categories, parse_issue, parse_issue_statuses, parse_journal_yaml, parse_priorities,
         parse_projects, parse_target_versions, parse_time_entity_activities, parse_trackers,
         parse_users,
     };
@@ -406,6 +418,24 @@ mod tests {
         assert_eq!(activities.len(), 3);
         assert_eq!(activities[0].name, "設計");
         assert!(activities[0].is_default);
+    }
+
+    #[test]
+    fn parse_issue_reads_fields_from_yaml_string() {
+        let aggregate = parse_issue(IssueId::new(1), include_str!("../../datas/issues/1.yml"));
+        assert_eq!(aggregate.issue.id, IssueId::new(1));
+        assert_eq!(aggregate.issue.subject, "issue1");
+        assert_eq!(aggregate.author_id, crate::vos::UserId::new(1001));
+        assert_eq!(aggregate.issue.project_id, crate::vos::ProjectId::new(1));
+        assert_eq!(aggregate.issue.status_id, IssueStatusId::new(3));
+        assert_eq!(aggregate.done_ratio, 100);
+        assert_eq!(aggregate.child_ids.len(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "issue id mismatch: 1 != 2")]
+    fn parse_issue_panics_when_id_does_not_match_yaml() {
+        parse_issue(IssueId::new(2), include_str!("../../datas/issues/1.yml"));
     }
 
     #[test]
