@@ -268,30 +268,22 @@ impl IssueStore {
                     after: target_version_id,
                 })
             }),
-            IssueAction::UpdateCategory { id, category_id } => {
-                let issue = self.assert_can_update_issue(id);
+            IssueAction::UpdateCategory { id, category_id } => self.update_issue(id, |issue| {
                 let before = issue.category_id;
                 issue.category_id = category_id;
-                self.issue_property_diffs.entry(id).or_default().push(
-                    IssuePropertyDiff::CategoryId(IssueCategoryIdDiff {
-                        before,
-                        after: category_id,
-                    }),
-                );
-                self.issue_states.insert(id, IssueState::Edited);
-            }
-            IssueAction::UpdateDoneRatio { id, done_ratio } => {
-                let issue = self.assert_can_update_issue(id);
+                IssuePropertyDiff::CategoryId(IssueCategoryIdDiff {
+                    before,
+                    after: category_id,
+                })
+            }),
+            IssueAction::UpdateDoneRatio { id, done_ratio } => self.update_issue(id, |issue| {
                 let before = issue.done_ratio;
                 issue.done_ratio = done_ratio;
-                self.issue_property_diffs.entry(id).or_default().push(
-                    IssuePropertyDiff::DoneRatio(IssueDoneRatioDiff {
-                        before,
-                        after: done_ratio,
-                    }),
-                );
-                self.issue_states.insert(id, IssueState::Edited);
-            }
+                IssuePropertyDiff::DoneRatio(IssueDoneRatioDiff {
+                    before,
+                    after: done_ratio,
+                })
+            }),
             IssueAction::UpdateStartDate { id, start_date } => {
                 let issue = self.assert_can_update_issue(id);
                 let before = issue.start_date;
