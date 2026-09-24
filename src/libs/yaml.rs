@@ -86,6 +86,17 @@ fn as_u16_array(yaml: &Yaml, key: &str) -> Vec<u16> {
 pub fn parse_journal_yaml(id: JournalId) -> Journal {
     let path = format!("datas/journals/{}.yml", id);
     let yaml = read_yaml(path.as_str());
+    let issue_id = IssueId::new(as_u16(&yaml, "issue_id"));
+    parse_journal_yaml_value(id, issue_id, &yaml)
+}
+
+/// fixture内のIDまたは所属Issueが要求と異なる場合は、fixtureの不整合としてpanicする。
+pub fn parse_journal(id: JournalId, issue_id: IssueId, yaml: &str) -> Journal {
+    let yaml = parse_yaml(yaml);
+    parse_journal_yaml_value(id, issue_id, &yaml)
+}
+
+fn parse_journal_yaml_value(id: JournalId, issue_id: IssueId, yaml: &Yaml) -> Journal {
     let parsed_id = as_u16(&yaml, "id");
     assert_eq!(
         parsed_id,
@@ -94,7 +105,14 @@ pub fn parse_journal_yaml(id: JournalId) -> Journal {
         parsed_id,
         id
     );
-    let issue_id = IssueId::new(as_u16(&yaml, "issue_id"));
+    let parsed_issue_id = as_u16(&yaml, "issue_id");
+    assert_eq!(
+        parsed_issue_id,
+        issue_id.get(),
+        "journal owner mismatch: {} != {}",
+        parsed_issue_id,
+        issue_id
+    );
     let user = as_string(&yaml, "user");
     let updated_on = Some(as_local_datetime(&yaml, "updated_on"));
     let notes = yaml["notes"].as_str().unwrap_or_default().to_string();
@@ -376,9 +394,9 @@ pub fn parse_time_entity_activities_yaml() -> Vec<TimeEntityActivity> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_categories, parse_issue, parse_issue_statuses, parse_journal_yaml, parse_priorities,
-        parse_projects, parse_target_versions, parse_time_entity_activities, parse_trackers,
-        parse_users,
+        parse_categories, parse_issue, parse_issue_statuses, parse_journal, parse_journal_yaml,
+        parse_priorities, parse_projects, parse_target_versions, parse_time_entity_activities,
+        parse_trackers, parse_users,
     };
     use crate::vos::{IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId};
 
@@ -436,6 +454,45 @@ mod tests {
     #[should_panic(expected = "issue id mismatch: 1 != 2")]
     fn parse_issue_panics_when_id_does_not_match_yaml() {
         parse_issue(IssueId::new(2), include_str!("../../datas/issues/1.yml"));
+    }
+
+    #[test]
+    fn parse_journal_reads_notes_and_details_from_yaml_string() {
+        let journal = parse_journal(
+            JournalId::new(1),
+            IssueId::new(3),
+            include_str!("../../datas/journals/1.yml"),
+        );
+        assert_eq!(journal.details.len(), 1);
+        assert!(journal.notes.is_empty());
+
+        let journal = parse_journal(
+            JournalId::new(3),
+            IssueId::new(3),
+            include_str!("../../datas/journals/3.yml"),
+        );
+        assert!(journal.notes.starts_with("### h3"));
+        assert!(journal.details.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "journal id mismatch: 1 != 2")]
+    fn parse_journal_panics_when_id_does_not_match_yaml() {
+        parse_journal(
+            JournalId::new(2),
+            IssueId::new(3),
+            include_str!("../../datas/journals/1.yml"),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "journal owner mismatch: 3 != 4")]
+    fn parse_journal_panics_when_owner_does_not_match_yaml() {
+        parse_journal(
+            JournalId::new(1),
+            IssueId::new(4),
+            include_str!("../../datas/journals/1.yml"),
+        );
     }
 
     #[test]
