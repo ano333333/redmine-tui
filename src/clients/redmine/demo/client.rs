@@ -1,13 +1,13 @@
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
-use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT};
+use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT, RedmineHttpError};
 use crate::clients::redmine::{RedmineClient, RedmineClientError};
 use crate::entities::{
     Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, TargetVersion,
     TimeEntityActivity, Tracker, User,
 };
-use crate::vos::{IssueId, JournalId, ProjectId};
+use crate::vos::{EntityIdValue, IssueId, JournalId, ProjectId};
 
 use super::fixture::DemoFixtureState;
 
@@ -46,9 +46,32 @@ impl RedmineClient for DemoRedmineClient {
 
     fn get_issue(
         &self,
-        _id: IssueId,
+        id: IssueId,
     ) -> impl std::future::Future<Output = Result<FetchedIssue, RedmineClientError>> + Send {
-        async { todo!() }
+        let snapshot = {
+            let state = self.state.lock().expect("demo fixture state lock poisoned");
+            state.issues.get(&id).cloned().map(|aggregate| {
+                let journals = state.journals.get(&id).cloned().unwrap_or_default();
+                (aggregate, journals)
+            })
+        };
+        async move {
+            let Some((aggregate, journals)) = snapshot else {
+                // 呼び出し側のエラー処理を実HTTPクライアントと揃えるため、404のcontextを付ける。
+                return Err(RedmineClientError::NotFound {
+                    context: RedmineHttpError {
+                        method: String::from("GET"),
+                        url: format!("/issues/{}.json", id.get()),
+                        status_code: 404,
+                        response_body: String::new(),
+                    },
+                });
+            };
+            Ok(FetchedIssue {
+                aggregate,
+                journals,
+            })
+        }
     }
 
     fn update_issue(
@@ -171,9 +194,9 @@ impl RedmineClient for DemoRedmineClient {
 mod tests {
     use std::num::NonZeroUsize;
 
-    use crate::clients::redmine::RedmineClient;
     use crate::clients::redmine::demo::DemoRedmineClient;
-    use crate::vos::{EntityIdValue, ProjectId};
+    use crate::clients::redmine::{RedmineClient, RedmineClientError};
+    use crate::vos::{EntityIdValue, IssueId, ProjectId};
     use tokio::runtime::Builder;
 
     #[test]
@@ -264,5 +287,30 @@ mod tests {
         let users = names!(runtime.block_on(client.get_users()).unwrap());
         assert_eq!(users.len(), 2);
         assert!(users.contains(&String::from("user1")));
+    }
+
+    #[test]
+    fn issue_getter_returns_matching_snapshot_and_not_found() {
+        let client = DemoRedmineClient::new();
+        let runtime = Builder::new_current_thread().build().unwrap();
+
+        let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
+        assert_eq!(fetched.aggregate.issue.id.get(), 3);
+        assert_eq!(
+            fetched
+                .journals
+                .iter()
+                .map(|journal| journal.id.get())
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        let journal_free = runtime.block_on(client.get_issue(IssueId::new(1))).unwrap();
+        assert_eq!(journal_free.aggregate.issue.id.get(), 1);
+        assert!(journal_free.journals.is_empty());
+
+        assert!(matches!(
+            runtime.block_on(client.get_issue(IssueId::new(999))),
+            Err(RedmineClientError::NotFound { .. })
+        ));
     }
 }
