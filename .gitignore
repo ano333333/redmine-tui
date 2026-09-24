@@ -1,2 +1,3 @@
 # rust built target
 target
+dist/

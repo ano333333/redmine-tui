@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>redmine-tui demo</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        background: #1e1e1e;
+        color: #d4d4d4;
+        font-family: monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <link
+      data-trunk
+      rel="rust"
+      href="Cargo.toml"
+      data-bin="redmine-tui-draft"
+      data-cargo-no-default-features
+      data-cargo-features="web-demo"
+    />
+  </body>
+</html>

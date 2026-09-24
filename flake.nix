@@ -17,7 +17,10 @@
             cargo-insta
             cargo-llvm-cov
             llvmPackages_latest.llvm
+            lld
             clippy
+            # wasm-bindgen CLIはTrunkにCargo.lockと同じversionを取得させ、二重管理を避ける。
+            trunk
           ];
 
           shellHook = ''
