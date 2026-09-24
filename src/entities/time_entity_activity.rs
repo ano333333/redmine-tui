@@ -1,5 +1,6 @@
 use crate::vos::TimeEntityActivityId;
 
+#[derive(Clone)]
 pub struct TimeEntityActivity {
     pub id: TimeEntityActivityId,
     pub name: String,

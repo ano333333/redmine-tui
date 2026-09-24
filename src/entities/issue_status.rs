@@ -1,5 +1,6 @@
 use crate::vos::IssueStatusId;
 
+#[derive(Clone)]
 pub struct IssueStatus {
     pub id: IssueStatusId,
     pub name: String,
