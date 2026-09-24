@@ -306,11 +306,10 @@ impl IssueStore {
     pub(super) fn get_issue(
         &self,
         issue_id: impl Into<IssueId>,
-    ) -> Option<(&IssueAggregate, &IssueState)> {
+    ) -> Option<(&IssueAggregate, IssueState)> {
         let issue_id = issue_id.into();
-        self.issues
-            .get(&issue_id)
-            .zip(self.get_issue_state(issue_id))
+        let issue = self.issues.get(&issue_id)?;
+        Some((issue, self.get_issue_state(issue_id)?))
     }
 
     pub(super) fn get_issues(&self) -> impl Iterator<Item = (&IssueId, &IssueAggregate)> {
@@ -340,12 +339,13 @@ impl IssueStore {
         self.issue_upload_failures.get(&id).map(String::as_str)
     }
 
-    pub(super) fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<&IssueState> {
-        self.issue_states.get(&issue_id.into())
+    pub(super) fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<IssueState> {
+        self.issue_states.get(&issue_id.into()).cloned()
     }
 
     fn state_or_synced(&self, issue_id: impl Into<IssueId>) -> &IssueState {
-        self.get_issue_state(issue_id)
+        self.issue_states
+            .get(&issue_id.into())
             .unwrap_or(&IssueState::Synced)
     }
 

@@ -9,7 +9,7 @@ use super::detail::IssueDetailWidget;
 
 pub(crate) enum IssueWidget<'a> {
     Fetching,
-    FetchFailed { message: &'a str },
+    FetchFailed { message: String },
     Detail(IssueDetailWidget<'a>),
 }
 
@@ -17,7 +17,7 @@ impl<'a> IssueWidget<'a> {
     pub(crate) fn fetching() -> Self {
         Self::Fetching
     }
-    pub(crate) fn fetch_failed(message: &'a str) -> Self {
+    pub(crate) fn fetch_failed(message: String) -> Self {
         Self::FetchFailed { message }
     }
     pub(crate) fn detail(widget: IssueDetailWidget<'a>) -> Self {

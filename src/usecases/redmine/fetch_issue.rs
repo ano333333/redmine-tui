@@ -229,7 +229,7 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         assert_eq!(
             dispatcher.borrow().store().get_issue_state(42),
-            Some(&IssueState::FetchFailed {
+            Some(IssueState::FetchFailed {
                 message: "first failure".to_string(),
             })
         );

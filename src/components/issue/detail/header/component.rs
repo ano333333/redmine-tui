@@ -39,7 +39,7 @@ impl HeaderComponent {
                 self.id,
                 &issue.issue.subject,
                 self.focus_state.is_focused(),
-                Self::title_decorator(issue_state),
+                Self::title_decorator(&issue_state),
             );
             widget.line_count(width) as u16
         } else {
@@ -55,7 +55,7 @@ impl HeaderComponent {
             self.id,
             &issue.issue.subject,
             self.focus_state.is_focused(),
-            Self::title_decorator(issue_status),
+            Self::title_decorator(&issue_status),
         )
     }
 

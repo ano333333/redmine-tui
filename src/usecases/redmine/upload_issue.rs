@@ -40,7 +40,7 @@ where
             .store()
             .get_issue(id)
             .expect("tried to upload unknown issue");
-        if state != &IssueState::Edited {
+        if state != IssueState::Edited {
             panic!("uploading issue is not edited");
         }
     }

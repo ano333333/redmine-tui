@@ -312,7 +312,7 @@ mod tests {
 
         assert!(matches!(
             component.create_widget(borrow.store()),
-            IssueWidget::FetchFailed { message: "timeout" }
+            IssueWidget::FetchFailed { message } if message == "timeout"
         ));
     }
 
@@ -416,7 +416,7 @@ mod tests {
             "issue_fetch_failed",
             40,
             3,
-            IssueWidget::fetch_failed("connection refused"),
+            IssueWidget::fetch_failed("connection refused".to_string()),
         );
     }
 }

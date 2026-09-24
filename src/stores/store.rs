@@ -184,14 +184,11 @@ impl Store {
         }
     }
 
-    pub fn get_issue(
-        &self,
-        issue_id: impl Into<IssueId>,
-    ) -> Option<(&IssueAggregate, &IssueState)> {
+    pub fn get_issue(&self, issue_id: impl Into<IssueId>) -> Option<(&IssueAggregate, IssueState)> {
         self.issue_store.get_issue(issue_id)
     }
 
-    pub fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<&IssueState> {
+    pub fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<IssueState> {
         self.issue_store.get_issue_state(issue_id)
     }
 
@@ -477,7 +474,7 @@ mod tests {
 
         store.consume_action(IssueAction::StartUpload { id }.into());
 
-        assert_eq!(store.get_issue_state(id), Some(&IssueState::Uploading));
+        assert_eq!(store.get_issue_state(id), Some(IssueState::Uploading));
     }
 
     #[test]

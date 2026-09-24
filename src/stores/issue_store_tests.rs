@@ -16,7 +16,7 @@ fn load_action_is_consumed_through_parent_store() {
 
     let (issue, state) = store.get_issue(id).expect("issue should be loaded");
     assert_eq!(issue.issue.id, id);
-    assert_eq!(state, &IssueState::Synced);
+    assert_eq!(state, IssueState::Synced);
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn update_issue_target_version_sets_selected_version() {
 
     let (issue, state) = store.get_issue(2).expect("issue should be loaded");
     assert_eq!(issue.target_version_id, Some(TargetVersionId::new(1)));
-    assert_eq!(state, &IssueState::Edited);
+    assert_eq!(state, IssueState::Edited);
 }
 
 #[test]
@@ -92,7 +92,7 @@ fn update_issue_target_version_can_clear_version() {
 
     let (issue, state) = store.get_issue(1).expect("issue should be loaded");
     assert_eq!(issue.target_version_id, None);
-    assert_eq!(state, &IssueState::Edited);
+    assert_eq!(state, IssueState::Edited);
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn update_issue_category_sets_selected_category() {
 
     let (issue, state) = store.get_issue(1).expect("issue should be loaded");
     assert_eq!(issue.category_id, Some(CategoryId::new(2)));
-    assert_eq!(state, &IssueState::Edited);
+    assert_eq!(state, IssueState::Edited);
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn update_issue_category_can_clear_category() {
 
     let (issue, state) = store.get_issue(1).expect("issue should be loaded");
     assert_eq!(issue.category_id, None);
-    assert_eq!(state, &IssueState::Edited);
+    assert_eq!(state, IssueState::Edited);
 }
 
 #[test]
@@ -260,7 +260,7 @@ fn start_issue_upload_marks_issue_uploading_and_retains_diffs() {
     store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
 
     let (_, state) = store.get_issue(1).expect("issue should be loaded");
-    assert_eq!(state, &IssueState::Uploading);
+    assert_eq!(state, IssueState::Uploading);
     assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
 }
 
@@ -292,7 +292,7 @@ fn issue_upload_conflicts_are_retained_while_uploading() {
         .expect("issue upload conflict should be retained");
     assert_eq!(actual_issue.issue.subject, server_issue.issue.subject);
     assert_eq!(actual_conflicts, conflicts);
-    assert_eq!(store.get_issue(1).unwrap().1, &IssueState::Uploading);
+    assert_eq!(store.get_issue(1).unwrap().1, IssueState::Uploading);
 }
 
 #[test]
@@ -485,7 +485,7 @@ fn cancel_issue_upload_returns_issue_to_edited_and_retains_diffs() {
     store.consume_action(IssueAction::CancelUpload { id: 1.into() }.into());
 
     let (_, state) = store.get_issue(1).expect("issue should be loaded");
-    assert_eq!(state, &IssueState::Edited);
+    assert_eq!(state, IssueState::Edited);
     assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
 }
 
@@ -518,7 +518,7 @@ fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs_and_message() {
     );
 
     let (_, state) = store.get_issue(1).expect("issue should be loaded");
-    assert_eq!(state, &IssueState::Edited);
+    assert_eq!(state, IssueState::Edited);
     assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
     assert!(store.get_issue_upload_conflict(1.into()).is_none());
     assert_eq!(
@@ -574,7 +574,7 @@ fn sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
     let (issue, state) = store.get_issue(9).expect("issue should be synced");
     assert_eq!(issue.issue.subject, "server issue after upload");
     assert_eq!(issue.issue.description, "body");
-    assert_eq!(state, &IssueState::Synced);
+    assert_eq!(state, IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
 }
 
@@ -633,7 +633,7 @@ fn sync_issue_after_failed_upload_replaces_issue_clears_diffs_and_failure_and_ma
     let (issue, state) = store.get_issue(9).expect("issue should be synced");
     assert_eq!(issue.issue.subject, "server issue after upload");
     assert_eq!(issue.issue.description, "body");
-    assert_eq!(state, &IssueState::Synced);
+    assert_eq!(state, IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
     assert_eq!(store.get_issue_upload_failure(9.into()), None);
 }
@@ -682,7 +682,7 @@ fn uploading_issue_sync_replaces_issue_clears_diffs_and_marks_synced() {
     let (issue, state) = store.get_issue(9).expect("issue should be synced");
     assert_eq!(issue.issue.subject, "server issue after upload");
     assert_eq!(issue.issue.description, "body");
-    assert_eq!(state, &IssueState::Synced);
+    assert_eq!(state, IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
 }
 
@@ -693,7 +693,7 @@ fn unregistered_issue_can_start_fetching_without_an_issue_body() {
 
     store.consume_action(IssueAction::StartFetching { id }.into());
 
-    assert_eq!(store.get_issue_state(id), Some(&IssueState::Fetching));
+    assert_eq!(store.get_issue_state(id), Some(IssueState::Fetching));
     assert!(store.get_issue(id).is_none());
 }
 
@@ -712,7 +712,7 @@ fn failed_issue_can_restart_fetching_and_clears_the_error() {
 
     store.consume_action(IssueAction::StartFetching { id }.into());
 
-    assert_eq!(store.get_issue_state(id), Some(&IssueState::Fetching));
+    assert_eq!(store.get_issue_state(id), Some(IssueState::Fetching));
     assert!(store.get_issue(id).is_none());
 }
 
@@ -775,7 +775,7 @@ fn matching_fetch_success_registers_the_issue_as_synced() {
 
     let (issue, state) = store.get_issue(id).expect("issue should be fetched");
     assert_eq!(issue.issue.subject, "fetched");
-    assert_eq!(state, &IssueState::Synced);
+    assert_eq!(state, IssueState::Synced);
     assert!(store.get_issue_property_diffs(id).is_empty());
     assert!(store.get_issue_upload_conflict(id).is_none());
 }
@@ -813,7 +813,7 @@ fn fetch_failure_retains_message_without_an_issue_body() {
 
     assert_eq!(
         store.get_issue_state(id),
-        Some(&IssueState::FetchFailed {
+        Some(IssueState::FetchFailed {
             message: "network error".to_string()
         })
     );
@@ -962,12 +962,12 @@ fn fixture_load_does_not_add_a_body_to_fetching_or_failed_issues() {
         if fail_fetch {
             assert_eq!(
                 store.get_issue_state(id),
-                Some(&IssueState::FetchFailed {
+                Some(IssueState::FetchFailed {
                     message: "failed".to_string(),
                 })
             );
         } else {
-            assert_eq!(store.get_issue_state(id), Some(&IssueState::Fetching));
+            assert_eq!(store.get_issue_state(id), Some(IssueState::Fetching));
         }
     }
 }
