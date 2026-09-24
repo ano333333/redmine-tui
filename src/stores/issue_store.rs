@@ -313,8 +313,8 @@ impl IssueStore {
             .zip(self.get_issue_state(issue_id))
     }
 
-    pub(super) fn get_issues(&self) -> &HashMap<IssueId, IssueAggregate> {
-        &self.issues
+    pub(super) fn get_issues(&self) -> impl Iterator<Item = (&IssueId, &IssueAggregate)> {
+        self.issues.iter()
     }
 
     pub(super) fn get_issue_property_diffs(

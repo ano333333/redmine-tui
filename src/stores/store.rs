@@ -195,7 +195,7 @@ impl Store {
         self.issue_store.get_issue_state(issue_id)
     }
 
-    pub fn get_issues(&self) -> &HashMap<IssueId, IssueAggregate> {
+    pub fn get_issues(&self) -> impl Iterator<Item = (&IssueId, &IssueAggregate)> {
         self.issue_store.get_issues()
     }
 

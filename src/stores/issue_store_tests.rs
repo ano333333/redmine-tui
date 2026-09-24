@@ -1,4 +1,5 @@
 use super::{IssueAction, IssueState, Store};
+use crate::entities::IssueAggregate;
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
 use crate::vos::issue_property_diff::{
@@ -16,6 +17,36 @@ fn load_action_is_consumed_through_parent_store() {
     let (issue, state) = store.get_issue(id).expect("issue should be loaded");
     assert_eq!(issue.issue.id, id);
     assert_eq!(state, &IssueState::Synced);
+}
+
+#[test]
+fn get_issues_lists_only_loaded_issues_and_excludes_unfetched_states() {
+    let mut store = Store::new();
+
+    store.consume_action(
+        IssueAction::Load {
+            id: IssueId::new(1),
+        }
+        .into(),
+    );
+    store.consume_action(
+        IssueAction::StartFetching {
+            id: IssueId::new(99),
+        }
+        .into(),
+    );
+    store.consume_action(
+        IssueAction::FetchFailed {
+            id: IssueId::new(99),
+            message: "network error".to_string(),
+        }
+        .into(),
+    );
+
+    let issues: Vec<(&IssueId, &IssueAggregate)> = store.get_issues().collect();
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].0, &IssueId::new(1));
+    assert_eq!(issues[0].1.issue.id, IssueId::new(1));
 }
 
 #[test]
