@@ -1,3 +1,7 @@
+//! Issueの取得・編集・uploadに伴う状態を保持し、Actionで遷移させる。
+//! entryのvariantで本体・差分・失敗・競合の保持可能な組合せを制限する。
+//! Actionごとの遷移前提条件は受理時に検査する。
+
 use std::collections::HashMap;
 
 use crate::entities::IssueAggregate;
