@@ -192,9 +192,8 @@ impl IssueStore {
                 if !matches!(state, IssueState::Edited) {
                     panic!("cannot start issue upload while issue {id} is {state:?}");
                 }
-                let entry = self.entries.remove(&id);
-                match entry {
-                    Some(IssueEntry::Edited { issue, diffs, .. }) => {
+                match self.entries.remove(&id).unwrap() {
+                    IssueEntry::Edited { issue, diffs, .. } => {
                         self.entries.insert(
                             id,
                             IssueEntry::Uploading {
@@ -204,20 +203,16 @@ impl IssueStore {
                             },
                         );
                     }
-                    Some(entry) => {
-                        self.entries.insert(id, entry);
-                    }
-                    None => {}
-                };
+                    _ => unreachable!("state check guarantees Edited"),
+                }
             }
             IssueAction::CancelUpload { id } => {
                 let state = self.derived_state(id).unwrap_or(IssueState::Synced);
                 if !matches!(state, IssueState::Uploading) {
                     panic!("cannot cancel issue upload while issue {id} is {state:?}");
                 }
-                let entry = self.entries.remove(&id);
-                match entry {
-                    Some(IssueEntry::Uploading { issue, diffs, .. }) => {
+                match self.entries.remove(&id).unwrap() {
+                    IssueEntry::Uploading { issue, diffs, .. } => {
                         self.entries.insert(
                             id,
                             IssueEntry::Edited {
@@ -227,43 +222,27 @@ impl IssueStore {
                             },
                         );
                     }
-                    Some(entry) => {
-                        self.entries.insert(id, entry);
-                    }
-                    None => {}
-                };
-            }
-            IssueAction::ClearUploadConflicts { id } => {
-                let state = self.derived_state(id).unwrap_or(IssueState::Synced);
-                if !matches!(state, IssueState::Uploading) {
-                    panic!("cannot clear issue upload conflicts while issue {id} is {state:?}");
+                    _ => unreachable!("state check guarantees Uploading"),
                 }
-                let entry = self.entries.remove(&id);
-                match entry {
-                    Some(IssueEntry::Uploading { issue, diffs, .. }) => {
-                        self.entries.insert(
-                            id,
-                            IssueEntry::Uploading {
-                                issue,
-                                diffs,
-                                conflict: None,
-                            },
-                        );
-                    }
-                    Some(entry) => {
-                        self.entries.insert(id, entry);
-                    }
-                    None => {}
-                };
             }
+            IssueAction::ClearUploadConflicts { id } => match self.entries.get_mut(&id) {
+                Some(IssueEntry::Uploading { conflict, .. }) => *conflict = None,
+                Some(entry) => panic!(
+                    "cannot clear issue upload conflicts while issue {id} is {:?}",
+                    Self::entry_state(entry)
+                ),
+                None => panic!(
+                    "cannot clear issue upload conflicts while issue {id} is {:?}",
+                    IssueState::Synced
+                ),
+            },
             IssueAction::FailUpload { id, message } => {
                 let state = self.derived_state(id).unwrap_or(IssueState::Synced);
                 if !matches!(state, IssueState::Uploading) {
                     panic!("cannot fail issue upload while issue {id} is {state:?}");
                 }
-                let entry = self.entries.remove(&id);
-                match entry {
-                    Some(IssueEntry::Uploading { issue, diffs, .. }) => {
+                match self.entries.remove(&id).unwrap() {
+                    IssueEntry::Uploading { issue, diffs, .. } => {
                         self.entries.insert(
                             id,
                             IssueEntry::Edited {
@@ -273,41 +252,30 @@ impl IssueStore {
                             },
                         );
                     }
-                    Some(entry) => {
-                        self.entries.insert(id, entry);
-                    }
-                    None => {}
-                };
+                    _ => unreachable!("state check guarantees Uploading"),
+                }
             }
             IssueAction::UploadConflictsDetected {
                 server_issue,
                 conflicts,
             } => {
                 let id = server_issue.issue.id;
-                let state = self.derived_state(id).unwrap_or(IssueState::Synced);
-                if !matches!(state, IssueState::Uploading) {
-                    panic!("cannot retain issue upload conflicts while issue {id} is {state:?}");
+                match self.entries.get_mut(&id) {
+                    Some(IssueEntry::Uploading { conflict, .. }) => {
+                        *conflict = Some(IssueUploadConflict {
+                            server_issue,
+                            conflicts,
+                        });
+                    }
+                    Some(entry) => panic!(
+                        "cannot retain issue upload conflicts while issue {id} is {:?}",
+                        Self::entry_state(entry)
+                    ),
+                    None => panic!(
+                        "cannot retain issue upload conflicts while issue {id} is {:?}",
+                        IssueState::Synced
+                    ),
                 }
-                let entry = self.entries.remove(&id);
-                match entry {
-                    Some(IssueEntry::Uploading { issue, diffs, .. }) => {
-                        self.entries.insert(
-                            id,
-                            IssueEntry::Uploading {
-                                issue,
-                                diffs,
-                                conflict: Some(IssueUploadConflict {
-                                    server_issue,
-                                    conflicts,
-                                }),
-                            },
-                        );
-                    }
-                    Some(entry) => {
-                        self.entries.insert(id, entry);
-                    }
-                    None => {}
-                };
             }
             IssueAction::UpdateDescription { id, body } => self.update_issue(id, |issue| {
                 let before = issue.issue.description.clone();
@@ -449,15 +417,18 @@ impl IssueStore {
     }
 
     fn derived_state(&self, id: IssueId) -> Option<IssueState> {
-        match self.entries.get(&id) {
-            None => None,
-            Some(IssueEntry::Fetching) => Some(IssueState::Fetching),
-            Some(IssueEntry::FetchFailed { message }) => Some(IssueState::FetchFailed {
+        self.entries.get(&id).map(Self::entry_state)
+    }
+
+    fn entry_state(entry: &IssueEntry) -> IssueState {
+        match entry {
+            IssueEntry::Fetching => IssueState::Fetching,
+            IssueEntry::FetchFailed { message } => IssueState::FetchFailed {
                 message: message.clone(),
-            }),
-            Some(IssueEntry::Synced { .. }) => Some(IssueState::Synced),
-            Some(IssueEntry::Edited { .. }) => Some(IssueState::Edited),
-            Some(IssueEntry::Uploading { .. }) => Some(IssueState::Uploading),
+            },
+            IssueEntry::Synced { .. } => IssueState::Synced,
+            IssueEntry::Edited { .. } => IssueState::Edited,
+            IssueEntry::Uploading { .. } => IssueState::Uploading,
         }
     }
 
