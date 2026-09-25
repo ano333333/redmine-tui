@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 11 — IssueStoreのentry統合とStoreの状態検査の整理</title>
+    <style>
+      *,*::before,*::after{box-sizing:border-box}body{margin:0;background:#0f1117;color:#d0d4e8;font:15px/1.75 system-ui,"Noto Sans JP",sans-serif}.layout{display:flex;min-height:100vh}nav{position:sticky;top:0;width:240px;height:100vh;padding:28px 20px;background:#1a1d27;border-right:1px solid #2e3350}nav a{display:block;padding:5px 0;color:#8ba3f5;text-decoration:none;font-size:13px}main{max-width:980px;padding:52px 64px}h1,h2,h3{color:#e8eaf6}h1{font-size:27px;line-height:1.25}h2{margin-top:44px;padding-bottom:8px;border-bottom:1px solid #2e3350;font-size:19px}h3{margin-top:28px;font-size:16px}code,pre{font-family:"JetBrains Mono",monospace}code{color:#8ba3f5}pre{overflow:auto;padding:16px 18px;background:#13151f;border:1px solid #2a2e45;border-radius:8px;color:#d0d4e8}.status{display:inline-block;padding:3px 10px;border:1px solid #2a7a50;border-radius:20px;color:#4caf8a}li{margin:5px 0}@media(max-width:820px){.layout{display:block}nav{position:static;width:auto;height:auto}main{padding:32px 22px}}
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <strong>ADR 11</strong>
+        <a href="#context">Context</a>
+        <a href="#decision">Decision</a>
+        <a href="#errors">Error Handling</a>
+        <a href="#rationale">Rationale</a>
+        <a href="#consequences">Consequences</a>
+        <a href="#alternatives">Alternatives</a>
+        <a href="#future">Future Work</a>
+        <hr />
+        <a href="9.html">ADR 9</a>
+        <a href="../architecture.html">Architecture</a>
+      </nav>
+      <main>
+        <h1>11. IssueStoreのentry統合とStoreの状態検査の整理</h1>
+        <span class="status">Accepted</span>
+
+        <section id="context">
+          <h2>Context</h2>
+          <p>IssueStoreはIssue本体、取得・保存状態、編集差分、upload競合、upload失敗を5つのHashMapに分けて保持する。各Actionが複数のMapを更新し、本体と状態の欠損や不要な付随情報の残存を実行時に防いでいる。</p>
+          <p>JournalStoreはすでにRemoteJournalEntry / LocalJournalEntryとデータを持つ状態enumを使う。一方、Action処理に存在確認・状態確認の重複がある。</p>
+          <p>ADR 9の不正Actionをpanicで拒否する方針を維持しながら、型によって内部不整合を表現できなくし、重複した検査を減らす。ADR 10は並行作業中であり、本ADRではその内容を仮定しない。</p>
+        </section>
+
+        <section id="decision">
+          <h2>Decision</h2>
+          <h3>IssueStoreを単一のMapへ統合する</h3>
+          <p>最終的な内部表現は以下を基本とする。型とフィールドはIssueStore内部に閉じ、公開getterから読み取り結果を返す。</p>
+          <pre><code>struct IssueStore {
+    entries: HashMap&lt;IssueId, IssueEntry&gt;,
+}
+
+enum IssueEntry {
+    Fetching,
+    FetchFailed { message: String },
+    Synced {
+        issue: IssueAggregate,
+    },
+    Edited {
+        issue: IssueAggregate,
+        diffs: Vec&lt;IssuePropertyDiff&gt;,
+        failure: Option&lt;String&gt;,
+    },
+    Uploading {
+        issue: IssueAggregate,
+        diffs: Vec&lt;IssuePropertyDiff&gt;,
+        conflict: Option&lt;IssueUploadConflict&gt;,
+    },
+}
+
+struct IssueUploadConflict {
+    server_issue: IssueAggregate,
+    conflicts: Vec&lt;IssuePropertyDiff&gt;,
+}</code></pre>
+          <p>未登録はMapの不在で表す。Fetching / FetchFailedは本体を持たず、Synced / Edited / Uploadingは必ず本体を持つ。Syncedは差分・失敗・競合を持たず、失敗はEdited、競合はUploadingだけが保持する。状態を別フィールドにも保存する二重管理は行わない。空diffを禁止する型や、競合待ちの新variantは今回導入しない。</p>
+          <p>getterの意味は維持する。get_issueは本体がなければNone、diffは対象状態でなければ空slice、競合・upload失敗はなければNoneを返す。get_issuesは取得済み本体だけを列挙するiteratorへ変更する。公開IssueStateは内部状態から導出する表示・判定用の値として残し、get_issueとget_issue_stateは状態を値で返す。FetchFailedのmessageは必要時にcloneする。参照APIを保つための状態キャッシュは追加しない。</p>
+
+          <h3>privateメソッドで重複を減らす</h3>
+          <p>Issueの各Update Actionは本体変更とdiff追加を一緒に扱うprivate編集処理を利用する。存在と編集可能性を確認した後に同じIDを引き直してexpectする形を避ける。Synced / Edited variantを直接matchしてよい。</p>
+          <p>JournalStoreも既存enumを維持し、存在取得、upload排他、状態別処理の重複をprivateメソッドや借用範囲の整理で減らす。異常時の対象IDと操作が分かる診断を保つ。panicの行数を減らすために全Actionの状態検査を巨大な汎用フレームワークへ集めない。</p>
+          <p>状態別structの所有権を消費する遷移メソッドは必須としない。Map統合後、再利用や複雑さに具体的な問題が残った場合に再検討する。Synced / Edited / Uploading variantに本体を持たせ、取得済み状態と本体の存在を型で結び付ける。</p>
+
+          <h3>Action契約と既存の振る舞い</h3>
+          <ul>
+            <li>dispatchとconsumeの分離、ActionごとのComponent updateを維持する。</li>
+            <li>遷移元違反、未登録対象への不正Action、ID不一致、Journal所有関係・重複、upload排他違反の検査は残す。</li>
+            <li>検査を削除できるのは新しい型で不正状態を構築できなくなった場合。Result、無言のno-op、debug_assertへの置換で削減しない。</li>
+            <li>IssueのSyncは未登録・Edited・Uploadingで受理する。Fetching・FetchFailed・Syncedでは拒否する。</li>
+            <li>IssueのLoadは未登録のみ登録し、登録済みなら変更しない。</li>
+            <li>Issueの再編集は現在のupload失敗情報を保持する。Journalの再編集は失敗情報を破棄する。両者の既存挙動を今回統一しない。</li>
+            <li>diffの順序、before/after、競合キャンセル・失敗・再試行のデータ保持規則を維持する。</li>
+            <li>Journalのdirty保護、取得順、Local upload完了時のmergeとLocal削除の不可分性を維持する。</li>
+          </ul>
+
+          <h3>テストを振る舞いに集中させる</h3>
+          <p>合法な状態に不正なActionを適用するpanicテストは残す。テストが内部entryを直接構築していても、それだけでは削除理由にならない。</p>
+          <p>旧Mapを直接壊して「本体だけ存在する」等を作るテストは、新しい型で構築不能になった変更と同時に削除する。型が保証することを実行時に再検証するための裏口やunsafeを作らない。値をstruct / enumに入れ、そのまま取り出すだけのテストも削除する。</p>
+          <p>正常遷移で本体・差分・失敗・競合がどう変わるかは引き続き検証する。型が付随情報の存在範囲を保証しても、正しい遷移先やデータを選んだことは型だけでは保証できない。</p>
+        </section>
+
+        <section id="errors">
+          <h2>Error Handling</h2>
+          <p>ADR 9を継続する。非同期完了の現在状態は受理時に検査する。Map統合は非同期の時間的整合性を保証しない。型で消えた内部不整合の検査だけを削除し、不正Actionに対する診断を維持する。</p>
+        </section>
+
+        <section id="rationale">
+          <h2>Rationale</h2>
+          <p>単一Mapとデータを持つenumにより、複数Mapの更新漏れと不正な状態の組み合わせを防げる。保存状態をIssueEntryのvariantに直接表すため状態判定は一段で済む。本体を参照するgetterと遷移では3つの取得済みvariantを扱う。</p>
+          <p>状態別structだけを追加してもAction受理時のmatchは残る。Map内の値に所有権を消費するメソッドを適用するには取り出し・復元が必要になるため、まず通常のprivateメソッドで十分か確認する。</p>
+        </section>
+
+        <section id="consequences">
+          <h2>Consequences</h2>
+          <ul>
+            <li>getterの状態は参照から値へ変わるため、呼び出し側とテストの比較・cloneを調整する。</li>
+            <li>Map統合を一度に行うタスクは100行未満に収まらない可能性がある。ビルド・テストが通る単位を優先する。</li>
+            <li>実装時にdocs/architecture.mdを更新する。既存ADRは書き換えない。</li>
+            <li>不可能な内部状態のテスト削除と、不正Actionのテスト保持を区別する。</li>
+          </ul>
+        </section>
+
+        <section id="alternatives">
+          <h2>Alternatives Considered</h2>
+          <ul>
+            <li>全フィールドをOptionにしたentry: Mapは統合できるが、状態との矛盾が残るため最終形にはしない。</li>
+            <li>平坦なenumと状態別struct: 遷移処理が複雑になった場合に再検討する。現時点では導入コストに見合う効果が確認できない。</li>
+            <li>全panicの除去: Action到着時の状態は実行時に決まるため、今回の型変更だけでは保証できない。</li>
+          </ul>
+        </section>
+
+        <section id="future">
+          <h2>Future Work</h2>
+          <ul>
+            <li>検証済みJournal取得結果型。SyncFetchedとCompleteLocalUploadWithFetchedの入力検証経路の差も別途検討する。</li>
+            <li>競合待ちの状態細分化と、その型を要求する操作API。</li>
+            <li>IssueとJournalをまたぐupload操作の単一所有。active_uploadと各entryの状態を二重管理するだけの変更は避ける。</li>
+            <li>Map統合後の実装を踏まえた状態別遷移メソッドの必要性の再評価。</li>
+          </ul>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
