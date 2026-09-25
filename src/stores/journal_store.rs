@@ -168,13 +168,7 @@ impl JournalStore {
                 });
             }
             JournalAction::EditLocalNotes { issue_id, notes } => {
-                let entry = self
-                    .by_issue
-                    .get_mut(&issue_id)
-                    .and_then(|issue_journals| issue_journals.local.as_mut())
-                    .unwrap_or_else(|| {
-                        panic!("local journal is not registered for issue {issue_id}")
-                    });
+                let entry = self.local_entry_mut(issue_id);
                 match &mut entry.state {
                     LocalJournalState::LocalOnly { failure } => {
                         entry.journal.notes = notes;
@@ -208,13 +202,7 @@ impl JournalStore {
                 local.state = LocalJournalState::Uploading;
             }
             JournalAction::FailLocalUpload { issue_id, message } => {
-                let entry = self
-                    .by_issue
-                    .get_mut(&issue_id)
-                    .and_then(|issue_journals| issue_journals.local.as_mut())
-                    .unwrap_or_else(|| {
-                        panic!("local journal is not registered for issue {issue_id}")
-                    });
+                let entry = self.local_entry_mut(issue_id);
                 match entry.state {
                     LocalJournalState::Uploading => {
                         entry.state = LocalJournalState::LocalOnly {
@@ -426,6 +414,13 @@ impl JournalStore {
                 issue_journals.local = None;
             }
         }
+    }
+
+    fn local_entry_mut(&mut self, issue_id: IssueId) -> &mut LocalJournalEntry {
+        self.by_issue
+            .get_mut(&issue_id)
+            .and_then(|issue_journals| issue_journals.local.as_mut())
+            .unwrap_or_else(|| panic!("local journal is not registered for issue {issue_id}"))
     }
 
     fn entry_mut(&mut self, issue_id: IssueId, journal_id: JournalId) -> &mut RemoteJournalEntry {
