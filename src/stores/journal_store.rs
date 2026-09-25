@@ -370,8 +370,17 @@ impl JournalStore {
                 issue_id,
                 journal_id,
             } => {
-                let entry = self.entry_mut(issue_id, journal_id);
-                match &entry.state {
+                let issue_journals = self.by_issue.get_mut(&issue_id).unwrap_or_else(|| {
+                    panic!("remote journal {journal_id} is not registered for issue {issue_id}")
+                });
+                let target_index = issue_journals
+                    .remote
+                    .iter()
+                    .position(|entry| entry.journal.id == journal_id)
+                    .unwrap_or_else(|| {
+                        panic!("remote journal {journal_id} is not registered for issue {issue_id}")
+                    });
+                match &issue_journals.remote[target_index].state {
                     RemoteJournalState::Uploading { .. } => {}
                     RemoteJournalState::Synced => {
                         panic!("cannot remove remote journal {journal_id} while it is synced");
@@ -380,9 +389,6 @@ impl JournalStore {
                         panic!("cannot remove remote journal {journal_id} while it is edited");
                     }
                 }
-                let issue_journals = self.by_issue.get_mut(&issue_id).unwrap_or_else(|| {
-                    panic!("remote journal {journal_id} is not registered for issue {issue_id}")
-                });
                 issue_journals
                     .remote
                     .retain(|entry| entry.journal.id != journal_id);
