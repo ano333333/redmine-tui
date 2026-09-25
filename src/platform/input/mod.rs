@@ -69,6 +69,9 @@ impl KeyModifiers {
 #[cfg(feature = "native")]
 pub mod native;
 
+#[cfg(feature = "web-demo")]
+pub mod web;
+
 #[cfg(test)]
 mod tests {
     use super::*;
