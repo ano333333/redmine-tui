@@ -1,5 +1,7 @@
 #[cfg(feature = "native")]
 pub mod native;
+#[cfg(feature = "web-demo")]
+pub mod web;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InteractionMode {
