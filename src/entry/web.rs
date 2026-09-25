@@ -12,7 +12,8 @@ use wasm_bindgen_futures::spawn_local;
 use crate::{
     clients::redmine::demo::DemoRedmineClient,
     platform::{
-        editor::web::WebTextEditor, host::web::WebPlatformHost,
+        editor::web::WebTextEditor,
+        host::web::{WebBackend, WebPlatformHost},
         runtime::web_spawner::WebBackgroundSpawner,
     },
     runner::{RunError, lifecycle::consume_initial_actions, run as run_app},
@@ -38,7 +39,7 @@ pub(crate) fn run() {
             return;
         }
     };
-    let terminal = match Terminal::new(backend) {
+    let terminal = match Terminal::new(WebBackend::new(backend)) {
         Ok(terminal) => terminal,
         Err(error) => {
             report(format!("failed to initialize web terminal: {error}"));

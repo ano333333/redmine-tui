@@ -10,28 +10,34 @@ use std::{
 
 use futures::{future::Either, future::select};
 use ratatui::{Frame, Terminal, layout::Rect};
-use ratzilla::{DomBackend, event::KeyEvent as RatzillaKeyEvent, web_sys};
+use ratzilla::{event::KeyEvent as RatzillaKeyEvent, web_sys};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use wasm_bindgen_futures::{JsFuture, js_sys::Promise};
 
 use super::{HostEvent, PlatformHost};
 use crate::platform::input::{InputEvent, KeyCode, web::convert_key};
 
+mod backend;
+
+pub(crate) use backend::WebBackend;
+
 #[derive(Default)]
 struct InputQueue {
     events: VecDeque<InputEvent>,
+    resized: bool,
     waker: Option<Waker>,
 }
 
 pub struct WebPlatformHost {
-    terminal: Terminal<DomBackend>,
+    terminal: Terminal<WebBackend>,
     started_at: f64,
     input: Rc<RefCell<InputQueue>>,
     key_listener: Closure<dyn FnMut(web_sys::KeyboardEvent)>,
+    resize_listener: Closure<dyn FnMut(web_sys::Event)>,
 }
 
 impl WebPlatformHost {
-    pub fn new(terminal: Terminal<DomBackend>) -> Self {
+    pub fn new(terminal: Terminal<WebBackend>) -> Self {
         let input = Rc::new(RefCell::new(InputQueue::default()));
         let listener_input = Rc::clone(&input);
         let key_listener = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
@@ -58,11 +64,24 @@ impl WebPlatformHost {
             .expect("browser document is unavailable")
             .add_event_listener_with_callback("keydown", key_listener.as_ref().unchecked_ref())
             .expect("failed to register browser key listener");
+        let resize_input = Rc::clone(&input);
+        let resize_listener = Closure::wrap(Box::new(move |_: web_sys::Event| {
+            let mut input = resize_input.borrow_mut();
+            input.resized = true;
+            if let Some(waker) = input.waker.take() {
+                waker.wake();
+            }
+        }) as Box<dyn FnMut(web_sys::Event)>);
+        web_sys::window()
+            .expect("browser window is unavailable")
+            .add_event_listener_with_callback("resize", resize_listener.as_ref().unchecked_ref())
+            .expect("failed to register browser resize listener");
         Self {
             terminal,
             started_at: performance().now(),
             input,
             key_listener,
+            resize_listener,
         }
     }
 }
@@ -73,6 +92,12 @@ impl Drop for WebPlatformHost {
             let _ = document.remove_event_listener_with_callback(
                 "keydown",
                 self.key_listener.as_ref().unchecked_ref(),
+            );
+        }
+        if let Some(window) = web_sys::window() {
+            let _ = window.remove_event_listener_with_callback(
+                "resize",
+                self.resize_listener.as_ref().unchecked_ref(),
             );
         }
     }
@@ -97,7 +122,11 @@ impl PlatformHost for WebPlatformHost {
         let next_input = poll_fn(|context| {
             let mut input = input.borrow_mut();
             if let Some(event) = input.events.pop_front() {
-                Poll::Ready(event)
+                Poll::Ready(HostEvent::Input(event))
+            } else if input.resized {
+                // 次の tick を待たず runner を起こし、新しい area で update・描画させる。
+                input.resized = false;
+                Poll::Ready(HostEvent::Ignored)
             } else {
                 input.waker = Some(context.waker().clone());
                 Poll::Pending
@@ -105,7 +134,7 @@ impl PlatformHost for WebPlatformHost {
         });
         let timer = std::pin::pin!(sleep(timeout));
         let result = match select(next_input, timer).await {
-            Either::Left((event, _)) => Some(HostEvent::Input(event)),
+            Either::Left((event, _)) => Some(event),
             Either::Right((_, _)) => None,
         };
         self.input.borrow_mut().waker = None;
