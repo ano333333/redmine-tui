@@ -16,6 +16,19 @@
         color: #d4d4d4;
         font-family: monospace;
       }
+
+      /* Ratzilla 0.3.0 の get_window_size は実フォントを測らず、
+         viewport を幅10px・高さ20pxで割ってセル数を決める。
+         ブラウザ既定の pre の余白を消し、行高をこの仮定に合わせる。
+         !important は DomBackend::populate が inline で指定する height: 15px を上書きするため。
+         16.6px は DejaVu Sans Mono で半角約10px・全角約20pxとなる測定値で、
+         別のフォントではセル幅に多少ずれが生じる。 */
+      #grid pre {
+        margin: 0;
+        height: 20px !important;
+        line-height: 20px;
+        font-size: 16.6px;
+      }
     </style>
   </head>
   <body>
