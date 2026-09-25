@@ -1,8 +1,8 @@
-//! Ratzilla の DOM 再構築を ratatui のサイズ取得より先に進める Backend wrapper。
-//! resize 後も Terminal が最新の大きさで描画 buffer を作れるようにする。
+//! Ratzilla の `DomBackend` のラッパー
 
 use std::{
     cell::{Cell, RefCell},
+    collections::HashSet,
     io,
     rc::Rc,
 };
@@ -11,6 +11,7 @@ use ratatui::{
     backend::{Backend, ClearType, WindowSize},
     buffer::Cell as BufferCell,
     layout::{Position, Size},
+    text::Span,
 };
 use ratzilla::DomBackend;
 use ratzilla::web_sys;
@@ -21,6 +22,11 @@ pub(crate) struct WebBackend {
     inner: RefCell<DomBackend>,
     resized: Rc<Cell<bool>>,
     resize_listener: Closure<dyn FnMut(web_sys::Event)>,
+    // DomBackend::draw が全角文字の右隣を空文字列にした位置と、
+    // 最後に描画したとき全角文字だった位置を別々に記録する。
+    // BufferDiff が右隣を差分に含めない場合も、前者を後者と照合して修復できる。
+    blanked: RefCell<HashSet<(u16, u16)>>,
+    wide: RefCell<HashSet<(u16, u16)>>,
 }
 
 impl WebBackend {
@@ -40,6 +46,8 @@ impl WebBackend {
             inner: RefCell::new(inner),
             resized,
             resize_listener,
+            blanked: RefCell::new(HashSet::new()),
+            wide: RefCell::new(HashSet::new()),
         }
     }
 }
@@ -62,7 +70,45 @@ impl Backend for WebBackend {
     where
         I: Iterator<Item = (u16, u16, &'a BufferCell)>,
     {
-        self.inner.get_mut().draw(content)
+        let content: Vec<_> = content.collect();
+        self.inner.get_mut().draw(content.iter().copied())?;
+
+        // Ratzilla は全角文字を描くと右隣の span を ""（幅 0）にする。
+        // 後で半角に変わっても ratatui-core の BufferDiff は、buffer 上で値が
+        // 変わらない右隣を再描画しないため、DOM の行末が左へずれる。
+        let blanked = self.blanked.get_mut();
+        let wide = self.wide.get_mut();
+        for &(x, y, cell) in &content {
+            blanked.remove(&(x, y));
+            // DomBackend::draw と同じ全角判定を使う。
+            if cell.symbol().len() > 1 && Span::raw(cell.symbol()).width() == 2 {
+                wide.insert((x, y));
+                if let Some(next_x) = x.checked_add(1) {
+                    // 右隣は全角文字の後半として描かれないので、古い全角記録を捨てる。
+                    wide.remove(&(next_x, y));
+                    blanked.insert((next_x, y));
+                }
+            } else {
+                wide.remove(&(x, y));
+            }
+        }
+
+        let stale: Vec<_> = blanked
+            .iter()
+            .copied()
+            .filter(|&(x, y)| x == 0 || !wide.contains(&(x - 1, y)))
+            .collect();
+        // ratatui-core は前の全角文字の背景色などが右隣に見える場合、
+        // BufferDiff で右隣を強制的に出し直す。ここに残るのは既定 style の
+        // 空白でよいセルだけなので、Cell::default() で幅 0 の span を戻せる。
+        let empty = BufferCell::default();
+        self.inner
+            .get_mut()
+            .draw(stale.iter().map(|&(x, y)| (x, y, &empty)))?;
+        for position in stale {
+            blanked.remove(&position);
+        }
+        Ok(())
     }
 
     fn append_lines(&mut self, n: u16) -> Result<(), Self::Error> {
@@ -102,6 +148,9 @@ impl Backend for WebBackend {
             // 空の draw で先に再構築すれば、autoresize が新しい size を検知して
             // buffer を作り直し、空の grid 全体を描画できる。
             self.inner.borrow_mut().draw(std::iter::empty())?;
+            // grid の span はすべて新しくなるため、旧 DOM の幅 0 記録も無効になる。
+            self.blanked.borrow_mut().clear();
+            self.wide.borrow_mut().clear();
             self.resized.set(false);
         }
         self.inner.borrow().size()
