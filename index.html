@@ -61,6 +61,10 @@
     </style>
   </head>
   <body>
+    <!--
+      Trunk 0.21.14 が release build 時に取得する wasm-opt（binaryen version_123）は
+      Rust が出力する bulk memory 命令を検証で拒否するため、data-wasm-opt="0" で最適化を無効にする。
+    -->
     <link
       data-trunk
       rel="rust"
@@ -68,6 +72,7 @@
       data-bin="redmine-tui-draft"
       data-cargo-no-default-features
       data-cargo-features="web-demo"
+      data-wasm-opt="0"
     />
   </body>
 </html>
