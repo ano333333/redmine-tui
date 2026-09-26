@@ -821,15 +821,15 @@ macro_rules! start_fetching_outside_startable_states_panics {
 
 start_fetching_outside_startable_states_panics! {
     start_fetching_while_fetching_panics:
-        "cannot start fetching issue 99 while it is Some(Fetching)" => [
+        "cannot start fetching issue 99 while it is Fetching" => [
             IssueAction::StartFetching { id: IssueId::new(99) },
         ],
     start_fetching_while_synced_panics:
-        "cannot start fetching issue 99 while it is Some(Synced)" => [IssueAction::Sync {
+        "cannot start fetching issue 99 while it is Synced" => [IssueAction::Sync {
             issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
         }],
     start_fetching_while_edited_panics:
-        "cannot start fetching issue 99 while it is Some(Edited)" => [
+        "cannot start fetching issue 99 while it is Edited" => [
             IssueAction::Sync {
                 issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
             },
@@ -839,7 +839,7 @@ start_fetching_outside_startable_states_panics! {
             },
         ],
     start_fetching_while_uploading_panics:
-        "cannot start fetching issue 99 while it is Some(Uploading)" => [
+        "cannot start fetching issue 99 while it is Uploading" => [
             IssueAction::Sync {
                 issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
             },

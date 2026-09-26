@@ -68,7 +68,6 @@ impl HeaderComponent {
             IssueState::Synced => None,
             IssueState::Edited => Some(TitleDecorater::Edited),
             IssueState::Uploading => Some(TitleDecorater::Uploading),
-            IssueState::Fetching | IssueState::FetchFailed { .. } => None,
         }
     }
 }
