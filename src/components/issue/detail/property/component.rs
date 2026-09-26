@@ -28,6 +28,11 @@ impl PropertyComponent {
         self.focus_state.focus_event(event);
     }
 
+    pub fn update(&mut self, width: u16) {
+        self.focus_state
+            .update(PropertyWidget::is_two_column(width));
+    }
+
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
         let (issue, _) = store.get_issue(self.id);
         let paragraph = create_property_widget(

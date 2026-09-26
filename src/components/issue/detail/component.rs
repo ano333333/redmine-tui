@@ -117,9 +117,9 @@ mod tests {
         );
     }
 
-    /// Property(15行) -> Body -> ChildrenList -> JournalsList(先頭Journalのdetail)
+    /// Property(2カラム時の左カラム8行) -> Body -> ChildrenList -> JournalsList(先頭Journalのdetail)
     /// の順にフォーカスを送り、JournalsList内の1件目JournalのNotes位置に到達させる
-    const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 54;
+    const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 47;
 
     fn dispatcher_with_issue_and_journals() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = dispatcher();
@@ -550,6 +550,7 @@ impl IssueDetailComponent {
         (self.width, self.height) = frame_size;
         let (issue, _) = store.get_issue(self.id);
         self.header.update(store);
+        self.property.update(self.width);
         self.body.update(issue, self.width);
         self.children_list.update(store);
 

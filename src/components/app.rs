@@ -1041,10 +1041,10 @@ mod tests {
         dispatcher
     }
 
-    /// Property(15行) -> Body -> ChildrenList -> JournalsList(先頭Journalのdetail)
+    /// Property(2カラム時の左カラム8行) -> Body -> ChildrenList -> JournalsList(先頭Journalのdetail)
     /// の順にフォーカスを送り、JournalsList内の1件目JournalのNotes位置に到達させる
     fn focus_first_journal_notes(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) {
-        for _ in 0..54 {
+        for _ in 0..47 {
             app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
             app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
         }
@@ -1295,10 +1295,12 @@ mod tests {
         let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
+        // 2カラム表示なので、左カラム最下行から右カラム最下行(カテゴリ)へ移る
         app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
-        for _ in 0..14 {
+        for _ in 0..7 {
             app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         }
+        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
         app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
 
         let popup = app.popup_components.back().expect("popup should be open");

@@ -13,6 +13,8 @@ const DUE_DATE_LINE: u16 = 10;
 const DONE_RATIO_LINE: u16 = 11;
 const TOTAL_SPENT_HOURS_LINE: u16 = 13;
 const CATEGORY_LINE: u16 = 14;
+/// 2カラム表示で右カラムの先頭になる項目インデックス。
+const RIGHT_COLUMN_FIRST_LINE: u16 = LINE_COUNT.div_ceil(2);
 
 pub enum FocusEvent {
     Unfocused,
@@ -36,6 +38,8 @@ pub enum EventProcessResult {
 enum Action {
     MoveDown,
     MoveUp,
+    MoveLeft,
+    MoveRight,
     OpenIssueStatusPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
@@ -47,12 +51,20 @@ enum Action {
 }
 
 pub struct FocusState {
+    is_two_column: bool,
     focused_y: Option<u16>,
 }
 
 impl FocusState {
     pub fn new() -> Self {
-        Self { focused_y: None }
+        Self {
+            is_two_column: false,
+            focused_y: None,
+        }
+    }
+
+    pub fn update(&mut self, is_two_column: bool) {
+        self.is_two_column = is_two_column;
     }
 
     pub fn process_event(&mut self, event: Event) -> Option<EventProcessResult> {
@@ -69,7 +81,12 @@ impl FocusState {
                 self.focused_y = Some(0);
             }
             FocusEvent::CursorEnteredFromBelow => {
-                self.focused_y = Some(LINE_COUNT - 1);
+                // 2カラム時は左カラムの最下行へ入る
+                self.focused_y = Some(if self.is_two_column {
+                    RIGHT_COLUMN_FIRST_LINE - 1
+                } else {
+                    LINE_COUNT - 1
+                });
             }
         }
     }
@@ -88,7 +105,7 @@ impl FocusState {
             };
         }
 
-        let split_at = LINE_COUNT.div_ceil(2);
+        let split_at = RIGHT_COLUMN_FIRST_LINE;
         if index < split_at {
             Position {
                 x: left_column_x,
@@ -117,6 +134,8 @@ impl FocusState {
         match key.code {
             KeyCode::Char('j') => Some(Action::MoveDown),
             KeyCode::Char('k') => Some(Action::MoveUp),
+            KeyCode::Char('h') => Some(Action::MoveLeft),
+            KeyCode::Char('l') => Some(Action::MoveRight),
             KeyCode::Char('e') if focused_y == ISSUE_STATUS_LINE => {
                 Some(Action::OpenIssueStatusPopup)
             }
@@ -141,7 +160,9 @@ impl FocusState {
         match action {
             Action::MoveDown => {
                 let focused_y = self.focused_y.as_mut()?;
-                if *focused_y + 1 == LINE_COUNT {
+                let is_column_bottom = *focused_y + 1 == LINE_COUNT
+                    || (self.is_two_column && *focused_y + 1 == RIGHT_COLUMN_FIRST_LINE);
+                if is_column_bottom {
                     return Some(EventProcessResult::CursorLeavedFromBelow);
                 }
                 *focused_y += 1;
@@ -149,10 +170,33 @@ impl FocusState {
             }
             Action::MoveUp => {
                 let focused_y = self.focused_y.as_mut()?;
-                if *focused_y == 0 {
+                let is_column_top = *focused_y == 0
+                    || (self.is_two_column && *focused_y == RIGHT_COLUMN_FIRST_LINE);
+                if is_column_top {
                     return Some(EventProcessResult::CursorLeavedFromAbove);
                 }
                 *focused_y -= 1;
+                None
+            }
+            Action::MoveLeft => {
+                if !self.is_two_column {
+                    return None;
+                }
+                let focused_y = self.focused_y.as_mut()?;
+                if *focused_y >= RIGHT_COLUMN_FIRST_LINE {
+                    *focused_y -= RIGHT_COLUMN_FIRST_LINE;
+                }
+                None
+            }
+            Action::MoveRight => {
+                if !self.is_two_column {
+                    return None;
+                }
+                let focused_y = self.focused_y.as_mut()?;
+                if *focused_y < RIGHT_COLUMN_FIRST_LINE {
+                    // 右カラムは1行少ないので、左カラム最下行からは右カラム最下行へ寄せる
+                    *focused_y = (*focused_y + RIGHT_COLUMN_FIRST_LINE).min(LINE_COUNT - 1);
+                }
                 None
             }
             Action::OpenIssueStatusPopup => Some(EventProcessResult::OpenIssueStatusPopup),
@@ -209,6 +253,7 @@ mod tests {
 
         // 分割位置の手前は左カラムに残る
         let state = FocusState {
+            is_two_column: false,
             focused_y: Some(split_at - 1),
         };
         assert_eq!(
@@ -221,6 +266,7 @@ mod tests {
 
         // 分割位置の項目は右カラムの先頭へ回る
         let state = FocusState {
+            is_two_column: false,
             focused_y: Some(split_at),
         };
         assert_eq!(
@@ -233,6 +279,7 @@ mod tests {
 
         // 最後の項目は右カラムの最下行
         let state = FocusState {
+            is_two_column: false,
             focused_y: Some(LINE_COUNT - 1),
         };
         assert_eq!(
@@ -244,6 +291,7 @@ mod tests {
     #[test]
     fn get_cursor_position_stays_in_one_column_when_narrow() {
         let state = FocusState {
+            is_two_column: false,
             focused_y: Some(LINE_COUNT - 1),
         };
 
@@ -384,7 +432,10 @@ mod tests {
 
     #[test]
     fn process_event_e_on_issue_status_line_opens_popup() {
-        let mut state = FocusState { focused_y: Some(3) };
+        let mut state = FocusState {
+            is_two_column: false,
+            focused_y: Some(3),
+        };
 
         let result = state.process_event(key_event(KeyCode::Char('e')));
 
@@ -398,6 +449,7 @@ mod tests {
     #[test]
     fn process_event_e_on_assigned_to_line_opens_popup() {
         let mut state = FocusState {
+            is_two_column: false,
             focused_y: Some(ASSIGNED_TO_LINE),
         };
 
@@ -413,6 +465,7 @@ mod tests {
     #[test]
     fn process_event_e_on_target_version_line_opens_popup() {
         let mut state = FocusState {
+            is_two_column: false,
             focused_y: Some(TARGET_VERSION_LINE),
         };
 
@@ -428,6 +481,7 @@ mod tests {
     #[test]
     fn process_event_e_on_start_date_line_opens_date_picker_popup() {
         let mut state = FocusState {
+            is_two_column: false,
             focused_y: Some(START_DATE_LINE),
         };
 
@@ -443,6 +497,7 @@ mod tests {
     #[test]
     fn process_event_e_on_due_date_line_opens_date_picker_popup() {
         let mut state = FocusState {
+            is_two_column: false,
             focused_y: Some(DUE_DATE_LINE),
         };
 
@@ -455,6 +510,7 @@ mod tests {
     #[test]
     fn process_event_e_on_done_ratio_line_opens_popup() {
         let mut state = FocusState {
+            is_two_column: false,
             focused_y: Some(DONE_RATIO_LINE),
         };
 
@@ -470,6 +526,7 @@ mod tests {
     #[test]
     fn process_event_e_on_total_spent_hours_line_opens_spent_time_popup() {
         let mut state = FocusState {
+            is_two_column: false,
             focused_y: Some(TOTAL_SPENT_HOURS_LINE),
         };
 
@@ -485,6 +542,7 @@ mod tests {
     #[test]
     fn process_event_e_on_category_line_opens_popup() {
         let mut state = FocusState {
+            is_two_column: false,
             focused_y: Some(LINE_COUNT - 1),
         };
 
@@ -495,5 +553,97 @@ mod tests {
             Some(EventProcessResult::OpenCategoryPopup)
         ));
         assert_eq!(state.focused_y(), Some(CATEGORY_LINE));
+    }
+
+    fn two_column_state(focused_y: u16) -> FocusState {
+        let mut state = FocusState::new();
+        state.update(true);
+        state.focused_y = Some(focused_y);
+        state
+    }
+
+    #[test]
+    fn process_event_l_and_h_switch_columns_keeping_row_when_wide() {
+        let mut state = two_column_state(3);
+
+        state.process_event(key_event(KeyCode::Char('l')));
+        assert_eq!(state.focused_y(), Some(11));
+
+        state.process_event(key_event(KeyCode::Char('h')));
+        assert_eq!(state.focused_y(), Some(3));
+    }
+
+    #[test]
+    fn process_event_l_on_left_bottom_moves_to_right_bottom_when_wide() {
+        let mut state = two_column_state(7);
+
+        state.process_event(key_event(KeyCode::Char('l')));
+
+        assert_eq!(state.focused_y(), Some(14));
+    }
+
+    #[test]
+    fn process_event_h_on_left_column_and_l_on_right_column_keep_focus_when_wide() {
+        let mut state = two_column_state(2);
+        state.process_event(key_event(KeyCode::Char('h')));
+        assert_eq!(state.focused_y(), Some(2));
+
+        let mut state = two_column_state(10);
+        state.process_event(key_event(KeyCode::Char('l')));
+        assert_eq!(state.focused_y(), Some(10));
+    }
+
+    #[test]
+    fn process_event_h_and_l_are_ignored_when_narrow() {
+        let mut state = FocusState {
+            is_two_column: false,
+            focused_y: Some(3),
+        };
+
+        state.process_event(key_event(KeyCode::Char('l')));
+        assert_eq!(state.focused_y(), Some(3));
+
+        state.process_event(key_event(KeyCode::Char('h')));
+        assert_eq!(state.focused_y(), Some(3));
+    }
+
+    #[test]
+    fn process_event_j_on_column_bottom_returns_leave_from_below_when_wide() {
+        for bottom in [7, 14] {
+            let mut state = two_column_state(bottom);
+
+            let result = state.process_event(key_event(KeyCode::Char('j')));
+
+            assert!(matches!(
+                result,
+                Some(EventProcessResult::CursorLeavedFromBelow)
+            ));
+            assert_eq!(state.focused_y(), Some(bottom));
+        }
+    }
+
+    #[test]
+    fn process_event_k_on_column_top_returns_leave_from_above_when_wide() {
+        for top in [0, 8] {
+            let mut state = two_column_state(top);
+
+            let result = state.process_event(key_event(KeyCode::Char('k')));
+
+            assert!(matches!(
+                result,
+                Some(EventProcessResult::CursorLeavedFromAbove)
+            ));
+            assert_eq!(state.focused_y(), Some(top));
+        }
+    }
+
+    #[test]
+    fn focus_event_from_below_enters_left_column_bottom_when_wide() {
+        let mut state = FocusState::new();
+        state.update(true);
+
+        state.focus_event(FocusEvent::CursorEnteredFromBelow);
+
+        assert_eq!(state.focused_y(), Some(7));
     }
 }
