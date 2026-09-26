@@ -23,6 +23,12 @@ pub enum IssueState {
     Uploading,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum IssueFetchState {
+    Fetching,
+    FetchFailed { message: String },
+}
+
 #[derive(Debug)]
 enum IssueEntry {
     Fetching,
@@ -418,6 +424,19 @@ impl IssueStore {
 
     pub(super) fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<IssueState> {
         self.derived_state(issue_id.into())
+    }
+
+    pub(super) fn try_get_issue_fetch_state(
+        &self,
+        issue_id: impl Into<IssueId>,
+    ) -> Option<IssueFetchState> {
+        match self.entries.get(&issue_id.into()) {
+            Some(IssueEntry::Fetching) => Some(IssueFetchState::Fetching),
+            Some(IssueEntry::FetchFailed { message }) => Some(IssueFetchState::FetchFailed {
+                message: message.clone(),
+            }),
+            _ => None,
+        }
     }
 
     fn derived_state(&self, id: IssueId) -> Option<IssueState> {

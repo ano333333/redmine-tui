@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use std::num::NonZeroUsize;
 
-use super::issue_store::{IssueAction, IssueState, IssueStore};
+use super::issue_store::{IssueAction, IssueFetchState, IssueState, IssueStore};
 use super::journal_state::{LocalJournalEntry, RemoteJournalEntry, RemoteJournalUploadConflict};
 use super::journal_store::{JournalAction, JournalStore};
 use super::notice_store::{Notice, NoticeAction, NoticeStore};
@@ -190,6 +190,16 @@ impl Store {
 
     pub fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<IssueState> {
         self.issue_store.get_issue_state(issue_id)
+    }
+
+    /// 取得中または取得失敗のIssueについて読み込み状態を返す。
+    ///
+    /// 未登録と取得済みのIssueではどちらも`None`を返す。
+    pub fn try_get_issue_fetch_state(
+        &self,
+        issue_id: impl Into<IssueId>,
+    ) -> Option<IssueFetchState> {
+        self.issue_store.try_get_issue_fetch_state(issue_id)
     }
 
     pub fn get_issues(&self) -> impl Iterator<Item = (&IssueId, &IssueAggregate)> {

@@ -5,7 +5,7 @@ mod notice_store;
 mod project_issues_store;
 mod store;
 
-pub use issue_store::{IssueAction, IssueState};
+pub use issue_store::{IssueAction, IssueFetchState, IssueState};
 pub use journal_state::{
     JournalUploadFailure, LocalJournalEntry, LocalJournalState, RemoteJournalEntry,
     RemoteJournalState, RemoteJournalUploadConflict,

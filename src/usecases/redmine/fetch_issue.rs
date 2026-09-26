@@ -84,7 +84,9 @@ mod tests {
         Category, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
         TimeEntityActivity, Tracker, User,
     };
-    use crate::stores::{Action, Dispatcher, IssueAction, IssueState, JournalAction};
+    use crate::stores::{
+        Action, Dispatcher, IssueAction, IssueFetchState, IssueState, JournalAction,
+    };
     use crate::test_support::{local_datetime, sample_issue_aggregate};
     use crate::vos::{IssueId, IssueStatusId, JournalId};
 
@@ -228,8 +230,8 @@ mod tests {
         assert!(future.is_some());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         assert_eq!(
-            dispatcher.borrow().store().get_issue_state(42),
-            Some(IssueState::FetchFailed {
+            dispatcher.borrow().store().try_get_issue_fetch_state(42),
+            Some(IssueFetchState::FetchFailed {
                 message: "first failure".to_string(),
             })
         );

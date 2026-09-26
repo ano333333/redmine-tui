@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use crate::{
-    stores::{Dispatcher, IssueState, Store},
+    stores::{Dispatcher, IssueFetchState, IssueState, Store},
     vos::IssueId,
 };
 
@@ -88,8 +88,11 @@ impl IssueComponent {
             }
             if key.code == KeyCode::Char('r') {
                 let failed = matches!(
-                    dispatcher.borrow().store().get_issue_state(self.issue_id),
-                    Some(IssueState::FetchFailed { .. })
+                    dispatcher
+                        .borrow()
+                        .store()
+                        .try_get_issue_fetch_state(self.issue_id),
+                    Some(IssueFetchState::FetchFailed { .. })
                 );
                 return failed.then_some(EventProcessResult::FetchRequested { id: self.issue_id });
             }

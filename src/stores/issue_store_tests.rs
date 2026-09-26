@@ -1,4 +1,4 @@
-use super::{IssueAction, IssueState, Store};
+use super::{IssueAction, IssueFetchState, IssueState, Store};
 use crate::entities::IssueAggregate;
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
@@ -774,7 +774,10 @@ fn unregistered_issue_can_start_fetching_without_an_issue_body() {
 
     store.consume_action(IssueAction::StartFetching { id }.into());
 
-    assert_eq!(store.get_issue_state(id), Some(IssueState::Fetching));
+    assert_eq!(
+        store.try_get_issue_fetch_state(id),
+        Some(IssueFetchState::Fetching)
+    );
     assert!(store.get_issue(id).is_none());
 }
 
@@ -793,7 +796,10 @@ fn failed_issue_can_restart_fetching_and_clears_the_error() {
 
     store.consume_action(IssueAction::StartFetching { id }.into());
 
-    assert_eq!(store.get_issue_state(id), Some(IssueState::Fetching));
+    assert_eq!(
+        store.try_get_issue_fetch_state(id),
+        Some(IssueFetchState::Fetching)
+    );
     assert!(store.get_issue(id).is_none());
 }
 
@@ -893,8 +899,8 @@ fn fetch_failure_retains_message_without_an_issue_body() {
     );
 
     assert_eq!(
-        store.get_issue_state(id),
-        Some(IssueState::FetchFailed {
+        store.try_get_issue_fetch_state(id),
+        Some(IssueFetchState::FetchFailed {
             message: "network error".to_string()
         })
     );
@@ -1042,13 +1048,16 @@ fn fixture_load_does_not_add_a_body_to_fetching_or_failed_issues() {
         assert!(store.get_issue(id).is_none());
         if fail_fetch {
             assert_eq!(
-                store.get_issue_state(id),
-                Some(IssueState::FetchFailed {
+                store.try_get_issue_fetch_state(id),
+                Some(IssueFetchState::FetchFailed {
                     message: "failed".to_string(),
                 })
             );
         } else {
-            assert_eq!(store.get_issue_state(id), Some(IssueState::Fetching));
+            assert_eq!(
+                store.try_get_issue_fetch_state(id),
+                Some(IssueFetchState::Fetching)
+            );
         }
     }
 }
