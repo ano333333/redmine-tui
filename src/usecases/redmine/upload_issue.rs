@@ -36,10 +36,7 @@ where
 {
     {
         let dispatcher = dispatcher.borrow();
-        let (_, state) = dispatcher
-            .store()
-            .get_issue(id)
-            .expect("tried to upload unknown issue");
+        let (_, state) = dispatcher.store().get_issue(id);
         if state != IssueState::Edited {
             panic!("uploading issue is not edited");
         }

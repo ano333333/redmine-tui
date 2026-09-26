@@ -125,10 +125,11 @@ fn resolve_optional<Id: EntityIdValue>(
 }
 
 fn resolve_parent_label(id: crate::vos::IssueId, store: &Store) -> String {
-    match store.get_issue(id) {
-        Some((issue, _)) => format!("#{} {}", id, issue.issue.subject),
-        None => format!("#{}", id),
+    if store.try_get_issue_state(id).is_none() {
+        return format!("#{}", id);
     }
+    let (issue, _) = store.get_issue(id);
+    format!("#{} {}", id, issue.issue.subject)
 }
 
 fn format_date(date: Option<chrono::DateTime<chrono::Local>>) -> String {

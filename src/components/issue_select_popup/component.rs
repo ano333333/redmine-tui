@@ -48,11 +48,8 @@ impl IssueSelectPopupComponent {
         let focused_issues_project =
             |project_id: &ProjectId| projects.iter().any(|project| project.id == *project_id);
         let focused_issues_project_id = focused_issue_id
-            .and_then(|issue_id| {
-                store
-                    .get_issue(issue_id)
-                    .map(|(issue, _)| issue.issue.project_id)
-            })
+            .filter(|issue_id| store.try_get_issue_state(*issue_id).is_some())
+            .map(|issue_id| store.get_issue(issue_id).0.issue.project_id)
             .filter(focused_issues_project);
         let focused_project_id =
             focused_issues_project_id.or_else(|| projects.first().map(|project| project.id));
@@ -212,7 +209,8 @@ impl IssueSelectPopupComponent {
             .unwrap_or_default()
             .iter()
             .map(|issue| {
-                if let Some((loaded, _)) = store.get_issue(issue.id) {
+                if store.try_get_issue_state(issue.id).is_some() {
+                    let (loaded, _) = store.get_issue(issue.id);
                     IssueSelectPopupIssue::new(
                         issue.project_id,
                         issue.id,
@@ -492,7 +490,7 @@ mod tests {
         assert_eq!(widget.issues[0].subject, "loaded subject");
         assert_eq!(
             widget.issues[0].description,
-            store.get_issue(1).unwrap().0.issue.description
+            store.get_issue(1).0.issue.description
         );
         assert_eq!(widget.issues[1].subject, "unloaded subject");
         assert_eq!(widget.issues[1].description, "unloaded body");
@@ -517,7 +515,7 @@ mod tests {
             1,
             100,
         );
-        assert!(store.get_issue(42).is_none());
+        assert!(store.try_get_issue_state(42).is_none());
 
         let mut component = IssueSelectPopupComponent::new(&store, Some(42.into()));
         let widget = component.create_widget(&store);

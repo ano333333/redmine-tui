@@ -892,7 +892,7 @@ mod tests {
             .store()
             .get_issue_property_diffs(IssueId::new(3))
             .to_vec();
-        let mut server_issue = dispatcher.borrow().store().get_issue(3).unwrap().0.clone();
+        let mut server_issue = dispatcher.borrow().store().get_issue(3).0.clone();
         server_issue.issue.description = "server body".to_string();
         {
             let mut dispatcher = dispatcher.borrow_mut();
@@ -1199,7 +1199,7 @@ mod tests {
             .store()
             .get_issue_property_diffs(IssueId::new(3))
             .to_vec();
-        let server_issue = dispatcher.borrow().store().get_issue(3).unwrap().0.clone();
+        let server_issue = dispatcher.borrow().store().get_issue(3).0.clone();
         {
             let mut dispatcher = dispatcher.borrow_mut();
             dispatcher.dispatch(IssueAction::StartUpload { id: 3.into() });
@@ -1315,12 +1315,8 @@ mod tests {
         app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
         dispatcher.borrow_mut().consume_action();
 
-        let issue_category_id = dispatcher
-            .borrow()
-            .store()
-            .get_issue(3)
-            .map(|(issue, _)| issue.category_id);
-        assert_eq!(issue_category_id, Some(None));
+        let issue_category_id = dispatcher.borrow().store().get_issue(3).0.category_id;
+        assert_eq!(issue_category_id, None);
         assert!(app.popup_components.is_empty());
     }
 
@@ -1343,13 +1339,7 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
 
         dispatcher.borrow_mut().consume_action();
-        let selected = dispatcher
-            .borrow()
-            .store()
-            .get_issue(3)
-            .unwrap()
-            .0
-            .start_date;
+        let selected = dispatcher.borrow().store().get_issue(3).0.start_date;
         assert_eq!(
             selected,
             Some(crate::test_support::local_datetime(
@@ -1377,7 +1367,7 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
 
         dispatcher.borrow_mut().consume_action();
-        let selected = dispatcher.borrow().store().get_issue(3).unwrap().0.due_date;
+        let selected = dispatcher.borrow().store().get_issue(3).0.due_date;
         assert_eq!(
             selected,
             Some(crate::test_support::local_datetime(

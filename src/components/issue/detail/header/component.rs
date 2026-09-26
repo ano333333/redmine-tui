@@ -34,23 +34,18 @@ impl HeaderComponent {
     }
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
-        if let Some((issue, issue_state)) = store.get_issue(self.id) {
-            let widget = HeaderWidget::new(
-                self.id,
-                &issue.issue.subject,
-                self.focus_state.is_focused(),
-                Self::title_decorator(&issue_state),
-            );
-            widget.line_count(width) as u16
-        } else {
-            0
-        }
+        let (issue, issue_state) = store.get_issue(self.id);
+        let widget = HeaderWidget::new(
+            self.id,
+            &issue.issue.subject,
+            self.focus_state.is_focused(),
+            Self::title_decorator(&issue_state),
+        );
+        widget.line_count(width) as u16
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> HeaderWidget<'a> {
-        let (issue, issue_status) = store
-            .get_issue(self.id)
-            .expect("HeaderComponent requires its issue to exist in Store");
+        let (issue, issue_status) = store.get_issue(self.id);
         HeaderWidget::new(
             self.id,
             &issue.issue.subject,

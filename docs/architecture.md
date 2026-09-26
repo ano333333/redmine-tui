@@ -114,9 +114,31 @@ Store は、失敗または Action の不受理に見える分岐を以下に区
 
 getter 契約は、API が表す状態と cardinality で決める。不在が示す意味が異なるため、entity の種類だけで一律には決めない。
 
-- strict 単体取得: 存在が呼び出し元の事前条件である getter は参照を直接返し、不在は異常系として `panic!` する。
-- 状態・cardinality を表す `Option`: 未取得・取得中・取得失敗、ページの未要求、0 件・1 件など、不在そのものが状態や cardinality を表す取得は `Option` を返す。呼び出し側が取得値の存在を特定の経路で前提する場合は、無言の `unwrap()` ではなく `expect(...)` で不変条件を説明する。
+- strict 単体取得: 存在が呼び出し元の事前条件である getter は `get_xxx` とし、参照を直接返し、不在は異常系として `panic!` する。
+- 状態・cardinality を表す `Option`: 読み込み状態、ページの未要求、0 件・1 件など、不在そのものが状態や cardinality を表す取得は `Option` を返す。`IssueStore` の単体 getter では、`Option` を返すものを `try_get_xxx` と命名する。呼び出し側が取得値の存在を特定の経路で前提する場合は、無言の `unwrap()` ではなく `expect(...)` で不変条件を説明する。
 - master snapshot の `Option`: 起動時に一度だけ同期するマスターデータ（`IssueStatus` など）は、起動後に取得した Issue や Journal がスナップショットに存在しない ID を参照し得るため陳腐化で欠損し得る。単体のマスターデータ getter は `Option` を返し、呼び出し元は表示上の fallback で処理する。
+
+Issue の getter は、取得済みの本体と読み込み状態を分けて扱う。
+
+```rust
+enum IssueState { Synced, Edited, Uploading }
+enum IssueFetchState { Fetching, FetchFailed { message: String } }
+
+fn get_issue(&self, id: IssueId) -> (&IssueAggregate, IssueState);
+fn try_get_issue_state(&self, id: IssueId) -> Option<IssueState>;
+fn try_get_issue_fetch_state(&self, id: IssueId) -> Option<IssueFetchState>;
+```
+
+| 内部状態 | `try_get_issue_state` | `try_get_issue_fetch_state` | `get_issue` |
+| --- | --- | --- | --- |
+| 未登録 | `None` | `None` | panic |
+| Fetching | `None` | `Some(Fetching)` | panic |
+| FetchFailed | `None` | `Some(FetchFailed)` | panic |
+| Synced / Edited / Uploading | `Some(..)` | `None` | 本体と状態 |
+
+- 本体の存在が不変条件である経路は `get_issue` を直接使い、不在を事前検査して処理をスキップしない。
+- 子 Issue や親 Issue の表示など不在が正常な経路では、`try_get_issue_state(id).is_some()` を確認してから `get_issue` を使う。
+- 未登録は両方の状態 getter が `None` の場合であり、`try_get_issue_fetch_state` の `None` だけで判定しない。
 
 ## Component lifecycle
 
@@ -150,12 +172,10 @@ Component は以下の lifecycle を前提に実装する。
 
 `src/components/issue/detail/` 配下の component では、`create_widget` 時点で対象 issue が Store に存在することを設計上の不変条件とする。
 外側の `src/components/issue/IssueComponent` は未取得、取得中、取得失敗も扱い、この不変条件を満たす状態でだけ detail component を生成する。
-この不変条件に依存する箇所では、無言の `unwrap()` ではなく、不変条件を説明する `expect(...)` を使う。
+この不変条件に依存する箇所では、strict getter の `get_issue` を直接使い、不在時の panic で契約違反を検出する。
 
 ```rust
-let (issue, _) = store
-    .get_issue(self.id)
-    .expect("PropertyComponent requires its issue to exist in Store");
+let (issue, _) = store.get_issue(self.id);
 ```
 
 ## Component の実装分割

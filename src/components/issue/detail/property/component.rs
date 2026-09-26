@@ -29,23 +29,18 @@ impl PropertyComponent {
     }
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
-        if let Some((issue, _)) = store.get_issue(self.id) {
-            let paragraph = create_property_widget(
-                issue,
-                store,
-                store.get_issue_status(issue.issue.status_id),
-                None,
-            );
-            paragraph.line_count(width) as u16
-        } else {
-            0
-        }
+        let (issue, _) = store.get_issue(self.id);
+        let paragraph = create_property_widget(
+            issue,
+            store,
+            store.get_issue_status(issue.issue.status_id),
+            None,
+        );
+        paragraph.line_count(width) as u16
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> PropertyWidget<'a> {
-        let (issue, _) = store
-            .get_issue(self.id)
-            .expect("PropertyComponent requires its issue to exist in Store");
+        let (issue, _) = store.get_issue(self.id);
         create_property_widget(
             issue,
             store,

@@ -548,15 +548,14 @@ impl IssueDetailComponent {
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, _: Rc<RefCell<Dispatcher>>, store: &Store, frame_size: (u16, u16)) {
         (self.width, self.height) = frame_size;
-        if let Some((issue, _)) = store.get_issue(self.id) {
-            self.header.update(store);
-            self.body.update(issue, self.width);
-            self.children_list.update(store);
+        let (issue, _) = store.get_issue(self.id);
+        self.header.update(store);
+        self.body.update(issue, self.width);
+        self.children_list.update(store);
 
-            let entries = store.get_remote_journals(self.id);
-            self.journals_list
-                .update(entries, store.get_local_journal(self.id), self.width);
-        }
+        let entries = store.get_remote_journals(self.id);
+        self.journals_list
+            .update(entries, store.get_local_journal(self.id), self.width);
 
         self.widget_state.update(
             self.calc_cursor_global_position(store),

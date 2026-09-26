@@ -39,16 +39,10 @@ mod tests {
         assert_eq!(dispatcher.consume_actinos_len(), 2);
         dispatcher.consume_action();
         assert!(dispatcher.store().get_issue_upload_conflict(id).is_none());
-        assert_eq!(
-            dispatcher.store().get_issue(id).unwrap().1,
-            IssueState::Uploading
-        );
+        assert_eq!(dispatcher.store().get_issue(id).1, IssueState::Uploading);
 
         dispatcher.consume_action();
-        assert_eq!(
-            dispatcher.store().get_issue(id).unwrap().1,
-            IssueState::Edited
-        );
+        assert_eq!(dispatcher.store().get_issue(id).1, IssueState::Edited);
         assert_eq!(dispatcher.store().get_issue_property_diffs(id).len(), 1);
     }
 }

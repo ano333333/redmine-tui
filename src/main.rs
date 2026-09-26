@@ -1640,12 +1640,7 @@ mod tests {
 
     fn edited_issue_dispatcher() -> (Dispatcher, IssueAggregate) {
         let mut dispatcher = loaded_journal_upload_dispatcher();
-        let server_issue = dispatcher
-            .store()
-            .get_issue(IssueId::new(3))
-            .expect("fixture issue should be loaded")
-            .0
-            .clone();
+        let server_issue = dispatcher.store().get_issue(IssueId::new(3)).0.clone();
         dispatcher.dispatch(IssueAction::UpdateDescription {
             id: IssueId::new(3),
             body: "locally edited description".to_string(),

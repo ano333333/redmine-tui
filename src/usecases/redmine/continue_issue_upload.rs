@@ -61,7 +61,7 @@ mod tests {
         let original_diffs = dispatcher.store().get_issue_property_diffs(id).to_vec();
         let local_description = original_diffs[0].clone();
         let conflicts = original_diffs[..2].to_vec();
-        let mut server_issue = dispatcher.store().get_issue(id).unwrap().0.clone();
+        let mut server_issue = dispatcher.store().get_issue(id).0.clone();
         server_issue.issue.description = "server body".to_string();
         server_issue.issue.status_id = 9.into();
         dispatcher.dispatch(IssueAction::UploadConflictsDetected {

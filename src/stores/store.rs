@@ -184,7 +184,14 @@ impl Store {
         }
     }
 
-    pub fn get_issue(&self, issue_id: impl Into<IssueId>) -> Option<(&IssueAggregate, IssueState)> {
+    /// 取得済みIssueの本体と状態を返す。
+    ///
+    /// # Panics
+    ///
+    /// 未登録・取得中・取得失敗のIssueを指定した場合にpanicする。
+    /// 取得済みかどうかが不明な経路では、先に`try_get_issue_state`で確認する。
+    #[track_caller]
+    pub fn get_issue(&self, issue_id: impl Into<IssueId>) -> (&IssueAggregate, IssueState) {
         self.issue_store.get_issue(issue_id)
     }
 
@@ -449,7 +456,7 @@ mod tests {
         dispatcher.dispatch(IssueAction::Load { id });
         dispatcher.consume_action();
 
-        assert!(dispatcher.store().get_issue(id).is_some());
+        assert!(dispatcher.store().try_get_issue_state(id).is_some());
     }
 
     #[test]

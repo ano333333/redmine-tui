@@ -22,15 +22,12 @@ impl ChildrenListComponent {
     }
 
     pub fn update(&mut self, store: &Store) {
-        if let Some((issue, _)) = store.get_issue(self.id) {
-            self.focus_state.update(&issue.child_ids);
-        }
+        let (issue, _) = store.get_issue(self.id);
+        self.focus_state.update(&issue.child_ids);
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> ChildrenListWidget<'a> {
-        let (issue, _) = store
-            .get_issue(self.id)
-            .expect("ChildrenListComponent requires its issue to exist in Store");
+        let (issue, _) = store.get_issue(self.id);
 
         let (child_all_num, child_closed_num, child_opened_num) =
             child_status_counts(store, &issue.child_ids);
@@ -46,11 +43,8 @@ impl ChildrenListComponent {
     }
 
     pub fn line_count(&self, store: &Store) -> u16 {
-        if let Some((issue, _)) = store.get_issue(self.id) {
-            2 + (issue.child_ids.len() as u16) + 1
-        } else {
-            0
-        }
+        let (issue, _) = store.get_issue(self.id);
+        2 + (issue.child_ids.len() as u16) + 1
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
@@ -71,11 +65,12 @@ fn child_status_counts(store: &Store, child_ids: &[IssueId]) -> (u16, u16, u16) 
     let child_closed_num = child_ids
         .iter()
         .filter(|id| {
-            store.get_issue(**id).is_some_and(|(issue, _)| {
+            store.try_get_issue_state(**id).is_some() && {
+                let (issue, _) = store.get_issue(**id);
                 store
                     .get_issue_status(issue.issue.status_id)
                     .is_closed_status()
-            })
+            }
         })
         .count() as u16;
     let child_opened_num = child_all_num - child_closed_num;
@@ -86,7 +81,8 @@ fn child_status_counts(store: &Store, child_ids: &[IssueId]) -> (u16, u16, u16) 
 fn create_child_rows<'a>(store: &'a Store, child_ids: &[IssueId]) -> Vec<ChildIssueRow<'a>> {
     child_ids
         .iter()
-        .filter_map(|id| store.get_issue(*id))
+        .filter(|id| store.try_get_issue_state(**id).is_some())
+        .map(|id| store.get_issue(*id))
         .map(|(issue, _)| ChildIssueRow {
             issue,
             issue_status: store.get_issue_status(issue.issue.status_id),
@@ -159,7 +155,7 @@ mod tests {
         let store = store_with_parent_and_unknown_status_child();
         let mut component = ChildrenListComponent::new(ISSUE_ID);
         component.update(&store);
-        let (parent, _) = store.get_issue(ISSUE_ID).unwrap();
+        let (parent, _) = store.get_issue(ISSUE_ID);
         let children = create_child_rows(&store, &parent.child_ids);
         let (child_all_num, child_closed_num, child_opened_num) =
             child_status_counts(&store, &parent.child_ids);

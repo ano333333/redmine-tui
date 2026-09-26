@@ -364,20 +364,18 @@ impl IssueStore {
         }
     }
 
-    pub(super) fn get_issue(
-        &self,
-        issue_id: impl Into<IssueId>,
-    ) -> Option<(&IssueAggregate, IssueState)> {
+    #[track_caller]
+    pub(super) fn get_issue(&self, issue_id: impl Into<IssueId>) -> (&IssueAggregate, IssueState) {
         let issue_id = issue_id.into();
         match self.entries.get(&issue_id) {
-            Some(IssueEntry::Synced { issue }) => return Some((issue, IssueState::Synced)),
-            Some(IssueEntry::Edited { issue, .. }) => return Some((issue, IssueState::Edited)),
-            Some(IssueEntry::Uploading { issue, .. }) => {
-                return Some((issue, IssueState::Uploading));
-            }
-            _ => {}
+            Some(IssueEntry::Synced { issue }) => (issue, IssueState::Synced),
+            Some(IssueEntry::Edited { issue, .. }) => (issue, IssueState::Edited),
+            Some(IssueEntry::Uploading { issue, .. }) => (issue, IssueState::Uploading),
+            entry => panic!(
+                "cannot get issue {issue_id} while it is {}",
+                Self::entry_state_name(entry)
+            ),
         }
-        None
     }
 
     pub(super) fn get_issues(&self) -> impl Iterator<Item = (&IssueId, &IssueAggregate)> {
