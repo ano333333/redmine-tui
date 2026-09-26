@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+# ローカルと同じ rustc / Trunk を使うため、両 job とも flake の devShell で実行する。
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@v23
+      - run: nix develop -c cargo fmt --check
+      - run: nix develop -c cargo build
+      - run: nix develop -c cargo test
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@v23
+      - run: nix develop -c cargo build --no-default-features --features web-demo --target wasm32-unknown-unknown
+      # 色制御の環境変数が設定されていると Trunk の起動に失敗することがあるため外す。
+      - run: env -u NO_COLOR -u TRUNK_NO_COLOR nix develop -c trunk build
