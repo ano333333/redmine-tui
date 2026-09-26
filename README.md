@@ -2,7 +2,9 @@
 
 A draft terminal UI for browsing and editing Redmine issue data.
 
-The current application is a local Ratatui prototype. It reads fixture-like YAML data from `datas/` and renders issue detail screens while the UI and domain model are being developed.
+The current application is a local Ratatui prototype. It reads data from a Redmine server running in a container and can update issues and journals.
+
+A Web demo renders the terminal UI in a browser (see the Web Demo section).
 
 ## Requirements
 
@@ -18,7 +20,7 @@ If you use Nix:
 nix develop
 ```
 
-This shell provides Rust, Cargo, Clippy, `cargo-insta`, and LLVM coverage tools.
+This shell provides Rust, Cargo, Clippy, `cargo-insta`, LLVM coverage tools, Trunk, and actionlint.
 
 ## Run the TUI
 
@@ -66,6 +68,18 @@ Seeder file checks:
 ```sh
 bash tests/redmine_seeder_files_test.sh
 ```
+
+`.github/workflows/ci.yml` checks the native build (`cargo fmt --check`, `cargo build --workspace`, `cargo test --workspace`) and the Web build (wasm32 `cargo build`, `trunk build`).
+
+## Web Demo
+
+The Web version renders the terminal UI in a browser with Ratzilla and runs against a memory mock (`DemoRedmineClient`) that embeds the fixtures. It does not connect to a real Redmine server and requires no API key. Edits exist only in memory; reloading or leaving the page discards them and restores the fixture state.
+
+```sh
+nix develop -c trunk serve --port 8081
+```
+
+Open `http://127.0.0.1:8081/` (the default port 8080 is used by the local Redmine server, so use a different port).
 
 ## Local Redmine With Docker
 
@@ -160,9 +174,12 @@ scripts/seed-redmine-test-data.sh
 ## Repository Layout
 
 - `src/`: Rust TUI source
-- `xtask/`: Cargo development tasks, including Redmine YAML seeding
+- `xtask/`: Cargo development tasks, including Redmine YAML seeding and Pages builds
+- `index.html`: Trunk entry HTML for the Web build
+- `Trunk.toml`: Trunk configuration for the Web build
 - `datas/`: local YAML fixture data
 - `compose.redmine.yml`: local Redmine Docker Compose setup
 - `docker/redmine/fresh_test_data.sql`: Redmine test-data reset SQL used before YAML seeding
 - `scripts/seed-redmine-test-data.sh`: seeder execution wrapper
+- `.github/workflows/`: CI and GitHub Pages workflows
 - `docs/redmine-test.md`: detailed local Redmine notes

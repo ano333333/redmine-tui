@@ -2,7 +2,9 @@
 
 Redmine の Issue データを閲覧、編集するためのターミナル UI のドラフトです。
 
-現在のアプリケーションは Ratatui を使ったローカルプロトタイプです。`datas/` の YAML データを読み込み、UI とドメインモデルの開発用に Issue 詳細画面を描画します。
+現在のアプリケーションは Ratatui を使ったローカルプロトタイプです。コンテナの Redmine サーバーのデータを読み込み、 Issue/Journal の更新ができます。
+
+Web デモは同じ端末 UI をブラウザに描画します（Web デモの節を参照）。
 
 ## 必要なもの
 
@@ -18,7 +20,7 @@ Nix を使う場合:
 nix develop
 ```
 
-このシェルには Rust、Cargo、Clippy、`cargo-insta`、LLVM coverage ツールが含まれます。
+このシェルには Rust、Cargo、Clippy、`cargo-insta`、LLVM coverage ツール、Trunk、actionlint が含まれます。
 
 ## TUI の起動
 
@@ -66,6 +68,18 @@ Seeder ファイルのチェック:
 ```sh
 bash tests/redmine_seeder_files_test.sh
 ```
+
+`.github/workflows/ci.yml` は native（`cargo fmt --check`、`cargo build --workspace`、`cargo test --workspace`）と Web（wasm32 の `cargo build`、`trunk build`）を検査します。
+
+## Web デモ
+
+Web 版は Ratzilla で端末 UI をブラウザに描画し、fixture を埋め込んだ memory mock（`DemoRedmineClient`）で動きます。実 Redmine には接続せず、API key も不要です。編集内容はメモリ上だけにあり、ページを再読み込み・離脱すると消えて fixture の状態に戻ります。
+
+```sh
+nix develop -c trunk serve --port 8081
+```
+
+`http://127.0.0.1:8081/` を開きます（既定の 8080 はローカル Redmine が使うため別 port にします）。
 
 ## Docker でローカル Redmine を起動する
 
@@ -160,9 +174,12 @@ scripts/seed-redmine-test-data.sh
 ## リポジトリ構成
 
 - `src/`: Rust TUI のソースコード
-- `xtask/`: Redmine YAML seeding などの Cargo 開発タスク
+- `xtask/`: Redmine YAML seeding、Pages build などの Cargo 開発タスク
+- `index.html`: Web build の Trunk 入口 HTML
+- `Trunk.toml`: Web build の Trunk 設定
 - `datas/`: ローカル YAML fixture データ
 - `compose.redmine.yml`: ローカル Redmine 用 Docker Compose 構成
 - `docker/redmine/fresh_test_data.sql`: YAML seed 前に使う Redmine テストデータリセット SQL
 - `scripts/seed-redmine-test-data.sh`: seeder 実行ラッパー
+- `.github/workflows/`: CI と GitHub Pages の workflow
 - `docs/redmine-test.md`: ローカル Redmine の詳細メモ
