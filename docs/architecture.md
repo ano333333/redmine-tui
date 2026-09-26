@@ -325,4 +325,4 @@ flowchart TD
 - 外部副作用は`AppEffect`としてrunnerに渡し、runnerがplatformのportで実行する（runtime handle や executor 固有型を Component、Store、Client に渡さない）。
 - `InteractionMode::Editing`中はComponentへの入力配送を止める。
 
-Webは`web-demo` featureとwasm32 targetでbuildし、GitHub Pagesへ配信する。build・確認・Pagesの手順は[README.ja.md](../README.ja.md)を参照する。
+Webは`web-demo` featureとwasm32 targetでbuildする。ローカルでの確認手順は[README.ja.md](../README.ja.md)を参照する。GitHub Pagesへの配信は`.github/workflows/pages.yml`が`cargo xtask build-pages`でbuildして行う。

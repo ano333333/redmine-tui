@@ -1266,8 +1266,10 @@ flowchart TD
           </ul>
           <p>
             Webは <code>web-demo</code> featureとwasm32
-            targetでbuildし、GitHub Pagesへ配信する。build・確認・Pagesの手順は
-            <a href="../README.ja.md">README.ja.md</a> を参照する。
+            targetでbuildする。ローカルでの確認手順は
+            <a href="../README.ja.md">README.ja.md</a> を参照する。GitHub
+            Pagesへの配信は <code>.github/workflows/pages.yml</code> が
+            <code>cargo xtask build-pages</code> でbuildして行う。
           </p>
         </section>
       </main>
