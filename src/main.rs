@@ -1789,7 +1789,7 @@ mod tests {
         ));
         assert_eq!(store.store().get_issue_property_diffs(id).len(), 1);
         assert_eq!(
-            store.store().get_issue_upload_failure(id),
+            store.store().try_get_issue_upload_failure(id),
             Some("network error: offline")
         );
         assert_eq!(store.store().get_notices().len(), 1);
@@ -1804,7 +1804,7 @@ mod tests {
         spawn_action_task(&runtime, sender, future);
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
         assert_eq!(
-            dispatcher.borrow().store().get_issue_upload_failure(id),
+            dispatcher.borrow().store().try_get_issue_upload_failure(id),
             None
         );
         assert_eq!(

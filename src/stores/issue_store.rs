@@ -415,7 +415,7 @@ impl IssueStore {
         }
     }
 
-    pub(super) fn get_issue_upload_failure(&self, id: IssueId) -> Option<&str> {
+    pub(super) fn try_get_issue_upload_failure(&self, id: IssueId) -> Option<&str> {
         match self.entries.get(&id) {
             Some(IssueEntry::Edited {
                 failure: Some(failure),

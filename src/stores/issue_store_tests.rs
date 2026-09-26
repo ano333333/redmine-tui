@@ -551,13 +551,13 @@ fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs_and_message() {
     assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
     assert!(store.try_get_issue_upload_conflict(1.into()).is_none());
     assert_eq!(
-        store.get_issue_upload_failure(1.into()),
+        store.try_get_issue_upload_failure(1.into()),
         Some("upload failed")
     );
 
     store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
 
-    assert_eq!(store.get_issue_upload_failure(1.into()), None);
+    assert_eq!(store.try_get_issue_upload_failure(1.into()), None);
 }
 
 #[test]
@@ -607,7 +607,7 @@ fn update_after_failed_upload_appends_diff_and_retains_failure() {
         })
     );
     assert_eq!(
-        store.get_issue_upload_failure(1.into()),
+        store.try_get_issue_upload_failure(1.into()),
         Some("temporary failure")
     );
 }
@@ -692,7 +692,7 @@ fn sync_issue_after_failed_upload_replaces_issue_clears_diffs_and_failure_and_ma
         .into(),
     );
     assert_eq!(
-        store.get_issue_upload_failure(9.into()),
+        store.try_get_issue_upload_failure(9.into()),
         Some("temporary failure")
     );
 
@@ -716,7 +716,7 @@ fn sync_issue_after_failed_upload_replaces_issue_clears_diffs_and_failure_and_ma
     assert_eq!(issue.issue.description, "body");
     assert_eq!(state, IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
-    assert_eq!(store.get_issue_upload_failure(9.into()), None);
+    assert_eq!(store.try_get_issue_upload_failure(9.into()), None);
 }
 
 #[test]
