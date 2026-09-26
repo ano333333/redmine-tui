@@ -5,7 +5,8 @@ use chrono::{DateTime, Local};
 
 use crate::stores::{Dispatcher, IssueAction, Store};
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssueStatusId, PriorityId, TargetVersionId, UserId,
+    CategoryId, EntityIdValue, IssueId, IssueStatusId, PriorityId, TargetVersionId, TrackerId,
+    UserId,
 };
 
 /// idと名前のentry一覧と現在値から、SelectBoxPopupComponent::new用の
@@ -34,6 +35,19 @@ pub fn build_issue_status_options(store: &Store) -> (Vec<(u16, String)>, usize) 
         .map(|(id, status)| (id.get(), status.name.clone()))
         .collect::<Vec<_>>();
     build_select_options(issue_statuses, None, false)
+}
+
+/// TrackerPopup用のitems/focused_indexを組み立てる。
+// FIXME: projectで有効なtrackerに絞っていない。Redmineは使えないtracker_idをエラーなしで
+// 無視するため、ローカルでは変更済みに見えてしまう。
+pub fn build_tracker_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
+    let current_tracker_id = store.get_issue(issue_id).0.tracker_id;
+    let trackers = store
+        .get_trackers()
+        .iter()
+        .map(|(id, tracker)| (id.get(), tracker.name.clone()))
+        .collect::<Vec<_>>();
+    build_select_options(trackers, Some(current_tracker_id.get()), true)
 }
 
 /// PriorityPopup用のitems/focused_indexを組み立てる。
@@ -114,6 +128,27 @@ pub fn issue_status_popup_observer(
                 id: issue_id,
                 status_id: IssueStatusId::new(status_id),
             });
+        }
+    })
+}
+
+/// TrackerPopupの選択結果からUpdateTrackerをdispatchするobserverを組み立てる。
+///
+/// trackerは必須項目のため、選択なし(None)は無視する。
+// FIXME: tracker変更時、Redmineは新trackerで使えないステータスを既定ステータスへ戻すことがある。
+// upload後に再取得しないため、ローカルのステータスとずれる。
+pub fn tracker_popup_observer(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    issue_id: IssueId,
+) -> Box<dyn FnMut(Option<u16>)> {
+    Box::new(move |tracker_id| {
+        if let Some(tracker_id) = tracker_id {
+            dispatcher
+                .borrow_mut()
+                .dispatch(IssueAction::UpdateTracker {
+                    id: issue_id,
+                    tracker_id: TrackerId::new(tracker_id),
+                });
         }
     })
 }
@@ -286,6 +321,23 @@ mod tests {
 
         assert!(!items.is_empty());
         assert_eq!(focused_index, 0);
+    }
+
+    #[test]
+    fn tracker_options_are_sorted_and_focus_the_current_tracker() {
+        let dispatcher = loaded_dispatcher();
+
+        let (items, focused_index) = build_tracker_options(dispatcher.store(), 3.into());
+
+        assert_eq!(
+            items,
+            vec![
+                (1, "Bug".to_string()),
+                (2, "Feature".to_string()),
+                (3, "Support".to_string()),
+            ]
+        );
+        assert_eq!(focused_index, 2);
     }
 
     #[test]
@@ -469,6 +521,31 @@ mod tests {
     fn issue_status_observer_ignores_none() {
         let dispatcher = shared_loaded_dispatcher();
         let mut observer = issue_status_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(None);
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+    }
+
+    #[test]
+    fn tracker_observer_dispatches_update_tracker_when_selected() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = tracker_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(Some(1));
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        dispatcher.borrow_mut().consume_action();
+        assert_eq!(
+            dispatcher.borrow().store().get_issue(3).0.tracker_id,
+            TrackerId::new(1)
+        );
+    }
+
+    #[test]
+    fn tracker_observer_ignores_none() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = tracker_popup_observer(dispatcher.clone(), 3.into());
 
         observer(None);
 

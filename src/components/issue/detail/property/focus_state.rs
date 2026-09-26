@@ -6,6 +6,7 @@ use crate::widgets::gutter::GUTTER_WIDTH;
 
 const LINE_COUNT: u16 = 15;
 const ISSUE_STATUS_LINE: u16 = 3;
+const TRACKER_LINE: u16 = 4;
 const PRIORITY_LINE: u16 = 5;
 const ASSIGNED_TO_LINE: u16 = 7;
 const TARGET_VERSION_LINE: u16 = 8;
@@ -28,6 +29,7 @@ pub enum EventProcessResult {
     CursorLeavedFromAbove,
     CursorLeavedFromBelow,
     OpenIssueStatusPopup,
+    OpenTrackerPopup,
     OpenPriorityPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
@@ -45,6 +47,7 @@ enum Action {
     MoveLeft,
     MoveRight,
     OpenIssueStatusPopup,
+    OpenTrackerPopup,
     OpenPriorityPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
@@ -145,6 +148,7 @@ impl FocusState {
             KeyCode::Char('e') if focused_y == ISSUE_STATUS_LINE => {
                 Some(Action::OpenIssueStatusPopup)
             }
+            KeyCode::Char('e') if focused_y == TRACKER_LINE => Some(Action::OpenTrackerPopup),
             KeyCode::Char('e') if focused_y == PRIORITY_LINE => Some(Action::OpenPriorityPopup),
             KeyCode::Char('e') if focused_y == ASSIGNED_TO_LINE => {
                 Some(Action::OpenAssignedToPopup)
@@ -210,6 +214,7 @@ impl FocusState {
                 None
             }
             Action::OpenIssueStatusPopup => Some(EventProcessResult::OpenIssueStatusPopup),
+            Action::OpenTrackerPopup => Some(EventProcessResult::OpenTrackerPopup),
             Action::OpenPriorityPopup => Some(EventProcessResult::OpenPriorityPopup),
             Action::OpenAssignedToPopup => Some(EventProcessResult::OpenAssignedToPopup),
             Action::OpenTargetVersionPopup => Some(EventProcessResult::OpenTargetVersionPopup),
@@ -456,6 +461,19 @@ mod tests {
             Some(EventProcessResult::OpenIssueStatusPopup)
         ));
         assert_eq!(state.focused_y(), Some(3));
+    }
+
+    #[test]
+    fn process_event_e_on_tracker_line_opens_popup() {
+        let mut state = FocusState {
+            is_two_column: false,
+            focused_y: Some(TRACKER_LINE),
+        };
+
+        let result = state.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(result, Some(EventProcessResult::OpenTrackerPopup)));
+        assert_eq!(state.focused_y(), Some(TRACKER_LINE));
     }
 
     #[test]

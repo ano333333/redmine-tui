@@ -674,6 +674,7 @@ impl From<&IssueAggregate> for UpdateIssueRequest {
 struct UpdateIssue {
     subject: String,
     description: String,
+    tracker_id: u16,
     status_id: u16,
     priority_id: u16,
     assigned_to_id: Option<u16>,
@@ -690,6 +691,7 @@ impl From<&IssueAggregate> for UpdateIssue {
         Self {
             subject: issue.issue.subject.clone(),
             description: issue.issue.description.clone(),
+            tracker_id: issue.tracker_id.get(),
             status_id: issue.issue.status_id.get(),
             priority_id: issue.priority_id.get(),
             assigned_to_id: issue.assigned_to_id.map(|id| id.get()),

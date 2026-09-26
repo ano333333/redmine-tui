@@ -28,6 +28,7 @@ fn update_issue_sends_redmine_put_request() {
         "issue": {
             "subject": "Fix login",
             "description": "nested body",
+            "tracker_id": 1,
             "status_id": 4,
             "priority_id": 1,
             "assigned_to_id": 1001,

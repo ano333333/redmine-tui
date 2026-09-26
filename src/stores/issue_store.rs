@@ -9,11 +9,11 @@ use crate::libs::yaml::parse_issue_yaml;
 use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
     IssueDueDateDiff, IssueEstimatedHoursDiff, IssuePriorityIdDiff, IssueStartDateDiff,
-    IssueStatusIdDiff, IssueTargetVersionIdDiff,
+    IssueStatusIdDiff, IssueTargetVersionIdDiff, IssueTrackerIdDiff,
 };
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, PriorityId,
-    TargetVersionId, UserId,
+    TargetVersionId, TrackerId, UserId,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -98,6 +98,10 @@ pub enum IssueAction {
     UpdateStatus {
         id: IssueId,
         status_id: IssueStatusId,
+    },
+    UpdateTracker {
+        id: IssueId,
+        tracker_id: TrackerId,
     },
     UpdatePriority {
         id: IssueId,
@@ -316,6 +320,14 @@ impl IssueStore {
                 IssuePropertyDiff::StatusId(IssueStatusIdDiff {
                     before,
                     after: status_id,
+                })
+            }),
+            IssueAction::UpdateTracker { id, tracker_id } => self.update_issue(id, |issue| {
+                let before = issue.tracker_id;
+                issue.tracker_id = tracker_id;
+                IssuePropertyDiff::TrackerId(IssueTrackerIdDiff {
+                    before,
+                    after: tracker_id,
                 })
             }),
             IssueAction::UpdatePriority { id, priority_id } => self.update_issue(id, |issue| {

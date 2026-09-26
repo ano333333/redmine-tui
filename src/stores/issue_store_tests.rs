@@ -4,9 +4,9 @@ use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
 use crate::vos::issue_property_diff::{
     IssueDescriptionDiff, IssueDueDateDiff, IssueEstimatedHoursDiff, IssuePriorityIdDiff,
-    IssueStartDateDiff, IssueStatusIdDiff,
+    IssueStartDateDiff, IssueStatusIdDiff, IssueTrackerIdDiff,
 };
-use crate::vos::{CategoryId, IssueId, IssueStatusId, PriorityId, TargetVersionId};
+use crate::vos::{CategoryId, IssueId, IssueStatusId, PriorityId, TargetVersionId, TrackerId};
 
 #[test]
 fn load_action_is_consumed_through_parent_store() {
@@ -140,6 +140,31 @@ fn update_issue_category_can_clear_category() {
     let (issue, state) = store.get_issue(1);
     assert_eq!(issue.category_id, None);
     assert_eq!(state, IssueState::Edited);
+}
+
+#[test]
+fn update_issue_tracker_updates_issue_and_records_diff() {
+    let mut store = Store::new();
+    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+
+    store.consume_action(
+        IssueAction::UpdateTracker {
+            id: 1.into(),
+            tracker_id: TrackerId::new(2),
+        }
+        .into(),
+    );
+
+    let (issue, state) = store.get_issue(1);
+    assert_eq!(issue.tracker_id, TrackerId::new(2));
+    assert_eq!(state, IssueState::Edited);
+    assert_eq!(
+        store.get_issue_property_diffs(IssueId::new(1)).last(),
+        Some(&IssuePropertyDiff::TrackerId(IssueTrackerIdDiff {
+            before: TrackerId::new(1),
+            after: TrackerId::new(2),
+        }))
+    );
 }
 
 #[test]
@@ -422,6 +447,10 @@ missing_issue_update_panics! {
     missing_issue_update_status_panics: IssueAction::UpdateStatus {
         id: 99.into(),
         status_id: 1.into(),
+    },
+    missing_issue_update_tracker_panics: IssueAction::UpdateTracker {
+        id: 99.into(),
+        tracker_id: 1.into(),
     },
     missing_issue_update_priority_panics: IssueAction::UpdatePriority {
         id: 99.into(),

@@ -26,6 +26,8 @@ pub(crate) async fn upload_issue(
 /// # Panics
 ///
 /// Issueが未登録、またはEdited以外の場合にpanicする。
+///
+/// FIXME: trackerを変更するとステータスが自動でデフォルトに戻る？Issueの読み直しが必要な可能性
 pub fn start_issue_upload<C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     client: Arc<C>,

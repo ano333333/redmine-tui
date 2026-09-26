@@ -24,10 +24,11 @@ use crate::stores::{Action, Dispatcher, IssueAction, JournalAction, RemoteJourna
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
     build_done_ratio_options, build_issue_status_options, build_priority_options,
-    build_target_version_options, category_popup_observer, current_due_date,
+    build_target_version_options, build_tracker_options, category_popup_observer, current_due_date,
     current_estimated_hours, current_start_date, done_ratio_popup_observer,
     due_date_popup_observer, estimated_hours_popup_observer, issue_status_popup_observer,
     priority_popup_observer, start_date_popup_observer, target_version_popup_observer,
+    tracker_popup_observer,
 };
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
 use crate::vos::{
@@ -315,6 +316,18 @@ impl<'a> AppComponent<'a> {
                     focused_index,
                     false,
                     issue_status_popup_observer(dispatcher.clone(), issue_id),
+                );
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::OpenTrackerPopup,
+            )) => {
+                let (items, focused_index) =
+                    build_tracker_options(dispatcher.borrow().store(), issue_id);
+                self.push_select_box_popup(
+                    &items,
+                    focused_index,
+                    false,
+                    tracker_popup_observer(dispatcher.clone(), issue_id),
                 );
             }
             Some(IssueEventProcessResult::Detail(
@@ -846,7 +859,7 @@ mod tests {
         JournalAction, NoticeAction, NoticeId, ProjectIssuesAction, RemoteJournalState,
     };
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
-    use crate::vos::{IssuePropertyDiff, PriorityId};
+    use crate::vos::{IssuePropertyDiff, PriorityId, TrackerId};
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
     const AREA: Rect = Rect {
@@ -1333,6 +1346,34 @@ mod tests {
 
         assert!(app.popup_components.is_empty());
         assert_eq!(app.issue_component.unwrap().issue_id(), IssueId::new(1));
+    }
+
+    #[test]
+    fn tracker_popup_excludes_none_and_updates_issue_tracker() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        focus_property_line(&mut app, dispatcher.clone(), 4);
+        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
+
+        let popup = app.popup_components.back().expect("popup should be open");
+        match &*popup.borrow() {
+            PopupComponent::SelectBox(select_box) => {
+                let widget = select_box.create_widget();
+                assert_eq!(widget.items[0], (Some(1), "Bug".to_string()));
+                assert_eq!(widget.focused_index, 2);
+            }
+            _ => panic!("tracker popup should be a select box"),
+        }
+
+        app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+        dispatcher.borrow_mut().consume_action();
+
+        let tracker_id = dispatcher.borrow().store().get_issue(3).0.tracker_id;
+        assert_eq!(tracker_id, TrackerId::new(2));
+        assert!(app.popup_components.is_empty());
     }
 
     #[test]
