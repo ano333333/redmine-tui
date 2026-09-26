@@ -89,7 +89,7 @@ impl Store {
         match action {
             Action::Issue(IssueAction::StartUpload { id }) => {
                 if matches!(
-                    self.issue_store.get_issue_state(id),
+                    self.issue_store.try_get_issue_state(id),
                     Some(IssueState::Edited)
                 ) {
                     assert!(
@@ -105,7 +105,7 @@ impl Store {
             Action::Journal(JournalAction::StartLocalUpload { issue_id }) => {
                 assert!(
                     !matches!(
-                        self.issue_store.get_issue_state(issue_id),
+                        self.issue_store.try_get_issue_state(issue_id),
                         Some(IssueState::Uploading)
                     ),
                     "cannot start local journal upload while issue {issue_id} is uploading"
@@ -119,7 +119,7 @@ impl Store {
             }) => {
                 assert!(
                     !matches!(
-                        self.issue_store.get_issue_state(issue_id),
+                        self.issue_store.try_get_issue_state(issue_id),
                         Some(IssueState::Uploading)
                     ),
                     "cannot start remote journal upload while issue {issue_id} is uploading"
@@ -188,8 +188,11 @@ impl Store {
         self.issue_store.get_issue(issue_id)
     }
 
-    pub fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<IssueState> {
-        self.issue_store.get_issue_state(issue_id)
+    /// 取得済みIssueの状態を返す。
+    ///
+    /// 未登録・取得中・取得失敗のIssueではどれも`None`を返す。
+    pub fn try_get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<IssueState> {
+        self.issue_store.try_get_issue_state(issue_id)
     }
 
     /// 取得中または取得失敗のIssueについて読み込み状態を返す。
@@ -484,7 +487,7 @@ mod tests {
 
         store.consume_action(IssueAction::StartUpload { id }.into());
 
-        assert_eq!(store.get_issue_state(id), Some(IssueState::Uploading));
+        assert_eq!(store.try_get_issue_state(id), Some(IssueState::Uploading));
     }
 
     #[test]

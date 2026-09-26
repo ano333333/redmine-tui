@@ -669,7 +669,11 @@ mod tests {
 
         assert!(app.take_effect().is_none());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-        assert_eq!(dispatcher.borrow().store().get_issue_state(42), None);
+        assert_eq!(dispatcher.borrow().store().try_get_issue_state(42), None);
+        assert_eq!(
+            dispatcher.borrow().store().try_get_issue_fetch_state(42),
+            None
+        );
         let first_completion = receiver
             .recv_timeout(Duration::from_secs(1))
             .expect("first fetch completion should be sent by the runtime task");
@@ -1785,7 +1789,7 @@ mod tests {
 
         let store = dispatcher.borrow();
         assert!(matches!(
-            store.store().get_issue_state(id),
+            store.store().try_get_issue_state(id),
             Some(crate::stores::IssueState::Edited)
         ));
         assert_eq!(store.store().get_issue_property_diffs(id).len(), 1);

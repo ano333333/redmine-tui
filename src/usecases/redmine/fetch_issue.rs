@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::clients::redmine::RedmineClient;
-use crate::stores::{Action, Dispatcher, IssueAction, IssueState, JournalAction};
+use crate::stores::{Action, Dispatcher, IssueAction, IssueFetchState, JournalAction};
 use crate::vos::{EntityIdValue, IssueId};
 
 /// IssueとJournalの取得結果を、Storeへ適用する順序で返すFuture。
@@ -22,10 +22,15 @@ pub fn fetch_issue<C>(
 where
     C: RedmineClient + Send + Sync + 'static,
 {
-    let can_start = matches!(
-        dispatcher.borrow().store().get_issue_state(id),
-        None | Some(IssueState::FetchFailed { .. })
-    );
+    let can_start = {
+        let dispatcher = dispatcher.borrow();
+        let store = dispatcher.store();
+        store.try_get_issue_state(id).is_none()
+            && matches!(
+                store.try_get_issue_fetch_state(id),
+                None | Some(IssueFetchState::FetchFailed { .. })
+            )
+    };
     if !can_start {
         return None;
     }
@@ -101,7 +106,11 @@ mod tests {
 
         assert!(future.is_some());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-        assert_eq!(dispatcher.borrow().store().get_issue_state(42), None);
+        assert_eq!(dispatcher.borrow().store().try_get_issue_state(42), None);
+        assert_eq!(
+            dispatcher.borrow().store().try_get_issue_fetch_state(42),
+            None
+        );
         assert_eq!(client.requested_ids(), Vec::<IssueId>::new());
     }
 

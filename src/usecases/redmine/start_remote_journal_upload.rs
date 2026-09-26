@@ -62,7 +62,10 @@ where
     let diff = {
         let dispatcher = dispatcher.borrow();
         let store = dispatcher.store();
-        if matches!(store.get_issue_state(issue_id), Some(IssueState::Uploading)) {
+        if matches!(
+            store.try_get_issue_state(issue_id),
+            Some(IssueState::Uploading)
+        ) {
             panic!("cannot start remote journal upload while issue {issue_id} is uploading");
         }
         let entry = store.get_remote_journal(issue_id, journal_id);
@@ -447,7 +450,7 @@ mod tests {
         dispatcher.consume_action();
         let dispatcher = Rc::new(RefCell::new(dispatcher));
         assert!(matches!(
-            dispatcher.borrow().store().get_issue_state(ISSUE_ID),
+            dispatcher.borrow().store().try_get_issue_state(ISSUE_ID),
             Some(IssueState::Uploading)
         ));
 

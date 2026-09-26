@@ -68,7 +68,10 @@ where
     let notes = {
         let dispatcher = dispatcher.borrow();
         let store = dispatcher.store();
-        if matches!(store.get_issue_state(issue_id), Some(IssueState::Uploading)) {
+        if matches!(
+            store.try_get_issue_state(issue_id),
+            Some(IssueState::Uploading)
+        ) {
             panic!("cannot start local journal upload while issue {issue_id} is uploading");
         }
         let entry = store

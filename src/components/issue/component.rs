@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use crate::{
-    stores::{Dispatcher, IssueFetchState, IssueState, Store},
+    stores::{Dispatcher, IssueFetchState, Store},
     vos::IssueId,
 };
 
@@ -48,12 +48,12 @@ impl IssueComponent {
         store: &Store,
         id: IssueId,
     ) -> (Option<IssueDetailComponent>, Option<EventProcessResult>) {
-        match store.get_issue_state(id) {
-            Some(IssueState::Synced | IssueState::Edited | IssueState::Uploading) => {
-                (Some(IssueDetailComponent::new(id)), None)
-            }
-            Some(IssueState::Fetching) => (None, None),
-            None | Some(IssueState::FetchFailed { .. }) => {
+        if store.try_get_issue_state(id).is_some() {
+            return (Some(IssueDetailComponent::new(id)), None);
+        }
+        match store.try_get_issue_fetch_state(id) {
+            Some(IssueFetchState::Fetching) => (None, None),
+            None | Some(IssueFetchState::FetchFailed { .. }) => {
                 (None, Some(EventProcessResult::FetchRequested { id }))
             }
         }
@@ -107,34 +107,26 @@ impl IssueComponent {
         store: &Store,
         frame_size: (u16, u16),
     ) {
-        match store.get_issue_state(self.issue_id) {
-            Some(IssueState::Synced | IssueState::Edited | IssueState::Uploading) => {
-                if self.detail.is_none() {
-                    self.detail = Some(IssueDetailComponent::new(self.issue_id));
-                }
-                self.detail
-                    .as_mut()
-                    .expect("loaded issue must have a detail component during update")
-                    .update(dispatcher, store, frame_size);
-            }
-            None | Some(IssueState::Fetching | IssueState::FetchFailed { .. }) => {
-                self.detail = None;
-            }
+        if store.try_get_issue_state(self.issue_id).is_none() {
+            self.detail = None;
+            return;
         }
+        self.detail
+            .get_or_insert_with(|| IssueDetailComponent::new(self.issue_id))
+            .update(dispatcher, store, frame_size);
     }
 
     pub(crate) fn create_widget<'a>(&'a self, store: &'a Store) -> IssueWidget<'a> {
-        match store.get_issue_state(self.issue_id) {
-            None => IssueWidget::fetching(),
-            Some(IssueState::Fetching) => IssueWidget::fetching(),
-            Some(IssueState::FetchFailed { message }) => IssueWidget::fetch_failed(message),
-            Some(IssueState::Synced | IssueState::Edited | IssueState::Uploading) => {
-                let detail = self
-                    .detail
-                    .as_ref()
-                    .expect("loaded issue must have a detail component after update");
-                IssueWidget::detail(detail.create_widget(store))
-            }
+        if store.try_get_issue_state(self.issue_id).is_some() {
+            let detail = self
+                .detail
+                .as_ref()
+                .expect("loaded issue must have a detail component after update");
+            return IssueWidget::detail(detail.create_widget(store));
+        }
+        match store.try_get_issue_fetch_state(self.issue_id) {
+            None | Some(IssueFetchState::Fetching) => IssueWidget::fetching(),
+            Some(IssueFetchState::FetchFailed { message }) => IssueWidget::fetch_failed(message),
         }
     }
 

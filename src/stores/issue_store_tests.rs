@@ -1098,3 +1098,67 @@ fn fetch_failed_issue_sync_panics() {
         .into(),
     );
 }
+
+#[test]
+fn state_getters_split_loaded_and_fetch_states() {
+    let id = IssueId::new(99);
+    let issue = || sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0);
+    let edit = || IssueAction::UpdateDescription {
+        id,
+        body: "local edit".to_string(),
+    };
+    let cases: Vec<(
+        Vec<IssueAction>,
+        Option<IssueState>,
+        Option<IssueFetchState>,
+    )> = vec![
+        (vec![], None, None),
+        (
+            vec![IssueAction::StartFetching { id }],
+            None,
+            Some(IssueFetchState::Fetching),
+        ),
+        (
+            vec![
+                IssueAction::StartFetching { id },
+                IssueAction::FetchFailed {
+                    id,
+                    message: "failed".to_string(),
+                },
+            ],
+            None,
+            Some(IssueFetchState::FetchFailed {
+                message: "failed".to_string(),
+            }),
+        ),
+        (
+            vec![IssueAction::Sync { issue: issue() }],
+            Some(IssueState::Synced),
+            None,
+        ),
+        (
+            vec![IssueAction::Sync { issue: issue() }, edit()],
+            Some(IssueState::Edited),
+            None,
+        ),
+        (
+            vec![
+                IssueAction::Sync { issue: issue() },
+                edit(),
+                IssueAction::StartUpload { id },
+            ],
+            Some(IssueState::Uploading),
+            None,
+        ),
+    ];
+
+    for (setup, expected_state, expected_fetch_state) in cases {
+        let mut store = Store::new();
+        for action in setup {
+            store.consume_action(action.into());
+        }
+
+        assert_eq!(store.try_get_issue_state(id), expected_state);
+        assert_eq!(store.try_get_issue_fetch_state(id), expected_fetch_state);
+    }
+}

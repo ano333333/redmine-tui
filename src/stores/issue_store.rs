@@ -422,8 +422,13 @@ impl IssueStore {
         }
     }
 
-    pub(super) fn get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<IssueState> {
-        self.derived_state(issue_id.into())
+    pub(super) fn try_get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<IssueState> {
+        match self.entries.get(&issue_id.into()) {
+            Some(IssueEntry::Synced { .. }) => Some(IssueState::Synced),
+            Some(IssueEntry::Edited { .. }) => Some(IssueState::Edited),
+            Some(IssueEntry::Uploading { .. }) => Some(IssueState::Uploading),
+            _ => None,
+        }
     }
 
     pub(super) fn try_get_issue_fetch_state(

@@ -362,7 +362,7 @@ impl IssueDetailComponent {
                     // 保存操作を統括するこのComponentで入力を正常なno-opとして消費する。
                     let store = dispatcher.borrow();
                     if matches!(
-                        store.store().get_issue_state(self.id),
+                        store.store().try_get_issue_state(self.id),
                         Some(IssueState::Uploading)
                     ) || store.store().has_uploading_journal(self.id)
                     {
