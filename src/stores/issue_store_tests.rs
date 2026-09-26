@@ -3,10 +3,13 @@ use crate::entities::IssueAggregate;
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
 use crate::vos::issue_property_diff::{
-    IssueDescriptionDiff, IssueDueDateDiff, IssueEstimatedHoursDiff, IssuePriorityIdDiff,
-    IssueStartDateDiff, IssueStatusIdDiff, IssueTrackerIdDiff,
+    IssueCategoryIdDiff, IssueDescriptionDiff, IssueDueDateDiff, IssueEstimatedHoursDiff,
+    IssuePriorityIdDiff, IssueProjectIdDiff, IssueStartDateDiff, IssueStatusIdDiff,
+    IssueTargetVersionIdDiff, IssueTrackerIdDiff,
 };
-use crate::vos::{CategoryId, IssueId, IssueStatusId, PriorityId, TargetVersionId, TrackerId};
+use crate::vos::{
+    CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId,
+};
 
 #[test]
 fn load_action_is_consumed_through_parent_store() {
@@ -165,6 +168,80 @@ fn update_issue_tracker_updates_issue_and_records_diff() {
             after: TrackerId::new(2),
         }))
     );
+}
+
+#[test]
+fn update_issue_project_clears_target_version_and_category_and_records_diffs() {
+    let mut store = Store::new();
+    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+
+    store.consume_action(
+        IssueAction::UpdateProject {
+            id: 1.into(),
+            project_id: ProjectId::new(2),
+        }
+        .into(),
+    );
+
+    let (issue, state) = store.get_issue(1);
+    assert_eq!(issue.issue.project_id, ProjectId::new(2));
+    assert_eq!(issue.target_version_id, None);
+    assert_eq!(issue.category_id, None);
+    assert_eq!(state, IssueState::Edited);
+    assert_eq!(
+        store.get_issue_property_diffs(IssueId::new(1)),
+        &[
+            IssuePropertyDiff::ProjectId(IssueProjectIdDiff {
+                before: ProjectId::new(1),
+                after: ProjectId::new(2),
+            }),
+            IssuePropertyDiff::TargetVersionId(IssueTargetVersionIdDiff {
+                before: Some(TargetVersionId::new(1)),
+                after: None,
+            }),
+            IssuePropertyDiff::CategoryId(IssueCategoryIdDiff {
+                before: Some(CategoryId::new(1)),
+                after: None,
+            }),
+        ]
+    );
+}
+
+#[test]
+fn update_issue_project_records_only_project_diff_when_related_values_are_unset() {
+    let mut store = Store::new();
+    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    store.consume_action(
+        IssueAction::UpdateTargetVersion {
+            id: 1.into(),
+            target_version_id: None,
+        }
+        .into(),
+    );
+    store.consume_action(
+        IssueAction::UpdateCategory {
+            id: 1.into(),
+            category_id: None,
+        }
+        .into(),
+    );
+
+    store.consume_action(
+        IssueAction::UpdateProject {
+            id: 1.into(),
+            project_id: ProjectId::new(2),
+        }
+        .into(),
+    );
+
+    assert_eq!(
+        store.get_issue_property_diffs(IssueId::new(1)).last(),
+        Some(&IssuePropertyDiff::ProjectId(IssueProjectIdDiff {
+            before: ProjectId::new(1),
+            after: ProjectId::new(2),
+        }))
+    );
+    assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 3);
 }
 
 #[test]
@@ -451,6 +528,10 @@ missing_issue_update_panics! {
     missing_issue_update_tracker_panics: IssueAction::UpdateTracker {
         id: 99.into(),
         tracker_id: 1.into(),
+    },
+    missing_issue_update_project_panics: IssueAction::UpdateProject {
+        id: 99.into(),
+        project_id: 1.into(),
     },
     missing_issue_update_priority_panics: IssueAction::UpdatePriority {
         id: 99.into(),

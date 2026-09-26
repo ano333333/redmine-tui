@@ -5,8 +5,8 @@ use chrono::{DateTime, Local};
 
 use crate::stores::{Dispatcher, IssueAction, Store};
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssueStatusId, PriorityId, TargetVersionId, TrackerId,
-    UserId,
+    CategoryId, EntityIdValue, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
+    TrackerId, UserId,
 };
 
 /// idと名前のentry一覧と現在値から、SelectBoxPopupComponent::new用の
@@ -48,6 +48,19 @@ pub fn build_tracker_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, Str
         .map(|(id, tracker)| (id.get(), tracker.name.clone()))
         .collect::<Vec<_>>();
     build_select_options(trackers, Some(current_tracker_id.get()), true)
+}
+
+/// ProjectPopup用のitems/focused_indexを組み立てる。
+// FIXME: add_issues権限のあるprojectに絞っていない。Redmineは移動できないproject_idを
+// エラーなしで無視するため、ローカルでは変更済みに見えてしまう。
+pub fn build_project_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
+    let current_project_id = store.get_issue(issue_id).0.issue.project_id;
+    let projects = store
+        .get_projects()
+        .iter()
+        .map(|(id, project)| (id.get(), project.name.clone()))
+        .collect::<Vec<_>>();
+    build_select_options(projects, Some(current_project_id.get()), true)
 }
 
 /// PriorityPopup用のitems/focused_indexを組み立てる。
@@ -150,6 +163,40 @@ pub fn tracker_popup_observer(
                     tracker_id: TrackerId::new(tracker_id),
                 });
         }
+    })
+}
+
+/// ProjectPopupの選択結果からUpdateProjectをdispatchするobserverを組み立てる。
+///
+/// projectは必須項目のため、選択なし(None)は無視する。現在と同じprojectを選んだ場合も、
+/// 対象バージョンとカテゴリーを消さないようdispatchしない。
+// FIXME: project移動時、Redmineは移動先で無効なtrackerを先頭のtrackerへ変え、別rootのprojectへ
+// 移すと親チケットを外す。upload後に再取得しないため、ローカルの値とずれる。
+// また、移動したIssueはProjectIssuesStoreに移動前のprojectの一覧として残る。
+pub fn project_popup_observer(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    issue_id: IssueId,
+) -> Box<dyn FnMut(Option<u16>)> {
+    Box::new(move |project_id| {
+        let Some(project_id) = project_id.map(ProjectId::new) else {
+            return;
+        };
+        let current_project_id = dispatcher
+            .borrow()
+            .store()
+            .get_issue(issue_id)
+            .0
+            .issue
+            .project_id;
+        if project_id == current_project_id {
+            return;
+        }
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateProject {
+                id: issue_id,
+                project_id,
+            });
     })
 }
 
@@ -338,6 +385,22 @@ mod tests {
             ]
         );
         assert_eq!(focused_index, 2);
+    }
+
+    #[test]
+    fn project_options_are_sorted_and_focus_the_current_project() {
+        let dispatcher = loaded_dispatcher();
+
+        let (items, focused_index) = build_project_options(dispatcher.store(), 3.into());
+
+        assert_eq!(
+            items,
+            vec![
+                (1, "Sample Project".to_string()),
+                (2, "Sample Project 2".to_string()),
+            ]
+        );
+        assert_eq!(focused_index, 0);
     }
 
     #[test]
@@ -548,6 +611,32 @@ mod tests {
         let mut observer = tracker_popup_observer(dispatcher.clone(), 3.into());
 
         observer(None);
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+    }
+
+    #[test]
+    fn project_observer_dispatches_update_project_when_another_project_is_selected() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = project_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(Some(2));
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        dispatcher.borrow_mut().consume_action();
+        assert_eq!(
+            dispatcher.borrow().store().get_issue(3).0.issue.project_id,
+            ProjectId::new(2)
+        );
+    }
+
+    #[test]
+    fn project_observer_ignores_none_and_the_current_project() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = project_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(None);
+        observer(Some(1));
 
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
     }

@@ -8,6 +8,7 @@ const LINE_COUNT: u16 = 15;
 const ISSUE_STATUS_LINE: u16 = 3;
 const TRACKER_LINE: u16 = 4;
 const PRIORITY_LINE: u16 = 5;
+const PROJECT_LINE: u16 = 6;
 const ASSIGNED_TO_LINE: u16 = 7;
 const TARGET_VERSION_LINE: u16 = 8;
 const START_DATE_LINE: u16 = 9;
@@ -31,6 +32,7 @@ pub enum EventProcessResult {
     OpenIssueStatusPopup,
     OpenTrackerPopup,
     OpenPriorityPopup,
+    OpenProjectPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
     OpenStartDatePopup,
@@ -49,6 +51,7 @@ enum Action {
     OpenIssueStatusPopup,
     OpenTrackerPopup,
     OpenPriorityPopup,
+    OpenProjectPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
     OpenStartDatePopup,
@@ -150,6 +153,7 @@ impl FocusState {
             }
             KeyCode::Char('e') if focused_y == TRACKER_LINE => Some(Action::OpenTrackerPopup),
             KeyCode::Char('e') if focused_y == PRIORITY_LINE => Some(Action::OpenPriorityPopup),
+            KeyCode::Char('e') if focused_y == PROJECT_LINE => Some(Action::OpenProjectPopup),
             KeyCode::Char('e') if focused_y == ASSIGNED_TO_LINE => {
                 Some(Action::OpenAssignedToPopup)
             }
@@ -216,6 +220,7 @@ impl FocusState {
             Action::OpenIssueStatusPopup => Some(EventProcessResult::OpenIssueStatusPopup),
             Action::OpenTrackerPopup => Some(EventProcessResult::OpenTrackerPopup),
             Action::OpenPriorityPopup => Some(EventProcessResult::OpenPriorityPopup),
+            Action::OpenProjectPopup => Some(EventProcessResult::OpenProjectPopup),
             Action::OpenAssignedToPopup => Some(EventProcessResult::OpenAssignedToPopup),
             Action::OpenTargetVersionPopup => Some(EventProcessResult::OpenTargetVersionPopup),
             Action::OpenStartDatePopup => Some(EventProcessResult::OpenStartDatePopup),
@@ -490,6 +495,19 @@ mod tests {
             Some(EventProcessResult::OpenPriorityPopup)
         ));
         assert_eq!(state.focused_y(), Some(PRIORITY_LINE));
+    }
+
+    #[test]
+    fn process_event_e_on_project_line_opens_popup() {
+        let mut state = FocusState {
+            is_two_column: false,
+            focused_y: Some(PROJECT_LINE),
+        };
+
+        let result = state.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(result, Some(EventProcessResult::OpenProjectPopup)));
+        assert_eq!(state.focused_y(), Some(PROJECT_LINE));
     }
 
     #[test]

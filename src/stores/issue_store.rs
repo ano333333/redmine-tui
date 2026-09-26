@@ -8,11 +8,11 @@ use crate::entities::IssueAggregate;
 use crate::libs::yaml::parse_issue_yaml;
 use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
-    IssueDueDateDiff, IssueEstimatedHoursDiff, IssuePriorityIdDiff, IssueStartDateDiff,
-    IssueStatusIdDiff, IssueTargetVersionIdDiff, IssueTrackerIdDiff,
+    IssueDueDateDiff, IssueEstimatedHoursDiff, IssuePriorityIdDiff, IssueProjectIdDiff,
+    IssueStartDateDiff, IssueStatusIdDiff, IssueTargetVersionIdDiff, IssueTrackerIdDiff,
 };
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, PriorityId,
+    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, PriorityId, ProjectId,
     TargetVersionId, TrackerId, UserId,
 };
 
@@ -102,6 +102,11 @@ pub enum IssueAction {
     UpdateTracker {
         id: IssueId,
         tracker_id: TrackerId,
+    },
+    /// 対象バージョンとカテゴリーはproject単位のため、移動先で無効にならないよう未設定に戻す。
+    UpdateProject {
+        id: IssueId,
+        project_id: ProjectId,
     },
     UpdatePriority {
         id: IssueId,
@@ -330,6 +335,30 @@ impl IssueStore {
                     after: tracker_id,
                 })
             }),
+            IssueAction::UpdateProject { id, project_id } => {
+                self.update_issue_with_diffs(id, |issue| {
+                    let mut diffs = vec![IssuePropertyDiff::ProjectId(IssueProjectIdDiff {
+                        before: issue.issue.project_id,
+                        after: project_id,
+                    })];
+                    issue.issue.project_id = project_id;
+                    if let Some(before) = issue.target_version_id.take() {
+                        diffs.push(IssuePropertyDiff::TargetVersionId(
+                            IssueTargetVersionIdDiff {
+                                before: Some(before),
+                                after: None,
+                            },
+                        ));
+                    }
+                    if let Some(before) = issue.category_id.take() {
+                        diffs.push(IssuePropertyDiff::CategoryId(IssueCategoryIdDiff {
+                            before: Some(before),
+                            after: None,
+                        }));
+                    }
+                    diffs
+                })
+            }
             IssueAction::UpdatePriority { id, priority_id } => self.update_issue(id, |issue| {
                 let before = issue.priority_id;
                 issue.priority_id = priority_id;
@@ -504,6 +533,15 @@ impl IssueStore {
         id: IssueId,
         edit: impl FnOnce(&mut IssueAggregate) -> IssuePropertyDiff,
     ) {
+        self.update_issue_with_diffs(id, |issue| vec![edit(issue)]);
+    }
+
+    /// 1つの操作で複数のpropertyを変更する場合に、変更したproperty分のdiffをまとめて記録する。
+    fn update_issue_with_diffs(
+        &mut self,
+        id: IssueId,
+        edit: impl FnOnce(&mut IssueAggregate) -> Vec<IssuePropertyDiff>,
+    ) {
         match self.entries.get(&id) {
             Some(IssueEntry::Synced { .. }) | Some(IssueEntry::Edited { .. }) => {}
             Some(IssueEntry::Uploading { .. }) => {
@@ -520,12 +558,12 @@ impl IssueStore {
         let entry = self.entries.remove(&id).unwrap();
         match entry {
             IssueEntry::Synced { mut issue } => {
-                let diff = edit(&mut issue);
+                let diffs = edit(&mut issue);
                 self.entries.insert(
                     id,
                     IssueEntry::Edited {
                         issue,
-                        diffs: vec![diff],
+                        diffs,
                         failure: None,
                     },
                 );
@@ -535,8 +573,7 @@ impl IssueStore {
                 mut diffs,
                 failure,
             } => {
-                let diff = edit(&mut issue);
-                diffs.push(diff);
+                diffs.extend(edit(&mut issue));
                 self.entries.insert(
                     id,
                     IssueEntry::Edited {

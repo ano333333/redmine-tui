@@ -24,11 +24,11 @@ use crate::stores::{Action, Dispatcher, IssueAction, JournalAction, RemoteJourna
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
     build_done_ratio_options, build_issue_status_options, build_priority_options,
-    build_target_version_options, build_tracker_options, category_popup_observer, current_due_date,
-    current_estimated_hours, current_start_date, done_ratio_popup_observer,
-    due_date_popup_observer, estimated_hours_popup_observer, issue_status_popup_observer,
-    priority_popup_observer, start_date_popup_observer, target_version_popup_observer,
-    tracker_popup_observer,
+    build_project_options, build_target_version_options, build_tracker_options,
+    category_popup_observer, current_due_date, current_estimated_hours, current_start_date,
+    done_ratio_popup_observer, due_date_popup_observer, estimated_hours_popup_observer,
+    issue_status_popup_observer, priority_popup_observer, project_popup_observer,
+    start_date_popup_observer, target_version_popup_observer, tracker_popup_observer,
 };
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
 use crate::vos::{
@@ -340,6 +340,18 @@ impl<'a> AppComponent<'a> {
                     focused_index,
                     false,
                     priority_popup_observer(dispatcher.clone(), issue_id),
+                );
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::OpenProjectPopup,
+            )) => {
+                let (items, focused_index) =
+                    build_project_options(dispatcher.borrow().store(), issue_id);
+                self.push_select_box_popup(
+                    &items,
+                    focused_index,
+                    false,
+                    project_popup_observer(dispatcher.clone(), issue_id),
                 );
             }
             Some(IssueEventProcessResult::Detail(
@@ -859,7 +871,7 @@ mod tests {
         JournalAction, NoticeAction, NoticeId, ProjectIssuesAction, RemoteJournalState,
     };
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
-    use crate::vos::{IssuePropertyDiff, PriorityId, TrackerId};
+    use crate::vos::{IssuePropertyDiff, PriorityId, ProjectId, TrackerId};
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
     const AREA: Rect = Rect {
@@ -1373,6 +1385,30 @@ mod tests {
 
         let tracker_id = dispatcher.borrow().store().get_issue(3).0.tracker_id;
         assert_eq!(tracker_id, TrackerId::new(2));
+        assert!(app.popup_components.is_empty());
+    }
+
+    #[test]
+    fn project_popup_moves_issue_and_clears_project_scoped_values() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        focus_property_line(&mut app, dispatcher.clone(), 6);
+        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::SelectBox(_)
+        ));
+
+        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+        dispatcher.borrow_mut().consume_action();
+
+        let dispatcher = dispatcher.borrow();
+        let (issue, _) = dispatcher.store().get_issue(3);
+        assert_eq!(issue.issue.project_id, ProjectId::new(2));
+        assert_eq!(issue.category_id, None);
         assert!(app.popup_components.is_empty());
     }
 
