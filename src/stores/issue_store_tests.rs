@@ -3,8 +3,8 @@ use crate::entities::IssueAggregate;
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
 use crate::vos::issue_property_diff::{
-    IssueDescriptionDiff, IssueDueDateDiff, IssuePriorityIdDiff, IssueStartDateDiff,
-    IssueStatusIdDiff,
+    IssueDescriptionDiff, IssueDueDateDiff, IssueEstimatedHoursDiff, IssuePriorityIdDiff,
+    IssueStartDateDiff, IssueStatusIdDiff,
 };
 use crate::vos::{CategoryId, IssueId, IssueStatusId, PriorityId, TargetVersionId};
 
@@ -164,6 +164,33 @@ fn update_issue_priority_updates_issue_and_records_diff() {
             before: PriorityId::new(1),
             after: PriorityId::new(3),
         }))
+    );
+}
+
+#[test]
+fn update_issue_estimated_hours_updates_issue_and_records_diff() {
+    let mut store = Store::new();
+    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+
+    store.consume_action(
+        IssueAction::UpdateEstimatedHours {
+            id: 1.into(),
+            estimated_hours: Some(2.5),
+        }
+        .into(),
+    );
+
+    let (issue, state) = store.get_issue(1);
+    assert_eq!(issue.estimated_hours, Some(2.5));
+    assert_eq!(state, IssueState::Edited);
+    assert_eq!(
+        store.get_issue_property_diffs(IssueId::new(1)).last(),
+        Some(&IssuePropertyDiff::EstimatedHours(
+            IssueEstimatedHoursDiff {
+                before: None,
+                after: Some(2.5),
+            }
+        ))
     );
 }
 
@@ -415,6 +442,10 @@ missing_issue_update_panics! {
     missing_issue_update_done_ratio_panics: IssueAction::UpdateDoneRatio {
         id: 99.into(),
         done_ratio: 10,
+    },
+    missing_issue_update_estimated_hours_panics: IssueAction::UpdateEstimatedHours {
+        id: 99.into(),
+        estimated_hours: None,
     },
     missing_issue_update_start_date_panics: IssueAction::UpdateStartDate {
         id: 99.into(),

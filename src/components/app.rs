@@ -24,8 +24,9 @@ use crate::stores::{Action, Dispatcher, IssueAction, JournalAction, RemoteJourna
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
     build_done_ratio_options, build_issue_status_options, build_priority_options,
-    build_target_version_options, category_popup_observer, current_due_date, current_start_date,
-    done_ratio_popup_observer, due_date_popup_observer, issue_status_popup_observer,
+    build_target_version_options, category_popup_observer, current_due_date,
+    current_estimated_hours, current_start_date, done_ratio_popup_observer,
+    due_date_popup_observer, estimated_hours_popup_observer, issue_status_popup_observer,
     priority_popup_observer, start_date_popup_observer, target_version_popup_observer,
 };
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
@@ -36,6 +37,9 @@ use crate::widgets::ToastWidget;
 
 use super::date_picker_popup::component::{
     DatePickerPopupComponent, EventProcessResult as DatePickerPopupEventProcessResult,
+};
+use super::number_input_popup::{
+    EventProcessResult as NumberInputPopupEventProcessResult, NumberInputPopupComponent,
 };
 use super::select_box_popup::{
     EventProcessResult as SelectBoxPopupEventProcessResult, SelectBoxPopupComponent,
@@ -95,6 +99,7 @@ enum PopupComponent<'a> {
     SelectBox(SelectBoxPopupComponent<'a>),
     SpentTimeInput(SpentTimeInputPopupComponent<'a>),
     DatePicker(DatePickerPopupComponent<'a>),
+    NumberInput(NumberInputPopupComponent<'a>),
     IssueSelect(IssueSelectPopupComponent),
     IssuePropertyConflict {
         issue_id: IssueId,
@@ -194,6 +199,16 @@ impl<'a> AppComponent<'a> {
                 match result {
                     Some(DatePickerPopupEventProcessResult::Entered)
                     | Some(DatePickerPopupEventProcessResult::Canceled) => {
+                        self.popup_components.pop_back();
+                    }
+                    None => {}
+                }
+            }
+            PopupComponent::NumberInput(popup_component) => {
+                let result = popup_component.process_event(event);
+                match result {
+                    Some(NumberInputPopupEventProcessResult::Entered)
+                    | Some(NumberInputPopupEventProcessResult::Canceled) => {
                         self.popup_components.pop_back();
                     }
                     None => {}
@@ -385,6 +400,19 @@ impl<'a> AppComponent<'a> {
                     true,
                     category_popup_observer(dispatcher.clone(), issue_id),
                 );
+            }
+            Some(IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::OpenEstimatedHoursPopup,
+            )) => {
+                let estimated_hours =
+                    current_estimated_hours(dispatcher.borrow().store(), issue_id);
+                self.popup_components.push_back(Rc::new(RefCell::new(
+                    PopupComponent::NumberInput(NumberInputPopupComponent::new(
+                        "予定工数",
+                        estimated_hours,
+                        estimated_hours_popup_observer(dispatcher.clone(), issue_id),
+                    )),
+                )));
             }
             Some(IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::OpenSpentTimeInputPopup,
@@ -713,6 +741,10 @@ impl<'a> AppComponent<'a> {
                     let widget = popup_component.create_widget();
                     frame.render_widget(widget, area);
                 }
+                PopupComponent::NumberInput(popup_component) => {
+                    let widget = popup_component.create_widget();
+                    frame.render_widget(widget, area);
+                }
                 PopupComponent::IssueSelect(popup_component) => {
                     let widget = popup_component.create_widget(store);
                     frame.render_widget(widget, area);
@@ -738,6 +770,8 @@ impl<'a> AppComponent<'a> {
                     popup_component.cursor_position(area)
                 }
                 PopupComponent::DatePicker(_) => None,
+                // ratatui_textarea::TextAreaが表示するカーソルをそのまま使用する
+                PopupComponent::NumberInput(_) => None,
                 PopupComponent::IssueSelect(_) => None,
                 PopupComponent::IssuePropertyConflict { component, .. } => {
                     component.cursor_position(area)
@@ -1326,6 +1360,32 @@ mod tests {
 
         let priority_id = dispatcher.borrow().store().get_issue(3).0.priority_id;
         assert_eq!(priority_id, PriorityId::new(2));
+        assert!(app.popup_components.is_empty());
+    }
+
+    #[test]
+    fn estimated_hours_popup_updates_issue_estimated_hours() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        // 2カラム表示なので、左カラムの行から右カラムの予定工数へ移る
+        focus_property_line(&mut app, dispatcher.clone(), 4);
+        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::NumberInput(_)
+        ));
+
+        for c in "2.5".chars() {
+            app.process_event(key_event(KeyCode::Char(c)), dispatcher.clone());
+        }
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+        dispatcher.borrow_mut().consume_action();
+
+        let estimated_hours = dispatcher.borrow().store().get_issue(3).0.estimated_hours;
+        assert_eq!(estimated_hours, Some(2.5));
         assert!(app.popup_components.is_empty());
     }
 

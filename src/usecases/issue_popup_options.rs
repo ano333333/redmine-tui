@@ -203,6 +203,26 @@ pub fn category_popup_observer(
     })
 }
 
+/// EstimatedHoursPopup用の現在値を取得する。
+pub fn current_estimated_hours(store: &Store, issue_id: IssueId) -> Option<f64> {
+    store.get_issue(issue_id).0.estimated_hours
+}
+
+/// EstimatedHoursPopupの入力結果からUpdateEstimatedHoursをdispatchするobserverを組み立てる。
+pub fn estimated_hours_popup_observer(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    issue_id: IssueId,
+) -> Box<dyn FnMut(Option<f64>)> {
+    Box::new(move |estimated_hours| {
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateEstimatedHours {
+                id: issue_id,
+                estimated_hours,
+            });
+    })
+}
+
 /// StartDatePopup用の現在値(選択済み開始日)を取得する。
 pub fn current_start_date(store: &Store, issue_id: IssueId) -> Option<DateTime<Local>> {
     store.get_issue(issue_id).0.start_date
@@ -542,6 +562,32 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
         assert_eq!(dispatcher.borrow().store().get_issue(3).0.category_id, None);
+    }
+
+    #[test]
+    fn estimated_hours_observer_dispatches_update_estimated_hours_even_when_cleared() {
+        let dispatcher = shared_loaded_dispatcher();
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateEstimatedHours {
+                id: 3.into(),
+                estimated_hours: Some(1.5),
+            });
+        dispatcher.borrow_mut().consume_action();
+        assert_eq!(
+            current_estimated_hours(dispatcher.borrow().store(), 3.into()),
+            Some(1.5)
+        );
+        let mut observer = estimated_hours_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(None);
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        dispatcher.borrow_mut().consume_action();
+        assert_eq!(
+            current_estimated_hours(dispatcher.borrow().store(), 3.into()),
+            None
+        );
     }
 
     fn sample_date() -> DateTime<Local> {

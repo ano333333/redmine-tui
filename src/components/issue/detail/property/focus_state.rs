@@ -12,6 +12,7 @@ const TARGET_VERSION_LINE: u16 = 8;
 const START_DATE_LINE: u16 = 9;
 const DUE_DATE_LINE: u16 = 10;
 const DONE_RATIO_LINE: u16 = 11;
+const ESTIMATED_HOURS_LINE: u16 = 12;
 const TOTAL_SPENT_HOURS_LINE: u16 = 13;
 const CATEGORY_LINE: u16 = 14;
 /// 2カラム表示で右カラムの先頭になる項目インデックス。
@@ -33,6 +34,7 @@ pub enum EventProcessResult {
     OpenStartDatePopup,
     OpenDueDatePopup,
     OpenDoneRatioPopup,
+    OpenEstimatedHoursPopup,
     OpenSpentTimeInputPopup,
     OpenCategoryPopup,
 }
@@ -49,6 +51,7 @@ enum Action {
     OpenStartDatePopup,
     OpenDueDatePopup,
     OpenDoneRatioPopup,
+    OpenEstimatedHoursPopup,
     OpenSpentTimeInputPopup,
     OpenCategoryPopup,
 }
@@ -152,6 +155,9 @@ impl FocusState {
             KeyCode::Char('e') if focused_y == START_DATE_LINE => Some(Action::OpenStartDatePopup),
             KeyCode::Char('e') if focused_y == DUE_DATE_LINE => Some(Action::OpenDueDatePopup),
             KeyCode::Char('e') if focused_y == DONE_RATIO_LINE => Some(Action::OpenDoneRatioPopup),
+            KeyCode::Char('e') if focused_y == ESTIMATED_HOURS_LINE => {
+                Some(Action::OpenEstimatedHoursPopup)
+            }
             KeyCode::Char('e') if focused_y == TOTAL_SPENT_HOURS_LINE => {
                 Some(Action::OpenSpentTimeInputPopup)
             }
@@ -210,6 +216,7 @@ impl FocusState {
             Action::OpenStartDatePopup => Some(EventProcessResult::OpenStartDatePopup),
             Action::OpenDueDatePopup => Some(EventProcessResult::OpenDueDatePopup),
             Action::OpenDoneRatioPopup => Some(EventProcessResult::OpenDoneRatioPopup),
+            Action::OpenEstimatedHoursPopup => Some(EventProcessResult::OpenEstimatedHoursPopup),
             Action::OpenSpentTimeInputPopup => Some(EventProcessResult::OpenSpentTimeInputPopup),
             Action::OpenCategoryPopup => Some(EventProcessResult::OpenCategoryPopup),
         }
@@ -542,6 +549,22 @@ mod tests {
             Some(EventProcessResult::OpenDoneRatioPopup)
         ));
         assert_eq!(state.focused_y(), Some(DONE_RATIO_LINE));
+    }
+
+    #[test]
+    fn process_event_e_on_estimated_hours_line_opens_popup() {
+        let mut state = FocusState {
+            is_two_column: false,
+            focused_y: Some(ESTIMATED_HOURS_LINE),
+        };
+
+        let result = state.process_event(key_event(KeyCode::Char('e')));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenEstimatedHoursPopup)
+        ));
+        assert_eq!(state.focused_y(), Some(ESTIMATED_HOURS_LINE));
     }
 
     #[test]

@@ -8,8 +8,8 @@ use crate::entities::IssueAggregate;
 use crate::libs::yaml::parse_issue_yaml;
 use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
-    IssueDueDateDiff, IssuePriorityIdDiff, IssueStartDateDiff, IssueStatusIdDiff,
-    IssueTargetVersionIdDiff,
+    IssueDueDateDiff, IssueEstimatedHoursDiff, IssuePriorityIdDiff, IssueStartDateDiff,
+    IssueStatusIdDiff, IssueTargetVersionIdDiff,
 };
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, PriorityId,
@@ -118,6 +118,10 @@ pub enum IssueAction {
     UpdateDoneRatio {
         id: IssueId,
         done_ratio: u16,
+    },
+    UpdateEstimatedHours {
+        id: IssueId,
+        estimated_hours: Option<f64>,
     },
     UpdateStartDate {
         id: IssueId,
@@ -357,6 +361,17 @@ impl IssueStore {
                 IssuePropertyDiff::DoneRatio(IssueDoneRatioDiff {
                     before,
                     after: done_ratio,
+                })
+            }),
+            IssueAction::UpdateEstimatedHours {
+                id,
+                estimated_hours,
+            } => self.update_issue(id, |issue| {
+                let before = issue.estimated_hours;
+                issue.estimated_hours = estimated_hours;
+                IssuePropertyDiff::EstimatedHours(IssueEstimatedHoursDiff {
+                    before,
+                    after: estimated_hours,
                 })
             }),
             IssueAction::UpdateStartDate { id, start_date } => self.update_issue(id, |issue| {

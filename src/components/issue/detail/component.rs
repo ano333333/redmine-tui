@@ -54,6 +54,7 @@ pub enum EventProcessResult {
     OpenStartDatePopup,
     OpenDueDatePopup,
     OpenDoneRatioPopup,
+    OpenEstimatedHoursPopup,
     OpenSpentTimeInputPopup,
     OpenCategoryPopup,
     StartIssueUpload,
@@ -447,6 +448,9 @@ impl IssueDetailComponent {
                     }
                     Some(PropertyEventProcessResult::OpenDoneRatioPopup) => {
                         return Some(EventProcessResult::OpenDoneRatioPopup);
+                    }
+                    Some(PropertyEventProcessResult::OpenEstimatedHoursPopup) => {
+                        return Some(EventProcessResult::OpenEstimatedHoursPopup);
                     }
                     Some(PropertyEventProcessResult::OpenSpentTimeInputPopup) => {
                         return Some(EventProcessResult::OpenSpentTimeInputPopup);
