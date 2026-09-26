@@ -6,8 +6,24 @@ use lazy_static::lazy_static;
 use std::{io::Result, path::PathBuf};
 #[cfg(feature = "native")]
 use tracing_error::ErrorLayer;
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "web-demo"))]
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
+
+#[cfg(feature = "web-demo")]
+pub fn initialize_logging() {
+    let layer = tracing_subscriber::fmt::layer()
+        // tracing の level に応じて browser の console.info/warn/error などへ振り分ける。
+        .with_writer(tracing_web::MakeWebConsoleWriter::new())
+        .with_ansi(false)
+        // fmt の既定の時刻取得は std::time::SystemTime を使うが、
+        // wasm32-unknown-unknown では利用できず panic するため無効にする。
+        .without_time()
+        .with_filter(tracing_subscriber::filter::EnvFilter::new(format!(
+            "{}=debug",
+            env!("CARGO_CRATE_NAME")
+        )));
+    tracing_subscriber::registry().with(layer).init();
+}
 
 #[cfg(feature = "native")]
 lazy_static! {

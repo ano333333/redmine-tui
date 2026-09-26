@@ -26,9 +26,9 @@ fn report(message: impl AsRef<str>) {
 }
 
 pub(crate) fn run() {
-    std::panic::set_hook(Box::new(|info| {
-        report(format!("web demo panic: {info}"));
-    }));
+    // 初期化中の panic もメッセージと JS の stack を console.error に出せるよう、最初に登録する。
+    console_error_panic_hook::set_once();
+    crate::logging::initialize_logging();
 
     let backend = match DomBackend::new() {
         Ok(backend) => backend,
