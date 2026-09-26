@@ -184,8 +184,6 @@ impl Store {
         }
     }
 
-    /// 取得済みIssueの本体と状態を返す。
-    ///
     /// # Panics
     ///
     /// 未登録・取得中・取得失敗のIssueを指定した場合にpanicする。
@@ -195,16 +193,13 @@ impl Store {
         self.issue_store.get_issue(issue_id)
     }
 
-    /// 取得済みIssueの状態を返す。
-    ///
     /// 未登録・取得中・取得失敗のIssueではどれも`None`を返す。
     pub fn try_get_issue_state(&self, issue_id: impl Into<IssueId>) -> Option<IssueState> {
         self.issue_store.try_get_issue_state(issue_id)
     }
 
-    /// 取得中または取得失敗のIssueについて読み込み状態を返す。
-    ///
-    /// 未登録と取得済みのIssueではどちらも`None`を返す。
+    /// 未登録と取得済みのIssueではどちらも`None`を返すため、
+    /// 未登録の判定には`try_get_issue_state`も併用する。
     pub fn try_get_issue_fetch_state(
         &self,
         issue_id: impl Into<IssueId>,
