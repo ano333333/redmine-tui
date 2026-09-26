@@ -29,6 +29,35 @@
         line-height: 20px;
         font-size: 16.6px;
       }
+
+      .editor-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        padding: 1rem;
+        background: #1e1e1e;
+        box-sizing: border-box;
+      }
+
+      .editor-overlay__textarea {
+        flex: 1;
+        width: 100%;
+        resize: none;
+        box-sizing: border-box;
+        padding: 0.75rem;
+        border: 1px solid #555;
+        background: #252526;
+        color: #d4d4d4;
+        font: inherit;
+        line-height: 1.5;
+      }
+
+      .editor-overlay__hint {
+        padding-top: 0.5rem;
+        color: #9da0a6;
+      }
     </style>
   </head>
   <body>
