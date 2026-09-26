@@ -1,7 +1,14 @@
-use std::io;
+use std::{
+    cell::RefCell,
+    future::Future,
+    io,
+    pin::Pin,
+    rc::Rc,
+    task::{Context, Poll, Waker},
+};
 
 use ratzilla::web_sys;
-use wasm_bindgen::JsCast;
+use wasm_bindgen::{JsCast, closure::Closure};
 
 use super::{EditorOutcome, EditorRequest, TextEditor};
 
@@ -44,15 +51,25 @@ impl TextareaOverlay {
             .expect("browser document has no body")
             .append_child(&container)
             .expect("failed to attach editor overlay");
-        textarea.focus().expect("failed to focus editor textarea");
+        // 起動キーの keydown 中に runner が microtask で動くため、ここで focus すると
+        // 同じキーの文字入力（例: e）が textarea に入る。setTimeout(0) で次の task に
+        // 遅らせ、起動キーの入力が現在の task 内で終わってから focus する。
+        let focus_textarea = textarea.clone();
+        let focus_callback = Closure::once_into_js(move || {
+            // 実行前に overlay が取り除かれている場合があるため、失敗は無視する。
+            let _ = focus_textarea.focus();
+        });
+        web_sys::window()
+            .expect("browser window is unavailable")
+            .set_timeout_with_callback_and_timeout_and_arguments_0(
+                focus_callback.unchecked_ref(),
+                0,
+            )
+            .expect("failed to schedule editor textarea focus");
         Self {
             container,
             textarea,
         }
-    }
-
-    fn value(&self) -> String {
-        self.textarea.value()
     }
 
     fn remove(self) {
@@ -62,14 +79,80 @@ impl TextareaOverlay {
     }
 }
 
-/// Webでの編集UIが接続されるまで、編集要求をUnsupportedとして返す暫定実装。
+/// textarea overlay の編集結果を非同期に返す Web editor。
 pub struct WebTextEditor;
 
 impl TextEditor for WebTextEditor {
-    async fn edit(&self, _request: EditorRequest) -> io::Result<EditorOutcome> {
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "web editor is not available yet",
-        ))
+    async fn edit(&self, request: EditorRequest) -> io::Result<EditorOutcome> {
+        let overlay = TextareaOverlay::attach(&request.initial_text);
+        let completion = EditorCompletion::default();
+        let listener_completion = completion.clone();
+        let listener_textarea = overlay.textarea.clone();
+        let listener = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
+            let outcome = match event.key().as_str() {
+                // 本文を空にする編集も、キャンセルと区別して確定する。
+                "Enter" if event.ctrl_key() || event.meta_key() => EditorOutcome::Submitted {
+                    edited_text: listener_textarea.value(),
+                },
+                "Escape" => EditorOutcome::Cancelled,
+                _ => return,
+            };
+            event.prevent_default();
+            listener_completion.resolve(outcome);
+        }) as Box<dyn FnMut(web_sys::KeyboardEvent)>);
+        overlay
+            .textarea
+            .add_event_listener_with_callback("keydown", listener.as_ref().unchecked_ref())
+            .expect("failed to register editor key listener");
+        let outcome = completion.await;
+        overlay
+            .textarea
+            .remove_event_listener_with_callback("keydown", listener.as_ref().unchecked_ref())
+            .expect("failed to remove editor key listener");
+        drop(listener);
+        overlay.remove();
+        Ok(outcome)
+    }
+}
+
+/// 複数の DOM イベントから最初の完了だけを受理し、待機側へ渡す。
+#[derive(Clone, Default)]
+struct EditorCompletion(Rc<RefCell<CompletionState>>);
+
+#[derive(Default)]
+struct CompletionState {
+    // outcome を取り出した後も、後続イベントによる再完了を拒否する。
+    resolved: bool,
+    outcome: Option<EditorOutcome>,
+    waker: Option<Waker>,
+}
+
+impl EditorCompletion {
+    fn resolve(&self, outcome: EditorOutcome) {
+        let mut state = self.0.borrow_mut();
+        if state.resolved {
+            return;
+        }
+        state.resolved = true;
+        state.outcome = Some(outcome);
+        let waker = state.waker.take();
+        drop(state);
+        if let Some(waker) = waker {
+            waker.wake();
+        }
+    }
+}
+
+impl Future for EditorCompletion {
+    type Output = EditorOutcome;
+
+    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut state = self.0.borrow_mut();
+        if let Some(outcome) = state.outcome.take() {
+            Poll::Ready(outcome)
+        } else {
+            state.waker = Some(context.waker().clone());
+            Poll::Pending
+        }
     }
 }
