@@ -24,7 +24,7 @@
 <h2 id="status">Status</h2>
 <p>Accepted</p>
 <h2 id="context">Context</h2>
-<p><a href="9.html">ADR 9</a>は、存在を前提にする単体getterの不在を自プロセスの契約違反としてpanicで拒否する。一方、get_issueは未取得・取得中・取得失敗を扱うためOptionを維持していた。<a href="11.html">ADR 11</a>ではIssueStoreを単一MapとIssueEntryに統合し、このgetter契約を維持した。</p>
+<p><a href="009.html">ADR 9</a>は、存在を前提にする単体getterの不在を自プロセスの契約違反としてpanicで拒否する。一方、get_issueは未取得・取得中・取得失敗を扱うためOptionを維持していた。<a href="011.html">ADR 11</a>ではIssueStoreを単一MapとIssueEntryに統合し、このgetter契約を維持した。</p>
 <p>IssueEntryのFetching / FetchFailedは本体を持たず、Synced / Edited / Uploadingは必ず本体を持つ。しかし公開IssueStateは5状態すべてを含み、get_issueの返り値にも実際には返らないFetching / FetchFailedを型として許している。また、詳細Componentなど本体の存在が前提の箇所にもOptionの処理が繰り返される。</p>
 <p>本体の存在を要求する取得と、不在を正常な結果として扱う問い合わせを分離する。JournalStoreにも同じgetter方針を適用する。本ADRはADR 9およびADR 11のIssue getter契約を更新し、エラー分類と内部entry表現は維持する。</p>
 <h2 id="decision">Decision</h2>
