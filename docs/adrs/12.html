@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ADR 12 — Storeのstrict getterと任意取得の分離</title>
+<style>
+      *,*::before,*::after{box-sizing:border-box}body{margin:0;background:#0f1117;color:#d0d4e8;font:15px/1.75 system-ui,"Noto Sans JP",sans-serif}.layout{display:flex;min-height:100vh}nav{position:sticky;top:0;width:240px;height:100vh;padding:28px 20px;background:#1a1d27;border-right:1px solid #2e3350}nav a{display:block;padding:5px 0;color:#8ba3f5;text-decoration:none;font-size:13px}main{max-width:980px;padding:52px 64px}h1,h2,h3{color:#e8eaf6}h1{font-size:27px;line-height:1.25}h2{margin-top:44px;padding-bottom:8px;border-bottom:1px solid #2e3350;font-size:19px}h3{margin-top:28px;font-size:16px}code,pre{font-family:"JetBrains Mono",monospace}code{color:#8ba3f5}pre{overflow:auto;padding:16px 18px;background:#13151f;border:1px solid #2a2e45;border-radius:8px;color:#d0d4e8}.status{display:inline-block;padding:3px 10px;border:1px solid #2a7a50;border-radius:20px;color:#4caf8a}li{margin:5px 0}@media(max-width:820px){.layout{display:block}nav{position:static;width:auto;height:auto}main{padding:32px 22px}}
+
+.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:9px 12px;border:1px solid #2e3350;text-align:left}th{background:#1a1d27}main{min-width:0}nav{flex-shrink:0;overflow-y:auto}a{color:#8ba3f5}</style>
+</head>
+<body><div class="layout">
+<nav><strong>ADR 12</strong>
+<a href="#status">Status</a>
+<a href="#context">Context</a>
+<a href="#decision">Decision</a>
+<a href="#error-handling">Error Handling</a>
+<a href="#rationale">Rationale</a>
+<a href="#consequences">Consequences</a>
+<a href="#alternatives-considered">Alternatives Considered</a>
+<hr><a href="9.html">ADR 9</a><a href="11.html">ADR 11</a><a href="../architecture.html">Architecture</a></nav>
+<main>
+<h1>12. Storeのstrict getterと任意取得の分離</h1>
+<h2 id="status">Status</h2>
+<p>Accepted</p>
+<h2 id="context">Context</h2>
+<p><a href="9.html">ADR 9</a>は、存在を前提にする単体getterの不在を自プロセスの契約違反としてpanicで拒否する。一方、get_issueは未取得・取得中・取得失敗を扱うためOptionを維持していた。<a href="11.html">ADR 11</a>ではIssueStoreを単一MapとIssueEntryに統合し、このgetter契約を維持した。</p>
+<p>IssueEntryのFetching / FetchFailedは本体を持たず、Synced / Edited / Uploadingは必ず本体を持つ。しかし公開IssueStateは5状態すべてを含み、get_issueの返り値にも実際には返らないFetching / FetchFailedを型として許している。また、詳細Componentなど本体の存在が前提の箇所にもOptionの処理が繰り返される。</p>
+<p>本体の存在を要求する取得と、不在を正常な結果として扱う問い合わせを分離する。JournalStoreにも同じgetter方針を適用する。本ADRはADR 9およびADR 11のIssue getter契約を更新し、エラー分類と内部entry表現は維持する。</p>
+<h2 id="decision">Decision</h2>
+<h3>Optionを返すgetterはtry_接頭辞を付ける</h3>
+<p>Optionを返す取得メソッドはtry_get_xxxとする。存在を前提とするget_xxxは値または参照を直接返し、前提違反はpanicする。try_は通信の試行ではなく、取得対象がない場合をOptionで表すことを意味する。</p>
+<p>今回の変更対象はIssueStore、JournalStore、およびそれらを公開する親Storeのgetterと呼び出し側とする。他のStoreやマスターデータのgetterへの命名適用は別途行い、不在時の意味を変えない。boolを返すhas_xxx、sliceやiteratorを返すcollection getterはこの改名の対象外とする。</p>
+<h3>Issueの取得済み状態と読み込み状態を分ける</h3>
+<p>公開型とgetterの契約を以下とする。引数型のimpl Into&lt;IssueId&gt;など既存の利便性は維持してよい。</p>
+<pre><code>enum IssueState {
+    Synced,
+    Edited,
+    Uploading,
+}
+
+enum IssueFetchState {
+    Fetching,
+    FetchFailed { message: String },
+}
+
+fn get_issue(&amp;self, id: IssueId) -&gt; (&amp;IssueAggregate, IssueState);
+fn try_get_issue_state(&amp;self, id: IssueId) -&gt; Option&lt;IssueState&gt;;
+fn try_get_issue_fetch_state(&amp;self, id: IssueId) -&gt; Option&lt;IssueFetchState&gt;;</code></pre>
+<p>get_issueは取得済み本体を要求する。未登録・Fetching・FetchFailedではpanicし、成功時には本体と取得済み状態を返す。公開IssueStateからFetching / FetchFailedを削除することで、返らない状態を型でも排除する。</p>
+<p>状態getterはどちらもOptionを返し、問い合わせ先に該当状態がないことを正常に扱う。旧get_issue_stateは削除する。</p>
+<div class="table-wrap"><table><thead><tr><th>内部状態</th><th>try_get_issue_state</th><th>try_get_issue_fetch_state</th><th>get_issue</th></tr></thead><tbody><tr><td>未登録</td><td>None</td><td>None</td><td>panic</td></tr><tr><td>Fetching</td><td>None</td><td>Some(Fetching)</td><td>panic</td></tr><tr><td>FetchFailed</td><td>None</td><td>Some(FetchFailed)</td><td>panic</td></tr><tr><td>Synced</td><td>Some(Synced)</td><td>None</td><td>本体とSynced</td></tr><tr><td>Edited</td><td>Some(Edited)</td><td>None</td><td>本体とEdited</td></tr><tr><td>Uploading</td><td>Some(Uploading)</td><td>None</td><td>本体とUploading</td></tr></tbody></table></div>
+<p>try_get_issue_state(id).is_some()を取得済み本体の存在確認として使用する。try_get_issue_fetch_stateのNoneだけで未登録と判定してはならない。両方がNoneの場合が未登録である。</p>
+<p>IssueEntryは非公開のままとし、getter用の状態はentryから導出する。公開用の状態キャッシュや別Mapは追加しない。FetchFailedのmessageは従来と同様に必要時にcloneする。</p>
+<h3>呼び出し側を用途に応じて移行する</h3>
+<ul><li>外側のIssueComponentは取得済み状態を確認してdetailを生成・更新する。それ以外では読み込み状態を調べ、取得中・失敗・未登録を扱う。再試行キーの判定はtry_get_issue_fetch_stateへ移す。</li><li>fetch_issueは未登録またはFetchFailedの場合だけ取得を開始する。try_get_issue_stateがNoneで、かつtry_get_issue_fetch_stateがNoneまたはFetchFailedであることを確認する。取得済みIssueやFetchingへの重複取得を許可しない。</li><li>IssueDetailComponentなど本体の存在を不変条件とする経路はget_issueを直接使う。不在を一律に事前検査して処理をスキップする形にはしない。</li><li>子Issue一覧やIssue選択popupのfallbackなど、不在が正常な経路ではtry_get_issue_stateで取得済みか確認してからget_issueを使う。今回try_get_issueは追加しない。</li><li>親StoreおよびJournal upload usecaseのIssue upload排他判定はtry_get_issue_stateを使う。従来はIssue本体の存在を要求していないため、strict getterに置き換えて事前条件を強めない。</li><li>詳細ヘッダーなどのIssueStateのmatchから、到達不能だったFetching / FetchFailedの分岐を削除する。</li></ul>
+<p>Issueの付随情報getterも以下へ改名する。返り値と不在時の挙動は維持する。</p>
+<ul><li>get_issue_upload_conflict → try_get_issue_upload_conflict</li><li>get_issue_upload_failure → try_get_issue_upload_failure</li></ul>
+<p>get_issuesは取得済み本体のiterator、get_issue_property_diffsは該当差分がなければ空sliceを返す契約を維持する。</p>
+<h3>JournalStoreにもstrict getterと任意取得を適用する</h3>
+<div class="table-wrap"><table><thead><tr><th>メソッド</th><th>方針</th></tr></thead><tbody><tr><td>get_remote_journal</td><td>参照を直接返し、不在はpanicする既存契約を維持</td></tr><tr><td>get_local_journal</td><td>参照を直接返し、不在はpanicするstrict getterにする</td></tr><tr><td>try_get_local_journal</td><td>現行get_local_journalのOption返却を引き継ぐ</td></tr><tr><td>try_get_remote_journal_upload_conflict</td><td>現行get_remote_journal_upload_conflictを改名し、Optionを維持</td></tr><tr><td>get_remote_journals</td><td>未登録なら空sliceを返す既存契約を維持</td></tr><tr><td>has_remote_journal / has_uploading_journal</td><td>boolを返す既存契約を維持</td></tr></tbody></table></div>
+<p>Local Journalは0件または1件である。任意の一覧表示はtry_get_local_journalを使い、存在が事前条件であるupload開始などはget_local_journalを使う。</p>
+<p>RemoteJournalEntry / LocalJournalEntryは全状態で本体を持ち、取得中・取得失敗を表すvariantを持たない。Journalの状態型の分割やentryの返却形式変更は行わない。親Storeの公開getterも同じ名前と契約に揃える。</p>
+<h3>内部の遷移検査はIssueEntryで行う</h3>
+<p>現行のderived_state / entry_stateは取得前と取得済みの全状態を公開IssueStateへ変換し、Actionの事前条件検査にも使っている。公開型の分割に合わせ、内部の遷移検査はIssueEntryを直接matchする形へ移す。</p>
+<p>特にtry_get_issue_stateのNoneを未登録と同一視してはならない。Syncは未登録・Edited・Uploadingのみを許可し、StartFetchingは未登録・FetchFailedのみ、取得完了ActionはFetchingのみを許可する既存契約を維持する。</p>
+<p>getterによる本体の存在保証は、編集やuploadなどの操作を許可する保証ではない。Action受理時の状態検査、ID整合性、Journalとのupload排他、非同期完了の検査は維持する。</p>
+<h2 id="error-handling">Error Handling</h2>
+<p>ADR 9のエラー分類を維持する。strict getterを本体のない状態で呼ぶことは自プロセスの契約違反としてpanicする。panicには対象IDと、操作や現在状態が分かる診断を含める。呼び出し位置の診断には必要に応じてtrack_callerを用いる。</p>
+<p>未登録、取得中、取得失敗を問い合わせること自体は正常であり、try_get_xxxで扱う。通信失敗は従来どおり失敗Action・状態復帰・ユーザー通知で扱い、getter変更によってpanicへ変更しない。</p>
+<h2 id="rationale">Rationale</h2>
+<p>取得済み本体を使う処理からOptionの処理と不可能な状態分岐を取り除ける。不在を許す問い合わせはtry_で明示され、存在前提の処理で不整合を黙ってスキップしにくくなる。</p>
+<p>取得前と取得済みの状態を分けるため、読み込み制御では2種類の問い合わせが必要になる。一方、状態を横断する主な呼び出し側はIssueComponentとfetch_issueに限られ、その他の状態参照は取得済み状態だけで足りる。</p>
+<h2 id="consequences">Consequences</h2>
+<ul><li>ADR 9およびADR 11の既存文書は書き換えず、本ADRをgetter契約の更新として参照する。実装時にdocs/architecture.mdのgetter契約とコード例を更新する。</li><li>strict getterの前提は呼び出し側が守る。状態確認後にStoreの更新を挟まず取得し、確認と取得の間で状態が変わる使い方を避ける。</li><li>任意取得では確認と取得の二重検索が発生し得る。現時点では契約の明確さを優先する。</li></ul>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<ul><li>IssueStateの5variantを維持し、get_issue専用の部分型を追加する: 取得済み状態の定義が重複するため採用しない。</li><li>get_issueからIssueEntryの参照を返す: 取得中も返せるが、本体の存在保証にならず、内部のdiff・失敗・競合の表現へ呼び出し側が依存するため採用しない。</li><li>get_issueのOptionを維持する: 存在前提の処理にもOption処理が残り、今回の目的を満たさない。</li><li>すべての単体getterを非Option化する: Local Journalの0件や競合の不在など、正常な任意取得があるため採用しない。</li></ul>
+</main></div></body>
+</html>
