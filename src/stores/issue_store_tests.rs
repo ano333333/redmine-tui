@@ -3,9 +3,10 @@ use crate::entities::IssueAggregate;
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
 use crate::vos::issue_property_diff::{
-    IssueDescriptionDiff, IssueDueDateDiff, IssueStartDateDiff, IssueStatusIdDiff,
+    IssueDescriptionDiff, IssueDueDateDiff, IssuePriorityIdDiff, IssueStartDateDiff,
+    IssueStatusIdDiff,
 };
-use crate::vos::{CategoryId, IssueId, IssueStatusId, TargetVersionId};
+use crate::vos::{CategoryId, IssueId, IssueStatusId, PriorityId, TargetVersionId};
 
 #[test]
 fn load_action_is_consumed_through_parent_store() {
@@ -139,6 +140,31 @@ fn update_issue_category_can_clear_category() {
     let (issue, state) = store.get_issue(1);
     assert_eq!(issue.category_id, None);
     assert_eq!(state, IssueState::Edited);
+}
+
+#[test]
+fn update_issue_priority_updates_issue_and_records_diff() {
+    let mut store = Store::new();
+    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+
+    store.consume_action(
+        IssueAction::UpdatePriority {
+            id: 1.into(),
+            priority_id: PriorityId::new(3),
+        }
+        .into(),
+    );
+
+    let (issue, state) = store.get_issue(1);
+    assert_eq!(issue.priority_id, PriorityId::new(3));
+    assert_eq!(state, IssueState::Edited);
+    assert_eq!(
+        store.get_issue_property_diffs(IssueId::new(1)).last(),
+        Some(&IssuePropertyDiff::PriorityId(IssuePriorityIdDiff {
+            before: PriorityId::new(1),
+            after: PriorityId::new(3),
+        }))
+    );
 }
 
 #[test]
@@ -369,6 +395,10 @@ missing_issue_update_panics! {
     missing_issue_update_status_panics: IssueAction::UpdateStatus {
         id: 99.into(),
         status_id: 1.into(),
+    },
+    missing_issue_update_priority_panics: IssueAction::UpdatePriority {
+        id: 99.into(),
+        priority_id: 1.into(),
     },
     missing_issue_update_assigned_to_panics: IssueAction::UpdateAssignedTo {
         id: 99.into(),

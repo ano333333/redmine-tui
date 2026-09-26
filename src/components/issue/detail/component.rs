@@ -48,6 +48,7 @@ pub enum EventProcessResult {
         issue_id: IssueId,
     },
     OpenIssueStatusPopup,
+    OpenPriorityPopup,
     OpenAssignedToPopup,
     OpenTargetVersionPopup,
     OpenStartDatePopup,
@@ -428,6 +429,9 @@ impl IssueDetailComponent {
                     }
                     Some(PropertyEventProcessResult::OpenIssueStatusPopup) => {
                         return Some(EventProcessResult::OpenIssueStatusPopup);
+                    }
+                    Some(PropertyEventProcessResult::OpenPriorityPopup) => {
+                        return Some(EventProcessResult::OpenPriorityPopup);
                     }
                     Some(PropertyEventProcessResult::OpenAssignedToPopup) => {
                         return Some(EventProcessResult::OpenAssignedToPopup);

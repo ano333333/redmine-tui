@@ -8,10 +8,12 @@ use crate::entities::IssueAggregate;
 use crate::libs::yaml::parse_issue_yaml;
 use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
-    IssueDueDateDiff, IssueStartDateDiff, IssueStatusIdDiff, IssueTargetVersionIdDiff,
+    IssueDueDateDiff, IssuePriorityIdDiff, IssueStartDateDiff, IssueStatusIdDiff,
+    IssueTargetVersionIdDiff,
 };
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, TargetVersionId, UserId,
+    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, PriorityId,
+    TargetVersionId, UserId,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -96,6 +98,10 @@ pub enum IssueAction {
     UpdateStatus {
         id: IssueId,
         status_id: IssueStatusId,
+    },
+    UpdatePriority {
+        id: IssueId,
+        priority_id: PriorityId,
     },
     UpdateAssignedTo {
         id: IssueId,
@@ -306,6 +312,14 @@ impl IssueStore {
                 IssuePropertyDiff::StatusId(IssueStatusIdDiff {
                     before,
                     after: status_id,
+                })
+            }),
+            IssueAction::UpdatePriority { id, priority_id } => self.update_issue(id, |issue| {
+                let before = issue.priority_id;
+                issue.priority_id = priority_id;
+                IssuePropertyDiff::PriorityId(IssuePriorityIdDiff {
+                    before,
+                    after: priority_id,
                 })
             }),
             IssueAction::UpdateAssignedTo { id, assigned_to_id } => {

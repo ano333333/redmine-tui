@@ -4,7 +4,9 @@ use std::rc::Rc;
 use chrono::{DateTime, Local};
 
 use crate::stores::{Dispatcher, IssueAction, Store};
-use crate::vos::{CategoryId, EntityIdValue, IssueId, IssueStatusId, TargetVersionId, UserId};
+use crate::vos::{
+    CategoryId, EntityIdValue, IssueId, IssueStatusId, PriorityId, TargetVersionId, UserId,
+};
 
 /// idと名前のentry一覧と現在値から、SelectBoxPopupComponent::new用の
 /// items(id昇順ソート、`sorted`指定時)とフォーカス箇所のindexを組み立てる。
@@ -32,6 +34,17 @@ pub fn build_issue_status_options(store: &Store) -> (Vec<(u16, String)>, usize) 
         .map(|(id, status)| (id.get(), status.name.clone()))
         .collect::<Vec<_>>();
     build_select_options(issue_statuses, None, false)
+}
+
+/// PriorityPopup用のitems/focused_indexを組み立てる。
+pub fn build_priority_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
+    let current_priority_id = store.get_issue(issue_id).0.priority_id;
+    let priorities = store
+        .get_priorities()
+        .iter()
+        .map(|(id, priority)| (id.get(), priority.name.clone()))
+        .collect::<Vec<_>>();
+    build_select_options(priorities, Some(current_priority_id.get()), true)
 }
 
 /// AssignedToPopup用のitems/focused_indexを組み立てる。
@@ -101,6 +114,27 @@ pub fn issue_status_popup_observer(
                 id: issue_id,
                 status_id: IssueStatusId::new(status_id),
             });
+        }
+    })
+}
+
+/// PriorityPopupの選択結果からUpdatePriorityをdispatchするobserverを組み立てる。
+///
+/// priorityは必須項目のため、選択なし(None)は無視する。
+// FIXME: 子チケットを持つIssueでは、Redmine既定の`parent_issue_priority: derived`により
+// サーバーがpriority_idをエラーなしで無視する。ローカルでは変更済みに見えてしまう。
+pub fn priority_popup_observer(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    issue_id: IssueId,
+) -> Box<dyn FnMut(Option<u16>)> {
+    Box::new(move |priority_id| {
+        if let Some(priority_id) = priority_id {
+            dispatcher
+                .borrow_mut()
+                .dispatch(IssueAction::UpdatePriority {
+                    id: issue_id,
+                    priority_id: PriorityId::new(priority_id),
+                });
         }
     })
 }
@@ -232,6 +266,29 @@ mod tests {
 
         assert!(!items.is_empty());
         assert_eq!(focused_index, 0);
+    }
+
+    #[test]
+    fn priority_options_are_sorted_and_focus_the_current_priority() {
+        let mut dispatcher = loaded_dispatcher();
+        dispatcher.dispatch(IssueAction::UpdatePriority {
+            id: 3.into(),
+            priority_id: PriorityId::new(3),
+        });
+        dispatcher.consume_action();
+
+        let (items, focused_index) = build_priority_options(dispatcher.store(), 3.into());
+
+        assert_eq!(
+            items,
+            vec![
+                (1, "major".to_string()),
+                (2, "minor".to_string()),
+                (3, "critical".to_string()),
+                (4, "blocker".to_string()),
+            ]
+        );
+        assert_eq!(focused_index, 2);
     }
 
     #[test]
@@ -392,6 +449,31 @@ mod tests {
     fn issue_status_observer_ignores_none() {
         let dispatcher = shared_loaded_dispatcher();
         let mut observer = issue_status_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(None);
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+    }
+
+    #[test]
+    fn priority_observer_dispatches_update_priority_when_selected() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = priority_popup_observer(dispatcher.clone(), 3.into());
+
+        observer(Some(2));
+
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
+        dispatcher.borrow_mut().consume_action();
+        assert_eq!(
+            dispatcher.borrow().store().get_issue(3).0.priority_id,
+            PriorityId::new(2)
+        );
+    }
+
+    #[test]
+    fn priority_observer_ignores_none() {
+        let dispatcher = shared_loaded_dispatcher();
+        let mut observer = priority_popup_observer(dispatcher.clone(), 3.into());
 
         observer(None);
 
