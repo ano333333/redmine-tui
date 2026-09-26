@@ -317,7 +317,7 @@ fn issue_upload_conflicts_are_retained_while_uploading() {
     );
 
     let (actual_issue, actual_conflicts) = store
-        .get_issue_upload_conflict(1.into())
+        .try_get_issue_upload_conflict(1.into())
         .expect("issue upload conflict should be retained");
     assert_eq!(actual_issue.issue.subject, server_issue.issue.subject);
     assert_eq!(actual_conflicts, conflicts);
@@ -549,7 +549,7 @@ fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs_and_message() {
     let (_, state) = store.get_issue(1);
     assert_eq!(state, IssueState::Edited);
     assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 1);
-    assert!(store.get_issue_upload_conflict(1.into()).is_none());
+    assert!(store.try_get_issue_upload_conflict(1.into()).is_none());
     assert_eq!(
         store.get_issue_upload_failure(1.into()),
         Some("upload failed")
@@ -864,7 +864,7 @@ fn matching_fetch_success_registers_the_issue_as_synced() {
     assert_eq!(issue.issue.subject, "fetched");
     assert_eq!(state, IssueState::Synced);
     assert!(store.get_issue_property_diffs(id).is_empty());
-    assert!(store.get_issue_upload_conflict(id).is_none());
+    assert!(store.try_get_issue_upload_conflict(id).is_none());
 }
 
 #[test]

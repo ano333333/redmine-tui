@@ -402,7 +402,7 @@ impl IssueStore {
         }
     }
 
-    pub(super) fn get_issue_upload_conflict(
+    pub(super) fn try_get_issue_upload_conflict(
         &self,
         id: IssueId,
     ) -> Option<(&IssueAggregate, &[IssuePropertyDiff])> {

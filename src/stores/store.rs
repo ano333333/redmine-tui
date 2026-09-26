@@ -355,11 +355,11 @@ impl Store {
     }
 
     /// 保存処理で検出した競合について、比較時点のサーバー Issue と差分を返す。
-    pub fn get_issue_upload_conflict(
+    pub fn try_get_issue_upload_conflict(
         &self,
         id: IssueId,
     ) -> Option<(&IssueAggregate, &[IssuePropertyDiff])> {
-        self.issue_store.get_issue_upload_conflict(id)
+        self.issue_store.try_get_issue_upload_conflict(id)
     }
 
     pub fn get_issue_upload_failure(&self, id: IssueId) -> Option<&str> {

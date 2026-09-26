@@ -17,7 +17,7 @@ pub fn continue_issue_upload(
 ) -> Vec<IssuePropertyDiff> {
     let (server_issue, conflicts) = dispatcher
         .store()
-        .get_issue_upload_conflict(id)
+        .try_get_issue_upload_conflict(id)
         .map(|(issue, conflicts)| (issue.clone(), conflicts.to_vec()))
         .expect("Issueのアップロード続行には競合情報が必要です");
 

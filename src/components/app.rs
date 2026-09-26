@@ -574,7 +574,7 @@ impl<'a> AppComponent<'a> {
     fn open_issue_property_conflict_popup_if_needed(&mut self, store: &Store) {
         if let Some(issue_component) = &self.issue_component
             && let Some((server_issue, conflicts)) =
-                store.get_issue_upload_conflict(issue_component.issue_id())
+                store.try_get_issue_upload_conflict(issue_component.issue_id())
             && !self.popup_components.iter().any(|popup| {
                 matches!(
                     &*popup.borrow(),
@@ -1272,7 +1272,7 @@ mod tests {
             dispatcher
                 .borrow()
                 .store()
-                .get_issue_upload_conflict(IssueId::new(3))
+                .try_get_issue_upload_conflict(IssueId::new(3))
                 .is_none()
         );
     }
