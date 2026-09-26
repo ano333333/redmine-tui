@@ -109,7 +109,7 @@ fn getters_on_an_empty_store_return_empty_results() {
 
     assert!(store.get_remote_journals(issue_id).is_empty());
     assert!(!store.has_remote_journal(issue_id, JournalId::new(10)));
-    assert!(store.get_local_journal(issue_id).is_none());
+    assert!(store.try_get_local_journal(issue_id).is_none());
     assert!(!store.has_uploading_journal(issue_id));
 }
 
@@ -184,9 +184,7 @@ fn getters_return_journals_stored_via_issue_journals() {
 
     assert!(store.has_remote_journal(issue_id, JournalId::new(11)));
 
-    let fetched_local = store
-        .get_local_journal(issue_id)
-        .expect("local journal should be stored");
+    let fetched_local = store.get_local_journal(issue_id);
     assert_eq!(fetched_local.journal.issue_id, issue_id);
     assert_eq!(fetched_local.journal.notes, "local notes");
     assert!(matches!(fetched_local.state, LocalJournalState::Uploading));
@@ -219,7 +217,7 @@ fn sync_fetched_registers_journals_on_an_empty_store() {
             .all(|entry| { matches!(entry.state, RemoteJournalState::Synced) })
     );
     assert!(store.get_remote_journals(IssueId::new(4)).is_empty());
-    assert!(store.get_local_journal(issue_id).is_none());
+    assert!(store.try_get_local_journal(issue_id).is_none());
 }
 
 #[test]
@@ -248,10 +246,7 @@ fn sync_fetched_replaces_the_existing_remote_collection_of_the_issue() {
         vec![JournalId::new(11)]
     );
     assert!(matches!(
-        store
-            .get_local_journal(IssueId::new(3))
-            .expect("local journal should be kept")
-            .state,
+        store.get_local_journal(IssueId::new(3)).state,
         LocalJournalState::Uploading
     ));
 }
@@ -344,10 +339,7 @@ fn sync_fetched_drops_synced_journals_missing_from_the_fetched_result() {
         vec![JournalId::new(10)]
     );
     assert!(matches!(
-        store
-            .get_local_journal(IssueId::new(3))
-            .expect("local journal should be kept")
-            .state,
+        store.get_local_journal(IssueId::new(3)).state,
         LocalJournalState::Uploading
     ));
 }
@@ -568,9 +560,7 @@ fn create_local_registers_an_empty_local_only_journal() {
 
     store.consume_action(JournalAction::CreateLocal { issue_id });
 
-    let entry = store
-        .get_local_journal(issue_id)
-        .expect("local journal should be registered");
+    let entry = store.get_local_journal(issue_id);
     assert_eq!(entry.journal.issue_id, issue_id);
     assert!(entry.journal.notes.is_empty());
     assert!(matches!(
@@ -607,9 +597,7 @@ fn edit_local_notes_updates_a_local_only_journal_and_drops_a_failure() {
         notes: "edited notes".to_string(),
     });
 
-    let entry = store
-        .get_local_journal(issue_id)
-        .expect("local journal should be registered");
+    let entry = store.get_local_journal(issue_id);
     assert_eq!(entry.journal.notes, "edited notes");
     assert!(matches!(
         entry.state,
@@ -655,7 +643,7 @@ fn start_local_upload_moves_a_local_only_journal_to_uploading() {
 
     store.consume_action(JournalAction::StartLocalUpload { issue_id });
 
-    let entry = store.get_local_journal(issue_id).unwrap();
+    let entry = store.get_local_journal(issue_id);
     assert!(matches!(entry.state, LocalJournalState::Uploading));
 }
 
@@ -719,7 +707,7 @@ fn fail_local_upload_restores_local_only_with_failure_and_keeps_notes() {
         message: "network error: offline".to_string(),
     });
 
-    let entry = store.get_local_journal(issue_id).unwrap();
+    let entry = store.get_local_journal(issue_id);
     assert_eq!(entry.journal.notes, "local notes");
     let LocalJournalState::LocalOnly {
         failure: Some(failure),
@@ -1614,7 +1602,7 @@ fn complete_local_upload_with_fetched_merges_the_remote_collection_and_clears_th
             .iter()
             .all(|entry| matches!(entry.state, RemoteJournalState::Synced))
     );
-    assert!(store.get_local_journal(issue_id).is_none());
+    assert!(store.try_get_local_journal(issue_id).is_none());
 }
 
 #[test]
@@ -1659,7 +1647,7 @@ fn complete_local_upload_with_fetched_keeps_dirty_remote_entries_even_when_refet
     let new_entry = store.get_remote_journal(issue_id, JournalId::new(20));
     assert!(matches!(new_entry.state, RemoteJournalState::Synced));
 
-    assert!(store.get_local_journal(issue_id).is_none());
+    assert!(store.try_get_local_journal(issue_id).is_none());
 }
 
 #[test]
@@ -1695,4 +1683,37 @@ fn complete_local_upload_with_fetched_panics_when_the_local_entry_is_local_only(
         issue_id,
         journals: vec![],
     });
+}
+
+#[test]
+#[should_panic(expected = "local journal is not registered for issue 1")]
+fn get_local_journal_panics_for_an_unregistered_issue() {
+    let store = JournalStore::new();
+
+    store.get_local_journal(IssueId::new(1));
+}
+
+#[test]
+fn try_get_local_journal_returns_none_for_an_issue_without_a_local_journal() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore::new();
+    store.consume_action(JournalAction::SyncFetched {
+        issue_id,
+        journals: vec![journal(issue_id, 10)],
+    });
+
+    assert!(store.try_get_local_journal(issue_id).is_none());
+}
+
+#[test]
+#[should_panic(expected = "local journal is not registered for issue 1")]
+fn get_local_journal_panics_for_an_issue_without_a_local_journal() {
+    let issue_id = IssueId::new(1);
+    let mut store = JournalStore::new();
+    store.consume_action(JournalAction::SyncFetched {
+        issue_id,
+        journals: vec![journal(issue_id, 10)],
+    });
+
+    store.get_local_journal(issue_id);
 }

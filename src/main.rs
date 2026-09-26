@@ -1980,7 +1980,13 @@ mod tests {
             }
         }
 
-        assert!(dispatcher.borrow().store().get_local_journal(3).is_none());
+        assert!(
+            dispatcher
+                .borrow()
+                .store()
+                .try_get_local_journal(3)
+                .is_none()
+        );
         assert_eq!(client.uploaded_issue_notes.lock().unwrap().len(), 2);
         assert_eq!(*client.get_requests.lock().unwrap(), 1);
     }
@@ -2019,7 +2025,13 @@ mod tests {
             }
         }
 
-        assert!(dispatcher.borrow().store().get_local_journal(3).is_none());
+        assert!(
+            dispatcher
+                .borrow()
+                .store()
+                .try_get_local_journal(3)
+                .is_none()
+        );
         assert_eq!(client.uploaded_issue_notes.lock().unwrap().len(), 2);
         assert_eq!(*client.get_requests.lock().unwrap(), 2);
     }

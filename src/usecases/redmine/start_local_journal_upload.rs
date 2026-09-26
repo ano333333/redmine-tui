@@ -74,9 +74,7 @@ where
         ) {
             panic!("cannot start local journal upload while issue {issue_id} is uploading");
         }
-        let entry = store
-            .get_local_journal(issue_id)
-            .unwrap_or_else(|| panic!("local journal is not registered for issue {issue_id}"));
+        let entry = store.get_local_journal(issue_id);
         if !matches!(entry.state, LocalJournalState::LocalOnly { .. }) {
             panic!("cannot start local journal upload unless it is local only");
         }
@@ -328,7 +326,6 @@ mod tests {
                 .borrow()
                 .store()
                 .get_local_journal(ISSUE_ID)
-                .unwrap()
                 .state,
             LocalJournalState::Uploading
         ));
@@ -466,7 +463,7 @@ mod tests {
 
         let dispatcher = dispatcher.borrow();
         let store = dispatcher.store();
-        assert!(store.get_local_journal(ISSUE_ID).is_none());
+        assert!(store.try_get_local_journal(ISSUE_ID).is_none());
         assert_eq!(
             store
                 .get_remote_journals(ISSUE_ID)
@@ -522,7 +519,7 @@ mod tests {
         dispatcher.borrow_mut().consume_action();
 
         let dispatcher = dispatcher.borrow();
-        let entry = dispatcher.store().get_local_journal(ISSUE_ID).unwrap();
+        let entry = dispatcher.store().get_local_journal(ISSUE_ID);
         assert_eq!(entry.journal.notes, "local notes");
         let LocalJournalState::LocalOnly {
             failure: Some(failure),
@@ -595,7 +592,7 @@ mod tests {
         dispatcher.borrow_mut().consume_action();
 
         let dispatcher = dispatcher.borrow();
-        let entry = dispatcher.store().get_local_journal(ISSUE_ID).unwrap();
+        let entry = dispatcher.store().get_local_journal(ISSUE_ID);
         assert_eq!(entry.journal.notes, "local notes");
         assert!(matches!(
             entry.state,
@@ -631,7 +628,7 @@ mod tests {
             .dispatch(actions.into_iter().nth(1).unwrap());
         dispatcher.borrow_mut().consume_action();
         let dispatcher = dispatcher.borrow();
-        let entry = dispatcher.store().get_local_journal(ISSUE_ID).unwrap();
+        let entry = dispatcher.store().get_local_journal(ISSUE_ID);
         assert_eq!(entry.journal.notes, "local notes");
         assert_eq!(
             entry.state,

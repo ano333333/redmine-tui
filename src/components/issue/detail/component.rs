@@ -555,7 +555,7 @@ impl IssueDetailComponent {
 
         let entries = store.get_remote_journals(self.id);
         self.journals_list
-            .update(entries, store.get_local_journal(self.id), self.width);
+            .update(entries, store.try_get_local_journal(self.id), self.width);
 
         self.widget_state.update(
             self.calc_cursor_global_position(store),

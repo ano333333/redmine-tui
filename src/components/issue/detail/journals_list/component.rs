@@ -781,7 +781,7 @@ mod tests {
         let mut component = JournalsListComponent::new(issue_id);
         component.update(
             store.get_remote_journals(issue_id),
-            store.get_local_journal(issue_id),
+            store.try_get_local_journal(issue_id),
             WIDE_WIDTH,
         );
         component
@@ -817,7 +817,7 @@ mod tests {
         complete_local_upload(&mut store, fetched);
         component.update(
             store.get_remote_journals(IssueId::new(1)),
-            store.get_local_journal(IssueId::new(1)),
+            store.try_get_local_journal(IssueId::new(1)),
             WIDE_WIDTH,
         );
 
@@ -840,7 +840,7 @@ mod tests {
         complete_local_upload(&mut store, remotes.clone());
         component.update(
             store.get_remote_journals(IssueId::new(1)),
-            store.get_local_journal(IssueId::new(1)),
+            store.try_get_local_journal(IssueId::new(1)),
             WIDE_WIDTH,
         );
 
@@ -862,7 +862,7 @@ mod tests {
         complete_local_upload(&mut store, vec![]);
         component.update(
             store.get_remote_journals(IssueId::new(1)),
-            store.get_local_journal(IssueId::new(1)),
+            store.try_get_local_journal(IssueId::new(1)),
             WIDE_WIDTH,
         );
 
@@ -912,7 +912,7 @@ mod tests {
         let mut component = JournalsListComponent::new(journal.issue_id);
         component.update(
             store.get_remote_journals(journal.issue_id),
-            store.get_local_journal(journal.issue_id),
+            store.try_get_local_journal(journal.issue_id),
             WIDE_WIDTH,
         );
         let widget = component.create_widget(&store);

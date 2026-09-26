@@ -240,7 +240,18 @@ impl Store {
     }
 
     /// Issueに紐づく0件または1件のLocal Journalを返す。
-    pub fn get_local_journal(&self, issue_id: impl Into<IssueId>) -> Option<&LocalJournalEntry> {
+    pub fn try_get_local_journal(
+        &self,
+        issue_id: impl Into<IssueId>,
+    ) -> Option<&LocalJournalEntry> {
+        self.journal_store.try_get_local_journal(issue_id)
+    }
+
+    /// # Panics
+    ///
+    /// Issueが未登録の場合、またはLocal Journalを持たない場合にpanicする。
+    #[track_caller]
+    pub fn get_local_journal(&self, issue_id: impl Into<IssueId>) -> &LocalJournalEntry {
         self.journal_store.get_local_journal(issue_id)
     }
 

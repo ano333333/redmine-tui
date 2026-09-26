@@ -598,10 +598,23 @@ impl JournalStore {
     /// Issueが持つ唯一のLocal Journalを返す。
     ///
     /// Issueが未登録の場合、またはLocal Journalを持たない場合は`None`を返す。
-    pub fn get_local_journal(&self, issue_id: impl Into<IssueId>) -> Option<&LocalJournalEntry> {
+    pub fn try_get_local_journal(
+        &self,
+        issue_id: impl Into<IssueId>,
+    ) -> Option<&LocalJournalEntry> {
         self.by_issue
             .get(&issue_id.into())
             .and_then(|journals| journals.local.as_ref())
+    }
+
+    /// # Panics
+    ///
+    /// Issueが未登録の場合、またはLocal Journalを持たない場合にpanicする。
+    #[track_caller]
+    pub fn get_local_journal(&self, issue_id: impl Into<IssueId>) -> &LocalJournalEntry {
+        let issue_id = issue_id.into();
+        self.try_get_local_journal(issue_id)
+            .unwrap_or_else(|| panic!("local journal is not registered for issue {issue_id}"))
     }
 
     /// 対象IssueのRemote JournalまたはLocal Journalがupload中かを返す。

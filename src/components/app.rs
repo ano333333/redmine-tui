@@ -1422,7 +1422,13 @@ mod tests {
         assert_eq!(request.initial_text, "");
 
         dispatcher.borrow_mut().consume_action();
-        assert!(dispatcher.borrow().store().get_local_journal(3).is_some());
+        assert!(
+            dispatcher
+                .borrow()
+                .store()
+                .try_get_local_journal(3)
+                .is_some()
+        );
 
         app.handle_editor_response(EditorResponse {
             edited_text: "local notes".to_string(),
@@ -1430,10 +1436,7 @@ mod tests {
         dispatcher.borrow_mut().consume_action();
 
         let dispatcher_ref = dispatcher.borrow();
-        let entry = dispatcher_ref
-            .store()
-            .get_local_journal(3)
-            .expect("created local journal should remain in Store");
+        let entry = dispatcher_ref.store().get_local_journal(3);
         assert_eq!(entry.journal.notes, "local notes");
     }
 
@@ -1473,10 +1476,7 @@ mod tests {
         dispatcher.borrow_mut().consume_action();
 
         let dispatcher_ref = dispatcher.borrow();
-        let entry = dispatcher_ref
-            .store()
-            .get_local_journal(3)
-            .expect("local journal should remain in Store");
+        let entry = dispatcher_ref.store().get_local_journal(3);
         assert_eq!(entry.journal.notes, "updated local notes");
     }
 
