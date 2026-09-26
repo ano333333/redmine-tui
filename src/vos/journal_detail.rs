@@ -60,8 +60,8 @@ pub enum JournalDetailAttr {
         new: u16,
     },
     EstimatedHours {
-        old: Option<u16>,
-        new: Option<u16>,
+        old: Option<f64>,
+        new: Option<f64>,
     },
     ParentId {
         old: Option<IssueId>,

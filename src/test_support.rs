@@ -139,7 +139,7 @@ pub fn sample_issue_aggregate(
         start_date: start_date.map(local_datetime),
         due_date: due.map(local_datetime),
         done_ratio: progress,
-        estimated_hours: Some(8),
+        estimated_hours: Some(8.0),
         total_spent_hours: Some(3.5),
         category_id: Some(CategoryId::new(1)),
         child_ids: vec![],

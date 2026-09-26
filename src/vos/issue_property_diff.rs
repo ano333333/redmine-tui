@@ -90,8 +90,8 @@ pub struct IssueDoneRatioDiff {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct IssueEstimatedHoursDiff {
-    pub before: Option<u16>,
-    pub after: Option<u16>,
+    pub before: Option<f64>,
+    pub after: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

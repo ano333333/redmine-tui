@@ -94,9 +94,8 @@ pub(super) fn try_into_domain(
             new: parse_id_value(&detail.name, &new_value)?,
         },
         "estimated_hours" => JournalDetailAttr::EstimatedHours {
-            // Redmineの小数表現は受け取るが、domainが想定する整数時間だけに制限する。
-            old: parse_optional_whole_hours(&detail.name, Some(old_value.as_str()))?,
-            new: parse_optional_whole_hours(&detail.name, Some(new_value.as_str()))?,
+            old: parse_optional_hours(&detail.name, Some(old_value.as_str()))?,
+            new: parse_optional_hours(&detail.name, Some(new_value.as_str()))?,
         },
         "parent_id" => JournalDetailAttr::ParentId {
             // 親Issueの解除は、他のOptional ID属性と同様に欠損値または空文字列で表される。
@@ -148,11 +147,11 @@ where
     parse_id_value(name, value).map(|id| T::from(id)).map(Some)
 }
 
-/// Redmineの小数表現から整数時間だけを変換し、欠損値または空文字列は`None`として扱う。
-fn parse_optional_whole_hours(
+/// Redmineの小数表現を時間として変換し、欠損値または空文字列は`None`として扱う。
+fn parse_optional_hours(
     name: &str,
     value: Option<&str>,
-) -> Result<Option<u16>, RedmineClientError> {
+) -> Result<Option<f64>, RedmineClientError> {
     let Some(value) = value else {
         return Ok(None);
     };
@@ -160,20 +159,14 @@ fn parse_optional_whole_hours(
         return Ok(None);
     }
 
-    let hours = value.parse::<f64>().map_err(|error| RedmineClientError::Client {
-        reason: format!(
-            "failed to parse Redmine journal detail attribute '{name}' value '{value}' as f64: {error}"
-        ),
-    })?;
-    if !(0.0..=u16::MAX as f64).contains(&hours) || hours.fract() != 0.0 {
-        return Err(RedmineClientError::Client {
+    value
+        .parse::<f64>()
+        .map(Some)
+        .map_err(|error| RedmineClientError::Client {
             reason: format!(
-                "failed to convert Redmine journal detail attribute '{name}' value '{value}' to whole u16"
+                "failed to parse Redmine journal detail attribute '{name}' value '{value}' as f64: {error}"
             ),
-        });
-    }
-
-    Ok(Some(hours as u16))
+        })
 }
 
 /// Redmineの真偽値表現のうち`0` / `1` / `false` / `true`だけを受け入れる。

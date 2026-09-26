@@ -56,7 +56,9 @@ fn as_u16_option(yaml: &Yaml, key: &str) -> Option<u16> {
 }
 
 fn as_f64_option(yaml: &Yaml, key: &str) -> Option<f64> {
-    yaml[key].as_f64()
+    yaml[key]
+        .as_f64()
+        .or_else(|| yaml[key].as_i64().map(|value| value as f64))
 }
 
 fn as_local_datetime_option(yaml: &Yaml, key: &str) -> Option<DateTime<Local>> {
@@ -172,8 +174,8 @@ pub fn parse_journal_detail_attr_yaml(yaml: &yaml_rust::Yaml) -> JournalDetailAt
             new: as_u16(yaml, "new"),
         },
         "estimated_hours" => JournalDetailAttr::EstimatedHours {
-            old: as_u16_option(yaml, "old"),
-            new: as_u16_option(yaml, "new"),
+            old: as_f64_option(yaml, "old"),
+            new: as_f64_option(yaml, "new"),
         },
         "parent_id" => JournalDetailAttr::ParentId {
             old: as_u16_option(yaml, "old").map(IssueId::new),
@@ -204,7 +206,7 @@ pub fn parse_issue_yaml(id: u16) -> IssueAggregate {
     let start_date = as_local_datetime_option(&yaml, "start_date");
     let due_date = as_local_datetime_option(&yaml, "due_date");
     let done_ratio = as_u16(&yaml, "done_ratio");
-    let estimated_hours = as_u16_option(&yaml, "estimated_hours");
+    let estimated_hours = as_f64_option(&yaml, "estimated_hours");
     let total_spent_hours = as_f64_option(&yaml, "total_spent_hours");
     let category_id = as_u16_option(&yaml, "category_id").map(CategoryId::new);
     let description = as_string(&yaml, "description");

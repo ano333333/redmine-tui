@@ -314,7 +314,7 @@ mod tests {
                 Some(local_datetime("2026-01-10T00:00:00+09:00")),
                 Some(local_datetime("2026-01-20T00:00:00+09:00")),
                 65,
-                Some(13),
+                Some(13.0),
                 Some(8.5),
                 self.component.as_str(),
                 Some(3),

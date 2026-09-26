@@ -29,7 +29,7 @@ fn get_issue_maps_success_response() {
                 "start_date": "2026-08-19",
                 "due_date": "2026-08-31",
                 "done_ratio": 30,
-                "estimated_hours": 8.0,
+                "estimated_hours": 1.5,
                 "total_spent_hours": 2.5,
                 "category": {"id": 4},
                 "description": "Login fails with valid credentials",
@@ -61,7 +61,7 @@ fn get_issue_maps_success_response() {
     assert_eq!(aggregate.assigned_to_id.unwrap().get(), 1001);
     assert_eq!(aggregate.target_version_id.unwrap().get(), 7);
     assert_eq!(aggregate.done_ratio, 30);
-    assert_eq!(aggregate.estimated_hours, Some(8));
+    assert_eq!(aggregate.estimated_hours, Some(1.5));
     assert_eq!(aggregate.total_spent_hours, Some(2.5));
     assert_eq!(aggregate.category_id.unwrap().get(), 4);
     assert_eq!(

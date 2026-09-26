@@ -681,7 +681,7 @@ struct UpdateIssue {
     start_date: Option<String>,
     due_date: Option<String>,
     done_ratio: u16,
-    estimated_hours: Option<u16>,
+    estimated_hours: Option<f64>,
     category_id: Option<u16>,
 }
 
@@ -768,7 +768,7 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
             start_date: value_conversion::parse_optional_date(value.start_date)?,
             due_date: value_conversion::parse_optional_date(value.due_date)?,
             done_ratio: value.done_ratio,
-            estimated_hours: value.estimated_hours.map(|hours| hours as u16),
+            estimated_hours: value.estimated_hours,
             total_spent_hours: value.total_spent_hours,
             category_id: value.category.map(|category| CategoryId::new(category.id)),
             child_ids: value

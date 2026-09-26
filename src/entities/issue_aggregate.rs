@@ -18,7 +18,7 @@ pub struct IssueAggregate {
     pub start_date: Option<DateTime<Local>>,
     pub due_date: Option<DateTime<Local>>,
     pub done_ratio: u16,
-    pub estimated_hours: Option<u16>,
+    pub estimated_hours: Option<f64>,
     pub total_spent_hours: Option<f64>,
     pub category_id: Option<CategoryId>,
     pub child_ids: Vec<IssueId>,

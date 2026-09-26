@@ -23,6 +23,7 @@ fn update_issue_sends_redmine_put_request() {
     );
     issue.issue.description = "nested body".to_string();
     issue.issue.status_id = IssueStatusId::new(4);
+    issue.estimated_hours = Some(1.5);
     let expected_body = json!({
         "issue": {
             "subject": "Fix login",
@@ -34,7 +35,7 @@ fn update_issue_sends_redmine_put_request() {
             "start_date": "2026-08-19",
             "due_date": "2026-08-31",
             "done_ratio": 30,
-            "estimated_hours": 8,
+            "estimated_hours": 1.5,
             "category_id": 1
         }
     });

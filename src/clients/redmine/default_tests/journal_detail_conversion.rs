@@ -381,8 +381,8 @@ fn done_ratio_attr_is_converted() {
 }
 
 #[test]
-fn estimated_hours_attr_is_converted_from_whole_float_values() {
-    let actual = try_into_domain(detail("estimated_hours", Some("1.0"), Some("2")))
+fn estimated_hours_attr_is_converted_from_float_values() {
+    let actual = try_into_domain(detail("estimated_hours", Some("1.5"), Some("2")))
         .expect("estimated_hours conversion failed");
     let Some(attr) = actual else {
         panic!("estimated_hours attr was skipped");
@@ -390,8 +390,8 @@ fn estimated_hours_attr_is_converted_from_whole_float_values() {
 
     match attr {
         JournalDetailAttr::EstimatedHours { old, new } => {
-            assert_eq!(old, Some(1));
-            assert_eq!(new, Some(2));
+            assert_eq!(old, Some(1.5));
+            assert_eq!(new, Some(2.0));
         }
         _ => panic!("unexpected attr variant"),
     }
@@ -551,28 +551,10 @@ fn invalid_is_private_value_maps_to_client_error() {
 }
 
 #[test]
-fn fractional_estimated_hours_maps_to_client_error() {
+fn non_numeric_estimated_hours_maps_to_client_error() {
     let actual_error = expect_error(
-        try_into_domain(detail("estimated_hours", Some("1.5"), Some("2"))),
-        "fractional estimated_hours was converted",
-    );
-
-    match actual_error {
-        RedmineClientError::Client { reason } => {
-            assert!(
-                reason.contains("'estimated_hours'"),
-                "unexpected reason: {reason}"
-            );
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
-}
-
-#[test]
-fn out_of_range_estimated_hours_maps_to_client_error() {
-    let actual_error = expect_error(
-        try_into_domain(detail("estimated_hours", Some("70000"), Some("2"))),
-        "out-of-range estimated_hours was converted",
+        try_into_domain(detail("estimated_hours", Some("abc"), Some("2"))),
+        "non-numeric estimated_hours was converted",
     );
 
     match actual_error {
