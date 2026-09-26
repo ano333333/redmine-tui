@@ -16,6 +16,8 @@ use super::{EditorOutcome, EditorRequest, TextEditor};
 struct TextareaOverlay {
     container: web_sys::Element,
     textarea: web_sys::HtmlTextAreaElement,
+    // drop すると JS 側の callback が無効になるため、overlay と同じ寿命で保持する。
+    _mouse_listener: Closure<dyn FnMut(web_sys::Event)>,
 }
 
 impl TextareaOverlay {
@@ -35,6 +37,16 @@ impl TextareaOverlay {
             .expect("created textarea has an unexpected element type");
         textarea.set_class_name("editor-overlay__textarea");
         textarea.set_value(initial_text);
+        let mouse_textarea = textarea.clone().unchecked_into::<web_sys::EventTarget>();
+        let mouse_listener = Closure::wrap(Box::new(move |event: web_sys::Event| {
+            // 余白や案内行のクリックで focus が外れると Esc が届かなくなるため、textarea に保つ。
+            if event.target().as_ref() != Some(&mouse_textarea) {
+                event.prevent_default();
+            }
+        }) as Box<dyn FnMut(web_sys::Event)>);
+        container
+            .add_event_listener_with_callback("mousedown", mouse_listener.as_ref().unchecked_ref())
+            .expect("failed to register editor mouse listener");
         container
             .append_child(&textarea)
             .expect("failed to add textarea to editor overlay");
@@ -69,6 +81,7 @@ impl TextareaOverlay {
         Self {
             container,
             textarea,
+            _mouse_listener: mouse_listener,
         }
     }
 
@@ -89,6 +102,19 @@ impl TextEditor for WebTextEditor {
         let listener_completion = completion.clone();
         let listener_textarea = overlay.textarea.clone();
         let listener = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
+            // document の listener に届くと、編集中に runner が読まない InputQueue に溜まり、
+            // editor 終了後に Component へ流れ込むため、全キーの伝播を止める。
+            event.stop_propagation();
+            // 変換中の Enter/Esc は IME の確定・取り消しに使うため、preventDefault もせず任せる。
+            // Safari などは変換確定キーで is_composing が false になることがあるため、229 も見る。
+            if event.is_composing() || event.key_code() == 229 {
+                return;
+            }
+            if event.key() == "Tab" {
+                // focus が外れると Esc が届かず、以後のキーも document 経由で queue に溜まる。
+                event.prevent_default();
+                return;
+            }
             let outcome = match event.key().as_str() {
                 // 本文を空にする編集も、キャンセルと区別して確定する。
                 "Enter" if event.ctrl_key() || event.meta_key() => EditorOutcome::Submitted {
