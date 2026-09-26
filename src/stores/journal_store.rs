@@ -576,7 +576,7 @@ impl JournalStore {
     /// 競合解決に必要な編集差分と、保存前確認で取得したサーバー値を返す。
     ///
     /// 対象が未登録の場合、または競合中でない場合は`None`を返す。
-    pub fn get_remote_journal_upload_conflict(
+    pub fn try_get_remote_journal_upload_conflict(
         &self,
         issue_id: impl Into<IssueId>,
         journal_id: impl Into<JournalId>,

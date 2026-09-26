@@ -488,7 +488,7 @@ fn get_remote_journal_upload_conflict_returns_the_diff_and_conflict_when_uploadi
     };
 
     let Some((diff, conflict)) =
-        store.get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(10))
+        store.try_get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(10))
     else {
         panic!("expected conflict")
     };
@@ -511,7 +511,7 @@ fn get_remote_journal_upload_conflict_is_none_when_uploading_without_a_conflict(
 
     assert!(
         store
-            .get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(10))
+            .try_get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(10))
             .is_none()
     );
 }
@@ -533,22 +533,22 @@ fn get_remote_journal_upload_conflict_is_none_when_not_uploading_or_unregistered
 
     assert!(
         store
-            .get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(10))
+            .try_get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(10))
             .is_none()
     );
     assert!(
         store
-            .get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(11))
+            .try_get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(11))
             .is_none()
     );
     assert!(
         store
-            .get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(12))
+            .try_get_remote_journal_upload_conflict(IssueId::new(1), JournalId::new(12))
             .is_none()
     );
     assert!(
         store
-            .get_remote_journal_upload_conflict(IssueId::new(2), JournalId::new(10))
+            .try_get_remote_journal_upload_conflict(IssueId::new(2), JournalId::new(10))
             .is_none()
     );
 }

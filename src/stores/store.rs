@@ -268,13 +268,13 @@ impl Store {
     /// 競合解決に必要なRemote Journalの編集差分とサーバー値を返す。
     ///
     /// 対象が未登録の場合、または競合中でない場合は`None`を返す。
-    pub fn get_remote_journal_upload_conflict(
+    pub fn try_get_remote_journal_upload_conflict(
         &self,
         issue_id: impl Into<IssueId>,
         journal_id: impl Into<JournalId>,
     ) -> Option<(&JournalNotesDiff, &RemoteJournalUploadConflict)> {
         self.journal_store
-            .get_remote_journal_upload_conflict(issue_id, journal_id)
+            .try_get_remote_journal_upload_conflict(issue_id, journal_id)
     }
 
     pub fn get_users(&self) -> &HashMap<UserId, User> {

@@ -601,7 +601,7 @@ impl<'a> AppComponent<'a> {
             for entry in store.get_remote_journals(issue_id) {
                 let journal_id = entry.journal.id;
                 let Some((diff, conflict)) =
-                    store.get_remote_journal_upload_conflict(issue_id, journal_id)
+                    store.try_get_remote_journal_upload_conflict(issue_id, journal_id)
                 else {
                     continue;
                 };
