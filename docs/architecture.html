@@ -431,6 +431,66 @@
         font-family: "JetBrains Mono", "Fira Code", monospace;
       }
 
+      p a {
+        color: var(--accent);
+      }
+
+      /* Port table */
+      .port-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin: 16px 0;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        font-size: 13.5px;
+      }
+
+      .port-table th,
+      .port-table td {
+        padding: 8px 16px;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .port-table th {
+        background: var(--surface-2);
+        color: var(--text-heading);
+        font-weight: 600;
+      }
+
+      .port-table td:first-child {
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      .port-table tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      .port-table td code {
+        background: var(--tag-bg);
+        color: var(--tag-text);
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-size: 12.5px;
+      }
+
+      /* Rule list */
+      .rule-list {
+        padding-left: 20px;
+        margin-bottom: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .rule-list li {
+        color: var(--text);
+      }
+
       .test-card ul {
         list-style: none;
         display: flex;
@@ -484,6 +544,7 @@
         <a href="#focusstate">FocusState</a>
         <a href="#component">Component</a>
         <a href="#testing">テスト方針</a>
+        <a href="#platform">Platform境界（native/Web）</a>
         <div class="nav-section">
           <div class="nav-title" style="margin-top: 0">ADR</div>
           <a href="adrs/1.html">ADR 1 — String/str 方針</a>
@@ -511,15 +572,18 @@
             <div class="dir-item">
               <span class="dir-path">src/main.rs</span>
               <span class="dir-desc"
-                >terminal 初期化、main loop、最上位 layout を持つ。Dispatcher
-                と AppComponent を保持し、tokio runtime、Redmine client、editor
-                起動など terminal・プロセス外部副作用の実行点を兼ねる（旧
-                <code>app_container.rs</code> はここへ統合済み）。副作用を生じる
-                非同期処理を行う Usecase を AppComponent
-                から使用する場合、イベントを受け取り非同期タスクを tokio
-                task として spawn する。完了 Action を
-                <code>mpsc::channel</code> 経由で loop に戻す。</span
+                >Cargo feature で native/Web の entry point を選ぶ。<code
+                  >native</code
+                >
+                と <code>web-demo</code> の同時指定、非 wasm32
+                target での <code>web-demo</code> 等、feature と target
+                が不一致なら <code>compile_error!</code> で compile
+                不能にする。</span
               >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/entry/</span>
+              <span class="dir-desc">native/Web の起動処理を置く。</span>
             </div>
             <div class="dir-item">
               <span class="dir-path">src/stores/</span>
@@ -539,8 +603,10 @@
                 即座に行い、非同期で形成する Action は Future
                 として返却する形が基本形である。Store
                 を直接書き換えず、Dispatcher::dispatch を介して Action
-                を積む。呼び出し側（main.rs）が Future を tokio task
-                として spawn し、完了 Action を Dispatcher へ戻す。</span
+                を積む。<code>runner</code> が Future を platform の
+                runtime port（native は Tokio、Web は
+                <code>spawn_local</code>）で起動し、完了 Action を
+                Dispatcher へ戻す。</span
               >
             </div>
             <div class="dir-item">
@@ -550,7 +616,10 @@
                 <code>redmine/base.rs</code> は RedmineClient trait
                 を定義し、Redmine との通信のインターフェースを定義する。
                 <code>redmine/default.rs</code> は
-                DefaultRedmineClient（実 HTTP 実装）を定義する。</span
+                DefaultRedmineClient（実 HTTP 実装）を定義する。<br />
+                <code>redmine/demo/</code> は <code>DemoRedmineClient</code
+                >（実 HTTP を行わず fixture を埋め込む memory
+                mock）を定義する。</span
               >
             </div>
             <div class="dir-item">
@@ -561,6 +630,23 @@
                 置き、issue/detail/
                 は読み込み済みIssueの詳細画面とその子componentを置く。*_popup/
                 は popup component を置く。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/platform/</span>
+              <span class="dir-desc"
+                >native/Web の platform adapter を置く。<br />
+                input（<code>InputEvent</code>）、runtime（<code
+                  >BackgroundSpawner</code
+                >）、host（<code>PlatformHost</code>）、editor（<code
+                  >TextEditor</code
+                >）の各 port。</span
+              >
+            </div>
+            <div class="dir-item">
+              <span class="dir-path">src/runner/</span>
+              <span class="dir-desc"
+                >native/Web で共有する application lifecycle を置く。</span
               >
             </div>
             <div class="dir-item">
@@ -591,7 +677,9 @@
             <div class="dir-item">
               <span class="dir-path">src/logging.rs</span>
               <span class="dir-desc"
-                ><code>trace_dbg!</code> などのログ初期化・補助マクロを置く。</span
+                ><code>initialize_logging</code>（native は
+                file、Web は browser console）と
+                <code>trace_dbg!</code> などの補助マクロを置く。</span
               >
             </div>
             <div class="dir-item">
@@ -615,53 +703,64 @@
         <section id="dependency">
           <h2>ディレクトリ間の依存</h2>
           <p>
-            矢印は「依存する → 依存される」の向きを表す。<code>entities</code>
-            と <code>vos</code>
-            は他のどのディレクトリにも依存しない末端、<code>components</code>
-            と <code>widgets</code> は TUI 描画を担う UI 層、
-            <code>usecases</code> と <code>clients</code>
-            はそれぞれ単独のレイヤとして扱う。<code>main.rs</code>、
-            <code>stores</code>、<code>libs</code>
-            はどの分類にも属さない「その他」としてまとめる。<code
-              >main.rs</code
+            矢印は依存する側から依存される側への向き。上の層は下の層に依存してよく（層を飛ばしてもよい）、下の層から上の層への依存はない。層内の依存は個別の矢印で表す。
+          </p>
+          <p>
+            <code>src/clients/</code> のうち <code>usecases</code>
+            が使うのは <code>redmine/base.rs</code> の
+            <code>RedmineClient</code> trait
+            などのインターフェース定義だけで、これを application
+            に置く。実装（<code>default.rs</code> の
+            <code>DefaultRedmineClient</code>、<code>demo/</code> の
+            <code>DemoRedmineClient</code>）と外部表現の変換（<code
+              >src/libs/</code
+            >）は <code>adapter</code>
+            に置き、実装は起動処理が組み立てて渡す。
+          </p>
+          <p>
+            例として、<code
+              >runner</code
             >
-            は各ディレクトリを束ねる最上位に位置する。ブロック間の依存は
-            ブロック単位の矢印に統一し、同一ブロック内の依存（<code
-              >main.rs -&gt; stores</code
-            >、<code>components -&gt; widgets</code
-            >）だけ個別ノード間の矢印で表す。
+            は <code>components</code>・<code>usecases</code>・<code
+              >stores</code
+            >・<code>clients</code>・<code>vos</code> に、<code
+              >platform</code
+            >
+            は completion を <code>Action</code> として dispatch
+            するため <code>stores</code> に依存する。
           </p>
           <pre class="mermaid mermaid-block">
 flowchart TD
-    subgraph grp_other["その他"]
-        main["main.rs"] --&gt; stores["src/stores/"]
-        libs["src/libs/"]
+    subgraph layer_boot["起動・lifecycle"]
+        main["main.rs"] --&gt; entry["src/entry/"]
+        entry --&gt; runner["src/runner/"]
+        entry --&gt; logging["src/logging.rs"]
+        runner --&gt; logging
     end
 
-    subgraph grp_ui["UI"]
+    subgraph layer_adapter["adapter"]
+        client_impls["src/clients/&lt;br/&gt;（impl）"] --&gt; libs["src/libs/"]
+    end
+
+    subgraph layer_ui["UI・platform"]
         components["src/components/"] --&gt; widgets["src/widgets/"]
+        components --&gt; platform["src/platform/"]
     end
 
-    usecases["src/usecases/"]
-    clients["src/clients/"]
-
-    subgraph grp_core["entities / vos"]
-        entities["src/entities/"]
-        vos["src/vos/"]
+    subgraph layer_app["application"]
+        usecases["src/usecases/"] --&gt; stores["src/stores/"]
+        usecases --&gt; client_trait["src/clients/&lt;br/&gt;（trait）"]
     end
 
-    grp_other --&gt; grp_ui
-    grp_other --&gt; usecases
-    grp_other --&gt; clients
-    grp_other --&gt; grp_core
+    subgraph layer_domain["domain"]
+        entities["src/entities/"] --&gt; vos["src/vos/"]
+    end
 
-    grp_ui --&gt; usecases
-    grp_ui --&gt; grp_core
-
-    usecases --&gt; clients
-    usecases --&gt; grp_core
-
-    clients --&gt; grp_core
+    layer_boot --&gt; layer_ui
+    layer_ui --&gt; layer_app
+    layer_adapter --&gt; layer_app
+    layer_adapter ~~~ layer_ui
+    layer_app --&gt; layer_domain
 </pre>
           <div class="callout" style="margin-top: 16px">
             <strong>規則:</strong> <code>usecases</code> は
@@ -670,8 +769,13 @@ flowchart TD
             redmine::{cancel_issue_upload, continue_issue_upload}
             を呼ぶ）、逆方向の依存は発生させない。同様に
             <code>clients</code> は <code>stores</code> にも
-            <code>usecases</code> にも依存せず、RedmineClient trait と HTTP
-            実装のみを提供する。
+            <code>usecases</code> にも依存せず、RedmineClient trait と
+            HTTP 実装（<code>DefaultRedmineClient</code
+            >）、<code>DemoRedmineClient</code> を提供する。<code
+              >DemoRedmineClient</code
+            >
+            の fixture は <code>src/libs/yaml.rs</code> の parser を使うため
+            <code>clients</code> から <code>libs</code> への依存がある。
           </div>
         </section>
 
@@ -749,10 +853,10 @@ flowchart TD
               <div>
                 editor 起動、Redmine への非同期取得・保存などの外部副作用は
                 <code>AppEffect</code> として Component から取り出し、
-                <code>main.rs</code> の main loop 側で実行する。Redmine
-                関連の AppEffect は usecases::redmine の関数を tokio task
-                として spawn し、完了 Action を mpsc::channel 経由で
-                Dispatcher に戻す。
+                <code>runner</code> 側で実行する。Redmine 関連の AppEffect
+                は usecases::redmine の関数を platform の runtime port（native
+                は Tokio、Web は <code>spawn_local</code>）で spawn し、完了
+                Action を Dispatcher に戻す。
               </div>
             </div>
             <div class="diff-item">
@@ -1110,6 +1214,61 @@ flowchart TD
               </ul>
             </div>
           </div>
+        </section>
+
+        <!-- Platform boundary -->
+        <section id="platform">
+          <h2>Platform境界（native/Web）</h2>
+          <p>
+            GitHub Pages向けWebデモをRatzilla
+            <code>DomBackend</code>で配信するため、Store、Component、Widget、entity、value
+            object、Redmine usecaseの状態遷移をnative/Webで共有し、platform差はアプリケーションの入口と外部副作用のadapterへ閉じ込める。設計根拠は
+            <a href="adrs/10.html">ADR 10</a> を参照する。
+          </p>
+          <pre class="mermaid mermaid-block">
+flowchart TD
+    input["InputEvent"] --&gt; component["Component"]
+    component --&gt;|effect| runner["App runner"]
+    runner --&gt; ports["platform ports&lt;br/&gt;Redmine・Editor・Runtime・Logging"]
+    ports --&gt;|completion| store["Dispatcher/Store"]
+    component --&gt; action["Action"]
+    action --&gt; store
+</pre>
+          <table class="port-table">
+            <thead>
+              <tr><th>port</th><th>native</th><th>Web</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>入力</td><td>crossterm</td><td>Ratzilla <code>DomBackend</code></td></tr>
+              <tr><td>Runtime</td><td>Tokio</td><td><code>spawn_local</code></td></tr>
+              <tr><td>Redmine</td><td>HTTP</td><td>memory mock</td></tr>
+              <tr><td>Editor</td><td>external editor</td><td>textarea</td></tr>
+              <tr><td>Logging</td><td>file</td><td>browser console</td></tr>
+            </tbody>
+          </table>
+          <h3>実装上の規則</h3>
+          <ul class="rule-list">
+            <li>
+              Componentはcrosstermではなく<code>src/platform/input/</code> の
+              <code>InputEvent</code>を受け取る。
+            </li>
+            <li>
+              共通層（components・widgets・stores・usecases・entities・vos）はcrossterm、Ratzilla、DOM、Tokio、filesystem、process、HTTP実装へ直接依存しない。
+            </li>
+            <li>
+              外部副作用は<code>AppEffect</code>としてrunnerに渡し、runnerがplatformのportで実行する（runtime handle や executor 固有型を Component、Store、Client
+              に渡さない）。
+            </li>
+            <li>
+              <code>InteractionMode::Editing</code>
+              中はComponentへの入力配送を止める。
+            </li>
+          </ul>
+          <p>
+            Webは <code>web-demo</code> featureとwasm32
+            targetでbuildし、GitHub Pagesへ配信する。build・確認・Pagesの手順は
+            <a href="../README.ja.md">README.ja.md</a> を参照する。
+          </p>
         </section>
       </main>
     </div>

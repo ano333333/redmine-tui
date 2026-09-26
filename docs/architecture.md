@@ -6,22 +6,28 @@
 ## ディレクトリ構成
 
 - `src/main.rs`
-  - terminal 初期化、main loop、最上位 layout を持つ。
-  - `Dispatcher` と `AppComponent` を保持し、tokio runtime、Redmine client、editor 起動など terminal・プロセス外部副作用の実行点を兼ねる（旧 `app_container.rs` はここへ統合済み）。
-  - 副作用を生じる非同期処理を行う Usecase を AppComponent から使用する場合、イベントを受け取り非同期タスクを tokio task として spawn する。完了 Action を `mpsc::channel` 経由で loop に戻す。
+  - Cargo feature で native/Web の entry point を選ぶ。feature と target が不一致（`native` と `web-demo` の同時指定、非 wasm32 target での `web-demo` 等）なら `compile_error!` で compile 不能にする。
+- `src/entry/`
+  - native/Web の起動処理を置く。
 - `src/stores/`
   - `store.rs` は、子 Store ・子 Action の統合を行う。外部からはこのファイルからエクスポートされる Store と Action を公開インターフェースとして用いる。
 - `src/usecases/`
   - アプリ固有の操作を置く。Store・Client の情報統合、および同期的な Dispatch や非同期タスクによる Action の形成を担う。
-  - 非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期で形成する Action は `Future` として返却する形が基本形である。`Store` を直接書き換えず、`Dispatcher::dispatch` を介して Action を積む。呼び出し側（`main.rs`）が Future を tokio task として spawn し、完了 Action を Dispatcher へ戻す。
+  - 非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期で形成する Action は `Future` として返却する形が基本形である。`Store` を直接書き換えず、`Dispatcher::dispatch` を介して Action を積む。`runner` が Future を platform の runtime port（native は Tokio、Web は `spawn_local`）で起動し、完了 Action を Dispatcher へ戻す。
 - `src/clients/`
   - 外部プロセスとの通信を行う。
   - `redmine/base.rs` は `RedmineClient` trait を定義し、 Redmine との通信のインターフェースを定義する。`redmine/default.rs` は `DefaultRedmineClient`（実 HTTP 実装）を定義する。
+  - `redmine/demo/` は `DemoRedmineClient`（実 HTTP を行わず fixture を埋め込む memory mock）を定義する。
 - `src/components/`
   - TUI の画面部品を置く。
   - `app.rs` は全体 component と popup stack を統括する。
   - `issue/` はIssue取得状態を解決する外側componentを置き、`issue/detail/` は読み込み済みIssueの詳細画面とその子componentを置く。
   - `*_popup/` は popup component を置く。
+- `src/platform/`
+  - native/Web の platform adapter を置く。
+  - input（`InputEvent`）、runtime（`BackgroundSpawner`）、host（`PlatformHost`）、editor（`TextEditor`）の各 port。
+- `src/runner/`
+  - native/Web で共有する application lifecycle を置く。
 - `src/entities/`
   - Redmine 由来の永続的な domain entity を置く。
 - `src/vos/`
@@ -31,7 +37,7 @@
 - `src/libs/`
   - YAML読み込みなど、外部表現から domain data へ変換する補助処理を置く。
 - `src/logging.rs`
-  - `trace_dbg!` などのログ初期化・補助マクロを置く。
+  - `initialize_logging`（native は file、Web は browser console）と `trace_dbg!` などの補助マクロを置く。
 - `src/test_support.rs`
   - snapshot rendering や test fixture を置く。
 - `src/snapshots/`
@@ -41,48 +47,49 @@
 
 ## ディレクトリ間の依存
 
-矢印は「依存する → 依存される」の向きを表す。
-`entities` と `vos` は他のどのディレクトリにも依存しない末端、`components` と `widgets` は TUI 描画を担う UI 層、`usecases` と `clients` はそれぞれ単独のレイヤとして扱う。
-`main.rs`、`stores`、`libs` はどの分類にも属さない「その他」としてまとめる。
-`main.rs` は各ディレクトリを束ねる最上位に位置する。
-ブロック間の依存はブロック単位の矢印に統一し、同一ブロック内の依存（`main.rs -> stores`、`components -> widgets`）だけ個別ノード間の矢印で表す。
+矢印は依存する側から依存される側への向き。
+上の層は下の層に依存してよく（層を飛ばしてもよい）、下の層から上の層への依存はない。
+層内の依存は個別の矢印で表す。
+`src/clients/` のうち `usecases` が使うのは `redmine/base.rs` の `RedmineClient` trait などのインターフェース定義だけで、これを application に置く。実装（`default.rs` の `DefaultRedmineClient`、`demo/` の `DemoRedmineClient`）と外部表現の変換（`src/libs/`）は `adapter` に置き、実装は起動処理が組み立てて渡す。
+例として、`runner` は `components`・`usecases`・`stores`・`clients`・`vos` に、`platform` は completion を `Action` として dispatch するため `stores` に依存する。
 
 ```mermaid
 flowchart TD
-    subgraph grp_other["その他"]
-        main["main.rs"] --> stores["src/stores/"]
-        libs["src/libs/"]
+    subgraph layer_boot["起動・lifecycle"]
+        main["main.rs"] --> entry["src/entry/"]
+        entry --> runner["src/runner/"]
+        entry --> logging["src/logging.rs"]
+        runner --> logging
     end
 
-    subgraph grp_ui["UI"]
+    subgraph layer_adapter["adapter"]
+        client_impls["src/clients/<br/>（impl）"] --> libs["src/libs/"]
+    end
+
+    subgraph layer_ui["UI・platform"]
         components["src/components/"] --> widgets["src/widgets/"]
+        components --> platform["src/platform/"]
     end
 
-    usecases["src/usecases/"]
-    clients["src/clients/"]
-
-    subgraph grp_core["entities / vos"]
-        entities["src/entities/"]
-        vos["src/vos/"]
+    subgraph layer_app["application"]
+        usecases["src/usecases/"] --> stores["src/stores/"]
+        usecases --> client_trait["src/clients/<br/>（trait）"]
     end
 
-    grp_other --> grp_ui
-    grp_other --> usecases
-    grp_other --> clients
-    grp_other --> grp_core
+    subgraph layer_domain["domain"]
+        entities["src/entities/"] --> vos["src/vos/"]
+    end
 
-    grp_ui --> usecases
-    grp_ui --> grp_core
-
-    usecases --> clients
-    usecases --> grp_core
-
-    clients --> grp_core
+    layer_boot --> layer_ui
+    layer_ui --> layer_app
+    layer_adapter --> layer_app
+    layer_adapter ~~~ layer_ui
+    layer_app --> layer_domain
 ```
 
 `usecases` は `components` に依存しない。
 Component から usecase の関数を呼ぶことはあるが（例: `app.rs` が `issue_popup_options` や `redmine::{cancel_issue_upload, continue_issue_upload}` を呼ぶ）、逆方向の依存は発生させない。
-同様に `clients` は `stores` にも `usecases` にも依存せず、`RedmineClient` trait と HTTP 実装のみを提供する。
+同様に `clients` は `stores` にも `usecases` にも依存せず、`RedmineClient` trait と HTTP 実装（`DefaultRedmineClient`）、`DemoRedmineClient` を提供する。`DemoRedmineClient` の fixture は `src/libs/yaml.rs` の parser を使うため `clients` から `libs` への依存がある。
 
 ## Flux を参考にした構成
 
@@ -101,7 +108,7 @@ Store の更新は原則として Dispatcher を介して行う。
 - Component と usecase は `IssueStore` を直接参照せず、親 `Store` の Issue getter を通して entity、同期状態、diff、競合情報を取得する。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。
-- editor 起動、Redmine への非同期取得・保存などの外部副作用は `AppEffect` として Component から取り出し、`main.rs` の main loop 側で実行する。Redmine 関連の `AppEffect` は `usecases::redmine` の関数を tokio task として spawn し、完了 Action を `mpsc::channel` 経由で Dispatcher に戻す。
+- editor 起動、Redmine への非同期取得・保存などの外部副作用は `AppEffect` として Component から取り出し、`runner` 側で実行する。Redmine 関連の `AppEffect` は `usecases::redmine` の関数を platform の runtime port（native は Tokio、Web は `spawn_local`）で spawn し、完了 Action を Dispatcher に戻す。
 - `create_widget(&Store)` で Store を参照して表示用 entity を取得してよい。
 
 Store は、失敗または Action の不受理に見える分岐を以下に区別して扱う。
@@ -288,3 +295,34 @@ Component は Widget と FocusState の結合を確認する結合テストを�
 
 Component test では必要に応じて Store fixture を使ってよい。
 表示の最終確認には snapshot test を使う。
+
+## Platform境界（native/Web）
+
+GitHub Pages向けWebデモをRatzilla `DomBackend`で配信するため、Store、Component、Widget、entity、value object、Redmine usecaseの状態遷移をnative/Webで共有し、platform差はアプリケーションの入口と外部副作用のadapterへ閉じ込める。設計根拠は[ADR 10](adrs/10.md)を参照する。
+
+```mermaid
+flowchart TD
+    input["InputEvent"] --> component["Component"]
+    component -->|effect| runner["App runner"]
+    runner --> ports["platform ports<br/>Redmine・Editor・Runtime・Logging"]
+    ports -->|completion| store["Dispatcher/Store"]
+    component --> action["Action"]
+    action --> store
+```
+
+| port | native | Web |
+| --- | --- | --- |
+| 入力 | crossterm | Ratzilla `DomBackend` |
+| Runtime | Tokio | `spawn_local` |
+| Redmine | HTTP | memory mock |
+| Editor | external editor | textarea |
+| Logging | file | browser console |
+
+### 実装上の規則
+
+- Componentはcrosstermではなく`src/platform/input/`の`InputEvent`を受け取る。
+- 共通層（components・widgets・stores・usecases・entities・vos）はcrossterm、Ratzilla、DOM、Tokio、filesystem、process、HTTP実装へ直接依存しない。
+- 外部副作用は`AppEffect`としてrunnerに渡し、runnerがplatformのportで実行する（runtime handle や executor 固有型を Component、Store、Client に渡さない）。
+- `InteractionMode::Editing`中はComponentへの入力配送を止める。
+
+Webは`web-demo` featureとwasm32 targetでbuildし、GitHub Pagesへ配信する。build・確認・Pagesの手順は[README.ja.md](../README.ja.md)を参照する。
