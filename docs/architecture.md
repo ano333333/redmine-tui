@@ -298,7 +298,7 @@ Component test では必要に応じて Store fixture を使ってよい。
 
 ## Platform境界（native/Web）
 
-GitHub Pages向けWebデモをRatzilla `DomBackend`で配信するため、Store、Component、Widget、entity、value object、Redmine usecaseの状態遷移をnative/Webで共有し、platform差はアプリケーションの入口と外部副作用のadapterへ閉じ込める。設計根拠は[ADR 10](adrs/10.md)を参照する。
+GitHub Pages向けWebデモをRatzilla `DomBackend`で配信するため、Store、Component、Widget、entity、value object、Redmine usecaseの状態遷移をnative/Webで共有し、platform差はアプリケーションの入口と外部副作用のadapterへ閉じ込める。設計根拠は[ADR 10](adrs/010.md)を参照する。
 
 ```mermaid
 flowchart TD
