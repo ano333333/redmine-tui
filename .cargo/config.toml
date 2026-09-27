@@ -1,2 +1,6 @@
 [alias]
 xtask = "run --package xtask --"
+
+# テストの日時 fixture は JST 前提のため、実行環境の TZ に関わらず固定する。
+[env]
+TZ = { value = "Asia/Tokyo", force = true }
