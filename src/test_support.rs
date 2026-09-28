@@ -1,15 +1,15 @@
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use insta::assert_snapshot;
 use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
+    Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
     TimeEntityActivity, Tracker, User,
 };
 use crate::stores::{Action, Dispatcher, Store};
 use crate::vos::{
-    CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
-    TimeEntityActivityId, TrackerId, UserId,
+    CategoryId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, PriorityId,
+    ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
 pub fn local_datetime(input: &str) -> DateTime<Local> {
@@ -220,4 +220,160 @@ pub fn sample_issue_aggregate(
         category_id: Some(CategoryId::new(1)),
         child_ids: vec![],
     }
+}
+
+pub fn local_date(year: i32, month: u32, day: u32) -> DateTime<Local> {
+    let date = NaiveDate::from_ymd_opt(year, month, day).unwrap();
+    Local
+        .from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
+        .single()
+        .unwrap()
+}
+
+pub const SAMPLE_MARKDOWN: &str = r#"### h3
+
+#### h4
+
+##### h5
+
+normal text
+
+*italic text*
+
+**bold text**
+
+1. numbered list 1
+1. numbered list 2
+1. numbered list 3
+  1. inner numbered list 1
+  1. inner numbered list 2
+  1. inner numbered list 3
+
+- itemized list 1
+- itemized list 2
+- itemized list 3
+  - itemized list 1
+  - itemized list 2
+  - itemized list 3
+
+~~canceled text~~
+
+`code`
+
+```
+code block
+```
+
+> citation"#;
+
+pub fn sample_open_child_issue() -> IssueAggregate {
+    IssueAggregate {
+        issue: Issue {
+            id: IssueId::new(1),
+            project_id: ProjectId::new(1),
+            subject: "issue1".to_string(),
+            description: String::new(),
+            status_id: IssueStatusId::new(3),
+        },
+        author_id: UserId::new(1001),
+        created_on: local_date(2026, 1, 1),
+        updated_on: local_date(2026, 1, 4),
+        tracker_id: TrackerId::new(1),
+        priority_id: PriorityId::new(1),
+        assigned_to_id: Some(UserId::new(1001)),
+        target_version_id: Some(TargetVersionId::new(1)),
+        start_date: Some(local_date(2025, 12, 9)),
+        due_date: Some(local_date(2025, 12, 19)),
+        done_ratio: 100,
+        estimated_hours: None,
+        total_spent_hours: None,
+        category_id: Some(CategoryId::new(1)),
+        child_ids: vec![],
+    }
+}
+
+pub fn sample_closed_child_issue() -> IssueAggregate {
+    IssueAggregate {
+        issue: Issue {
+            id: IssueId::new(2),
+            project_id: ProjectId::new(1),
+            subject: "issue2".to_string(),
+            description: String::new(),
+            status_id: IssueStatusId::new(5),
+        },
+        author_id: UserId::new(1001),
+        created_on: local_date(2026, 2, 1),
+        updated_on: local_date(2026, 2, 4),
+        tracker_id: TrackerId::new(2),
+        priority_id: PriorityId::new(1),
+        assigned_to_id: Some(UserId::new(1001)),
+        target_version_id: None,
+        start_date: Some(local_date(2025, 12, 9)),
+        due_date: Some(local_date(2025, 12, 19)),
+        done_ratio: 100,
+        estimated_hours: None,
+        total_spent_hours: None,
+        category_id: Some(CategoryId::new(1)),
+        child_ids: vec![],
+    }
+}
+
+/// 長いsubject、Markdown本文、子Issue 1・2を持つ。
+pub fn sample_parent_issue() -> IssueAggregate {
+    IssueAggregate {
+        issue: Issue {
+            id: IssueId::new(3),
+            project_id: ProjectId::new(1),
+            subject: "issue1(長ああああああああああああああああああああああああああああああああああああいタイトル)"
+                .to_string(),
+            description: SAMPLE_MARKDOWN.to_string(),
+            status_id: IssueStatusId::new(3),
+        },
+        author_id: UserId::new(1001),
+        created_on: local_date(2026, 2, 4),
+        updated_on: local_date(2026, 2, 16),
+        tracker_id: TrackerId::new(3),
+        priority_id: PriorityId::new(1),
+        assigned_to_id: Some(UserId::new(1001)),
+        target_version_id: None,
+        start_date: Some(local_date(2026, 2, 16)),
+        due_date: Some(local_date(2026, 2, 17)),
+        done_ratio: 0,
+        estimated_hours: None,
+        total_spent_hours: None,
+        category_id: Some(CategoryId::new(1)),
+        child_ids: vec![IssueId::new(1), IssueId::new(2)],
+    }
+}
+
+pub fn sample_parent_issue_journals() -> Vec<Journal> {
+    let journal = |id: u16, updated_on, details, notes: &str| Journal {
+        id: JournalId::new(id),
+        issue_id: IssueId::new(3),
+        user: "user1".to_string(),
+        updated_on: Some(updated_on),
+        details,
+        notes: notes.to_string(),
+    };
+    vec![
+        journal(
+            1,
+            local_date(2026, 2, 10),
+            vec![JournalDetail::Attr(JournalDetailAttr::StatusId {
+                old: IssueStatusId::new(1),
+                new: IssueStatusId::new(2),
+            })],
+            "",
+        ),
+        journal(
+            2,
+            local_date(2026, 2, 16),
+            vec![JournalDetail::Attr(JournalDetailAttr::DueDate {
+                old: Some(local_date(2026, 2, 16)),
+                new: Some(local_date(2026, 2, 17)),
+            })],
+            "",
+        ),
+        journal(3, local_date(2026, 2, 16), vec![], SAMPLE_MARKDOWN),
+    ]
 }

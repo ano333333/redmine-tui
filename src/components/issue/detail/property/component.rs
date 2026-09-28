@@ -155,8 +155,8 @@ mod tests {
         let mut store = Store::new();
         sync_sample_masters(&mut store);
         store.consume_action(
-            IssueAction::Load {
-                id: ISSUE_ID.into(),
+            IssueAction::Sync {
+                issue: crate::test_support::sample_open_child_issue(),
             }
             .into(),
         );

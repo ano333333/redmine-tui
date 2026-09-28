@@ -229,7 +229,12 @@ mod tests {
     #[test]
     fn loaded_issue_builds_detail_without_fetch() {
         let d = dispatcher();
-        consume(&d, IssueAction::Load { id: 3.into() });
+        consume(
+            &d,
+            IssueAction::Sync {
+                issue: crate::test_support::sample_parent_issue(),
+            },
+        );
         let (component, result) = component(&d, 3);
         assert_eq!(result, None);
         assert!(component.has_detail_component());
@@ -280,7 +285,7 @@ mod tests {
             &d,
             IssueAction::FetchSucceeded {
                 id: 3.into(),
-                issue: crate::libs::yaml::parse_issue_yaml(3),
+                issue: crate::test_support::sample_parent_issue(),
             },
         );
         {
@@ -320,7 +325,7 @@ mod tests {
             &d,
             IssueAction::FetchSucceeded {
                 id: 3.into(),
-                issue: crate::libs::yaml::parse_issue_yaml(3),
+                issue: crate::test_support::sample_parent_issue(),
             },
         );
         {
@@ -364,7 +369,12 @@ mod tests {
             Some(EventProcessResult::OpenIssueSelectPopup)
         );
 
-        consume(&d, IssueAction::Load { id: 3.into() });
+        consume(
+            &d,
+            IssueAction::Sync {
+                issue: crate::test_support::sample_parent_issue(),
+            },
+        );
         let (mut loaded, _) = component(&d, 3);
         assert_eq!(
             loaded.process_event(key(KeyCode::Char('y')), d),
@@ -375,7 +385,12 @@ mod tests {
     #[test]
     fn loaded_issue_delegates_detail_events() {
         let d = dispatcher();
-        consume(&d, IssueAction::Load { id: 3.into() });
+        consume(
+            &d,
+            IssueAction::Sync {
+                issue: crate::test_support::sample_parent_issue(),
+            },
+        );
         let (mut component, _) = component(&d, 3);
 
         assert_eq!(
@@ -393,7 +408,12 @@ mod tests {
         while d.borrow().consume_actinos_len() > 0 {
             d.borrow_mut().consume_action();
         }
-        consume(&d, IssueAction::Load { id: 3.into() });
+        consume(
+            &d,
+            IssueAction::Sync {
+                issue: crate::test_support::sample_parent_issue(),
+            },
+        );
         let (component, _) = component(&d, 3);
         let borrow = d.borrow();
 
