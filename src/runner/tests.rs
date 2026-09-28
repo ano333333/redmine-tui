@@ -29,7 +29,6 @@ use crate::entities::{
     Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project, ProjectIssuesPage,
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
-use crate::libs::yaml::parse_journal_yaml;
 use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId, ProjectIssuesAction};
 use crate::test_support::sample_issue_aggregate;
 use crate::vos::issue_property_diff::IssueDescriptionDiff;
@@ -1067,8 +1066,8 @@ fn journal_upload_app(dispatcher: Rc<RefCell<Dispatcher>>) -> AppComponent<'stat
 fn loaded_journal_upload_dispatcher() -> Dispatcher {
     let mut dispatcher = Dispatcher::new();
     crate::test_support::dispatch_sample_masters(&mut dispatcher);
-    dispatcher.dispatch(IssueAction::Load {
-        id: IssueId::new(3),
+    dispatcher.dispatch(IssueAction::Sync {
+        issue: crate::test_support::sample_parent_issue(),
     });
     while dispatcher.consume_actinos_len() > 0 {
         dispatcher.consume_action();
@@ -1080,11 +1079,7 @@ fn edited_remote_journal_dispatcher() -> Dispatcher {
     let mut dispatcher = loaded_journal_upload_dispatcher();
     dispatcher.dispatch(JournalAction::SyncFetched {
         issue_id: IssueId::new(3),
-        journals: vec![
-            parse_journal_yaml(JournalId::new(1)),
-            parse_journal_yaml(JournalId::new(2)),
-            parse_journal_yaml(JournalId::new(3)),
-        ],
+        journals: crate::test_support::sample_parent_issue_journals(),
     });
     dispatcher.consume_action();
     dispatcher.dispatch(JournalAction::EditRemoteNotes {
@@ -1271,7 +1266,7 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
     };
     let client = Arc::new(IssueUploadClient::with_journals(
         sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
-        vec![parse_journal_yaml(JournalId::new(1))],
+        vec![crate::test_support::sample_parent_issue_journals().remove(0)],
     ));
     *client.get_failures_remaining.lock().unwrap() = 1;
 
@@ -1333,7 +1328,7 @@ fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     focus_remote_journal_notes(&mut app, dispatcher.clone());
     let client = Arc::new(IssueUploadClient::with_journals(
         sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
-        vec![parse_journal_yaml(JournalId::new(1))],
+        vec![crate::test_support::sample_parent_issue_journals().remove(0)],
     ));
     *client.journal_failures_remaining.lock().unwrap() = 1;
 
