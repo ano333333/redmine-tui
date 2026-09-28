@@ -2,6 +2,7 @@ use super::{IssueAction, IssueFetchState, IssueState, Store};
 use crate::entities::IssueAggregate;
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
+use crate::vos::id::EntityIdValue;
 use crate::vos::issue_property_diff::{
     IssueCategoryIdDiff, IssueDescriptionDiff, IssueDueDateDiff, IssueEstimatedHoursDiff,
     IssuePriorityIdDiff, IssueProjectIdDiff, IssueStartDateDiff, IssueStatusIdDiff,
@@ -11,28 +12,33 @@ use crate::vos::{
     CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId,
 };
 
-#[test]
-fn load_action_is_consumed_through_parent_store() {
-    let id = IssueId::new(1);
-    let mut store = Store::new();
+const ISSUE_START_DATE: &str = "2025-12-09T00:00:00+09:00";
+const ISSUE_DUE_DATE: &str = "2025-12-19T00:00:00+09:00";
 
-    store.consume_action(IssueAction::Load { id }.into());
-
-    let (issue, state) = store.get_issue(id);
-    assert_eq!(issue.issue.id, id);
-    assert_eq!(state, IssueState::Synced);
+fn sync_issue(store: &mut Store, id: IssueId) {
+    let mut issue = sample_issue_aggregate(
+        id.get(),
+        "issue",
+        3.into(),
+        None,
+        Some(ISSUE_START_DATE),
+        Some(ISSUE_DUE_DATE),
+        0,
+    );
+    issue.issue.project_id = ProjectId::new(1);
+    issue.tracker_id = TrackerId::new(1);
+    issue.priority_id = PriorityId::new(1);
+    issue.target_version_id = Some(TargetVersionId::new(1));
+    issue.category_id = Some(CategoryId::new(1));
+    issue.estimated_hours = None;
+    store.consume_action(IssueAction::Sync { issue }.into());
 }
 
 #[test]
 fn get_issues_lists_only_loaded_issues_and_excludes_unfetched_states() {
     let mut store = Store::new();
 
-    store.consume_action(
-        IssueAction::Load {
-            id: IssueId::new(1),
-        }
-        .into(),
-    );
+    sync_issue(&mut store, 1.into());
     store.consume_action(
         IssueAction::StartFetching {
             id: IssueId::new(99),
@@ -54,37 +60,27 @@ fn get_issues_lists_only_loaded_issues_and_excludes_unfetched_states() {
 }
 
 #[test]
-fn load_issue_reads_target_version_id_reference() {
-    let mut store = Store::new();
-
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
-
-    let (issue, _) = store.get_issue(1);
-    assert_eq!(issue.target_version_id, Some(TargetVersionId::new(1)));
-}
-
-#[test]
 fn update_issue_target_version_sets_selected_version() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 2.into() }.into());
+    sync_issue(&mut store, 2.into());
 
     store.consume_action(
         IssueAction::UpdateTargetVersion {
             id: 2.into(),
-            target_version_id: Some(TargetVersionId::new(1)),
+            target_version_id: Some(TargetVersionId::new(2)),
         }
         .into(),
     );
 
     let (issue, state) = store.get_issue(2);
-    assert_eq!(issue.target_version_id, Some(TargetVersionId::new(1)));
+    assert_eq!(issue.target_version_id, Some(TargetVersionId::new(2)));
     assert_eq!(state, IssueState::Edited);
 }
 
 #[test]
 fn update_issue_target_version_can_clear_version() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
 
     store.consume_action(
         IssueAction::UpdateTargetVersion {
@@ -100,19 +96,9 @@ fn update_issue_target_version_can_clear_version() {
 }
 
 #[test]
-fn load_issue_reads_category_id_reference() {
-    let mut store = Store::new();
-
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
-
-    let (issue, _) = store.get_issue(1);
-    assert_eq!(issue.category_id, Some(CategoryId::new(1)));
-}
-
-#[test]
 fn update_issue_category_sets_selected_category() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
 
     store.consume_action(
         IssueAction::UpdateCategory {
@@ -130,7 +116,7 @@ fn update_issue_category_sets_selected_category() {
 #[test]
 fn update_issue_category_can_clear_category() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
 
     store.consume_action(
         IssueAction::UpdateCategory {
@@ -148,7 +134,7 @@ fn update_issue_category_can_clear_category() {
 #[test]
 fn update_issue_tracker_updates_issue_and_records_diff() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
 
     store.consume_action(
         IssueAction::UpdateTracker {
@@ -173,7 +159,7 @@ fn update_issue_tracker_updates_issue_and_records_diff() {
 #[test]
 fn update_issue_project_clears_target_version_and_category_and_records_diffs() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
 
     store.consume_action(
         IssueAction::UpdateProject {
@@ -210,7 +196,7 @@ fn update_issue_project_clears_target_version_and_category_and_records_diffs() {
 #[test]
 fn update_issue_project_records_only_project_diff_when_related_values_are_unset() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
     store.consume_action(
         IssueAction::UpdateTargetVersion {
             id: 1.into(),
@@ -247,7 +233,7 @@ fn update_issue_project_records_only_project_diff_when_related_values_are_unset(
 #[test]
 fn update_issue_priority_updates_issue_and_records_diff() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
 
     store.consume_action(
         IssueAction::UpdatePriority {
@@ -272,7 +258,7 @@ fn update_issue_priority_updates_issue_and_records_diff() {
 #[test]
 fn update_issue_estimated_hours_updates_issue_and_records_diff() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
 
     store.consume_action(
         IssueAction::UpdateEstimatedHours {
@@ -299,8 +285,8 @@ fn update_issue_estimated_hours_updates_issue_and_records_diff() {
 #[test]
 fn update_issue_start_date_updates_issue_and_records_diff() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
-    let before = store.get_issue(1).0.start_date;
+    sync_issue(&mut store, 1.into());
+    let before = Some(local_datetime(ISSUE_START_DATE));
     let after = Some(local_datetime("2026-04-30T00:00:00+09:00"));
 
     store.consume_action(
@@ -324,8 +310,8 @@ fn update_issue_start_date_updates_issue_and_records_diff() {
 #[test]
 fn update_issue_due_date_updates_issue_and_records_diff() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
-    let before = store.get_issue(1).0.due_date;
+    sync_issue(&mut store, 1.into());
+    let before = Some(local_datetime(ISSUE_DUE_DATE));
     let after = Some(local_datetime("2026-05-01T00:00:00+09:00"));
 
     store.consume_action(
@@ -403,7 +389,7 @@ fn update_issue_status_updates_issue_and_records_diff() {
 #[test]
 fn start_issue_upload_marks_issue_uploading_and_retains_diffs() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
     store.consume_action(
         IssueAction::UpdateDescription {
             id: 1.into(),
@@ -422,7 +408,7 @@ fn start_issue_upload_marks_issue_uploading_and_retains_diffs() {
 #[test]
 fn uploading_issue_update_panics_and_retains_the_entry() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
     store.consume_action(
         IssueAction::UpdateDescription {
             id: 1.into(),
@@ -451,7 +437,7 @@ fn uploading_issue_update_panics_and_retains_the_entry() {
 #[test]
 fn issue_upload_conflicts_are_retained_while_uploading() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
     store.consume_action(
         IssueAction::UpdateDescription {
             id: 1.into(),
@@ -483,7 +469,7 @@ fn issue_upload_conflicts_are_retained_while_uploading() {
 #[should_panic(expected = "cannot update issue while issue 1 is Uploading")]
 fn uploading_issue_update_panics() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
     store.consume_action(
         IssueAction::UpdateDescription {
             id: 1.into(),
@@ -571,7 +557,7 @@ missing_issue_update_panics! {
 #[should_panic(expected = "cannot start issue upload while issue 1 is Uploading")]
 fn uploading_issue_start_upload_panics() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
     store.consume_action(
         IssueAction::UpdateDescription {
             id: 1.into(),
@@ -588,7 +574,7 @@ fn uploading_issue_start_upload_panics() {
 #[should_panic(expected = "cannot start issue upload while issue 1 is Synced")]
 fn synced_issue_start_upload_panics() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
 
     store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
 }
@@ -597,7 +583,7 @@ fn synced_issue_start_upload_panics() {
 #[should_panic(expected = "cannot cancel issue upload while issue 1 is Synced")]
 fn synced_issue_cancel_upload_panics() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
 
     store.consume_action(IssueAction::CancelUpload { id: 1.into() }.into());
 }
@@ -606,7 +592,7 @@ fn synced_issue_cancel_upload_panics() {
 #[should_panic(expected = "cannot cancel issue upload while issue 1 is Edited")]
 fn edited_issue_cancel_upload_panics() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
     store.consume_action(
         IssueAction::UpdateDescription {
             id: 1.into(),
@@ -622,7 +608,7 @@ fn edited_issue_cancel_upload_panics() {
 #[should_panic(expected = "cannot fail issue upload while issue 1 is Synced")]
 fn synced_issue_fail_upload_panics() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
 
     store.consume_action(
         IssueAction::FailUpload {
@@ -637,7 +623,7 @@ fn synced_issue_fail_upload_panics() {
 #[should_panic(expected = "cannot fail issue upload while issue 1 is Edited")]
 fn edited_issue_fail_upload_panics() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
     store.consume_action(
         IssueAction::UpdateDescription {
             id: 1.into(),
@@ -659,7 +645,7 @@ fn edited_issue_fail_upload_panics() {
 #[should_panic(expected = "cannot sync issue 1 while it is Synced")]
 fn synced_issue_sync_issue_panics() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
 
     store.consume_action(
         IssueAction::Sync {
@@ -672,7 +658,7 @@ fn synced_issue_sync_issue_panics() {
 #[test]
 fn cancel_issue_upload_returns_issue_to_edited_and_retains_diffs() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
     store.consume_action(
         IssueAction::UpdateDescription {
             id: 1.into(),
@@ -692,7 +678,7 @@ fn cancel_issue_upload_returns_issue_to_edited_and_retains_diffs() {
 #[test]
 fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs_and_message() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
     store.consume_action(
         IssueAction::UpdateDescription {
             id: 1.into(),
@@ -734,7 +720,7 @@ fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs_and_message() {
 #[test]
 fn update_after_failed_upload_appends_diff_and_retains_failure() {
     let mut store = Store::new();
-    store.consume_action(IssueAction::Load { id: 1.into() }.into());
+    sync_issue(&mut store, 1.into());
     store.consume_action(
         IssueAction::UpdateDescription {
             id: 1.into(),
@@ -750,12 +736,6 @@ fn update_after_failed_upload_appends_diff_and_retains_failure() {
         }
         .into(),
     );
-    let original_diff = store
-        .get_issue_property_diffs(IssueId::new(1))
-        .first()
-        .cloned()
-        .unwrap();
-
     store.consume_action(
         IssueAction::UpdateStatus {
             id: 1.into(),
@@ -769,7 +749,13 @@ fn update_after_failed_upload_appends_diff_and_retains_failure() {
     assert_eq!(state, IssueState::Edited);
     let diffs = store.get_issue_property_diffs(IssueId::new(1));
     assert_eq!(diffs.len(), 2);
-    assert_eq!(diffs[0], original_diff);
+    assert_eq!(
+        diffs[0],
+        IssuePropertyDiff::Description(IssueDescriptionDiff {
+            before: "body".to_string(),
+            after: "edited body".to_string(),
+        })
+    );
     assert_eq!(
         diffs[1],
         IssuePropertyDiff::StatusId(IssueStatusIdDiff {
@@ -1196,41 +1182,6 @@ fetch_success_outside_fetching_panics! {
             },
             IssueAction::StartUpload { id: IssueId::new(99) },
         ],
-}
-
-#[test]
-fn fixture_load_does_not_add_a_body_to_fetching_or_failed_issues() {
-    for fail_fetch in [false, true] {
-        let id = IssueId::new(1);
-        let mut store = Store::new();
-        store.consume_action(IssueAction::StartFetching { id }.into());
-        if fail_fetch {
-            store.consume_action(
-                IssueAction::FetchFailed {
-                    id,
-                    message: "failed".to_string(),
-                }
-                .into(),
-            );
-        }
-
-        store.consume_action(IssueAction::Load { id }.into());
-
-        assert!(store.try_get_issue_state(id).is_none());
-        if fail_fetch {
-            assert_eq!(
-                store.try_get_issue_fetch_state(id),
-                Some(IssueFetchState::FetchFailed {
-                    message: "failed".to_string(),
-                })
-            );
-        } else {
-            assert_eq!(
-                store.try_get_issue_fetch_state(id),
-                Some(IssueFetchState::Fetching)
-            );
-        }
-    }
 }
 
 #[test]

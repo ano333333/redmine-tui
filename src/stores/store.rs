@@ -441,7 +441,7 @@ impl From<NoticeAction> for Action {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::sync_fixture_entities;
+    use crate::test_support::sample_issue_aggregate;
     use crate::vos::id::EntityIdValue;
     use crate::vos::{
         CategoryId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId,
@@ -453,7 +453,9 @@ mod tests {
         let id = IssueId::new(1);
         let mut dispatcher = Dispatcher::new();
 
-        dispatcher.dispatch(IssueAction::Load { id });
+        dispatcher.dispatch(IssueAction::Sync {
+            issue: sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0),
+        });
         dispatcher.consume_action();
 
         assert!(dispatcher.store().try_get_issue_state(id).is_some());
@@ -466,7 +468,12 @@ mod tests {
         let mut store = Store::new();
         store.consume_action(JournalAction::CreateLocal { issue_id: id }.into());
         store.consume_action(JournalAction::StartLocalUpload { issue_id: id }.into());
-        store.consume_action(IssueAction::Load { id }.into());
+        store.consume_action(
+            IssueAction::Sync {
+                issue: sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0),
+            }
+            .into(),
+        );
         store.consume_action(
             IssueAction::UpdateDescription {
                 id,
@@ -483,7 +490,12 @@ mod tests {
         let id = IssueId::new(1);
         let mut store = Store::new();
         store.consume_action(JournalAction::CreateLocal { issue_id: id }.into());
-        store.consume_action(IssueAction::Load { id }.into());
+        store.consume_action(
+            IssueAction::Sync {
+                issue: sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0),
+            }
+            .into(),
+        );
         store.consume_action(
             IssueAction::UpdateDescription {
                 id,
@@ -495,19 +507,6 @@ mod tests {
         store.consume_action(IssueAction::StartUpload { id }.into());
 
         assert_eq!(store.try_get_issue_state(id), Some(IssueState::Uploading));
-    }
-
-    #[test]
-    fn sync_fixture_entities_populates_target_versions() {
-        let mut store = Store::new();
-
-        sync_fixture_entities(&mut store);
-
-        let target_version = store
-            .get_target_version(TargetVersionId::new(1))
-            .expect("target version should be loaded");
-        assert_eq!(target_version.name, "v1.2.3");
-        assert_eq!(store.get_target_versions(ProjectId::new(1)).len(), 1);
     }
 
     #[test]
@@ -576,19 +575,6 @@ mod tests {
 
         let unmatched = store.get_categories(ProjectId::new(99));
         assert!(unmatched.is_empty());
-    }
-
-    #[test]
-    fn sync_fixture_entities_populates_categories() {
-        let mut store = Store::new();
-
-        sync_fixture_entities(&mut store);
-
-        let category = store
-            .get_category(CategoryId::new(1))
-            .expect("category should be loaded");
-        assert_eq!(category.name, "category1");
-        assert_eq!(store.get_categories(ProjectId::new(1)).len(), 1);
     }
 
     #[test]
