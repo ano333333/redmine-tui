@@ -1148,7 +1148,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
-            crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher_ref);
+            crate::test_support::dispatch_sample_masters(&mut dispatcher_ref);
             dispatcher_ref.dispatch(IssueAction::Load { id: 3.into() });
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
@@ -1217,7 +1217,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
-            crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher_ref);
+            crate::test_support::dispatch_sample_masters(&mut dispatcher_ref);
             dispatcher_ref.dispatch(IssueAction::Load { id: 1.into() });
             dispatcher_ref.dispatch(IssueAction::Load { id: 3.into() });
             while dispatcher_ref.consume_actinos_len() > 0 {
@@ -2168,7 +2168,7 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
-            crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher_ref);
+            crate::test_support::dispatch_sample_masters(&mut dispatcher_ref);
             let mut lower_id_issue = crate::test_support::sample_issue_aggregate(
                 1,
                 "project two issue",

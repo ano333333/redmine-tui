@@ -100,7 +100,7 @@ mod tests {
     use crate::entities::IssueStatus;
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::stores::{Action, IssueAction};
-    use crate::test_support::{render_snapshot, sync_fixture_entities};
+    use crate::test_support::{render_snapshot, sync_sample_masters};
     use crate::widgets::gutter::GUTTER_WIDTH;
     use ratatui::layout::Position;
 
@@ -110,7 +110,7 @@ mod tests {
 
     fn store_with_parent_and_children() -> Store {
         let mut store = Store::new();
-        sync_fixture_entities(&mut store);
+        sync_sample_masters(&mut store);
         store.consume_action(IssueAction::Load { id: 1.into() }.into());
         store.consume_action(IssueAction::Load { id: 2.into() }.into());
         store.consume_action(

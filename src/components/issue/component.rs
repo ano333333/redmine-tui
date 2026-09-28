@@ -389,7 +389,7 @@ mod tests {
     #[test]
     fn loaded_issue_creates_detail_widget() {
         let d = dispatcher();
-        crate::test_support::dispatch_fixture_entity_actions(&mut d.borrow_mut());
+        crate::test_support::dispatch_sample_masters(&mut d.borrow_mut());
         while d.borrow().consume_actinos_len() > 0 {
             d.borrow_mut().consume_action();
         }

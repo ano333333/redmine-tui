@@ -352,46 +352,6 @@ pub fn parse_time_entity_activities(yaml: &str) -> Vec<TimeEntityActivity> {
 }
 
 #[cfg(test)]
-pub fn parse_users_yaml() -> Vec<User> {
-    parse_users(&read_fixture("datas/users.yml"))
-}
-
-#[cfg(test)]
-pub fn parse_issue_statuses_yaml() -> Vec<IssueStatus> {
-    parse_issue_statuses(&read_fixture("datas/issue_statuses.yml"))
-}
-
-#[cfg(test)]
-pub fn parse_priorities_yaml() -> Vec<Priority> {
-    parse_priorities(&read_fixture("datas/priorities.yml"))
-}
-
-#[cfg(test)]
-pub fn parse_projects_yaml() -> Vec<Project> {
-    parse_projects(&read_fixture("datas/projects.yml"))
-}
-
-#[cfg(test)]
-pub fn parse_trackers_yaml() -> Vec<Tracker> {
-    parse_trackers(&read_fixture("datas/trackers.yml"))
-}
-
-#[cfg(test)]
-pub fn parse_target_versions_yaml() -> Vec<TargetVersion> {
-    parse_target_versions(&read_fixture("datas/target_versions.yml"))
-}
-
-#[cfg(test)]
-pub fn parse_categories_yaml() -> Vec<Category> {
-    parse_categories(&read_fixture("datas/categories.yml"))
-}
-
-#[cfg(test)]
-pub fn parse_time_entity_activities_yaml() -> Vec<TimeEntityActivity> {
-    parse_time_entity_activities(&read_fixture("datas/time_entity_activities.yml"))
-}
-
-#[cfg(test)]
 mod tests {
     use super::{
         parse_categories, parse_issue, parse_issue_statuses, parse_journal, parse_journal_yaml,

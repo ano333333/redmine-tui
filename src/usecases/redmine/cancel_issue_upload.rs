@@ -19,7 +19,9 @@ mod tests {
     fn conflictを削除してからissue_uploadをキャンセルする() {
         let id = IssueId::new(1);
         let mut dispatcher = Dispatcher::new();
-        dispatcher.dispatch(IssueAction::Load { id });
+        dispatcher.dispatch(IssueAction::Sync {
+            issue: sample_issue_aggregate(1, "local issue", 1.into(), None, None, None, 0),
+        });
         dispatcher.consume_action();
         dispatcher.dispatch(IssueAction::UpdateDescription {
             id,

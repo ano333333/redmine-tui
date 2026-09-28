@@ -341,7 +341,7 @@ mod tests {
     use crate::entities::{Issue, ProjectIssuesPage};
     use crate::stores::IssueAction;
     use crate::stores::ProjectIssuesAction;
-    use crate::test_support::{render_snapshot, sample_issue_aggregate, sync_fixture_entities};
+    use crate::test_support::{render_snapshot, sample_issue_aggregate, sync_sample_masters};
 
     const AREA: Rect = Rect {
         x: 0,
@@ -356,7 +356,7 @@ mod tests {
 
     fn unloaded_store() -> Store {
         let mut store = Store::new();
-        sync_fixture_entities(&mut store);
+        sync_sample_masters(&mut store);
         store.consume_action(IssueAction::Load { id: 1.into() }.into());
         store.consume_action(IssueAction::Load { id: 2.into() }.into());
         store.consume_action(IssueAction::Load { id: 3.into() }.into());
@@ -464,7 +464,7 @@ mod tests {
     #[test]
     fn loaded_projects_issues_are_displayed_and_loaded_issue_values_take_precedence() {
         let mut store = Store::new();
-        sync_fixture_entities(&mut store);
+        sync_sample_masters(&mut store);
         let mut loaded_issue =
             sample_issue_aggregate(1, "loaded subject", 1.into(), None, None, None, 0);
         loaded_issue.issue.description = "loaded body".to_string();

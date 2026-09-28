@@ -122,7 +122,7 @@ fn tick_since_returns_a_positive_duration_after_elapsed_time() {
 #[test]
 fn key_event_updates_issue_popup_preview_even_when_it_dispatches_no_action() {
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher.borrow_mut());
+    crate::test_support::dispatch_sample_masters(&mut dispatcher.borrow_mut());
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
@@ -272,7 +272,7 @@ fn issue_detail_shows_journals_from_the_first_frame_after_ordered_fetch_actions(
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
     {
         let mut d = dispatcher.borrow_mut();
-        crate::test_support::dispatch_fixture_entity_actions(&mut d);
+        crate::test_support::dispatch_sample_masters(&mut d);
         d.dispatch(IssueAction::StartFetching { id: 42.into() });
         d.dispatch(Action::Journal(JournalAction::SyncFetched {
             issue_id: 42.into(),
@@ -316,7 +316,7 @@ fn issue_detail_shows_journals_from_the_first_frame_after_ordered_fetch_actions(
 fn project_page_effect_queues_start_loading_and_routes_only_completion_to_worker_channel() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher.borrow_mut());
+    crate::test_support::dispatch_sample_masters(&mut dispatcher.borrow_mut());
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
@@ -1066,7 +1066,7 @@ fn journal_upload_app(dispatcher: Rc<RefCell<Dispatcher>>) -> AppComponent<'stat
 
 fn loaded_journal_upload_dispatcher() -> Dispatcher {
     let mut dispatcher = Dispatcher::new();
-    crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher);
+    crate::test_support::dispatch_sample_masters(&mut dispatcher);
     dispatcher.dispatch(IssueAction::Load {
         id: IssueId::new(3),
     });
@@ -1652,7 +1652,7 @@ fn quit_event() -> HostEvent {
 #[tokio::test]
 async fn run_accepts_completion_actions_then_ticks_updates_draws_and_reads_input() {
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher.borrow_mut());
+    crate::test_support::dispatch_sample_masters(&mut dispatcher.borrow_mut());
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }

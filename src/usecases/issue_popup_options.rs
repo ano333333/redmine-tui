@@ -348,12 +348,16 @@ pub fn due_date_popup_observer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stores::{Dispatcher, IssueAction};
+    use crate::entities::{Category, TargetVersion};
+    use crate::stores::{Action, Dispatcher, IssueAction};
+    use crate::test_support::{dispatch_sample_masters, sample_issue_aggregate};
 
     fn loaded_dispatcher() -> Dispatcher {
         let mut dispatcher = Dispatcher::new();
-        crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher);
-        dispatcher.dispatch(IssueAction::Load { id: 3.into() });
+        dispatch_sample_masters(&mut dispatcher);
+        let mut issue = sample_issue_aggregate(3, "issue", 3.into(), Some(1001), None, None, 0);
+        issue.tracker_id = TrackerId::new(3);
+        dispatcher.dispatch(IssueAction::Sync { issue });
         while dispatcher.consume_actinos_len() > 0 {
             dispatcher.consume_action();
         }
@@ -364,10 +368,21 @@ mod tests {
     fn issue_status_options_are_not_sorted_and_focus_the_first_item() {
         let dispatcher = loaded_dispatcher();
 
-        let (items, focused_index) = build_issue_status_options(dispatcher.store());
+        let (mut items, focused_index) = build_issue_status_options(dispatcher.store());
 
-        assert!(!items.is_empty());
         assert_eq!(focused_index, 0);
+        items.sort_by_key(|(id, _)| *id);
+        assert_eq!(
+            items,
+            vec![
+                (1, "新規(new)".to_string()),
+                (2, "割り当て(assigned)".to_string()),
+                (3, "進行中(accepted)".to_string()),
+                (4, "レビュー(review)".to_string()),
+                (5, "完了(closed)".to_string()),
+                (6, "改修確認待ち".to_string()),
+            ]
+        );
     }
 
     #[test]
@@ -429,23 +444,19 @@ mod tests {
     #[test]
     fn assigned_to_options_are_sorted_and_focus_the_current_assignee() {
         let mut dispatcher = loaded_dispatcher();
-        let current_assigned_to_id = dispatcher
-            .store()
-            .get_users()
-            .keys()
-            .next()
-            .copied()
-            .expect("fixture has at least one user");
         dispatcher.dispatch(IssueAction::UpdateAssignedTo {
             id: 3.into(),
-            assigned_to_id: Some(current_assigned_to_id),
+            assigned_to_id: Some(UserId::new(1002)),
         });
         dispatcher.consume_action();
 
         let (items, focused_index) = build_assigned_to_options(dispatcher.store(), 3.into());
 
-        assert!(items.windows(2).all(|w| w[0].0 <= w[1].0));
-        assert_eq!(items[focused_index].0, current_assigned_to_id.get());
+        assert_eq!(
+            items,
+            vec![(1001, "user1".to_string()), (1002, "user2".to_string())]
+        );
+        assert_eq!(focused_index, 1);
     }
 
     #[test]
@@ -465,29 +476,26 @@ mod tests {
     #[test]
     fn target_version_options_are_sorted_and_focus_the_current_value() {
         let mut dispatcher = loaded_dispatcher();
-        let project_id = dispatcher
-            .store()
-            .get_issue(IssueId::new(3))
-            .0
-            .issue
-            .project_id;
-        let current_target_version_id = dispatcher
-            .store()
-            .get_target_versions(project_id)
-            .into_iter()
-            .next()
-            .map(|target_version| target_version.id)
-            .expect("fixture has at least one target version");
+        dispatcher.dispatch(Action::SyncTargetVersions {
+            target_versions: [(3, "v3", 1), (1, "v1", 1), (2, "other project", 2)]
+                .map(|(id, name, project_id)| TargetVersion {
+                    id: TargetVersionId::new(id),
+                    name: name.to_string(),
+                    project_id: ProjectId::new(project_id),
+                })
+                .into(),
+        });
         dispatcher.dispatch(IssueAction::UpdateTargetVersion {
             id: 3.into(),
-            target_version_id: Some(current_target_version_id),
+            target_version_id: Some(TargetVersionId::new(3)),
         });
+        dispatcher.consume_action();
         dispatcher.consume_action();
 
         let (items, focused_index) = build_target_version_options(dispatcher.store(), 3.into());
 
-        assert!(items.windows(2).all(|w| w[0].0 <= w[1].0));
-        assert_eq!(items[focused_index].0, current_target_version_id.get());
+        assert_eq!(items, vec![(1, "v1".to_string()), (3, "v3".to_string())]);
+        assert_eq!(focused_index, 1);
     }
 
     #[test]
@@ -498,10 +506,19 @@ mod tests {
 
         assert_eq!(
             items,
-            (0..=100)
-                .step_by(10)
-                .map(|ratio| (ratio, ratio.to_string()))
-                .collect::<Vec<_>>()
+            vec![
+                (0, "0".to_string()),
+                (10, "10".to_string()),
+                (20, "20".to_string()),
+                (30, "30".to_string()),
+                (40, "40".to_string()),
+                (50, "50".to_string()),
+                (60, "60".to_string()),
+                (70, "70".to_string()),
+                (80, "80".to_string()),
+                (90, "90".to_string()),
+                (100, "100".to_string()),
+            ]
         );
     }
 
@@ -514,51 +531,54 @@ mod tests {
         });
         dispatcher.consume_action();
 
-        let (items, focused_index) = build_done_ratio_options(dispatcher.store(), 3.into());
+        let (_, focused_index) = build_done_ratio_options(dispatcher.store(), 3.into());
 
-        assert_eq!(items[focused_index].0, 30);
+        assert_eq!(focused_index, 3);
     }
 
     #[test]
     fn category_options_are_sorted_and_focus_the_first_item_when_uncategorized() {
         let mut dispatcher = loaded_dispatcher();
+        dispatch_unsorted_categories(&mut dispatcher);
         dispatcher.dispatch(IssueAction::UpdateCategory {
             id: 3.into(),
             category_id: None,
         });
         dispatcher.consume_action();
+        dispatcher.consume_action();
 
         let (items, focused_index) = build_category_options(dispatcher.store(), 3.into());
 
-        assert!(items.windows(2).all(|w| w[0].0 <= w[1].0));
+        assert_eq!(items, vec![(1, "c1".to_string()), (3, "c3".to_string())]);
         assert_eq!(focused_index, 0);
     }
 
     #[test]
     fn category_options_focus_the_current_category() {
         let mut dispatcher = loaded_dispatcher();
-        let project_id = dispatcher
-            .store()
-            .get_issue(IssueId::new(3))
-            .0
-            .issue
-            .project_id;
-        let current_category_id = dispatcher
-            .store()
-            .get_categories(project_id)
-            .into_iter()
-            .next()
-            .map(|category| category.id)
-            .expect("fixture has at least one category");
+        dispatch_unsorted_categories(&mut dispatcher);
         dispatcher.dispatch(IssueAction::UpdateCategory {
             id: 3.into(),
-            category_id: Some(current_category_id),
+            category_id: Some(CategoryId::new(3)),
         });
         dispatcher.consume_action();
+        dispatcher.consume_action();
 
-        let (items, focused_index) = build_category_options(dispatcher.store(), 3.into());
+        let (_, focused_index) = build_category_options(dispatcher.store(), 3.into());
 
-        assert_eq!(items[focused_index].0, current_category_id.get());
+        assert_eq!(focused_index, 1);
+    }
+
+    fn dispatch_unsorted_categories(dispatcher: &mut Dispatcher) {
+        dispatcher.dispatch(Action::SyncCategories {
+            categories: [(3, "c3", 1), (1, "c1", 1), (2, "other project", 2)]
+                .map(|(id, name, project_id)| Category {
+                    id: CategoryId::new(id),
+                    name: name.to_string(),
+                    project_id: ProjectId::new(project_id),
+                })
+                .into(),
+        });
     }
 
     fn shared_loaded_dispatcher() -> Rc<RefCell<Dispatcher>> {

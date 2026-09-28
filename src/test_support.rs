@@ -2,15 +2,14 @@ use chrono::{DateTime, Local};
 use insta::assert_snapshot;
 use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
-use crate::entities::{Issue, IssueAggregate};
-use crate::libs::yaml::{
-    parse_categories_yaml, parse_issue_statuses_yaml, parse_priorities_yaml, parse_projects_yaml,
-    parse_target_versions_yaml, parse_time_entity_activities_yaml, parse_trackers_yaml,
-    parse_users_yaml,
+use crate::entities::{
+    Category, Issue, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
+    TimeEntityActivity, Tracker, User,
 };
 use crate::stores::{Action, Dispatcher, Store};
 use crate::vos::{
-    CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, UserId,
+    CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
+    TimeEntityActivityId, TrackerId, UserId,
 };
 
 pub fn local_datetime(input: &str) -> DateTime<Local> {
@@ -71,45 +70,122 @@ fn describe_buffer(buffer: &Buffer) -> String {
     lines.join("\n")
 }
 
-pub fn sync_fixture_entities(store: &mut Store) {
-    for action in fixture_entity_actions() {
+pub fn sync_sample_masters(store: &mut Store) {
+    for action in sample_master_actions() {
         store.consume_action(action);
     }
 }
 
-pub fn dispatch_fixture_entity_actions(dispatcher: &mut Dispatcher) {
-    for action in fixture_entity_actions() {
+pub fn dispatch_sample_masters(dispatcher: &mut Dispatcher) {
+    for action in sample_master_actions() {
         dispatcher.dispatch(action);
     }
 }
 
-fn fixture_entity_actions() -> Vec<Action> {
+fn sample_master_actions() -> Vec<Action> {
     vec![
         Action::SyncUsers {
-            users: parse_users_yaml(),
+            users: sample_users(),
         },
         Action::SyncIssueStatuses {
-            issue_statuses: parse_issue_statuses_yaml(),
+            issue_statuses: sample_issue_statuses(),
         },
         Action::SyncPriorities {
-            priorities: parse_priorities_yaml(),
+            priorities: sample_priorities(),
         },
         Action::SyncProjects {
-            projects: parse_projects_yaml(),
+            projects: sample_projects(),
         },
         Action::SyncTrackers {
-            trackers: parse_trackers_yaml(),
+            trackers: sample_trackers(),
         },
         Action::SyncTargetVersions {
-            target_versions: parse_target_versions_yaml(),
+            target_versions: sample_target_versions(),
         },
         Action::SyncCategories {
-            categories: parse_categories_yaml(),
+            categories: sample_categories(),
         },
         Action::SyncTimeEntityActivities {
-            time_entity_activities: parse_time_entity_activities_yaml(),
+            time_entity_activities: sample_time_entity_activities(),
         },
     ]
+}
+
+pub fn sample_users() -> Vec<User> {
+    [(1001, "user1"), (1002, "user2")]
+        .map(|(id, name)| User {
+            id: UserId::new(id),
+            name: name.to_string(),
+        })
+        .into()
+}
+
+pub fn sample_issue_statuses() -> Vec<IssueStatus> {
+    [
+        (1, "新規(new)", false),
+        (2, "割り当て(assigned)", false),
+        (3, "進行中(accepted)", false),
+        (4, "レビュー(review)", false),
+        (5, "完了(closed)", true),
+        (6, "改修確認待ち", false),
+    ]
+    .map(|(id, name, is_closed)| IssueStatus {
+        id: IssueStatusId::new(id),
+        name: name.to_string(),
+        is_closed,
+    })
+    .into()
+}
+
+pub fn sample_priorities() -> Vec<Priority> {
+    [(1, "major"), (2, "minor"), (3, "critical"), (4, "blocker")]
+        .map(|(id, name)| Priority {
+            id: PriorityId::new(id),
+            name: name.to_string(),
+        })
+        .into()
+}
+
+pub fn sample_projects() -> Vec<Project> {
+    [(1, "Sample Project"), (2, "Sample Project 2")]
+        .map(|(id, name)| Project {
+            id: ProjectId::new(id),
+            name: name.to_string(),
+        })
+        .into()
+}
+
+pub fn sample_trackers() -> Vec<Tracker> {
+    [(1, "Bug"), (2, "Feature"), (3, "Support")]
+        .map(|(id, name)| Tracker {
+            id: TrackerId::new(id),
+            name: name.to_string(),
+        })
+        .into()
+}
+
+pub fn sample_target_versions() -> Vec<TargetVersion> {
+    vec![TargetVersion {
+        id: TargetVersionId::new(1),
+        name: "v1.2.3".to_string(),
+        project_id: ProjectId::new(1),
+    }]
+}
+
+pub fn sample_categories() -> Vec<Category> {
+    vec![Category {
+        id: CategoryId::new(1),
+        name: "category1".to_string(),
+        project_id: ProjectId::new(1),
+    }]
+}
+
+pub fn sample_time_entity_activities() -> Vec<TimeEntityActivity> {
+    [(1, "設計", true), (2, "実装", false), (3, "検証", false)]
+        .map(|(id, name, is_default)| {
+            TimeEntityActivity::new(TimeEntityActivityId::new(id), name, is_default)
+        })
+        .into()
 }
 
 pub fn sample_issue_aggregate(

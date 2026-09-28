@@ -129,7 +129,7 @@ mod tests {
         let dispatcher = dispatcher();
         {
             let mut d = dispatcher.borrow_mut();
-            crate::test_support::dispatch_fixture_entity_actions(&mut d);
+            crate::test_support::dispatch_sample_masters(&mut d);
             d.dispatch(IssueAction::Load { id: 3.into() });
             d.dispatch(crate::stores::Action::Journal(
                 crate::stores::JournalAction::SyncFetched {
