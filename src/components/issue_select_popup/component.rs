@@ -341,7 +341,10 @@ mod tests {
     use crate::entities::{Issue, ProjectIssuesPage};
     use crate::stores::IssueAction;
     use crate::stores::ProjectIssuesAction;
-    use crate::test_support::{render_snapshot, sample_issue_aggregate, sync_sample_masters};
+    use crate::test_support::{
+        render_snapshot, sample_closed_child_issue, sample_issue_aggregate,
+        sample_open_child_issue, sample_parent_issue, sync_sample_masters,
+    };
 
     const AREA: Rect = Rect {
         x: 0,
@@ -357,9 +360,13 @@ mod tests {
     fn unloaded_store() -> Store {
         let mut store = Store::new();
         sync_sample_masters(&mut store);
-        store.consume_action(IssueAction::Load { id: 1.into() }.into());
-        store.consume_action(IssueAction::Load { id: 2.into() }.into());
-        store.consume_action(IssueAction::Load { id: 3.into() }.into());
+        for issue in [
+            sample_open_child_issue(),
+            sample_closed_child_issue(),
+            sample_parent_issue(),
+        ] {
+            store.consume_action(IssueAction::Sync { issue }.into());
+        }
         store
     }
 
