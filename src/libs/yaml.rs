@@ -1,7 +1,5 @@
 //! fixtureのYAMLを読み込み、Redmineのdomain dataへ変換する。
 
-use std::fs;
-
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use yaml_rust::{Yaml, YamlLoader};
 
@@ -13,14 +11,6 @@ use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId,
     PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
-
-fn read_yaml(path: &str) -> Yaml {
-    parse_yaml(&read_fixture(path))
-}
-
-fn read_fixture(path: &str) -> String {
-    fs::read_to_string(path).expect(format!("failed to load {}", path).as_str())
-}
 
 fn parse_yaml(yaml: &str) -> Yaml {
     let yaml_all = YamlLoader::load_from_str(yaml).expect("");
@@ -81,13 +71,6 @@ fn as_u16_array(yaml: &Yaml, key: &str) -> Vec<u16> {
         }
     }
     res
-}
-
-pub fn parse_journal_yaml(id: JournalId) -> Journal {
-    let path = format!("datas/journals/{}.yml", id);
-    let yaml = read_yaml(path.as_str());
-    let issue_id = IssueId::new(as_u16(&yaml, "issue_id"));
-    parse_journal_yaml_value(id, issue_id, &yaml)
 }
 
 /// fixture内のIDまたは所属Issueが要求と異なる場合は、fixtureの不整合としてpanicする。
@@ -208,11 +191,6 @@ pub fn parse_journal_detail_attr_yaml(yaml: &yaml_rust::Yaml) -> JournalDetailAt
         },
         attr_name => panic!("unsupported journal detail attr: {}", attr_name),
     }
-}
-
-pub fn parse_issue_yaml(id: u16) -> IssueAggregate {
-    let path = format!("datas/issues/{}.yml", id);
-    parse_issue(IssueId::new(id), &read_fixture(path.as_str()))
 }
 
 /// fixture内のIDが要求IDと異なる場合は、fixtureの不整合としてpanicする。
@@ -354,9 +332,9 @@ pub fn parse_time_entity_activities(yaml: &str) -> Vec<TimeEntityActivity> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_categories, parse_issue, parse_issue_statuses, parse_journal, parse_journal_yaml,
-        parse_priorities, parse_projects, parse_target_versions, parse_time_entity_activities,
-        parse_trackers, parse_users,
+        parse_categories, parse_issue, parse_issue_statuses, parse_journal, parse_priorities,
+        parse_projects, parse_target_versions, parse_time_entity_activities, parse_trackers,
+        parse_users,
     };
     use crate::vos::{IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId};
 
@@ -456,14 +434,18 @@ mod tests {
     }
 
     #[test]
-    fn parse_journal_yaml_reads_all_fields_from_fixture() {
+    fn parse_journal_reads_all_fields_from_demo_fixture() {
         assert_journal_1();
         assert_journal_2();
         assert_journal_3();
     }
 
     fn assert_journal_1() {
-        let journal = parse_journal_yaml(JournalId::new(1));
+        let journal = parse_journal(
+            JournalId::new(1),
+            IssueId::new(3),
+            include_str!("../../datas/journals/1.yml"),
+        );
         assert_eq!(journal.id, JournalId::new(1));
         assert_eq!(journal.issue_id, IssueId::new(3));
         assert_eq!(journal.user, "user1");
@@ -487,7 +469,11 @@ mod tests {
     }
 
     fn assert_journal_2() {
-        let journal = parse_journal_yaml(JournalId::new(2));
+        let journal = parse_journal(
+            JournalId::new(2),
+            IssueId::new(3),
+            include_str!("../../datas/journals/2.yml"),
+        );
         assert_eq!(journal.id, JournalId::new(2));
         assert_eq!(journal.issue_id, IssueId::new(3));
         assert_eq!(journal.user, "user1");
@@ -513,7 +499,11 @@ mod tests {
     }
 
     fn assert_journal_3() {
-        let journal = parse_journal_yaml(JournalId::new(3));
+        let journal = parse_journal(
+            JournalId::new(3),
+            IssueId::new(3),
+            include_str!("../../datas/journals/3.yml"),
+        );
         assert_eq!(journal.id, JournalId::new(3));
         assert_eq!(journal.issue_id, IssueId::new(3));
         assert_eq!(journal.user, "user1");
@@ -525,17 +515,7 @@ mod tests {
                 .to_string(),
             "2026-02-16"
         );
-        assert!(!journal.notes.is_empty());
-        assert!(journal.notes.starts_with("### h3"));
-        assert!(journal.notes.ends_with("> citation"));
-        assert!(journal.notes.contains("*italic text*"));
-        assert!(journal.notes.contains("**bold text**"));
-        assert!(journal.notes.contains("1. numbered list 1"));
-        assert!(journal.notes.contains("inner numbered list 1"));
-        assert!(journal.notes.contains("- itemized list 1"));
-        assert!(journal.notes.contains("~~canceled text~~"));
-        assert!(journal.notes.contains("`code`"));
-        assert!(journal.notes.contains("code block"));
+        assert_eq!(journal.notes, crate::test_support::SAMPLE_MARKDOWN);
         assert!(journal.details.is_empty());
     }
 }
