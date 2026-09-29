@@ -1139,17 +1139,6 @@ mod tests {
         ));
     }
 
-    fn edit_first_journal(dispatcher: &Rc<RefCell<Dispatcher>>) {
-        dispatcher
-            .borrow_mut()
-            .dispatch(JournalAction::EditRemoteNotes {
-                issue_id: IssueId::new(3),
-                journal_id: JournalId::new(1),
-                notes: "edited notes".to_string(),
-            });
-        dispatcher.borrow_mut().consume_action();
-    }
-
     fn loaded_dispatcher() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
@@ -1497,37 +1486,6 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_s_on_local_only_journal_notes_installs_start_local_journal_upload_effect() {
-        let dispatcher = loaded_dispatcher();
-        dispatcher
-            .borrow_mut()
-            .dispatch(Action::Journal(JournalAction::CreateLocal {
-                issue_id: IssueId::new(3),
-            }));
-        dispatcher.borrow_mut().consume_action();
-        dispatcher
-            .borrow_mut()
-            .dispatch(Action::Journal(JournalAction::EditLocalNotes {
-                issue_id: IssueId::new(3),
-                notes: "local notes".to_string(),
-            }));
-        dispatcher.borrow_mut().consume_action();
-
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-        for _ in 0..100 {
-            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
-        }
-        app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
-        app.process_event(ctrl_s_event(), dispatcher.clone());
-
-        let Some(AppEffect::StartLocalJournalUpload { issue_id }) = app.take_effect() else {
-            panic!("expected start local journal upload effect");
-        };
-        assert_eq!(issue_id, IssueId::new(3));
-    }
-
-    #[test]
     fn e_and_ctrl_s_on_uploading_local_journal_notes_install_no_effect() {
         let dispatcher = loaded_dispatcher();
         for action in [
@@ -1563,28 +1521,6 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_s_on_edited_journal_notes_installs_start_remote_journal_upload_effect() {
-        let dispatcher = loaded_dispatcher_with_journals();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-        edit_first_journal(&dispatcher);
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        focus_first_journal_notes(&mut app, dispatcher.clone());
-        app.process_event(ctrl_s_event(), dispatcher.clone());
-
-        let Some(AppEffect::StartRemoteJournalUpload {
-            issue_id,
-            journal_id,
-        }) = app.take_effect()
-        else {
-            panic!("expected start remote journal upload effect");
-        };
-        assert_eq!(issue_id, IssueId::new(3));
-        assert_eq!(journal_id, JournalId::new(1));
-    }
-
-    #[test]
     fn ctrl_s_on_synced_journal_notes_installs_no_effect() {
         let dispatcher = loaded_dispatcher_with_journals();
         let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
@@ -1594,20 +1530,6 @@ mod tests {
         app.process_event(ctrl_s_event(), dispatcher.clone());
 
         assert!(app.take_effect().is_none());
-    }
-
-    #[test]
-    fn ctrl_s_outside_journals_list_installs_start_issue_upload() {
-        let dispatcher = loaded_dispatcher_with_journals();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        app.process_event(ctrl_s_event(), dispatcher.clone());
-
-        let Some(AppEffect::StartIssueUpload(id)) = app.take_effect() else {
-            panic!("expected start issue upload effect");
-        };
-        assert_eq!(id, IssueId::new(3));
     }
 
     /// updateでキャッシュしたプレビューがrenderで実際に描画されることを確認する

@@ -241,3 +241,41 @@ pub fn property_value(frame: &str, label: &str) -> String {
         .trim()
         .to_string()
 }
+
+pub fn redmine_get_json(path: &str) -> serde_json::Value {
+    let url = format!("{}{path}", required_env(BASE_URL_ENV));
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("failed to build tokio runtime")
+        .block_on(async {
+            reqwest::Client::new()
+                .get(url)
+                .header("X-Redmine-API-Key", API_KEY)
+                .send()
+                .await
+                .expect("failed to send Redmine API request")
+                .json()
+                .await
+                .expect("failed to parse Redmine API response")
+        })
+}
+
+/// uploadは非同期に完了するため、Redmine APIの取得結果が条件を満たすまで待つ。
+pub fn wait_for_redmine(
+    path: &str,
+    description: &str,
+    predicate: impl Fn(&serde_json::Value) -> bool,
+) -> serde_json::Value {
+    let deadline = Instant::now() + WAIT_TIMEOUT;
+    loop {
+        let value = redmine_get_json(path);
+        if predicate(&value) {
+            return value;
+        }
+        if Instant::now() >= deadline {
+            panic!("{description} did not happen\nlast response from {path}:\n{value:#}");
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+}
