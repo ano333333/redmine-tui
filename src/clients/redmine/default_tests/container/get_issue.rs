@@ -54,7 +54,6 @@ async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::
         vec![1, 2]
     );
 
-    // seederはJournalのupdated_onを設定しないため、未編集のJournalとしてNoneになる。
     assert_eq!(
         fetched
             .journals
@@ -68,9 +67,27 @@ async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::
             ))
             .collect::<Vec<_>>(),
         vec![
-            (1, 3, "user1 Fixture", None, ""),
-            (2, 3, "user1 Fixture", None, ""),
-            (3, 3, "user1 Fixture", None, SAMPLE_MARKDOWN),
+            (
+                1,
+                3,
+                "user1 Fixture",
+                Some(local_datetime("2026-02-10T00:00:00Z")),
+                "",
+            ),
+            (
+                2,
+                3,
+                "user1 Fixture",
+                Some(local_datetime("2026-02-16T00:00:00Z")),
+                "",
+            ),
+            (
+                3,
+                3,
+                "user1 Fixture",
+                Some(local_datetime("2026-02-16T00:00:00Z")),
+                SAMPLE_MARKDOWN,
+            ),
         ]
     );
     assert!(matches!(

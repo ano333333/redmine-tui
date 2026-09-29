@@ -129,6 +129,13 @@ struct NamedRecord {
 }
 
 #[derive(Debug)]
+struct ProjectScopedRecord {
+    id: u16,
+    name: String,
+    project_id: u16,
+}
+
+#[derive(Debug)]
 struct IssueStatusRecord {
     id: u16,
     name: String,
@@ -189,8 +196,8 @@ struct SeedData {
     trackers: Vec<NamedRecord>,
     statuses: Vec<IssueStatusRecord>,
     priorities: Vec<NamedRecord>,
-    versions: Vec<NamedRecord>,
-    categories: Vec<NamedRecord>,
+    versions: Vec<ProjectScopedRecord>,
+    categories: Vec<ProjectScopedRecord>,
     activities: Vec<ActivityRecord>,
     issues: Vec<IssueRecord>,
     journals: BTreeMap<u16, JournalRecord>,
@@ -204,8 +211,14 @@ impl SeedData {
             trackers: load_named_records(datas_dir.join("trackers.yml"), "trackers")?,
             statuses: load_issue_statuses(datas_dir.join("issue_statuses.yml"))?,
             priorities: load_named_records(datas_dir.join("priorities.yml"), "priorities")?,
-            versions: load_named_records(datas_dir.join("target_versions.yml"), "target_versions")?,
-            categories: load_named_records(datas_dir.join("categories.yml"), "categories")?,
+            versions: load_project_scoped_records(
+                datas_dir.join("target_versions.yml"),
+                "target_versions",
+            )?,
+            categories: load_project_scoped_records(
+                datas_dir.join("categories.yml"),
+                "categories",
+            )?,
             activities: load_activities(datas_dir.join("time_entity_activities.yml"))?,
             issues: load_issues(&datas_dir.join("issues"))?,
             journals: load_journals(&datas_dir.join("journals"))?,
@@ -477,9 +490,9 @@ impl SeedData {
     }
 
     fn push_versions_sql(&self, sql: &mut String) {
-        let Some(project) = self.projects.first() else {
+        if self.versions.is_empty() {
             return;
-        };
+        }
         sql.push_str("INSERT INTO versions (id, project_id, name, description, effective_date, created_on, updated_on, wiki_page_title, status, sharing) VALUES\n");
         push_values(
             sql,
@@ -487,7 +500,7 @@ impl SeedData {
                 format!(
                     "({}, {}, {}, '', NULL, {}, {}, NULL, 'open', 'none')",
                     version.id,
-                    project.id,
+                    version.project_id,
                     sql_string(&version.name),
                     sql_datetime("2026/01/01"),
                     sql_datetime("2026/01/01")
@@ -498,9 +511,9 @@ impl SeedData {
     }
 
     fn push_categories_sql(&self, sql: &mut String) {
-        let Some(project) = self.projects.first() else {
+        if self.categories.is_empty() {
             return;
-        };
+        }
         sql.push_str(
             "INSERT INTO issue_categories (id, project_id, name, assigned_to_id) VALUES\n",
         );
@@ -510,7 +523,7 @@ impl SeedData {
                 format!(
                     "({}, {}, {}, NULL)",
                     category.id,
-                    project.id,
+                    category.project_id,
                     sql_string(&category.name)
                 )
             }),
@@ -591,16 +604,17 @@ impl SeedData {
             return;
         }
 
-        sql.push_str("INSERT INTO journals (id, journalized_id, journalized_type, user_id, notes, created_on, private_notes) VALUES\n");
+        sql.push_str("INSERT INTO journals (id, journalized_id, journalized_type, user_id, notes, created_on, updated_on, private_notes) VALUES\n");
         push_values(
             sql,
             journals.iter().map(|(journal, issue_id, user_id)| {
                 format!(
-                    "({}, {}, 'Issue', {}, {}, {}, 0)",
+                    "({}, {}, 'Issue', {}, {}, {}, {}, 0)",
                     journal.id,
                     issue_id,
                     user_id,
                     sql_string(&journal.notes),
+                    sql_datetime(&journal.updated_on),
                     sql_datetime(&journal.updated_on)
                 )
             }),
@@ -629,6 +643,25 @@ impl SeedData {
             sql.push_str(";\n\n");
         }
     }
+}
+
+fn load_project_scoped_records(
+    path: PathBuf,
+    key: &str,
+) -> Result<Vec<ProjectScopedRecord>, String> {
+    let yaml = read_yaml(&path)?;
+    yaml[key]
+        .as_vec()
+        .ok_or_else(|| format!("{} has no {key} array", path.display()))?
+        .iter()
+        .map(|entry| {
+            Ok(ProjectScopedRecord {
+                id: as_u16(entry, "id")?,
+                name: as_string(entry, "name")?,
+                project_id: as_u16(entry, "project_id")?,
+            })
+        })
+        .collect()
 }
 
 fn load_named_records(path: PathBuf, key: &str) -> Result<Vec<NamedRecord>, String> {

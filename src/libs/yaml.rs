@@ -362,12 +362,14 @@ mod tests {
         assert_eq!(trackers[1].name, "Feature");
 
         let versions = parse_target_versions(include_str!("../../datas/target_versions.yml"));
-        assert_eq!(versions.len(), 1);
+        assert_eq!(versions.len(), 3);
         assert_eq!(versions[0].name, "v1.2.3");
+        assert_eq!(versions[2].project_id, crate::vos::ProjectId::new(2));
 
         let categories = parse_categories(include_str!("../../datas/categories.yml"));
-        assert_eq!(categories.len(), 1);
+        assert_eq!(categories.len(), 3);
         assert_eq!(categories[0].name, "category1");
+        assert_eq!(categories[2].project_id, crate::vos::ProjectId::new(2));
 
         let activities =
             parse_time_entity_activities(include_str!("../../datas/time_entity_activities.yml"));

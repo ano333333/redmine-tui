@@ -26,7 +26,7 @@ async fn assert_get_target_versions_200(base_url: &str) -> Result<(), Box<dyn st
             .iter()
             .map(|value| (value.id.get(), value.name.as_str(), value.project_id.get()))
             .collect::<Vec<_>>(),
-        vec![(1, "v1.2.3", 1)]
+        vec![(1, "v1.2.3", 1), (2, "v2.0.0", 1), (3, "p2-v1.0.0", 2)]
     );
 
     Ok(())

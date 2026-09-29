@@ -99,8 +99,8 @@ mod tests {
         assert_eq!(state.priorities.len(), 4);
         assert_eq!(state.projects.len(), 2);
         assert_eq!(state.trackers.len(), 3);
-        assert_eq!(state.target_versions.len(), 1);
-        assert_eq!(state.categories.len(), 1);
+        assert_eq!(state.target_versions.len(), 3);
+        assert_eq!(state.categories.len(), 3);
         assert_eq!(state.time_entity_activities.len(), 3);
         let issue_ids: BTreeSet<_> = state.issues.keys().map(|id| id.get()).collect();
         assert_eq!(issue_ids, BTreeSet::from([1, 2, 3]));

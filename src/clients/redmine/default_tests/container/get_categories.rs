@@ -26,7 +26,11 @@ async fn assert_get_categories_200(base_url: &str) -> Result<(), Box<dyn std::er
             .iter()
             .map(|value| (value.id.get(), value.name.as_str(), value.project_id.get()))
             .collect::<Vec<_>>(),
-        vec![(1, "category1", 1)]
+        vec![
+            (1, "category1", 1),
+            (2, "category2", 1),
+            (3, "p2-category1", 2),
+        ]
     );
 
     Ok(())
