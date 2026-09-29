@@ -11,7 +11,7 @@ fn issue_fetch_failure_shows_the_reason_and_r_retries() {
     wait_for_text(&mut session, "issue2");
     // And 一覧の取得後に、Issue 2がRedmineから削除されている
     assert_eq!(
-        redmine_api(Method::DELETE, "/issues/2.json"),
+        redmine_api(Method::DELETE, "/issues/2.json", None),
         StatusCode::NO_CONTENT
     );
 

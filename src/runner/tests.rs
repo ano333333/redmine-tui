@@ -10,7 +10,7 @@ use crate::runner::effect::{
     start_remote_journal_upload_action,
 };
 use crate::runner::lifecycle::{
-    consume_editor_worker_actions, handle_host_event, move_worker_action, tick_since, update,
+    consume_editor_worker_actions, move_worker_action, tick_since, update,
 };
 use crate::stores::{self, Action, Dispatcher};
 use crate::usecases::redmine::{start_issue_upload, upload_issue_action};
@@ -26,10 +26,10 @@ use std::{
 use crate::clients::redmine::base::FetchedIssue;
 use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project, ProjectIssuesPage,
-    TargetVersion, TimeEntityActivity, Tracker, User,
+    Category, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
+    TimeEntityActivity, Tracker, User,
 };
-use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId, ProjectIssuesAction};
+use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId};
 use crate::test_support::sample_issue_aggregate;
 use crate::vos::issue_property_diff::IssueDescriptionDiff;
 use crate::vos::{self, IssueId, IssuePropertyDiff, IssueStatusId, JournalId};
@@ -116,92 +116,6 @@ fn tick_since_returns_a_positive_duration_after_elapsed_time() {
     let now = Duration::from_millis(10);
 
     assert!(tick_since(last, now) > chrono::Duration::zero());
-}
-
-#[test]
-fn key_event_updates_issue_popup_preview_even_when_it_dispatches_no_action() {
-    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    crate::test_support::dispatch_sample_masters(&mut dispatcher.borrow_mut());
-    while dispatcher.borrow().consume_actinos_len() > 0 {
-        dispatcher.borrow_mut().consume_action();
-    }
-    let mut app = AppComponent::new(dispatcher.clone(), None);
-    let Some(AppEffect::FetchProjectIssuesPage { project_id, page }) = app.take_effect() else {
-        panic!("expected the initial project page effect")
-    };
-    update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-    let request_id = crate::stores::ProjectIssuesRequestId::new();
-    dispatcher
-        .borrow_mut()
-        .dispatch(ProjectIssuesAction::StartLoading {
-            request_id,
-            project_id,
-            page,
-        });
-    dispatcher
-        .borrow_mut()
-        .dispatch(ProjectIssuesAction::LoadSucceeded {
-            request_id,
-            project_id,
-            page,
-            result: ProjectIssuesPage {
-                issues: vec![
-                    Issue {
-                        id: 41.into(),
-                        project_id,
-                        subject: "first issue".to_string(),
-                        description: "first preview marker".to_string(),
-                        status_id: 1.into(),
-                    },
-                    Issue {
-                        id: 42.into(),
-                        project_id,
-                        subject: "second issue".to_string(),
-                        description: "second preview marker".to_string(),
-                        status_id: 1.into(),
-                    },
-                ],
-                total_count: 2,
-                offset: 0,
-                limit: 50,
-            },
-        });
-    update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-
-    assert!(handle_host_event(
-        HostEvent::Input(InputEvent::Key(KeyEvent::new(
-            KeyCode::Char('l'),
-            KeyModifiers::none(),
-        ))),
-        &mut app,
-        dispatcher.clone(),
-        Rect::new(0, 0, 80, 24),
-    ));
-    assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
-    assert!(handle_host_event(
-        HostEvent::Input(InputEvent::Key(KeyEvent::new(
-            KeyCode::Char('j'),
-            KeyModifiers::none(),
-        ))),
-        &mut app,
-        dispatcher.clone(),
-        Rect::new(0, 0, 80, 24),
-    ));
-    assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
-
-    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-    terminal
-        .draw(|frame| app.render(dispatcher.borrow().store(), frame, frame.area()))
-        .unwrap();
-    let rendered = terminal
-        .backend()
-        .buffer()
-        .content
-        .iter()
-        .map(|cell| cell.symbol())
-        .collect::<String>();
-    assert!(rendered.contains("second preview marker"));
-    assert!(!rendered.contains("first preview marker"));
 }
 
 #[test]

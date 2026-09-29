@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use testty::session::{PtySession, PtySessionBuilder};
 
@@ -9,6 +9,7 @@ const PROJECT_NAME_ENV: &str = "REDMINE_TUI_TEST_PROJECT_NAME";
 const COMPOSE_FILE_ENV: &str = "REDMINE_TUI_COMPOSE_FILE";
 const API_KEY: &str = "0123456789abcdef0123456789abcdef01234567";
 const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const TERMINAL_WIDTH: u16 = 120;
 const TERMINAL_HEIGHT: u16 = 40;
 
@@ -55,6 +56,25 @@ pub fn spawn_app_with_api_key(api_key: Option<&str>) -> PtySession {
         .expect("failed to start redmine-tui in a PTY")
 }
 
+/// 文字列の出現では判定できない状態（表示が消えたことなど）を、画面を取り直しながら待つ。
+pub fn wait_until(
+    session: &mut PtySession,
+    description: &str,
+    predicate: impl Fn(&str) -> bool,
+) -> String {
+    let deadline = Instant::now() + WAIT_TIMEOUT;
+    loop {
+        session.drain_output(POLL_INTERVAL);
+        let frame = session.capture_frame().all_text();
+        if predicate(&frame) {
+            return frame;
+        }
+        if Instant::now() >= deadline {
+            panic!("{description} did not happen\nterminal frame:\n{frame}");
+        }
+    }
+}
+
 pub fn press_keys(session: &mut PtySession, keys: &[&str]) {
     for key in keys {
         session
@@ -74,16 +94,25 @@ pub fn wait_for_exit(session: &mut PtySession) -> bool {
 }
 
 /// Given・Thenで使うRedmine APIを、テスト用のAPI keyで呼ぶ。
-pub fn redmine_api(method: reqwest::Method, path: &str) -> reqwest::StatusCode {
+pub fn redmine_api(
+    method: reqwest::Method,
+    path: &str,
+    body: Option<serde_json::Value>,
+) -> reqwest::StatusCode {
     let url = format!("{}{path}", required_env(BASE_URL_ENV));
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("failed to build tokio runtime")
         .block_on(async {
-            reqwest::Client::new()
+            let request = reqwest::Client::new()
                 .request(method, url)
-                .header("X-Redmine-API-Key", API_KEY)
+                .header("X-Redmine-API-Key", API_KEY);
+            let request = match body {
+                Some(body) => request.json(&body),
+                None => request,
+            };
+            request
                 .send()
                 .await
                 .expect("failed to send Redmine API request")
