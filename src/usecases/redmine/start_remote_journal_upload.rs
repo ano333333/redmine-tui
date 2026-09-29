@@ -160,6 +160,8 @@ where
         ],
         RemoteJournalUploadResolution::Upload => {
             match client.update_journal_notes(journal_id, &diff.after).await {
+                // FIXME: detailを持たないJournalのnotesを空にすると、Redmineはそのjournalを削除する。
+                // ここではSyncedとして残すため、次に取得するまで削除済みのjournalが表示される。
                 Ok(()) => vec![
                     JournalAction::CompleteRemoteUpload {
                         issue_id,

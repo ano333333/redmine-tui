@@ -39,7 +39,7 @@
 - `src/logging.rs`
   - `initialize_logging`（native は file、Web は browser console）と `trace_dbg!` などの補助マクロを置く。
 - `src/test_support.rs`
-  - snapshot rendering や test fixture を置く。
+  - snapshot rendering や、テスト用のentityを組み立てる`sample_*`を置く。
 - `src/snapshots/`
   - insta snapshot を置く。
 - `docs/adrs/`
@@ -136,12 +136,12 @@ fn try_get_issue_state(&self, id: IssueId) -> Option<IssueState>;
 fn try_get_issue_fetch_state(&self, id: IssueId) -> Option<IssueFetchState>;
 ```
 
-| 内部状態 | `try_get_issue_state` | `try_get_issue_fetch_state` | `get_issue` |
-| --- | --- | --- | --- |
-| 未登録 | `None` | `None` | panic |
-| Fetching | `None` | `Some(Fetching)` | panic |
-| FetchFailed | `None` | `Some(FetchFailed)` | panic |
-| Synced / Edited / Uploading | `Some(..)` | `None` | 本体と状態 |
+| 内部状態                    | `try_get_issue_state` | `try_get_issue_fetch_state` | `get_issue` |
+| --------------------------- | --------------------- | --------------------------- | ----------- |
+| 未登録                      | `None`                | `None`                      | panic       |
+| Fetching                    | `None`                | `Some(Fetching)`            | panic       |
+| FetchFailed                 | `None`                | `Some(FetchFailed)`         | panic       |
+| Synced / Edited / Uploading | `Some(..)`            | `None`                      | 本体と状態  |
 
 - 本体の存在が不変条件である経路は `get_issue` を直接使い、不在を事前検査して処理をスキップしない。
 - 子 Issue や親 Issue の表示など不在が正常な経路では、`try_get_issue_state(id).is_some()` を確認してから `get_issue` を使う。
@@ -253,6 +253,42 @@ entity の owned copy を field に持つ場合は、Store との二重管理と
 
 ## テスト方針
 
+テストは単体テスト、外部プロセスへのアダプターのテスト、E2Eの3層で構成する。内部で閉じるstruct同士の結合テストは、画面から観測できない層の間の契約に限って残す。
+
+| 層                                 | 対象                                                                  | 実行方法                          |
+| ---------------------------------- | --------------------------------------------------------------------- | --------------------------------- |
+| 単体テスト                         | Store、FocusState、Widget、Component、usecase、value object、変換処理 | `cargo test`                      |
+| 外部プロセスへのアダプターのテスト | `DefaultRedmineClient`とRedmine containerの契約                       | `cargo xtask test-redmine-client` |
+| E2E                                | PTY上のnativeバイナリによるユーザー操作の流れ                         | `cargo xtask test-e2e`            |
+
+### どの層でテストするか
+
+単体テストかどうかは、組み合わせるstructの数ではなく、テスト対象がひとつかどうかで判断する。Storeを入力として組み立て、Componentの描画、`process_event`の戻り値、発行したActionを検証するテストは、Componentを対象とする単体テストである。
+
+変更の内容ごとに、次の層でテストする。
+
+- Store、FocusState、Widget、Component、usecase、value objectの振る舞い: 単体テスト。組み合わせや境界値はここで網羅する。
+- Redmine APIとの送受信（requestの形式、responseの変換、Redmineがどう反映するか）: Redmine clientテスト。実際のRedmineで起こしにくい応答（5xx、壊れたJSONなど）の変換だけは、wiremockを使う単体テストにする。
+- ユーザー操作の流れ（popupでの選択、編集、upload、競合の解決、画面の切り替えなど）: E2E。
+- 画面から観測できない層の間の契約: 結合テストとして`src/components/app.rs`と`src/runner/tests.rs`に置く。
+
+1件のテストが複数の性質を含む場合は、性質ごとに分けて上の層へ置く。たとえばpopupの選択肢の組み合わせは単体テストに、選んだ値がIssueに反映される流れはE2Eに置く。
+
+### 期待値の書き方
+
+assertの期待値はリテラルまたは`const`で書く。入力と実装が同時に誤っても検出できるよう、期待値を入力や実装の出力から取らない。
+
+- 入力と期待値で同じ`const`を使ってよい。どちらも定数のため、片方だけがずれることはない。
+- 入力のコレクションの長さ、パースしたentityのフィールド、Storeから取り出した値など、定数でない値から期待値を取らない。
+- 期待値が`const`同士の計算で決まる場合（seedのIssueが3件なので次に作成されるIDは4、など）も、コード上はリテラルで書き、計算方法をコメントに残す。
+- 型で保証されている性質（`Send`であることなど）はテストしない。
+
+### テストデータ
+
+- 単体テストでは、Storeへ`test_support`の`sample_*`で組み立てたentityをSyncで渡す。テストが依存する値はテストの中か`sample_*`に書き、`datas/`のfixtureは読まない。`datas/`はDemo clientとRedmine seederの入力である。
+- Redmine clientテストとE2Eは、テストごとに`datas/`からseedを入れ直した状態で始まる。seedには全テストで共通の土台（マスターデータ、project、role、workflowなど）だけを入れる。
+- テスト固有のデータは、E2EではGivenの段階でRedmine APIを使って追加する。他のユーザーによる更新や競合も、APIによる更新として書く。seedの再投入はAUTO_INCREMENTもリセットするため、APIで作成したデータのIDは毎回同じになる。
+
 Widget、FocusState、Component は責務ごとにテストする。
 
 ### Widget test
@@ -284,7 +320,7 @@ FocusState test は Widget や Store に依存させない。
 
 ### Component test
 
-Component は Widget と FocusState の結合を確認する結合テストを書く。
+Component は Widget と FocusState の組み合わせを、Component を対象とする単体テストで確認する。
 
 確認すること:
 
@@ -293,8 +329,21 @@ Component は Widget と FocusState の結合を確認する結合テストを�
 - `update` 後に FocusState の補正、Widget の表示、line count が整合すること。
 - 子 component を持つ component では、子から親への `EventProcessResult` と親から別子への `focus_event` がつながること。
 
-Component test では必要に応じて Store fixture を使ってよい。
+Component test では必要に応じて Store を入力として使ってよい。
 表示の最終確認には snapshot test を使う。
+
+### Redmine clientテスト
+
+`src/clients/redmine/default_tests/container/`に置き、`container-tests` featureを有効にしたときだけcompileする。`cargo xtask test-redmine-client`がDocker ComposeでRedmineを1つ起動し、各テストは開始時にseedを入れ直す。正常系と実際に起こせるエラー（401、404、422）はcontainerで検証し、wiremockは5xxや壊れたJSONなど実際のRedmineで起こしにくい応答の変換に限る。
+
+### E2E
+
+`tests/e2e/`に置き、`e2e-tests` featureを有効にしたときだけcompileする。`cargo xtask test-e2e`がRedmine containerを起動し、testtyでnativeバイナリをPTY上で操作する。
+
+- シナリオはテスト関数ごとに固定し、Gherkinの`// Scenario:`、`// Given`、`// When`、`// Then`をコメントで書く。
+- 各シナリオは開始時にseedを入れ直す。シナリオ固有のデータはGivenでRedmine APIを使って追加する。
+- 結果は画面表示と、Redmine APIで取得し直した状態で検証する。リクエスト回数はE2Eで検証しない。
+- editorは`VISUAL`に指定した`FakeEditor`で置き換える。testtyの仮想端末はcursor位置の問い合わせに応答しないため、`FakeEditor::finish_editing`が応答を書き込む。
 
 ## Platform境界（native/Web）
 
@@ -310,13 +359,13 @@ flowchart TD
     action --> store
 ```
 
-| port | native | Web |
-| --- | --- | --- |
-| 入力 | crossterm | Ratzilla `DomBackend` |
-| Runtime | Tokio | `spawn_local` |
-| Redmine | HTTP | memory mock |
-| Editor | external editor | textarea |
-| Logging | file | browser console |
+| port    | native          | Web                   |
+| ------- | --------------- | --------------------- |
+| 入力    | crossterm       | Ratzilla `DomBackend` |
+| Runtime | Tokio           | `spawn_local`         |
+| Redmine | HTTP            | memory mock           |
+| Editor  | external editor | textarea              |
+| Logging | file            | browser console       |
 
 ### 実装上の規則
 

@@ -324,7 +324,7 @@ mod tests {
         }
 
         let categories = names!(runtime.block_on(client.get_categories()).unwrap());
-        assert_eq!(categories.len(), 1);
+        assert_eq!(categories.len(), 3);
         assert!(categories.contains(&String::from("category1")));
 
         let statuses = names!(runtime.block_on(client.get_issue_statuses()).unwrap());
@@ -340,7 +340,7 @@ mod tests {
         assert!(projects.contains(&String::from("Sample Project")));
 
         let versions = names!(runtime.block_on(client.get_target_versions()).unwrap());
-        assert_eq!(versions.len(), 1);
+        assert_eq!(versions.len(), 3);
         assert!(versions.contains(&String::from("v1.2.3")));
 
         let activities = names!(

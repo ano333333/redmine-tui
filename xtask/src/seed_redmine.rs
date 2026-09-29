@@ -10,6 +10,9 @@ use yaml_rust::{Yaml, YamlLoader};
 
 const ACTIVITY_ID_OFFSET: u16 = 10_000;
 const REDMINE_TUI_TEST_API_USER_ID: u16 = 1;
+/// Redmineが作成する組み込みrole（Non member、Anonymous）のIDと重ならない値にする。
+const FIXTURE_ROLE_ID: u16 = 3;
+const FIXTURE_ROLE_PERMISSIONS: &str = "---\n- :view_issues\n- :add_issues\n- :edit_issues\n- :add_issue_notes\n- :edit_issue_notes\n- :edit_own_issue_notes\n- :view_time_entries\n- :log_time\n";
 pub(crate) const REDMINE_TUI_TEST_API_KEY: &str = "0123456789abcdef0123456789abcdef01234567";
 
 pub(crate) fn seed_redmine(args: Vec<String>) -> Result<(), String> {
@@ -126,6 +129,13 @@ struct NamedRecord {
 }
 
 #[derive(Debug)]
+struct ProjectScopedRecord {
+    id: u16,
+    name: String,
+    project_id: u16,
+}
+
+#[derive(Debug)]
 struct IssueStatusRecord {
     id: u16,
     name: String,
@@ -186,8 +196,8 @@ struct SeedData {
     trackers: Vec<NamedRecord>,
     statuses: Vec<IssueStatusRecord>,
     priorities: Vec<NamedRecord>,
-    versions: Vec<NamedRecord>,
-    categories: Vec<NamedRecord>,
+    versions: Vec<ProjectScopedRecord>,
+    categories: Vec<ProjectScopedRecord>,
     activities: Vec<ActivityRecord>,
     issues: Vec<IssueRecord>,
     journals: BTreeMap<u16, JournalRecord>,
@@ -201,8 +211,14 @@ impl SeedData {
             trackers: load_named_records(datas_dir.join("trackers.yml"), "trackers")?,
             statuses: load_issue_statuses(datas_dir.join("issue_statuses.yml"))?,
             priorities: load_named_records(datas_dir.join("priorities.yml"), "priorities")?,
-            versions: load_named_records(datas_dir.join("target_versions.yml"), "target_versions")?,
-            categories: load_named_records(datas_dir.join("categories.yml"), "categories")?,
+            versions: load_project_scoped_records(
+                datas_dir.join("target_versions.yml"),
+                "target_versions",
+            )?,
+            categories: load_project_scoped_records(
+                datas_dir.join("categories.yml"),
+                "categories",
+            )?,
             activities: load_activities(datas_dir.join("time_entity_activities.yml"))?,
             issues: load_issues(&datas_dir.join("issues"))?,
             journals: load_journals(&datas_dir.join("journals"))?,
@@ -219,6 +235,9 @@ impl SeedData {
         self.push_enumerations_sql(&mut sql);
         self.push_projects_sql(&mut sql);
         self.push_project_support_sql(&mut sql);
+        self.push_role_sql(&mut sql);
+        self.push_members_sql(&mut sql);
+        self.push_workflows_sql(&mut sql);
         self.push_versions_sql(&mut sql);
         self.push_categories_sql(&mut sql);
         self.push_issues_sql(&mut sql);
@@ -402,10 +421,78 @@ impl SeedData {
         sql.push_str(";\n\n");
     }
 
+    /// 担当者の設定とstatus変更にはproject memberのroleとworkflowが必要なため、fixture userに共通のroleを与える。
+    fn push_role_sql(&self, sql: &mut String) {
+        sql.push_str("INSERT INTO roles (id, name, position, assignable, builtin, permissions, issues_visibility, users_visibility, time_entries_visibility, all_roles_managed) VALUES\n");
+        push_values(
+            sql,
+            [format!(
+                "({FIXTURE_ROLE_ID}, 'Developer', 1, 1, 0, {}, 'all', 'all', 'all', 1)",
+                sql_string(FIXTURE_ROLE_PERMISSIONS)
+            )],
+        );
+        sql.push_str(";\n\n");
+    }
+
+    fn push_members_sql(&self, sql: &mut String) {
+        let members = self
+            .projects
+            .iter()
+            .flat_map(|project| self.users.iter().map(move |user| (project.id, user.id)))
+            .enumerate()
+            .map(|(index, (project_id, user_id))| (index + 1, project_id, user_id))
+            .collect::<Vec<_>>();
+
+        sql.push_str(
+            "INSERT INTO members (id, user_id, project_id, created_on, mail_notification) VALUES\n",
+        );
+        push_values(
+            sql,
+            members.iter().map(|(member_id, project_id, user_id)| {
+                format!(
+                    "({member_id}, {}, {project_id}, {}, 0)",
+                    db_user_id(*user_id),
+                    sql_datetime("2026/01/01")
+                )
+            }),
+        );
+        sql.push_str(";\n\n");
+
+        sql.push_str("INSERT INTO member_roles (member_id, role_id, inherited_from) VALUES\n");
+        push_values(
+            sql,
+            members
+                .iter()
+                .map(|(member_id, _, _)| format!("({member_id}, {FIXTURE_ROLE_ID}, NULL)")),
+        );
+        sql.push_str(";\n\n");
+    }
+
+    fn push_workflows_sql(&self, sql: &mut String) {
+        sql.push_str("INSERT INTO workflows (tracker_id, old_status_id, new_status_id, role_id, assignee, author, type) VALUES\n");
+        push_values(
+            sql,
+            self.trackers.iter().flat_map(|tracker| {
+                self.statuses.iter().flat_map(move |old_status| {
+                    self.statuses
+                        .iter()
+                        .filter(move |new_status| new_status.id != old_status.id)
+                        .map(move |new_status| {
+                            format!(
+                                "({}, {}, {}, {FIXTURE_ROLE_ID}, 0, 0, 'WorkflowTransition')",
+                                tracker.id, old_status.id, new_status.id
+                            )
+                        })
+                })
+            }),
+        );
+        sql.push_str(";\n\n");
+    }
+
     fn push_versions_sql(&self, sql: &mut String) {
-        let Some(project) = self.projects.first() else {
+        if self.versions.is_empty() {
             return;
-        };
+        }
         sql.push_str("INSERT INTO versions (id, project_id, name, description, effective_date, created_on, updated_on, wiki_page_title, status, sharing) VALUES\n");
         push_values(
             sql,
@@ -413,7 +500,7 @@ impl SeedData {
                 format!(
                     "({}, {}, {}, '', NULL, {}, {}, NULL, 'open', 'none')",
                     version.id,
-                    project.id,
+                    version.project_id,
                     sql_string(&version.name),
                     sql_datetime("2026/01/01"),
                     sql_datetime("2026/01/01")
@@ -424,9 +511,9 @@ impl SeedData {
     }
 
     fn push_categories_sql(&self, sql: &mut String) {
-        let Some(project) = self.projects.first() else {
+        if self.categories.is_empty() {
             return;
-        };
+        }
         sql.push_str(
             "INSERT INTO issue_categories (id, project_id, name, assigned_to_id) VALUES\n",
         );
@@ -436,7 +523,7 @@ impl SeedData {
                 format!(
                     "({}, {}, {}, NULL)",
                     category.id,
-                    project.id,
+                    category.project_id,
                     sql_string(&category.name)
                 )
             }),
@@ -517,16 +604,17 @@ impl SeedData {
             return;
         }
 
-        sql.push_str("INSERT INTO journals (id, journalized_id, journalized_type, user_id, notes, created_on, private_notes) VALUES\n");
+        sql.push_str("INSERT INTO journals (id, journalized_id, journalized_type, user_id, notes, created_on, updated_on, private_notes) VALUES\n");
         push_values(
             sql,
             journals.iter().map(|(journal, issue_id, user_id)| {
                 format!(
-                    "({}, {}, 'Issue', {}, {}, {}, 0)",
+                    "({}, {}, 'Issue', {}, {}, {}, {}, 0)",
                     journal.id,
                     issue_id,
                     user_id,
                     sql_string(&journal.notes),
+                    sql_datetime(&journal.updated_on),
                     sql_datetime(&journal.updated_on)
                 )
             }),
@@ -555,6 +643,25 @@ impl SeedData {
             sql.push_str(";\n\n");
         }
     }
+}
+
+fn load_project_scoped_records(
+    path: PathBuf,
+    key: &str,
+) -> Result<Vec<ProjectScopedRecord>, String> {
+    let yaml = read_yaml(&path)?;
+    yaml[key]
+        .as_vec()
+        .ok_or_else(|| format!("{} has no {key} array", path.display()))?
+        .iter()
+        .map(|entry| {
+            Ok(ProjectScopedRecord {
+                id: as_u16(entry, "id")?,
+                name: as_string(entry, "name")?,
+                project_id: as_u16(entry, "project_id")?,
+            })
+        })
+        .collect()
 }
 
 fn load_named_records(path: PathBuf, key: &str) -> Result<Vec<NamedRecord>, String> {

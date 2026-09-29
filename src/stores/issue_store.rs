@@ -5,15 +5,14 @@
 use std::collections::HashMap;
 
 use crate::entities::IssueAggregate;
-use crate::libs::yaml::parse_issue_yaml;
 use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
     IssueDueDateDiff, IssueEstimatedHoursDiff, IssuePriorityIdDiff, IssueProjectIdDiff,
     IssueStartDateDiff, IssueStatusIdDiff, IssueTargetVersionIdDiff, IssueTrackerIdDiff,
 };
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssuePropertyDiff, IssueStatusId, PriorityId, ProjectId,
-    TargetVersionId, TrackerId, UserId,
+    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
+    TrackerId, UserId,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -57,9 +56,6 @@ struct IssueUploadConflict {
 }
 
 pub enum IssueAction {
-    Load {
-        id: IssueId,
-    },
     Sync {
         issue: IssueAggregate,
     },
@@ -155,16 +151,6 @@ impl IssueStore {
 
     pub(super) fn consume_action(&mut self, action: IssueAction) {
         match action {
-            IssueAction::Load { id } => {
-                if !self.entries.contains_key(&id) {
-                    self.entries.insert(
-                        id,
-                        IssueEntry::Synced {
-                            issue: parse_issue_yaml(id.get()),
-                        },
-                    );
-                }
-            }
             IssueAction::Sync { issue } => {
                 let id = issue.issue.id;
                 match self.entries.get(&id) {

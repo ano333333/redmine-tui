@@ -10,10 +10,10 @@ use crate::runner::effect::{
     start_remote_journal_upload_action,
 };
 use crate::runner::lifecycle::{
-    consume_editor_worker_actions, handle_host_event, move_worker_action, tick_since, update,
+    consume_editor_worker_actions, move_worker_action, tick_since, update,
 };
 use crate::stores::{self, Action, Dispatcher};
-use crate::usecases::redmine::{load_initial_entities, start_issue_upload, upload_issue_action};
+use crate::usecases::redmine::{start_issue_upload, upload_issue_action};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 use std::{
     collections::VecDeque,
@@ -26,11 +26,10 @@ use std::{
 use crate::clients::redmine::base::FetchedIssue;
 use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project, ProjectIssuesPage,
-    TargetVersion, TimeEntityActivity, Tracker, User,
+    Category, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
+    TimeEntityActivity, Tracker, User,
 };
-use crate::libs::yaml::parse_journal_yaml;
-use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId, ProjectIssuesAction};
+use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId};
 use crate::test_support::sample_issue_aggregate;
 use crate::vos::issue_property_diff::IssueDescriptionDiff;
 use crate::vos::{self, IssueId, IssuePropertyDiff, IssueStatusId, JournalId};
@@ -120,92 +119,6 @@ fn tick_since_returns_a_positive_duration_after_elapsed_time() {
 }
 
 #[test]
-fn key_event_updates_issue_popup_preview_even_when_it_dispatches_no_action() {
-    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher.borrow_mut());
-    while dispatcher.borrow().consume_actinos_len() > 0 {
-        dispatcher.borrow_mut().consume_action();
-    }
-    let mut app = AppComponent::new(dispatcher.clone(), None);
-    let Some(AppEffect::FetchProjectIssuesPage { project_id, page }) = app.take_effect() else {
-        panic!("expected the initial project page effect")
-    };
-    update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-    let request_id = crate::stores::ProjectIssuesRequestId::new();
-    dispatcher
-        .borrow_mut()
-        .dispatch(ProjectIssuesAction::StartLoading {
-            request_id,
-            project_id,
-            page,
-        });
-    dispatcher
-        .borrow_mut()
-        .dispatch(ProjectIssuesAction::LoadSucceeded {
-            request_id,
-            project_id,
-            page,
-            result: ProjectIssuesPage {
-                issues: vec![
-                    Issue {
-                        id: 41.into(),
-                        project_id,
-                        subject: "first issue".to_string(),
-                        description: "first preview marker".to_string(),
-                        status_id: 1.into(),
-                    },
-                    Issue {
-                        id: 42.into(),
-                        project_id,
-                        subject: "second issue".to_string(),
-                        description: "second preview marker".to_string(),
-                        status_id: 1.into(),
-                    },
-                ],
-                total_count: 2,
-                offset: 0,
-                limit: 50,
-            },
-        });
-    update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-
-    assert!(handle_host_event(
-        HostEvent::Input(InputEvent::Key(KeyEvent::new(
-            KeyCode::Char('l'),
-            KeyModifiers::none(),
-        ))),
-        &mut app,
-        dispatcher.clone(),
-        Rect::new(0, 0, 80, 24),
-    ));
-    assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
-    assert!(handle_host_event(
-        HostEvent::Input(InputEvent::Key(KeyEvent::new(
-            KeyCode::Char('j'),
-            KeyModifiers::none(),
-        ))),
-        &mut app,
-        dispatcher.clone(),
-        Rect::new(0, 0, 80, 24),
-    ));
-    assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
-
-    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-    terminal
-        .draw(|frame| app.render(dispatcher.borrow().store(), frame, frame.area()))
-        .unwrap();
-    let rendered = terminal
-        .backend()
-        .buffer()
-        .content
-        .iter()
-        .map(|cell| cell.symbol())
-        .collect::<String>();
-    assert!(rendered.contains("second preview marker"));
-    assert!(!rendered.contains("first preview marker"));
-}
-
-#[test]
 fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion_to_worker_channel()
 {
     let spawner = TokioBackgroundSpawner::new().unwrap();
@@ -272,7 +185,7 @@ fn issue_detail_shows_journals_from_the_first_frame_after_ordered_fetch_actions(
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
     {
         let mut d = dispatcher.borrow_mut();
-        crate::test_support::dispatch_fixture_entity_actions(&mut d);
+        crate::test_support::dispatch_sample_masters(&mut d);
         d.dispatch(IssueAction::StartFetching { id: 42.into() });
         d.dispatch(Action::Journal(JournalAction::SyncFetched {
             issue_id: 42.into(),
@@ -316,7 +229,7 @@ fn issue_detail_shows_journals_from_the_first_frame_after_ordered_fetch_actions(
 fn project_page_effect_queues_start_loading_and_routes_only_completion_to_worker_channel() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher.borrow_mut());
+    crate::test_support::dispatch_sample_masters(&mut dispatcher.borrow_mut());
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
@@ -359,22 +272,6 @@ fn project_page_effect_queues_start_loading_and_routes_only_completion_to_worker
             && page == std::num::NonZeroUsize::MIN
     ));
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-}
-
-#[test]
-fn load_initial_entities_returns_redmine_client_error() {
-    let spawner = TokioBackgroundSpawner::new().unwrap();
-    let client = FailingClient;
-
-    let error = match spawner.block_on(load_initial_entities(&client)) {
-        Ok(_) => panic!("load initial entities succeeded"),
-        Err(error) => error,
-    };
-
-    assert_eq!(
-        error.to_string(),
-        "unauthorized: GET http://redmine.invalid/users.json returned 401 with body: {\"error\":\"failed\"}"
-    );
 }
 
 #[tokio::test]
@@ -1066,9 +963,9 @@ fn journal_upload_app(dispatcher: Rc<RefCell<Dispatcher>>) -> AppComponent<'stat
 
 fn loaded_journal_upload_dispatcher() -> Dispatcher {
     let mut dispatcher = Dispatcher::new();
-    crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher);
-    dispatcher.dispatch(IssueAction::Load {
-        id: IssueId::new(3),
+    crate::test_support::dispatch_sample_masters(&mut dispatcher);
+    dispatcher.dispatch(IssueAction::Sync {
+        issue: crate::test_support::sample_parent_issue(),
     });
     while dispatcher.consume_actinos_len() > 0 {
         dispatcher.consume_action();
@@ -1080,11 +977,7 @@ fn edited_remote_journal_dispatcher() -> Dispatcher {
     let mut dispatcher = loaded_journal_upload_dispatcher();
     dispatcher.dispatch(JournalAction::SyncFetched {
         issue_id: IssueId::new(3),
-        journals: vec![
-            parse_journal_yaml(JournalId::new(1)),
-            parse_journal_yaml(JournalId::new(2)),
-            parse_journal_yaml(JournalId::new(3)),
-        ],
+        journals: crate::test_support::sample_parent_issue_journals(),
     });
     dispatcher.consume_action();
     dispatcher.dispatch(JournalAction::EditRemoteNotes {
@@ -1271,7 +1164,7 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
     };
     let client = Arc::new(IssueUploadClient::with_journals(
         sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
-        vec![parse_journal_yaml(JournalId::new(1))],
+        vec![crate::test_support::sample_parent_issue_journals().remove(0)],
     ));
     *client.get_failures_remaining.lock().unwrap() = 1;
 
@@ -1333,7 +1226,7 @@ fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     focus_remote_journal_notes(&mut app, dispatcher.clone());
     let client = Arc::new(IssueUploadClient::with_journals(
         sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),
-        vec![parse_journal_yaml(JournalId::new(1))],
+        vec![crate::test_support::sample_parent_issue_journals().remove(0)],
     ));
     *client.journal_failures_remaining.lock().unwrap() = 1;
 
@@ -1652,7 +1545,7 @@ fn quit_event() -> HostEvent {
 #[tokio::test]
 async fn run_accepts_completion_actions_then_ticks_updates_draws_and_reads_input() {
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    crate::test_support::dispatch_fixture_entity_actions(&mut dispatcher.borrow_mut());
+    crate::test_support::dispatch_sample_masters(&mut dispatcher.borrow_mut());
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }

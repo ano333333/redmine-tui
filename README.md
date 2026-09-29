@@ -69,7 +69,29 @@ Seeder file checks:
 bash tests/redmine_seeder_files_test.sh
 ```
 
-`.github/workflows/ci.yml` checks the native build (`cargo fmt --check`, `cargo build --workspace`, `cargo test --workspace`) and the Web build (wasm32 `cargo build`, `trunk build`).
+### Redmine Client Integration Tests
+
+Tests that talk to a real Redmine instance live in `src/clients/redmine/default_tests/container/`, compile only with the `container-tests` feature, and run through `xtask`. Docker is required.
+
+```sh
+cargo xtask test-redmine-client
+```
+
+The command starts one Redmine instance with Docker Compose under a unique project name and a random host port, then runs every test in that module in a single serial `cargo test` run. Each test re-seeds the database before it runs, so tests do not depend on each other's changes. The seed resets `AUTO_INCREMENT`, so records created through the API get the same IDs on every run. The containers and volumes are removed when the command finishes.
+
+These tests read the connection from `REDMINE_TUI_TEST_BASE_URL` and `REDMINE_TUI_TEST_PROJECT_NAME`, which `xtask` sets. Running them directly with `cargo test --features container-tests` fails with a message pointing to the command above. Tests using `wiremock` cover only responses that are hard to produce with a real Redmine, and run with normal `cargo test`.
+
+### E2E
+
+E2E scenarios live in `tests/e2e/`, compile only with the `e2e-tests` feature, and run through `xtask`. Docker is required.
+
+```sh
+cargo xtask test-e2e
+```
+
+The command starts Redmine the same way as the client integration tests, then runs the `e2e` test target serially. Each scenario re-seeds the database, launches the native binary in a PTY with `testty`, and checks both the screen and the Redmine API. Scenarios that edit text replace the editor with a fake editor set through `VISUAL`.
+
+`.github/workflows/ci.yml` runs these jobs in parallel: `unit` (`cargo fmt --check`, `cargo build --workspace`, `cargo test --workspace`, and the seeder file checks), `redmine-client` (`cargo xtask test-redmine-client`), `e2e` (`cargo xtask test-e2e`), and `web` (wasm32 `cargo build`, `trunk build`).
 
 ## Web Demo
 
@@ -159,6 +181,14 @@ The seeder currently inserts the fixture data present in `datas/`:
 - trackers, statuses, priorities, versions, categories, and time entry activities
 - issues from `datas/issues/*.yml`, preserving issue IDs
 - journals and journal details from `datas/journals/*.yml`
+- a `Developer` role, membership of every fixture user in every project with that role, and workflow transitions between every pair of statuses for every tracker, so that API updates can change assignees and statuses
+- REST API access for the Redmine admin user via API key `0123456789abcdef0123456789abcdef01234567`
+
+When seeding a Docker Compose project with a non-default project name, pass it through:
+
+```sh
+cargo xtask seed-redmine --project-name redmine-tui-client-test
+```
 
 The compatibility wrapper remains available:
 
@@ -174,6 +204,7 @@ scripts/seed-redmine-test-data.sh
 ## Repository Layout
 
 - `src/`: Rust TUI source
+- `tests/e2e/`: E2E scenarios driven through a PTY
 - `xtask/`: Cargo development tasks, including Redmine YAML seeding and Pages builds
 - `index.html`: Trunk entry HTML for the Web build
 - `Trunk.toml`: Trunk configuration for the Web build
@@ -182,4 +213,3 @@ scripts/seed-redmine-test-data.sh
 - `docker/redmine/fresh_test_data.sql`: Redmine test-data reset SQL used before YAML seeding
 - `scripts/seed-redmine-test-data.sh`: seeder execution wrapper
 - `.github/workflows/`: CI and GitHub Pages workflows
-- `docs/redmine-test.md`: detailed local Redmine notes

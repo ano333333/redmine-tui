@@ -91,6 +91,7 @@ impl FocusState {
     }
 
     pub fn get_cursor_position(&self) -> Position {
+        // FIXME: 子Issueがない詳細画面で本文からjを押すと、focus先がないままここへ来てpanicする。
         let focused_id = self.focused_id.unwrap();
         let index = self
             .ids

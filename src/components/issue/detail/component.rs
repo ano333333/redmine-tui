@@ -102,9 +102,9 @@ mod tests {
 
     fn dispatcher_with_issue() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = dispatcher();
-        dispatcher
-            .borrow_mut()
-            .dispatch(IssueAction::Load { id: 3.into() });
+        dispatcher.borrow_mut().dispatch(IssueAction::Sync {
+            issue: crate::test_support::sample_parent_issue(),
+        });
         dispatcher.borrow_mut().consume_action();
         dispatcher
     }
@@ -129,16 +129,14 @@ mod tests {
         let dispatcher = dispatcher();
         {
             let mut d = dispatcher.borrow_mut();
-            crate::test_support::dispatch_fixture_entity_actions(&mut d);
-            d.dispatch(IssueAction::Load { id: 3.into() });
+            crate::test_support::dispatch_sample_masters(&mut d);
+            d.dispatch(IssueAction::Sync {
+                issue: crate::test_support::sample_parent_issue(),
+            });
             d.dispatch(crate::stores::Action::Journal(
                 crate::stores::JournalAction::SyncFetched {
                     issue_id: 3.into(),
-                    journals: vec![
-                        crate::libs::yaml::parse_journal_yaml(1.into()),
-                        crate::libs::yaml::parse_journal_yaml(2.into()),
-                        crate::libs::yaml::parse_journal_yaml(3.into()),
-                    ],
+                    journals: crate::test_support::sample_parent_issue_journals(),
                 },
             ));
             while d.consume_actinos_len() > 0 {

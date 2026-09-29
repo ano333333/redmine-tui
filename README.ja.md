@@ -69,7 +69,29 @@ Seeder ファイルのチェック:
 bash tests/redmine_seeder_files_test.sh
 ```
 
-`.github/workflows/ci.yml` は native（`cargo fmt --check`、`cargo build --workspace`、`cargo test --workspace`）と Web（wasm32 の `cargo build`、`trunk build`）を検査します。
+### Redmine client テスト
+
+実際の Redmine に接続するテストは `src/clients/redmine/default_tests/container/` に置き、`container-tests` feature を有効にしたときだけ compile します。`xtask` から実行し、Docker が必要です。
+
+```sh
+cargo xtask test-redmine-client
+```
+
+このコマンドは、一意な project 名とランダムなホスト側ポートで Redmine を Docker Compose で1つ起動し、module 内のテストを1回の `cargo test` で直列に実行します。各テストは開始時に seed を入れ直すため、他のテストの変更に依存しません。seed は `AUTO_INCREMENT` もリセットするため、API で作成したデータの ID は毎回同じになります。終了時に container と volume を削除します。
+
+接続先は `xtask` が設定する `REDMINE_TUI_TEST_BASE_URL` と `REDMINE_TUI_TEST_PROJECT_NAME` から読みます。`cargo test --features container-tests` で直接実行すると、上のコマンドを案内するメッセージで失敗します。`wiremock` を使うテストは、実際の Redmine では起こしにくい応答の検証に限り、通常の `cargo test` で実行します。
+
+### E2E
+
+E2E のシナリオは `tests/e2e/` に置き、`e2e-tests` feature を有効にしたときだけ compile します。`xtask` から実行し、Docker が必要です。
+
+```sh
+cargo xtask test-e2e
+```
+
+このコマンドは Redmine client テストと同じ方法で Redmine を起動し、`e2e` test target を直列に実行します。各シナリオは seed を入れ直し、`testty` で native バイナリを PTY 上で起動して、画面と Redmine API の両方で結果を確認します。テキストを編集するシナリオは、`VISUAL` に指定した偽の editor で editor を置き換えます。
+
+`.github/workflows/ci.yml` は次の job を並列に実行します。`unit`（`cargo fmt --check`、`cargo build --workspace`、`cargo test --workspace`、seeder ファイルのチェック）、`redmine-client`（`cargo xtask test-redmine-client`）、`e2e`（`cargo xtask test-e2e`）、`web`（wasm32 の `cargo build`、`trunk build`）です。
 
 ## Web デモ
 
@@ -159,6 +181,14 @@ cargo xtask seed-redmine --dry-run
 - tracker、status、priority、version、category、time entry activity
 - `datas/issues/*.yml` の issue。issue ID は維持されます
 - `datas/journals/*.yml` の journal と journal detail
+- `Developer` role、全 fixture user の全 project へのメンバー登録、全 tracker について全 status 間を遷移できる workflow。API で担当者と status を変更するために必要です
+- API key `0123456789abcdef0123456789abcdef01234567` による Redmine admin user の REST API アクセス
+
+既定以外の Docker Compose project 名に seed する場合は、project 名を渡します。
+
+```sh
+cargo xtask seed-redmine --project-name redmine-tui-client-test
+```
 
 互換用ラッパーも残しています。
 
@@ -174,6 +204,7 @@ scripts/seed-redmine-test-data.sh
 ## リポジトリ構成
 
 - `src/`: Rust TUI のソースコード
+- `tests/e2e/`: PTY 上で操作する E2E シナリオ
 - `xtask/`: Redmine YAML seeding、Pages build などの Cargo 開発タスク
 - `index.html`: Web build の Trunk 入口 HTML
 - `Trunk.toml`: Web build の Trunk 設定
@@ -182,4 +213,3 @@ scripts/seed-redmine-test-data.sh
 - `docker/redmine/fresh_test_data.sql`: YAML seed 前に使う Redmine テストデータリセット SQL
 - `scripts/seed-redmine-test-data.sh`: seeder 実行ラッパー
 - `.github/workflows/`: CI と GitHub Pages の workflow
-- `docs/redmine-test.md`: ローカル Redmine の詳細メモ

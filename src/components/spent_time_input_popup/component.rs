@@ -271,14 +271,14 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
 mod tests {
     use super::*;
     use crate::platform::input::KeyModifiers;
-    use crate::test_support::sync_fixture_entities;
+    use crate::test_support::sync_sample_masters;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
     use ratatui::widgets::Widget;
 
     fn store_with_time_entity_activities() -> Store {
         let mut store = Store::new();
-        sync_fixture_entities(&mut store);
+        sync_sample_masters(&mut store);
         store
     }
 

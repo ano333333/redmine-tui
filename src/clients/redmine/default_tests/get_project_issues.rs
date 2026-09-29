@@ -1,57 +1,11 @@
 use std::num::NonZeroUsize;
 
-use wiremock::matchers::{header, method, path, query_param};
+use wiremock::matchers::{method, path};
 use wiremock::{Mock, ResponseTemplate};
 
 use super::{block_on, expect_error};
 use crate::clients::redmine::{DefaultRedmineClient, RedmineClient, RedmineClientError};
-use crate::vos::{EntityIdValue, ProjectId};
-
-#[test]
-fn get_project_issues_requests_a_fixed_page_and_maps_its_metadata() {
-    let mock_server = block_on(wiremock::MockServer::start());
-    block_on(
-        Mock::given(method("GET"))
-            .and(path("/issues.json"))
-            .and(query_param("project_id", "10"))
-            .and(query_param("status_id", "*"))
-            .and(query_param("sort", "id:desc"))
-            .and(query_param("limit", "50"))
-            .and(query_param("page", "2"))
-            .and(header("X-Redmine-API-Key", "secret-token"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(
-                r#"{
-                    "issues":[{
-                        "id":42,
-                        "project":{"id":10},
-                        "subject":"Fix login",
-                        "description":"Login fails",
-                        "status":{"id":3}
-                    }],
-                    "total_count":51,
-                    "offset":50,
-                    "limit":50
-                }"#,
-            ))
-            .expect(1)
-            .mount(&mock_server),
-    );
-    let client = DefaultRedmineClient::new(mock_server.uri(), "secret-token");
-
-    let result =
-        block_on(client.get_project_issues(ProjectId::new(10), NonZeroUsize::new(2).unwrap()))
-            .unwrap();
-
-    assert_eq!(result.issues.len(), 1);
-    assert_eq!(result.issues[0].id.get(), 42);
-    assert_eq!(result.issues[0].project_id.get(), 10);
-    assert_eq!(result.issues[0].subject, "Fix login");
-    assert_eq!(result.issues[0].description, "Login fails");
-    assert_eq!(result.issues[0].status_id.get(), 3);
-    assert_eq!(result.total_count, 51);
-    assert_eq!(result.offset, 50);
-    assert_eq!(result.limit, 50);
-}
+use crate::vos::ProjectId;
 
 #[test]
 fn get_project_issues_maps_missing_and_null_descriptions_to_empty_strings() {

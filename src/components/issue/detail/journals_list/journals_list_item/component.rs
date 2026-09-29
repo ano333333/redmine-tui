@@ -274,7 +274,7 @@ mod tests {
     use crate::{
         entities::Journal,
         stores::{Action, JournalAction, RemoteJournalEntry, Store},
-        test_support::{local_datetime, render_snapshot, sync_fixture_entities},
+        test_support::{local_datetime, render_snapshot, sync_sample_masters},
         vos::{IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, UserId},
     };
 
@@ -317,7 +317,7 @@ mod tests {
 
     fn fixture_store() -> Store {
         let mut store = Store::new();
-        sync_fixture_entities(&mut store);
+        sync_sample_masters(&mut store);
         store
     }
 
