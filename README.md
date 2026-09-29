@@ -91,7 +91,7 @@ cargo xtask test-e2e
 
 The command starts Redmine the same way as the client integration tests, then runs the `e2e` test target serially. Each scenario re-seeds the database, launches the native binary in a PTY with `testty`, and checks both the screen and the Redmine API. Scenarios that edit text replace the editor with a fake editor set through `VISUAL`.
 
-`.github/workflows/ci.yml` checks the native build (`cargo fmt --check`, `cargo build --workspace`, `cargo test --workspace`) and the Web build (wasm32 `cargo build`, `trunk build`).
+`.github/workflows/ci.yml` runs these jobs in parallel: `unit` (`cargo fmt --check`, `cargo build --workspace`, `cargo test --workspace`, and the seeder file checks), `redmine-client` (`cargo xtask test-redmine-client`), `e2e` (`cargo xtask test-e2e`), and `web` (wasm32 `cargo build`, `trunk build`).
 
 ## Web Demo
 

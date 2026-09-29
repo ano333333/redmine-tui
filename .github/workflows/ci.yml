@@ -9,9 +9,9 @@ on:
 permissions:
   contents: read
 
-# ローカルと同じ rustc / Trunk を使うため、両 job とも flake の devShell で実行する。
+# ローカルと同じ rustc / Trunk を使うため、各 job とも flake の devShell で実行する。
 jobs:
-  native:
+  unit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -21,6 +21,25 @@ jobs:
       - run: nix develop -c cargo fmt --check
       - run: nix develop -c cargo build --workspace
       - run: nix develop -c cargo test --workspace
+      - run: nix develop -c bash tests/redmine_seeder_files_test.sh
+
+  redmine-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@v23
+      - run: nix develop -c cargo xtask test-redmine-client
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@v23
+      - run: nix develop -c cargo xtask test-e2e
 
   web:
     runs-on: ubuntu-latest

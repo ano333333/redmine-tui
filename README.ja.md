@@ -91,7 +91,7 @@ cargo xtask test-e2e
 
 このコマンドは Redmine client テストと同じ方法で Redmine を起動し、`e2e` test target を直列に実行します。各シナリオは seed を入れ直し、`testty` で native バイナリを PTY 上で起動して、画面と Redmine API の両方で結果を確認します。テキストを編集するシナリオは、`VISUAL` に指定した偽の editor で editor を置き換えます。
 
-`.github/workflows/ci.yml` は native（`cargo fmt --check`、`cargo build --workspace`、`cargo test --workspace`）と Web（wasm32 の `cargo build`、`trunk build`）を検査します。
+`.github/workflows/ci.yml` は次の job を並列に実行します。`unit`（`cargo fmt --check`、`cargo build --workspace`、`cargo test --workspace`、seeder ファイルのチェック）、`redmine-client`（`cargo xtask test-redmine-client`）、`e2e`（`cargo xtask test-e2e`）、`web`（wasm32 の `cargo build`、`trunk build`）です。
 
 ## Web デモ
 
