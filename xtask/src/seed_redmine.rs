@@ -10,6 +10,9 @@ use yaml_rust::{Yaml, YamlLoader};
 
 const ACTIVITY_ID_OFFSET: u16 = 10_000;
 const REDMINE_TUI_TEST_API_USER_ID: u16 = 1;
+/// Redmineが作成する組み込みrole（Non member、Anonymous）のIDと重ならない値にする。
+const FIXTURE_ROLE_ID: u16 = 3;
+const FIXTURE_ROLE_PERMISSIONS: &str = "---\n- :view_issues\n- :add_issues\n- :edit_issues\n- :add_issue_notes\n- :edit_issue_notes\n- :edit_own_issue_notes\n- :view_time_entries\n- :log_time\n";
 pub(crate) const REDMINE_TUI_TEST_API_KEY: &str = "0123456789abcdef0123456789abcdef01234567";
 
 pub(crate) fn seed_redmine(args: Vec<String>) -> Result<(), String> {
@@ -219,6 +222,9 @@ impl SeedData {
         self.push_enumerations_sql(&mut sql);
         self.push_projects_sql(&mut sql);
         self.push_project_support_sql(&mut sql);
+        self.push_role_sql(&mut sql);
+        self.push_members_sql(&mut sql);
+        self.push_workflows_sql(&mut sql);
         self.push_versions_sql(&mut sql);
         self.push_categories_sql(&mut sql);
         self.push_issues_sql(&mut sql);
@@ -397,6 +403,74 @@ impl SeedData {
                 ["issue_tracking", "time_tracking"]
                     .into_iter()
                     .map(move |name| format!("({}, {})", project.id, sql_string(name)))
+            }),
+        );
+        sql.push_str(";\n\n");
+    }
+
+    /// 担当者の設定とstatus変更にはproject memberのroleとworkflowが必要なため、fixture userに共通のroleを与える。
+    fn push_role_sql(&self, sql: &mut String) {
+        sql.push_str("INSERT INTO roles (id, name, position, assignable, builtin, permissions, issues_visibility, users_visibility, time_entries_visibility, all_roles_managed) VALUES\n");
+        push_values(
+            sql,
+            [format!(
+                "({FIXTURE_ROLE_ID}, 'Developer', 1, 1, 0, {}, 'all', 'all', 'all', 1)",
+                sql_string(FIXTURE_ROLE_PERMISSIONS)
+            )],
+        );
+        sql.push_str(";\n\n");
+    }
+
+    fn push_members_sql(&self, sql: &mut String) {
+        let members = self
+            .projects
+            .iter()
+            .flat_map(|project| self.users.iter().map(move |user| (project.id, user.id)))
+            .enumerate()
+            .map(|(index, (project_id, user_id))| (index + 1, project_id, user_id))
+            .collect::<Vec<_>>();
+
+        sql.push_str(
+            "INSERT INTO members (id, user_id, project_id, created_on, mail_notification) VALUES\n",
+        );
+        push_values(
+            sql,
+            members.iter().map(|(member_id, project_id, user_id)| {
+                format!(
+                    "({member_id}, {}, {project_id}, {}, 0)",
+                    db_user_id(*user_id),
+                    sql_datetime("2026/01/01")
+                )
+            }),
+        );
+        sql.push_str(";\n\n");
+
+        sql.push_str("INSERT INTO member_roles (member_id, role_id, inherited_from) VALUES\n");
+        push_values(
+            sql,
+            members
+                .iter()
+                .map(|(member_id, _, _)| format!("({member_id}, {FIXTURE_ROLE_ID}, NULL)")),
+        );
+        sql.push_str(";\n\n");
+    }
+
+    fn push_workflows_sql(&self, sql: &mut String) {
+        sql.push_str("INSERT INTO workflows (tracker_id, old_status_id, new_status_id, role_id, assignee, author, type) VALUES\n");
+        push_values(
+            sql,
+            self.trackers.iter().flat_map(|tracker| {
+                self.statuses.iter().flat_map(move |old_status| {
+                    self.statuses
+                        .iter()
+                        .filter(move |new_status| new_status.id != old_status.id)
+                        .map(move |new_status| {
+                            format!(
+                                "({}, {}, {}, {FIXTURE_ROLE_ID}, 0, 0, 'WorkflowTransition')",
+                                tracker.id, old_status.id, new_status.id
+                            )
+                        })
+                })
             }),
         );
         sql.push_str(";\n\n");

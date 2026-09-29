@@ -60,6 +60,7 @@ The seeder currently inserts the fixture data present under `datas/`:
 - projects, users, trackers, issue statuses, priorities, target versions, categories, and time entry activities
 - issues from `datas/issues/*.yml`, preserving issue IDs
 - journals and journal details from `datas/journals/*.yml`
+- a `Developer` role, membership of every fixture user in every project with that role, and workflow transitions between every pair of statuses for every tracker, so that API updates can change assignees and statuses
 - REST API access for the Redmine admin user via API key `0123456789abcdef0123456789abcdef01234567`
 
 When seeding a Docker Compose project with a non-default project name, pass it through:

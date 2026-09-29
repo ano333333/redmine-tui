@@ -28,6 +28,8 @@ fn build_select_options(
 }
 
 /// IssueStatusPopup用のitems/focused_indexを組み立てる。
+// FIXME: workflowで許可された遷移先に絞っていない。Redmineは許可されないstatus_idをエラーなしで
+// 無視するため、ローカルでは変更済みに見えてしまう。
 pub fn build_issue_status_options(store: &Store) -> (Vec<(u16, String)>, usize) {
     let issue_statuses = store
         .get_issue_statuses()
@@ -75,6 +77,8 @@ pub fn build_priority_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, St
 }
 
 /// AssignedToPopup用のitems/focused_indexを組み立てる。
+// FIXME: projectのassignableなmemberに絞っていない。Redmineはmember以外のassigned_to_idを
+// 422で拒否する。
 pub fn build_assigned_to_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
     let current_assigned_to_id = store.get_issue(issue_id).0.assigned_to_id;
     let users = store

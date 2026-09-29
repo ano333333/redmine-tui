@@ -1,6 +1,10 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
+DELETE FROM workflows;
+DELETE FROM member_roles;
+DELETE FROM members;
+DELETE FROM roles WHERE builtin = 0;
 DELETE FROM journal_details;
 DELETE FROM journals;
 DELETE FROM time_entries;
@@ -18,6 +22,10 @@ DELETE FROM email_addresses WHERE address LIKE 'redmine-tui-%@example.test';
 DELETE FROM user_preferences WHERE user_id >= 1000;
 DELETE FROM users WHERE id >= 1000 AND login LIKE 'redmine-tui-%';
 
+ALTER TABLE workflows AUTO_INCREMENT = 1;
+ALTER TABLE member_roles AUTO_INCREMENT = 1;
+ALTER TABLE members AUTO_INCREMENT = 1;
+ALTER TABLE roles AUTO_INCREMENT = 1;
 ALTER TABLE journal_details AUTO_INCREMENT = 1;
 ALTER TABLE journals AUTO_INCREMENT = 1;
 ALTER TABLE time_entries AUTO_INCREMENT = 1;
