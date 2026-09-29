@@ -153,6 +153,7 @@ struct DiffValueText {
     server: String,
 }
 
+// FIXME: priorityなどIDで参照するpropertyを名前ではなくIDのまま表示している。マスターデータから名前を解決する。
 fn diff_value_text(server_issue: &IssueAggregate, diff: &IssuePropertyDiff) -> DiffValueText {
     match diff {
         IssuePropertyDiff::Subject(diff) => {
