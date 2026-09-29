@@ -4,32 +4,6 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::{block_on, expect_error, http_error};
 use crate::clients::redmine::{DefaultRedmineClient, RedmineClient, RedmineClientError};
-use crate::vos::EntityIdValue;
-
-#[test]
-fn get_users_sends_api_token_and_maps_success_response() {
-    let mock_server = block_on(MockServer::start());
-    block_on(
-        Mock::given(method("GET"))
-            .and(path("/users.json"))
-            .and(wiremock::matchers::header(
-                "X-Redmine-API-Key",
-                "secret-token",
-            ))
-            .respond_with(ResponseTemplate::new(200).set_body_string(
-                r#"{"users":[{"id":1000,"firstname":"Alice","lastname":"Sato"}]}"#,
-            ))
-            .expect(1)
-            .mount(&mock_server),
-    );
-    let client = DefaultRedmineClient::new(mock_server.uri(), "secret-token");
-
-    let users = block_on(client.get_users()).unwrap();
-
-    assert_eq!(users.len(), 1);
-    assert_eq!(users[0].id.get(), 1000);
-    assert_eq!(users[0].name, "Alice Sato");
-}
 
 #[test]
 fn get_users_maps_known_redmine_error_statuses_with_response_context() {

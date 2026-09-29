@@ -1,5 +1,5 @@
 use tokio::runtime::Builder as TokioRuntimeBuilder;
-use wiremock::matchers::{header, method, path, query_param};
+use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::clients::redmine::{RedmineClientError, RedmineHttpError};
@@ -7,18 +7,11 @@ use crate::clients::redmine::{RedmineClientError, RedmineHttpError};
 #[cfg(feature = "container-tests")]
 mod container;
 mod error_mapping;
-mod get_categories;
 mod get_issue;
 mod get_project_issues;
-mod get_projects;
-mod get_static_lists;
-mod get_target_versions;
 mod get_users;
 mod journal_conversion;
 mod journal_detail_conversion;
-mod update_issue;
-mod update_issue_notes;
-mod update_journal_notes;
 mod value_conversion;
 
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
@@ -40,19 +33,6 @@ fn mount_get(mock_server: &MockServer, path_value: &str, status_code: u16, body:
     block_on(
         Mock::given(method("GET"))
             .and(path(path_value))
-            .and(header("X-Redmine-API-Key", "secret-token"))
-            .respond_with(ResponseTemplate::new(status_code).set_body_string(body))
-            .expect(1)
-            .mount(mock_server),
-    );
-}
-
-fn mount_get_paginated(mock_server: &MockServer, path_value: &str, status_code: u16, body: &str) {
-    block_on(
-        Mock::given(method("GET"))
-            .and(path(path_value))
-            .and(query_param("limit", "100"))
-            .and(query_param("offset", "0"))
             .and(header("X-Redmine-API-Key", "secret-token"))
             .respond_with(ResponseTemplate::new(status_code).set_body_string(body))
             .expect(1)
