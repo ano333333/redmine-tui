@@ -3,6 +3,7 @@ use super::integration_support::{
     test_error, unauthorized_client,
 };
 use crate::clients::redmine::RedmineClient;
+use crate::vos::EntityIdValue;
 
 #[test]
 fn get_issue_statuses_contract_against_redmine_container() {
@@ -15,20 +16,25 @@ fn get_issue_statuses_contract_against_redmine_container() {
 }
 
 async fn assert_get_issue_statuses_200(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let statuses = authenticated_client(base_url)
+    let values = authenticated_client(base_url)
         .get_issue_statuses()
         .await
         .map_err(|error| test_error(format!("get_issue_statuses returned {error:?}")))?;
 
-    if statuses.is_empty() {
-        return Err(test_error("get_issue_statuses returned no statuses"));
-    }
-    if !statuses.iter().any(|status| status.name == "新規(new)") {
-        return Err(test_error(format!(
-            "get_issue_statuses did not include 新規(new); got {}",
-            names(statuses.iter().map(|status| status.name.as_str()))
-        )));
-    }
+    assert_eq!(
+        values
+            .iter()
+            .map(|value| (value.id.get(), value.name.as_str(), value.is_closed))
+            .collect::<Vec<_>>(),
+        vec![
+            (1, "新規(new)", false),
+            (2, "割り当て(assigned)", false),
+            (3, "進行中(accepted)", false),
+            (4, "レビュー(review)", false),
+            (5, "完了(closed)", true),
+            (6, "改修確認待ち", false),
+        ]
+    );
 
     Ok(())
 }
@@ -54,20 +60,18 @@ fn get_priorities_contract_against_redmine_container() {
 }
 
 async fn assert_get_priorities_200(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let priorities = authenticated_client(base_url)
+    let values = authenticated_client(base_url)
         .get_priorities()
         .await
         .map_err(|error| test_error(format!("get_priorities returned {error:?}")))?;
 
-    if priorities.is_empty() {
-        return Err(test_error("get_priorities returned no priorities"));
-    }
-    if !priorities.iter().any(|priority| priority.name == "major") {
-        return Err(test_error(format!(
-            "get_priorities did not include major; got {}",
-            names(priorities.iter().map(|priority| priority.name.as_str()))
-        )));
-    }
+    assert_eq!(
+        values
+            .iter()
+            .map(|value| (value.id.get(), value.name.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(1, "major"), (2, "minor"), (3, "critical"), (4, "blocker")]
+    );
 
     Ok(())
 }
@@ -95,22 +99,23 @@ fn get_time_entity_activities_contract_against_redmine_container() {
 async fn assert_get_time_entity_activities_200(
     base_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let activities = authenticated_client(base_url)
+    let values = authenticated_client(base_url)
         .get_time_entity_activities()
         .await
         .map_err(|error| test_error(format!("get_time_entity_activities returned {error:?}")))?;
 
-    if activities.is_empty() {
-        return Err(test_error(
-            "get_time_entity_activities returned no activities",
-        ));
-    }
-    if !activities.iter().any(|activity| activity.name == "設計") {
-        return Err(test_error(format!(
-            "get_time_entity_activities did not include 設計; got {}",
-            names(activities.iter().map(|activity| activity.name.as_str()))
-        )));
-    }
+    assert_eq!(
+        values
+            .iter()
+            .map(|value| (value.id.get(), value.name.as_str(), value.is_default))
+            .collect::<Vec<_>>(),
+        // seederはenumerationのID衝突を避けるため、activityのIDに10000を加える。
+        vec![
+            (10001, "設計", true),
+            (10002, "実装", false),
+            (10003, "検証", false)
+        ]
+    );
 
     Ok(())
 }
@@ -140,23 +145,18 @@ fn get_trackers_contract_against_redmine_container() {
 }
 
 async fn assert_get_trackers_200(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let trackers = authenticated_client(base_url)
+    let values = authenticated_client(base_url)
         .get_trackers()
         .await
         .map_err(|error| test_error(format!("get_trackers returned {error:?}")))?;
 
-    if trackers.is_empty() {
-        return Err(test_error("get_trackers returned no trackers"));
-    }
-    if !trackers
-        .iter()
-        .any(|tracker| matches!(tracker.name.as_str(), "Bug" | "Feature" | "Support"))
-    {
-        return Err(test_error(format!(
-            "get_trackers did not include Bug, Feature, or Support; got {}",
-            names(trackers.iter().map(|tracker| tracker.name.as_str()))
-        )));
-    }
+    assert_eq!(
+        values
+            .iter()
+            .map(|value| (value.id.get(), value.name.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(1, "Bug"), (2, "Feature"), (3, "Support")]
+    );
 
     Ok(())
 }
@@ -169,8 +169,4 @@ async fn assert_get_trackers_401(base_url: &str) -> Result<(), Box<dyn std::erro
 async fn assert_get_trackers_404(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     let client = not_found_client(base_url);
     expect_not_found(client.get_trackers().await).await
-}
-
-fn names<'a>(values: impl Iterator<Item = &'a str>) -> String {
-    values.collect::<Vec<_>>().join(", ")
 }

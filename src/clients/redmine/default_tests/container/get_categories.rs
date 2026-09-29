@@ -16,20 +16,18 @@ fn get_categories_contract_against_redmine_container() {
 }
 
 async fn assert_get_categories_200(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let categories = authenticated_client(base_url)
+    let values = authenticated_client(base_url)
         .get_categories()
         .await
         .map_err(|error| test_error(format!("get_categories returned {error:?}")))?;
 
-    if !categories
-        .iter()
-        .any(|category| category.id.get() == 1 && category.name == "category1")
-    {
-        return Err(test_error(format!(
-            "expected seeded category1 among {} categories",
-            categories.len()
-        )));
-    }
+    assert_eq!(
+        values
+            .iter()
+            .map(|value| (value.id.get(), value.name.as_str(), value.project_id.get()))
+            .collect::<Vec<_>>(),
+        vec![(1, "category1", 1)]
+    );
 
     Ok(())
 }

@@ -3,6 +3,7 @@ use super::integration_support::{
     test_error, unauthorized_client,
 };
 use crate::clients::redmine::RedmineClient;
+use crate::vos::EntityIdValue;
 
 #[test]
 fn get_users_contract_against_redmine_container() {
@@ -15,21 +16,21 @@ fn get_users_contract_against_redmine_container() {
 }
 
 async fn assert_get_users_200(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let users = authenticated_client(base_url)
+    let values = authenticated_client(base_url)
         .get_users()
         .await
         .map_err(|error| test_error(format!("get_users returned {error:?}")))?;
 
-    let expected_names = ["user1 Fixture", "user2 Fixture"];
-    assert!(
-        users
+    assert_eq!(
+        values
             .iter()
-            .any(|user| expected_names.contains(&user.name.as_str())),
-        "expected one of {expected_names:?}, got {:?}",
-        users
-            .iter()
-            .map(|user| user.name.as_str())
-            .collect::<Vec<_>>()
+            .map(|value| (value.id.get(), value.name.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            (1, "Redmine Admin"),
+            (1001, "user1 Fixture"),
+            (1002, "user2 Fixture"),
+        ]
     );
 
     Ok(())

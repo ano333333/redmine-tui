@@ -16,20 +16,18 @@ fn get_target_versions_contract_against_redmine_container() {
 }
 
 async fn assert_get_target_versions_200(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let versions = authenticated_client(base_url)
+    let values = authenticated_client(base_url)
         .get_target_versions()
         .await
         .map_err(|error| test_error(format!("get_target_versions returned {error:?}")))?;
 
-    if !versions
-        .iter()
-        .any(|version| version.id.get() == 1 && version.name == "v1.2.3")
-    {
-        return Err(test_error(format!(
-            "expected seeded v1.2.3 among {} versions",
-            versions.len()
-        )));
-    }
+    assert_eq!(
+        values
+            .iter()
+            .map(|value| (value.id.get(), value.name.as_str(), value.project_id.get()))
+            .collect::<Vec<_>>(),
+        vec![(1, "v1.2.3", 1)]
+    );
 
     Ok(())
 }

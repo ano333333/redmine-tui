@@ -16,20 +16,17 @@ fn get_projects_contract_against_redmine_container() {
 }
 
 async fn assert_get_projects_200(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let projects = authenticated_client(base_url)
+    let values = authenticated_client(base_url)
         .get_projects()
         .await
         .map_err(|error| test_error(format!("get_projects returned {error:?}")))?;
 
-    assert!(
-        projects
+    assert_eq!(
+        values
             .iter()
-            .any(|project| project.id.get() == 1 && project.name == "Sample Project"),
-        "expected Sample Project id 1, got {:?}",
-        projects
-            .iter()
-            .map(|project| (project.id.get(), project.name.as_str()))
-            .collect::<Vec<_>>()
+            .map(|value| (value.id.get(), value.name.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(1, "Sample Project"), (2, "Sample Project 2")]
     );
 
     Ok(())
