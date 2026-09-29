@@ -27,6 +27,8 @@ native = [
 ]
 # Docker上のRedmineへ接続するテストを有効にする。`cargo xtask test-redmine-client`から使う。
 container-tests = []
+# PTY上のnativeバイナリをRedmine containerへ接続して操作するE2Eを有効にする。`cargo xtask test-e2e`から使う。
+e2e-tests = []
 web-demo = [
     "dep:console_error_panic_hook",
     "dep:ratzilla",
@@ -76,6 +78,12 @@ insta = "1.43.2"
 serde_json = "1.0.143"
 wiremock = "0.6.5"
 tokio = { version = "1.42", features = ["rt", "rt-multi-thread", "time", "sync", "process", "macros"] }
+testty = "0.15.15"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
+required-features = ["e2e-tests"]
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]

@@ -7,6 +7,8 @@ mod seed_redmine;
 
 const CONTAINER_TEST_FEATURE: &str = "container-tests";
 const CONTAINER_TEST_MODULE: &str = "clients::redmine::default::tests::container::";
+const E2E_TEST_FEATURE: &str = "e2e-tests";
+const E2E_TEST_TARGET: &str = "e2e";
 
 fn main() {
     if let Err(err) = run() {
@@ -24,6 +26,7 @@ fn run() -> Result<(), String> {
     match command.as_str() {
         "seed-redmine" => seed_redmine::seed_redmine(args.collect()),
         "test-redmine-client" => test_redmine_client(args.collect()),
+        "test-e2e" => test_e2e(args.collect()),
         "build-pages" => build_pages::build_pages(args.collect()),
         "--help" | "-h" => {
             println!("{}", usage());
@@ -34,15 +37,30 @@ fn run() -> Result<(), String> {
 }
 
 fn test_redmine_client(args: Vec<String>) -> Result<(), String> {
+    run_container_tests(
+        "test-redmine-client",
+        args,
+        &["--features", CONTAINER_TEST_FEATURE, CONTAINER_TEST_MODULE],
+    )
+}
+
+fn test_e2e(args: Vec<String>) -> Result<(), String> {
+    // E2EはPTY上でnativeバイナリを起動するため、`CARGO_BIN_EXE_*`を使えるtest targetとして置く。
+    run_container_tests(
+        "test-e2e",
+        args,
+        &["--features", E2E_TEST_FEATURE, "--test", E2E_TEST_TARGET],
+    )
+}
+
+/// Redmine containerを1つ起動し、指定したテストを直列に1回の`cargo test`で実行する。
+fn run_container_tests(name: &str, args: Vec<String>, cargo_args: &[&str]) -> Result<(), String> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!("{}", usage());
         return Ok(());
     }
     if let Some(arg) = args.first() {
-        return Err(format!(
-            "unknown test-redmine-client option: {arg}\n\n{}",
-            usage()
-        ));
+        return Err(format!("unknown {name} option: {arg}\n\n{}", usage()));
     }
 
     let container =
@@ -50,21 +68,17 @@ fn test_redmine_client(args: Vec<String>) -> Result<(), String> {
     let mut command = Command::new("cargo");
     command
         .arg("test")
-        .arg("--features")
-        .arg(CONTAINER_TEST_FEATURE)
-        .arg(CONTAINER_TEST_MODULE)
+        .args(cargo_args)
         .arg("--")
         .arg("--test-threads=1");
     container.apply_env(&mut command);
     let status = command
         .status()
-        .map_err(|err| format!("failed to start redmine client integration tests: {err}"))?;
+        .map_err(|err| format!("failed to start {name}: {err}"))?;
 
     if !status.success() {
         container.report_failure();
-        return Err(format!(
-            "redmine client integration tests failed with status: {status}"
-        ));
+        return Err(format!("{name} failed with status: {status}"));
     }
 
     Ok(())
@@ -75,6 +89,7 @@ pub(crate) fn usage() -> String {
         "usage:",
         "  cargo xtask seed-redmine [--dry-run] [--datas-dir datas] [--reset-sql docker/redmine/fresh_test_data.sql] [--compose-file compose.redmine.yml] [--project-name NAME]",
         "  cargo xtask test-redmine-client",
+        "  cargo xtask test-e2e",
         "  cargo xtask build-pages --public-url URL",
     ]
     .join("\n")
