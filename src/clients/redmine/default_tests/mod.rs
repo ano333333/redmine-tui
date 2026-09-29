@@ -4,6 +4,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::clients::redmine::{RedmineClientError, RedmineHttpError};
 
+#[cfg(feature = "container-tests")]
+mod container;
 mod error_mapping;
 mod get_categories;
 mod get_issue;
@@ -12,7 +14,6 @@ mod get_projects;
 mod get_static_lists;
 mod get_target_versions;
 mod get_users;
-mod integration_support;
 mod journal_conversion;
 mod journal_detail_conversion;
 mod update_issue;

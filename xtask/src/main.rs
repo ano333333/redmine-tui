@@ -1,19 +1,12 @@
+use std::path::PathBuf;
 use std::process::Command;
 
 mod build_pages;
+mod redmine_container;
 mod seed_redmine;
 
-const REDMINE_CLIENT_INTEGRATION_TESTS: &[&str] = &[
-    "clients::redmine::default::tests::get_categories::get_categories_contract_against_redmine_container",
-    "clients::redmine::default::tests::get_issue::get_issue_contract_against_redmine_container",
-    "clients::redmine::default::tests::get_projects::get_projects_contract_against_redmine_container",
-    "clients::redmine::default::tests::get_static_lists::get_issue_statuses_contract_against_redmine_container",
-    "clients::redmine::default::tests::get_static_lists::get_priorities_contract_against_redmine_container",
-    "clients::redmine::default::tests::get_static_lists::get_time_entity_activities_contract_against_redmine_container",
-    "clients::redmine::default::tests::get_static_lists::get_trackers_contract_against_redmine_container",
-    "clients::redmine::default::tests::get_target_versions::get_target_versions_contract_against_redmine_container",
-    "clients::redmine::default::tests::get_users::get_users_contract_against_redmine_container",
-];
+const CONTAINER_TEST_FEATURE: &str = "container-tests";
+const CONTAINER_TEST_MODULE: &str = "clients::redmine::default::tests::container::";
 
 fn main() {
     if let Err(err) = run() {
@@ -52,23 +45,26 @@ fn test_redmine_client(args: Vec<String>) -> Result<(), String> {
         ));
     }
 
-    for test_filter in REDMINE_CLIENT_INTEGRATION_TESTS {
-        let status = Command::new("cargo")
-            .arg("test")
-            .arg(test_filter)
-            .arg("--")
-            .arg("--ignored")
-            .arg("--test-threads=1")
-            .status()
-            .map_err(|err| {
-                format!("failed to start redmine client integration test {test_filter}: {err}")
-            })?;
+    let container =
+        redmine_container::RedmineContainer::start(PathBuf::from("compose.redmine.yml"))?;
+    let mut command = Command::new("cargo");
+    command
+        .arg("test")
+        .arg("--features")
+        .arg(CONTAINER_TEST_FEATURE)
+        .arg(CONTAINER_TEST_MODULE)
+        .arg("--")
+        .arg("--test-threads=1");
+    container.apply_env(&mut command);
+    let status = command
+        .status()
+        .map_err(|err| format!("failed to start redmine client integration tests: {err}"))?;
 
-        if !status.success() {
-            return Err(format!(
-                "redmine client integration test {test_filter} failed with status: {status}"
-            ));
-        }
+    if !status.success() {
+        container.report_failure();
+        return Err(format!(
+            "redmine client integration tests failed with status: {status}"
+        ));
     }
 
     Ok(())

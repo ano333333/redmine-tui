@@ -70,13 +70,15 @@ cargo xtask seed-redmine --project-name redmine-tui-client-test
 
 ## Redmine Client Integration Tests
 
-Unit tests use `wiremock` and run with normal `cargo test`. Docker-backed Redmine client tests are ignored by default and run through `xtask`:
+Unit tests use `wiremock` and run with normal `cargo test`. Docker-backed Redmine client tests live in `src/clients/redmine/default_tests/container/`, compile only with the `container-tests` feature, and run through `xtask`:
 
 ```sh
 cargo xtask test-redmine-client
 ```
 
-The integration command starts Redmine with `testcontainers`, seeds fixture data, and runs small method-level contract tests for `DefaultRedmineClient`.
+The integration command starts one Redmine instance with Docker Compose under a unique project name and a random host port, then runs every test in that module with `--features container-tests` in a single serial `cargo test` run. Each test re-seeds the database before it runs, so tests do not depend on each other's changes. The seed resets `AUTO_INCREMENT`, so records created through the API get the same IDs on every run. The containers and volumes are removed when the command finishes.
+
+These tests read the connection from `REDMINE_TUI_TEST_BASE_URL` and `REDMINE_TUI_TEST_PROJECT_NAME`, which `xtask` sets. Running them directly with `cargo test --features container-tests` fails with a message pointing to the command above.
 
 ## Seeder Checks
 
