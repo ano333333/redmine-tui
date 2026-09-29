@@ -7,3 +7,4 @@ mod get_target_versions;
 mod get_users;
 mod integration_support;
 mod seed_reset;
+mod update_issue;
