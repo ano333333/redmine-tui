@@ -26,4 +26,4 @@
 - アーキテクチャ上の判断や component lifecycle に関わる変更は、先に [docs/architecture.md](docs/architecture.md) と関連 ADR を確認してください。
 - アーキテクチャ方針を変える場合は、コードだけでなく `docs/architecture.md` の更新、または `docs/adrs/` への新規追加も検討してください。特に `docs/adrs/` の既存ファイルはユーザーからの指示があるまで更新せず、新しい内容は原則新規ファイルに記載してください。
 - UI 表示の変更では、影響する snapshot を確認してください。snapshot の更新は意図した差分だと判断できる場合に限って行ってください。
-- `datas/`、`docker/redmine/seed_test_data.rb`、`tests/redmine_seeder_files_test.sh` はローカル Redmine テストデータの整合性に関わります。fixture 追加・変更時はあわせて確認してください。
+- `datas/`、`xtask/src/seed_redmine.rs`、`docker/redmine/fresh_test_data.sql`、`tests/redmine_seeder_files_test.sh` はローカル Redmine テストデータの整合性に関わります。fixture 追加・変更時はあわせて確認してください。
