@@ -81,6 +81,16 @@ The integration command starts one Redmine instance with Docker Compose under a 
 
 These tests read the connection from `REDMINE_TUI_TEST_BASE_URL` and `REDMINE_TUI_TEST_PROJECT_NAME`, which `xtask` sets. Running them directly with `cargo test --features container-tests` fails with a message pointing to the command above.
 
+## E2E
+
+E2E scenarios live in `tests/e2e/`, compile only with the `e2e-tests` feature, and run through `xtask`:
+
+```sh
+cargo xtask test-e2e
+```
+
+The command starts Redmine the same way as the client integration tests, then runs the `e2e` test target serially. Each scenario re-seeds the database, launches the native binary in a PTY with `testty`, and checks both the screen and the Redmine API. Scenarios that edit text replace the editor with a fake editor set through `VISUAL`.
+
 ## Seeder Checks
 
 ```sh
