@@ -8,3 +8,4 @@ mod get_users;
 mod integration_support;
 mod seed_reset;
 mod update_issue;
+mod update_issue_notes;
