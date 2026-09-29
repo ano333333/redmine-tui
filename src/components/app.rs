@@ -1286,17 +1286,6 @@ mod tests {
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
     }
 
-    fn focus_property_line(
-        app: &mut AppComponent<'_>,
-        dispatcher: Rc<RefCell<Dispatcher>>,
-        line: u16,
-    ) {
-        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
-        for _ in 0..line {
-            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
-        }
-    }
-
     fn loaded_dispatcher_with_journals() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = loaded_dispatcher();
         {
@@ -1332,18 +1321,6 @@ mod tests {
         );
         assert_eq!(app.interaction_mode(), InteractionMode::Application);
         assert!(app.take_effect().is_none());
-    }
-
-    #[test]
-    fn e_key_on_issue_body_opens_editor_and_enters_editing_mode() {
-        let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-
-        focus_property_line(&mut app, dispatcher.clone(), 15);
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher);
-
-        assert_eq!(app.interaction_mode(), InteractionMode::Editing);
-        assert!(matches!(app.take_effect(), Some(AppEffect::OpenEditor(_))));
     }
 
     #[test]
@@ -1517,116 +1494,6 @@ mod tests {
                 .try_get_issue_upload_conflict(IssueId::new(3))
                 .is_none()
         );
-    }
-
-    #[test]
-    fn e_key_on_journal_notes_opens_editor_and_updates_store_through_dispatcher() {
-        let dispatcher = loaded_dispatcher_with_journals();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        focus_first_journal_notes(&mut app, dispatcher.clone());
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
-
-        assert_eq!(app.interaction_mode(), InteractionMode::Editing);
-        let Some(AppEffect::OpenEditor(request)) = app.take_effect() else {
-            panic!("Journal本文編集時はエディタ起動effectが必要です");
-        };
-        assert_eq!(request.initial_text, "");
-
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
-        assert!(app.take_effect().is_none());
-        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
-
-        app.handle_editor_response(EditorOutcome::Submitted {
-            edited_text: "updated notes".to_string(),
-        });
-        assert_eq!(app.interaction_mode(), InteractionMode::Application);
-        dispatcher.borrow_mut().consume_action();
-
-        let dispatcher_ref = dispatcher.borrow();
-        let entry = dispatcher_ref.store().get_remote_journal(3, 1);
-        let RemoteJournalState::Edited { diff, failure } = &entry.state else {
-            panic!("expected edited state");
-        };
-        assert_eq!(diff.before, "");
-        assert_eq!(diff.after, "updated notes");
-        assert!(failure.is_none());
-    }
-
-    #[test]
-    fn enter_on_create_local_journal_button_creates_local_journal_and_opens_editor() {
-        let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        for _ in 0..100 {
-            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
-        }
-        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
-
-        let Some(AppEffect::OpenEditor(request)) = app.take_effect() else {
-            panic!("Local Journal作成時はエディタ起動effectが必要です");
-        };
-        assert_eq!(request.initial_text, "");
-
-        dispatcher.borrow_mut().consume_action();
-        assert!(
-            dispatcher
-                .borrow()
-                .store()
-                .try_get_local_journal(3)
-                .is_some()
-        );
-
-        app.handle_editor_response(EditorOutcome::Submitted {
-            edited_text: "local notes".to_string(),
-        });
-        dispatcher.borrow_mut().consume_action();
-
-        let dispatcher_ref = dispatcher.borrow();
-        let entry = dispatcher_ref.store().get_local_journal(3);
-        assert_eq!(entry.journal.notes, "local notes");
-    }
-
-    #[test]
-    fn e_key_on_local_journal_notes_opens_editor_and_updates_store_through_dispatcher() {
-        let dispatcher = loaded_dispatcher();
-        dispatcher
-            .borrow_mut()
-            .dispatch(Action::Journal(JournalAction::CreateLocal {
-                issue_id: IssueId::new(3),
-            }));
-        dispatcher.borrow_mut().consume_action();
-        dispatcher
-            .borrow_mut()
-            .dispatch(Action::Journal(JournalAction::EditLocalNotes {
-                issue_id: IssueId::new(3),
-                notes: "initial local notes".to_string(),
-            }));
-        dispatcher.borrow_mut().consume_action();
-
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-        for _ in 0..100 {
-            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
-        }
-        app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
-
-        let Some(AppEffect::OpenEditor(request)) = app.take_effect() else {
-            panic!("Local Journal本文編集時はエディタ起動effectが必要です");
-        };
-        assert_eq!(request.initial_text, "initial local notes");
-
-        app.handle_editor_response(EditorOutcome::Submitted {
-            edited_text: "updated local notes".to_string(),
-        });
-        dispatcher.borrow_mut().consume_action();
-
-        let dispatcher_ref = dispatcher.borrow();
-        let entry = dispatcher_ref.store().get_local_journal(3);
-        assert_eq!(entry.journal.notes, "updated local notes");
     }
 
     #[test]

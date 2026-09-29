@@ -35,6 +35,69 @@ pub fn spawn_app() -> PtySession {
     spawn_app_with_api_key(Some(API_KEY))
 }
 
+/// editorとして起動されると、渡されたファイルの元の内容を記録し、指定の文字列で置き換えて終了する。
+pub struct FakeEditor {
+    script: PathBuf,
+    capture: PathBuf,
+}
+
+impl FakeEditor {
+    pub fn new(name: &str) -> Self {
+        let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(name);
+        std::fs::create_dir_all(&dir).expect("failed to create the fake editor directory");
+        let script = dir.join("editor.sh");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\ncat \"$1\" > \"$E2E_EDITOR_CAPTURE\"\nprintf '%s' \"$E2E_EDITOR_TEXT\" > \"$1\"\n",
+        )
+        .expect("failed to write the fake editor");
+        let mut permissions = std::fs::metadata(&script)
+            .expect("failed to read the fake editor permissions")
+            .permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        std::fs::set_permissions(&script, permissions)
+            .expect("failed to make the fake editor executable");
+        let capture = dir.join("captured.txt");
+        let _ = std::fs::remove_file(&capture);
+        Self { script, capture }
+    }
+
+    /// editorの終了を待ち、アプリがterminalを戻すときのcursor位置の問い合わせに答える。
+    ///
+    /// testtyの仮想端末はcursor位置の問い合わせ（DSR）に応答しないため、ratatuiの
+    /// `Terminal::clear`がtimeoutしてeditor編集の失敗になる。crosstermは先に届いた応答も
+    /// 保持するため、editorの終了直後に応答を書き込めば問い合わせに間に合う。
+    ///
+    /// editorに渡された編集前の内容を返す。
+    pub fn finish_editing(&self, session: &mut PtySession) -> String {
+        let deadline = Instant::now() + WAIT_TIMEOUT;
+        while !self.capture.exists() {
+            assert!(Instant::now() < deadline, "the fake editor was not started");
+            std::thread::sleep(POLL_INTERVAL);
+        }
+        let initial_text =
+            std::fs::read_to_string(&self.capture).expect("failed to read the captured text");
+        let _ = std::fs::remove_file(&self.capture);
+        session
+            .write_bytes(b"\x1b[1;1R")
+            .expect("failed to answer the cursor position query");
+        initial_text
+    }
+
+    pub fn spawn_app(&self, edited_text: &str) -> PtySession {
+        PtySessionBuilder::new(env!("CARGO_BIN_EXE_redmine-tui-draft"))
+            .size(TERMINAL_WIDTH, TERMINAL_HEIGHT)
+            .env("REDMINE_URL", required_env(BASE_URL_ENV))
+            .env("REDMINE_API_KEY", API_KEY)
+            .env("VISUAL", self.script.display().to_string())
+            .env("E2E_EDITOR_CAPTURE", self.capture.display().to_string())
+            .env("E2E_EDITOR_TEXT", edited_text)
+            .workdir(repo_root())
+            .spawn()
+            .expect("failed to start redmine-tui in a PTY")
+    }
+}
+
 /// `None`では親プロセスの`REDMINE_API_KEY`も引き継がないよう、`env -u`で外して起動する。
 pub fn spawn_app_with_api_key(api_key: Option<&str>) -> PtySession {
     let app = env!("CARGO_BIN_EXE_redmine-tui-draft");
