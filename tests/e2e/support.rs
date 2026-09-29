@@ -140,3 +140,41 @@ fn required_env(name: &str) -> String {
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
+
+/// Issue選択popupの見出し。popupが閉じたことは、これが画面から消えたことで判定する。
+pub const POPUP_HEADER: &str = "PROJECTS";
+
+pub fn wait_for_popup_to_close(session: &mut PtySession) -> String {
+    wait_until(session, "closing the issue select popup", |frame| {
+        !frame.contains(POPUP_HEADER)
+    })
+}
+
+/// 起動直後のIssue選択popupから、一覧の`position`番目（0始まり）のIssueを開く。
+///
+/// seedの一覧はID降順（3, 2, 1）で並ぶ。
+pub fn open_issue_from_initial_popup(session: &mut PtySession, position: usize) -> String {
+    wait_for_text(session, "issue2");
+    session.press_key("l").expect("failed to press l");
+    for _ in 0..position {
+        session.press_key("j").expect("failed to press j");
+    }
+    session.press_key("Enter").expect("failed to press Enter");
+    wait_for_popup_to_close(session)
+}
+
+/// 詳細画面で`label`の直後に表示されている値を返す。
+///
+/// propertyは2列で表示されるため、同じ行の次の項目との区切り（2つ以上の空白）までを値とする。
+pub fn property_value(frame: &str, label: &str) -> String {
+    let line = frame
+        .lines()
+        .find(|line| line.contains(label))
+        .unwrap_or_else(|| panic!("{label} is not displayed\nterminal frame:\n{frame}"));
+    let rest = line[line.find(label).unwrap() + label.len()..].trim_start();
+    rest.split("  ")
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}

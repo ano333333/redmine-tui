@@ -2,5 +2,6 @@
 
 mod issue_fetch;
 mod issue_select_popup;
+mod property_edit;
 mod startup;
 mod support;

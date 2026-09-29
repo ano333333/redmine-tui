@@ -2,11 +2,10 @@ use reqwest::{Method, StatusCode};
 use serde_json::json;
 
 use crate::support::{
-    press_keys, redmine_api, reseed_redmine, spawn_app, wait_for_text, wait_until,
+    POPUP_HEADER, press_keys, redmine_api, reseed_redmine, spawn_app, wait_for_popup_to_close,
+    wait_for_text, wait_until,
 };
 
-/// Issue選択popupの見出し。popupが閉じたことは、これが画面から消えたことで判定する。
-const POPUP_HEADER: &str = "PROJECTS";
 /// Issue 3の詳細にだけ表示されるtracker名。
 const ISSUE_3_TRACKER: &str = "Support";
 /// Issue 2の詳細にだけ表示されるtracker名。
@@ -18,12 +17,6 @@ fn open_popup(session: &mut testty::session::PtySession) {
     wait_until(session, "loading the issue list in the popup", |frame| {
         frame.contains(POPUP_HEADER) && frame.contains("issue2")
     });
-}
-
-fn wait_for_popup_to_close(session: &mut testty::session::PtySession) -> String {
-    wait_until(session, "closing the issue select popup", |frame| {
-        !frame.contains(POPUP_HEADER)
-    })
 }
 
 // Scenario: Issue一覧で選択を動かすとプレビューが切り替わる

@@ -365,6 +365,8 @@ impl<'a> AppComponent<'a> {
                     tracker_popup_observer(dispatcher.clone(), issue_id),
                 );
             }
+            // FIXME: 子Issueを持つ親Issueの優先度・開始日・期日・進捗率は子から計算され、Redmineは更新を
+            // エラーなしで無視する。親Issueでも編集できるため、ローカルでは変更済みに見えてしまう。
             Some(IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::OpenPriorityPopup,
             )) => {
@@ -932,7 +934,7 @@ mod tests {
         JournalAction, NoticeAction, NoticeId, ProjectIssuesAction, RemoteJournalState,
     };
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
-    use crate::vos::{IssuePropertyDiff, PriorityId, ProjectId, TrackerId};
+    use crate::vos::{IssuePropertyDiff, ProjectId};
 
     const AREA: Rect = Rect {
         x: 0,
@@ -1204,15 +1206,6 @@ mod tests {
         (dispatcher, app)
     }
 
-    fn dispatcher_with_issue() -> Rc<RefCell<Dispatcher>> {
-        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-        dispatcher.borrow_mut().dispatch(IssueAction::Sync {
-            issue: crate::test_support::sample_parent_issue(),
-        });
-        dispatcher.borrow_mut().consume_action();
-        dispatcher
-    }
-
     fn dispatcher_with_selectable_issues() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
@@ -1302,17 +1295,6 @@ mod tests {
         for _ in 0..line {
             app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         }
-    }
-
-    fn select_next_day_in_open_date_picker(
-        app: &mut AppComponent<'_>,
-        dispatcher: Rc<RefCell<Dispatcher>>,
-    ) {
-        for _ in 0..3 {
-            app.process_event(key_event(KeyCode::Tab), dispatcher.clone());
-        }
-        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
-        app.process_event(key_event(KeyCode::Enter), dispatcher);
     }
 
     fn loaded_dispatcher_with_journals() -> Rc<RefCell<Dispatcher>> {
@@ -1534,201 +1516,6 @@ mod tests {
                 .store()
                 .try_get_issue_upload_conflict(IssueId::new(3))
                 .is_none()
-        );
-    }
-
-    #[test]
-    fn tracker_popup_excludes_none_and_updates_issue_tracker() {
-        let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        focus_property_line(&mut app, dispatcher.clone(), 4);
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
-
-        let popup = app.popup_components.back().expect("popup should be open");
-        match &*popup.borrow() {
-            PopupComponent::SelectBox(select_box) => {
-                let widget = select_box.create_widget();
-                assert_eq!(widget.items[0], (Some(1), "Bug".to_string()));
-                assert_eq!(widget.focused_index, 2);
-            }
-            _ => panic!("tracker popup should be a select box"),
-        }
-
-        app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
-        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
-        dispatcher.borrow_mut().consume_action();
-
-        let tracker_id = dispatcher.borrow().store().get_issue(3).0.tracker_id;
-        assert_eq!(tracker_id, TrackerId::new(2));
-        assert!(app.popup_components.is_empty());
-    }
-
-    #[test]
-    fn project_popup_moves_issue_and_clears_project_scoped_values() {
-        let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        focus_property_line(&mut app, dispatcher.clone(), 6);
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
-        assert!(matches!(
-            &*app.popup_components.back().unwrap().borrow(),
-            PopupComponent::SelectBox(_)
-        ));
-
-        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
-        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
-        dispatcher.borrow_mut().consume_action();
-
-        let dispatcher = dispatcher.borrow();
-        let (issue, _) = dispatcher.store().get_issue(3);
-        assert_eq!(issue.issue.project_id, ProjectId::new(2));
-        assert_eq!(issue.category_id, None);
-        assert!(app.popup_components.is_empty());
-    }
-
-    #[test]
-    fn priority_popup_excludes_none_and_updates_issue_priority() {
-        let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        focus_property_line(&mut app, dispatcher.clone(), 5);
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
-
-        let popup = app.popup_components.back().expect("popup should be open");
-        match &*popup.borrow() {
-            PopupComponent::SelectBox(select_box) => {
-                let widget = select_box.create_widget();
-                assert_eq!(widget.items[0], (Some(1), "major".to_string()));
-                assert_eq!(widget.focused_index, 0);
-            }
-            _ => panic!("priority popup should be a select box"),
-        }
-
-        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
-        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
-        dispatcher.borrow_mut().consume_action();
-
-        let priority_id = dispatcher.borrow().store().get_issue(3).0.priority_id;
-        assert_eq!(priority_id, PriorityId::new(2));
-        assert!(app.popup_components.is_empty());
-    }
-
-    #[test]
-    fn estimated_hours_popup_updates_issue_estimated_hours() {
-        let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        // 2カラム表示なので、左カラムの行から右カラムの予定工数へ移る
-        focus_property_line(&mut app, dispatcher.clone(), 4);
-        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
-        assert!(matches!(
-            &*app.popup_components.back().unwrap().borrow(),
-            PopupComponent::NumberInput(_)
-        ));
-
-        for c in "2.5".chars() {
-            app.process_event(key_event(KeyCode::Char(c)), dispatcher.clone());
-        }
-        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
-        dispatcher.borrow_mut().consume_action();
-
-        let estimated_hours = dispatcher.borrow().store().get_issue(3).0.estimated_hours;
-        assert_eq!(estimated_hours, Some(2.5));
-        assert!(app.popup_components.is_empty());
-    }
-
-    #[test]
-    fn category_popup_includes_none_and_can_clear_issue_category() {
-        let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        // 2カラム表示なので、左カラム最下行から右カラム最下行(カテゴリ)へ移る
-        app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
-        for _ in 0..7 {
-            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
-        }
-        app.process_event(key_event(KeyCode::Char('l')), dispatcher.clone());
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
-
-        let popup = app.popup_components.back().expect("popup should be open");
-        match &*popup.borrow() {
-            PopupComponent::SelectBox(select_box) => {
-                let widget = select_box.create_widget();
-                assert_eq!(widget.items[0], (None, "選択なし(None)".to_string()));
-                assert_eq!(widget.focused_index, 1);
-            }
-            _ => panic!("category popup should be a select box"),
-        }
-
-        app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
-        app.process_event(key_event(KeyCode::Enter), dispatcher.clone());
-        dispatcher.borrow_mut().consume_action();
-
-        let issue_category_id = dispatcher.borrow().store().get_issue(3).0.category_id;
-        assert_eq!(issue_category_id, None);
-        assert!(app.popup_components.is_empty());
-    }
-
-    #[test]
-    fn start_date_property_opens_date_picker_and_updates_store_through_dispatcher() {
-        let dispatcher = dispatcher_with_issue();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-
-        focus_property_line(&mut app, dispatcher.clone(), 9);
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
-
-        assert_eq!(app.popup_components.len(), 1);
-        assert!(matches!(
-            &*app.popup_components.back().unwrap().borrow(),
-            PopupComponent::DatePicker(_)
-        ));
-
-        select_next_day_in_open_date_picker(&mut app, dispatcher.clone());
-        assert_eq!(app.popup_components.len(), 0);
-        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-
-        dispatcher.borrow_mut().consume_action();
-        let selected = dispatcher.borrow().store().get_issue(3).0.start_date;
-        assert_eq!(
-            selected,
-            Some(crate::test_support::local_datetime(
-                "2026-02-17T00:00:00+09:00"
-            ))
-        );
-    }
-
-    #[test]
-    fn due_date_property_opens_date_picker_and_updates_store_through_dispatcher() {
-        let dispatcher = dispatcher_with_issue();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-
-        focus_property_line(&mut app, dispatcher.clone(), 10);
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
-
-        assert_eq!(app.popup_components.len(), 1);
-        assert!(matches!(
-            &*app.popup_components.back().unwrap().borrow(),
-            PopupComponent::DatePicker(_)
-        ));
-
-        select_next_day_in_open_date_picker(&mut app, dispatcher.clone());
-        assert_eq!(app.popup_components.len(), 0);
-        assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-
-        dispatcher.borrow_mut().consume_action();
-        let selected = dispatcher.borrow().store().get_issue(3).0.due_date;
-        assert_eq!(
-            selected,
-            Some(crate::test_support::local_datetime(
-                "2026-02-18T00:00:00+09:00"
-            ))
         );
     }
 
