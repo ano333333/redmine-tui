@@ -31,13 +31,64 @@ pub fn reseed_redmine() {
 }
 
 pub fn spawn_app() -> PtySession {
-    PtySessionBuilder::new(env!("CARGO_BIN_EXE_redmine-tui-draft"))
+    spawn_app_with_api_key(Some(API_KEY))
+}
+
+/// `None`では親プロセスの`REDMINE_API_KEY`も引き継がないよう、`env -u`で外して起動する。
+pub fn spawn_app_with_api_key(api_key: Option<&str>) -> PtySession {
+    let app = env!("CARGO_BIN_EXE_redmine-tui-draft");
+    let args = match api_key {
+        Some(_) => vec![app],
+        None => vec!["-u", "REDMINE_API_KEY", app],
+    };
+    let builder = PtySessionBuilder::new("env")
+        .args(args)
         .size(TERMINAL_WIDTH, TERMINAL_HEIGHT)
         .env("REDMINE_URL", required_env(BASE_URL_ENV))
-        .env("REDMINE_API_KEY", API_KEY)
-        .workdir(repo_root())
+        .workdir(repo_root());
+    let builder = match api_key {
+        Some(api_key) => builder.env("REDMINE_API_KEY", api_key),
+        None => builder,
+    };
+    builder
         .spawn()
         .expect("failed to start redmine-tui in a PTY")
+}
+
+pub fn press_keys(session: &mut PtySession, keys: &[&str]) {
+    for key in keys {
+        session
+            .press_key(key)
+            .unwrap_or_else(|error| panic!("failed to press {key}: {error}"));
+    }
+}
+
+/// 終了コードの成否を返す。
+pub fn wait_for_exit(session: &mut PtySession) -> bool {
+    session.wait_for_exit(WAIT_TIMEOUT).unwrap_or_else(|error| {
+        panic!(
+            "redmine-tui did not exit: {error}\nterminal frame:\n{}",
+            session.capture_frame().all_text()
+        )
+    })
+}
+
+/// Given・Thenで使うRedmine APIを、テスト用のAPI keyで呼ぶ。
+pub fn redmine_api(method: reqwest::Method, path: &str) -> reqwest::StatusCode {
+    let url = format!("{}{path}", required_env(BASE_URL_ENV));
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("failed to build tokio runtime")
+        .block_on(async {
+            reqwest::Client::new()
+                .request(method, url)
+                .header("X-Redmine-API-Key", API_KEY)
+                .send()
+                .await
+                .expect("failed to send Redmine API request")
+                .status()
+        })
 }
 
 /// 失敗時に画面全体を出力し、どの画面で止まったかを確認できるようにする。

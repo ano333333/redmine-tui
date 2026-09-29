@@ -13,7 +13,7 @@ use crate::runner::lifecycle::{
     consume_editor_worker_actions, handle_host_event, move_worker_action, tick_since, update,
 };
 use crate::stores::{self, Action, Dispatcher};
-use crate::usecases::redmine::{load_initial_entities, start_issue_upload, upload_issue_action};
+use crate::usecases::redmine::{start_issue_upload, upload_issue_action};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 use std::{
     collections::VecDeque,
@@ -358,22 +358,6 @@ fn project_page_effect_queues_start_loading_and_routes_only_completion_to_worker
             && page == std::num::NonZeroUsize::MIN
     ));
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-}
-
-#[test]
-fn load_initial_entities_returns_redmine_client_error() {
-    let spawner = TokioBackgroundSpawner::new().unwrap();
-    let client = FailingClient;
-
-    let error = match spawner.block_on(load_initial_entities(&client)) {
-        Ok(_) => panic!("load initial entities succeeded"),
-        Err(error) => error,
-    };
-
-    assert_eq!(
-        error.to_string(),
-        "unauthorized: GET http://redmine.invalid/users.json returned 401 with body: {\"error\":\"failed\"}"
-    );
 }
 
 #[tokio::test]

@@ -1418,28 +1418,6 @@ mod tests {
     }
 
     #[test]
-    fn r_requests_retry_after_mounted_issue_transitions_to_fetch_failed() {
-        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-        dispatcher
-            .borrow_mut()
-            .dispatch(IssueAction::StartFetching { id: 42.into() });
-        dispatcher.borrow_mut().consume_action();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(42.into()));
-        assert!(app.take_effect().is_none());
-        dispatcher.borrow_mut().dispatch(IssueAction::FetchFailed {
-            id: 42.into(),
-            message: "offline".to_string(),
-        });
-        dispatcher.borrow_mut().consume_action();
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        app.process_event(key_event(KeyCode::Char('r')), dispatcher);
-
-        assert!(matches!(app.take_effect(), Some(AppEffect::FetchIssue(id)) if id == 42));
-        assert!(app.take_effect().is_none());
-    }
-
-    #[test]
     #[should_panic(expected = "AppComponent already has a pending effect")]
     fn a_second_fetch_request_cannot_replace_a_pending_effect() {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
@@ -2241,14 +2219,6 @@ mod tests {
         assert!(should_continue);
         assert!(app.popup_components.is_empty());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
-    }
-
-    #[test]
-    fn q_without_popup_requests_application_exit() {
-        let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
-
-        assert!(!app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher));
     }
 
     fn app_with_remote_journal_conflict_popup() -> (Rc<RefCell<Dispatcher>>, AppComponent<'static>)
