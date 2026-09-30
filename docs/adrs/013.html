@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ADR 13 — テストの層構成と期待値の書き方</title>
+<style>
+      *,*::before,*::after{box-sizing:border-box}body{margin:0;background:#0f1117;color:#d0d4e8;font:15px/1.75 system-ui,"Noto Sans JP",sans-serif}.layout{display:flex;min-height:100vh}nav{position:sticky;top:0;width:240px;height:100vh;padding:28px 20px;background:#1a1d27;border-right:1px solid #2e3350}nav a{display:block;padding:5px 0;color:#8ba3f5;text-decoration:none;font-size:13px}main{max-width:980px;padding:52px 64px}h1,h2,h3{color:#e8eaf6}h1{font-size:27px;line-height:1.25}h2{margin-top:44px;padding-bottom:8px;border-bottom:1px solid #2e3350;font-size:19px}h3{margin-top:28px;font-size:16px}code,pre{font-family:"JetBrains Mono",monospace}code{color:#8ba3f5}pre{overflow:auto;padding:16px 18px;background:#13151f;border:1px solid #2a2e45;border-radius:8px;color:#d0d4e8}.status{display:inline-block;padding:3px 10px;border:1px solid #2a7a50;border-radius:20px;color:#4caf8a}li{margin:5px 0}@media(max-width:820px){.layout{display:block}nav{position:static;width:auto;height:auto}main{padding:32px 22px}}
+
+.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:9px 12px;border:1px solid #2e3350;text-align:left}th{background:#1a1d27}main{min-width:0}nav{flex-shrink:0;overflow-y:auto}a{color:#8ba3f5}</style>
+</head>
+<body><div class="layout">
+<nav><strong>ADR 13</strong>
+<a href="#status">Status</a>
+<a href="#context">Context</a>
+<a href="#decision">Decision</a>
+<a href="#rationale">Rationale</a>
+<a href="#consequences">Consequences</a>
+<a href="#alternatives-considered">Alternatives Considered</a>
+<hr><a href="012.html">ADR 12</a><a href="../architecture.html">Architecture</a></nav>
+<main>
+<h1>13. テストの層構成と期待値の書き方</h1>
+<h2 id="status">Status</h2>
+<p>Accepted</p>
+<h2 id="context">Context</h2>
+<p>現在のテストは、Storeやfocus stateの単体テスト、wiremockを使うRedmine clientのテスト、Componentや<code>runner</code>の結合テストで構成されている。結合テストは<code>src/components/app.rs</code>と<code>src/runner/tests.rs</code>に集中している。これらはAppComponent、Dispatcher、Store、popupを組み立て、キー入力からStore更新やeffect発行までを検証する。1件のテストに、選択肢の組み合わせとユーザー操作の流れが同時に含まれることも多い。そのため、組み合わせを増やすと結合テストの数が増え、構成するstructが増えると準備手順が長くなる。</p>
+<p>Redmine clientのテストはwiremockの応答を前提にしている。Redmine APIの仕様を読み違えても、wiremockの応答は読み違えたとおりに書かれるため、テストは通る。実際に何度か、手動でRedmineにつないだときに初めてエラーが見つかった。</p>
+<p>テストデータは<code>datas/</code>のYAML fixtureから読み込んでいる。<code>IssueAction::Load</code>は<code>IssueStore</code>の中で<code>parse_issue_yaml</code>を呼ぶ。このActionは本番コードから発行されず、テストだけが使う。<code>test_support::sync_fixture_entities</code>と<code>dispatch_fixture_entity_actions</code>も、fixtureをパースしてマスターデータのSync Actionを作る。このため、各テストがfixtureのどの値に依存しているかをコードから読み取れない。また、fixtureは件数が少なく、境界値や組み合わせを十分に含まない。</p>
+<p>期待値をfixtureのパース結果や入力から計算するテストもある。このようなテストでは、入力の誤りが期待値にも同じ形で伝わるため、実装とテストが同時にずれても検出できない。</p>
+<h2 id="decision">Decision</h2>
+<h3>テストを3層に分ける</h3>
+<p>テストは次の3層を中心に構成する。</p>
+<div class="table-wrap"><table><thead><tr><th>層</th><th>対象</th><th>接続先</th></tr></thead><tbody><tr><td>単体テスト</td><td>Store、focus state、usecase、widget、component単体、value object、変換処理</td><td>なし</td></tr><tr><td>Redmine clientテスト</td><td><code>DefaultRedmineClient</code>の各メソッド</td><td>Redmine container、エラー変換のみwiremock</td></tr><tr><td>E2E</td><td>ユーザー操作の流れ全体</td><td>testtyのPTY上のnativeバイナリとRedmine container</td></tr></tbody></table></div>
+<p>内部で閉じるstruct同士の結合テストは減らす。</p>
+<p>単体テストかどうかは、組み合わせるstructの数ではなく、テスト対象がひとつかどうかで判断する。テスト対象がひとつで、Storeを入力のfixtureとしてのみ使う場合は単体テストとする。たとえば、Storeを組み立てて渡し、Componentの描画、<code>process_event</code>の戻り値、発行したActionを検証するテストは単体テストである。</p>
+<h3>結合テストは基準に従って残すか移す</h3>
+<p>既存の結合テストを次の基準で仕分ける。1件のテストが複数の性質を含む場合は、分割してそれぞれの移し先へ移す。</p>
+<ul><li>残す: 層の間の契約のうち、画面から観測できないものを検証するテスト。例として、Componentが<code>AppEffect</code>を発行するかどうかと発行回数、<code>take_effect</code>による取り出し、action処理とupdateを交互に行うlifecycleがある。</li><li>単体テストへ移す: 組み合わせを検証するテスト。例として、popupの選択肢からNoneを除く判定は<code>issue_popup_options</code>の単体テストで検証する。</li><li>E2Eへ移す: ユーザー操作の流れを検証するテスト。例として、popupでの選択がIssueの属性に反映されることを検証する。</li></ul>
+<h3>Redmine clientテストは実際のRedmineに接続する</h3>
+<p><code>DefaultRedmineClient</code>の正常系は、xtaskがDocker Composeで起動したRedmine containerに接続して検証する。containerに接続するテストは専用のmoduleに置き、<code>container-tests</code> featureを有効にしたときだけcompileする。</p>
+<p>401、5xx、壊れたJSONなど、実際のRedmineでは発生させにくい応答は、wiremockで再現する。wiremockを使うテストは、HTTP応答を<code>RedmineClientError</code>へ変換する処理の検証に限る。</p>
+<h3>E2EはtesttyとRedmine containerで行う</h3>
+<p>E2Eはtesttyを使い、nativeバイナリをPTY上で起動して操作する。接続先はRedmine clientテストと同じRedmine containerとする。Web adapterはE2Eの対象外とし、従来どおり手動で確認する。</p>
+<p>シナリオ間の独立性は次の方法で保つ。</p>
+<ul><li>E2Eは直列に実行する。</li><li>シナリオを開始するたびにseedを投入し直す。</li><li>seedの投入時に、各テーブルのAUTO_INCREMENTもリセットする。<code>fresh_test_data.sql</code>は、Issue、Journal、version、categoryなどのテーブルを<code>DELETE</code>した後に<code>ALTER TABLE ... AUTO_INCREMENT = 1</code>を実行しており、これを前提とする。これにより、シナリオ中にAPIで作成したデータのIDも毎回同じ値になる。</li><li>seedには全シナリオで共通の土台だけを入れる。対象は、マスターデータ、複数project構成、categoryやversionの有無などである。</li><li>シナリオ固有のデータは、Givenの段階でRedmine APIを使って追加する。他のユーザーによる更新や衝突も、APIによる更新として記述する。</li></ul>
+<p>期待する結果は、画面の表示と、シナリオ終了後にRedmine APIで取得した状態の2つで検証する。Redmine APIで取得する状態の例は、journalの件数、属性値、<code>updated_on</code>である。E2Eではリクエスト回数を検証しない。回数や副作用の有無は、<code>AppEffect</code>の発行回数や、呼び出しを記録するmockの<code>RedmineClient</code>を使った結合テストで検証する。</p>
+<p>シナリオはテスト関数ごとに固定し、Gherkinをコメントとして記述する。</p>
+<ul><li>テスト関数名とScenario名を1対1で対応させる。</li><li><code>// Given</code>、<code>// When</code>、<code>// Then</code>は、それぞれに対応するコードブロックの直前に置く。</li></ul>
+<p>ページパターンは導入しない。シナリオが増えた段階で導入を検討する。ただし、seedの投入やAPIによるデータ追加を行う補助関数は、E2E用のsupport moduleへ最初から切り出す。</p>
+<h3>テストデータはSyncでentityを直接渡す</h3>
+<p><code>IssueAction::Load</code>を削除する。<code>test_support::sync_fixture_entities</code>と<code>dispatch_fixture_entity_actions</code>も削除する。テストでは、Syncなどの本番Actionでentityを直接Storeへ渡す。</p>
+<p>テストが必要とするentityは、各テストか<code>test_support</code>の小さな組み立て関数で定義する。これにより、テストが依存する値がテストのコード上に現れる。</p>
+<p><code>datas/</code>はDemo clientとRedmine seederの入力としてだけ使う。</p>
+<h3>期待値は定数で書く</h3>
+<p>assertの期待値はリテラルまたは<code>const</code>で書く。</p>
+<ul><li>入力と期待値で同じ<code>const</code>を使ってよい。どちらも定数のため、片方だけがずれることはない。</li><li>期待値を、入力のコレクションの長さや、パースしたentityのフィールドなど、定数でない値から取得してはならない。</li><li>期待値が<code>const</code>同士の計算で決まる場合でも、コード上はリテラルで書き、計算方法をコメントに残す。</li></ul>
+<h2 id="rationale">Rationale</h2>
+<p>組み合わせの検証を単体テストへ移すと、組み合わせが増えても準備手順は増えない。操作の流れの検証をE2Eへ移すと、構成するstructが増えても、結合テスト用の組み立てコードを保守する必要がない。層の間の契約は画面から観測できないため、結合テストとして残す。</p>
+<p>Redmine APIの仕様の読み違いは、実際のRedmineに接続しない限り検出できない。E2EとRedmine clientテストはどちらも実行頻度が低い。そのため、実行時間より検出力を優先する。seedの再投入は手元の計測で平均0.04秒であり、シナリオ数が3桁に届かない見込みのため、シナリオごとに再投入しても実行時間は問題にならない。</p>
+<p>テスト専用のActionを本番のStoreに置くと、本番の状態遷移とは別の経路でStoreに状態が入る。Syncでentityを直接渡せば、テストも本番と同じ経路を通る。</p>
+<p>期待値を定数にすると、入力や実装の誤りが期待値へ伝わらない。</p>
+<h2 id="consequences">Consequences</h2>
+<ul><li><code>app.rs</code>と<code>runner/tests.rs</code>の結合テストを、本ADRの基準に従って仕分ける必要がある。1件のテストに複数の性質が含まれる場合は分割するため、移し替えの作業量は件数より多くなる。</li><li><code>IssueAction::Load</code>は58か所のテストで使われている。<code>Load</code>は登録済みの場合に何もしないが、<code>Sync</code>は登録済みの状態によってはpanicする。そのため、機械的に置き換えると失敗するテストがある。</li><li><code>datas/</code>をテストが使わなくなるため、seedの内容はE2Eの必要に合わせて変更できる。変更時は、Demo clientと<code>tests/redmine_seeder_files_test.sh</code>への影響を確認する。</li><li><code>libs/yaml.rs</code>の利用者がDemo clientとseederだけになるため、公開範囲を見直す。</li><li>E2EとRedmine clientテストはDockerを必要とする。どちらも通常の<code>cargo test</code>ではcompile・実行せず、xtaskから実行する。Redmine clientテストは<code>container-tests</code> featureで切り替え、<code>cargo xtask test-redmine-client</code>から実行する。</li><li>実装時に<code>docs/architecture.md</code>へテストの層構成を追記する。</li></ul>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<ul><li>E2Eの接続先をwiremockにする: 速度と安定性は高いが、Redmine APIの仕様の読み違いを検出できないため採用しない。</li><li>seedを1回だけ投入し、シナリオごとにAPIで専用のデータを作って分離する: seedの再投入が十分に速いため(記載時平均0.04秒/回)、分離の漏れが起きにくい再投入を採用する。</li><li>シナリオごとにcompose projectを分けて並列に実行する: シナリオ数の見込みに対してcontainer管理の複雑さが見合わないため採用しない。</li><li>既存の結合テストをすべて残す: 組み合わせと構成structの増加に伴って保守コストが増え続けるため採用しない。</li></ul>
+</main></div></body>
+</html>
