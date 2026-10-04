@@ -102,6 +102,11 @@ pub(super) fn try_into_domain(
             old: parse_optional_id_value(&detail.name, Some(old_value.as_str()))?,
             new: parse_optional_id_value(&detail.name, Some(new_value.as_str()))?,
         },
+        "child_id" => JournalDetailAttr::ChildId {
+            // 子Issueの追加はoldが、解除はnewが欠損値になる。
+            old: parse_optional_id_value(&detail.name, Some(old_value.as_str()))?,
+            new: parse_optional_id_value(&detail.name, Some(new_value.as_str()))?,
+        },
         "is_private" => JournalDetailAttr::IsPrivate {
             // Redmineが返す数値表現と真偽値表現の4種類のみを有効とする。
             old: parse_bool(&detail.name, &old_value)?,

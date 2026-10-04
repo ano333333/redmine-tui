@@ -103,8 +103,13 @@ fn resolve_attr(attr: &JournalDetailAttr, store: &Store) -> ResolvedJournalDetai
         ),
         JournalDetailAttr::ParentId { old, new } => (
             "親チケット",
-            resolve_optional(*old, |id| Some(resolve_parent_label(id, store))),
-            resolve_optional(*new, |id| Some(resolve_parent_label(id, store))),
+            resolve_optional(*old, |id| Some(resolve_issue_label(id, store))),
+            resolve_optional(*new, |id| Some(resolve_issue_label(id, store))),
+        ),
+        JournalDetailAttr::ChildId { old, new } => (
+            "子チケット",
+            resolve_optional(*old, |id| Some(resolve_issue_label(id, store))),
+            resolve_optional(*new, |id| Some(resolve_issue_label(id, store))),
         ),
         JournalDetailAttr::IsPrivate { old, new } => {
             ("非公開", format_bool(*old), format_bool(*new))
@@ -124,7 +129,7 @@ fn resolve_optional<Id: EntityIdValue>(
     id.and_then(lookup).unwrap_or(NONE_DISPLAY.into())
 }
 
-fn resolve_parent_label(id: crate::vos::IssueId, store: &Store) -> String {
+fn resolve_issue_label(id: crate::vos::IssueId, store: &Store) -> String {
     if store.try_get_issue_state(id).is_none() {
         return format!("#{}", id);
     }

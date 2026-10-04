@@ -67,6 +67,11 @@ pub enum JournalDetailAttr {
         old: Option<IssueId>,
         new: Option<IssueId>,
     },
+    /// 子Issueの追加・解除。Redmineは子側の親変更に合わせて、親側のJournalにも記録する。
+    ChildId {
+        old: Option<IssueId>,
+        new: Option<IssueId>,
+    },
     IsPrivate {
         old: bool,
         new: bool,
