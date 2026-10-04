@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 14 — IssueとJournalの取得単位、編集差分、保存状態</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0f1117;
+        color: #d0d4e8;
+        font:
+          15px/1.75 system-ui,
+          "Noto Sans JP",
+          sans-serif;
+      }
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+      nav {
+        position: sticky;
+        top: 0;
+        width: 240px;
+        height: 100vh;
+        padding: 28px 20px;
+        background: #1a1d27;
+        border-right: 1px solid #2e3350;
+      }
+      nav a {
+        display: block;
+        padding: 5px 0;
+        color: #8ba3f5;
+        text-decoration: none;
+        font-size: 13px;
+      }
+      main {
+        max-width: 980px;
+        padding: 52px 64px;
+      }
+      h1,
+      h2,
+      h3 {
+        color: #e8eaf6;
+      }
+      h1 {
+        font-size: 27px;
+        line-height: 1.25;
+      }
+      h2 {
+        margin-top: 44px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #2e3350;
+        font-size: 19px;
+      }
+      h3 {
+        margin-top: 28px;
+        font-size: 16px;
+      }
+      code,
+      pre {
+        font-family: "JetBrains Mono", monospace;
+      }
+      code {
+        color: #8ba3f5;
+      }
+      pre {
+        overflow: auto;
+        padding: 16px 18px;
+        background: #13151f;
+        border: 1px solid #2a2e45;
+        border-radius: 8px;
+        color: #d0d4e8;
+      }
+      .status {
+        display: inline-block;
+        padding: 3px 10px;
+        border: 1px solid #2a7a50;
+        border-radius: 20px;
+        color: #4caf8a;
+      }
+      li {
+        margin: 5px 0;
+      }
+      @media (max-width: 820px) {
+        .layout {
+          display: block;
+        }
+        nav {
+          position: static;
+          width: auto;
+          height: auto;
+        }
+        main {
+          padding: 32px 22px;
+        }
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 9px 12px;
+        border: 1px solid #2e3350;
+        text-align: left;
+      }
+      th {
+        background: #1a1d27;
+      }
+      main {
+        min-width: 0;
+      }
+      nav {
+        flex-shrink: 0;
+        overflow-y: auto;
+      }
+      a {
+        color: #8ba3f5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <strong>ADR 14</strong>
+        <a href="#status">Status</a>
+        <a href="#context">Context</a>
+        <a href="#decision">Decision</a>
+        <a href="#error-handling">Error Handling</a>
+        <a href="#rationale">Rationale</a>
+        <a href="#consequences">Consequences</a>
+        <a href="#alternatives-considered">Alternatives Considered</a>
+        <a href="#future-work">Future Work</a>
+        <a href="#references">References</a>
+        <hr />
+        <a href="013.html">ADR 13</a
+        ><a href="../architecture.html">Architecture</a>
+      </nav>
+      <main>
+        <h1>14. IssueとJournalの取得単位、編集差分、保存状態</h1>
+        <h2 id="status">Status</h2>
+        <p>Accepted</p>
+        <h2 id="context">Context</h2>
+        <p>
+          現在のIssueAggregateは一覧用Issueと詳細属性、子IssueのID一覧を持つ。親IssueのIDは保持していない。Journal本体と編集状態はJournalStoreにあり、IssueStoreとは別に更新される。
+        </p>
+        <p>
+          RedmineのIssue詳細GETでは、Issue本体とJournal、子Issueの情報を一度に取得できる。しかし初回取得ではJournalとIssueを別々のActionで登録している。ActionごとにComponentを更新するため、同じ応答の一部だけを反映した状態が生じる。Issue保存前GETではJournalを捨て、Journal保存時のGETではIssue本体を捨てている。
+        </p>
+        <p>
+          Issueのローカル編集は、本体の変更とIssuePropertyDiffの追加で表している。同じ編集内容を本体と差分の両方に反映する必要があり、サーバーから取得した値と編集中の値の区別も曖昧になる。
+        </p>
+        <p>
+          LocalJournalの投稿はPUTと確認GETを続けて実行する。PUTが成功してもGETに失敗するとLocalOnlyへ戻るため、確認GETだけを再試行したい場合にも投稿を繰り返してしまう。
+        </p>
+        <h2 id="decision">Decision</h2>
+        <h3>1リクエストの結果を1つのActionで反映する</h3>
+        <p>
+          「1 APIリクエスト =
+          1トランザクション」を、アプリ内での反映単位として採用する。Issue詳細GETの結果は、IssueStoreが検証してから1つのActionで反映する。Issue本体、Journal、子一覧の適用途中にComponentを更新しない。ActionごとにComponentを更新する既存のlifecycleは維持する。
+        </p>
+        <p>
+          GET、PUT、確認GETはそれぞれ独立したリクエストとして扱う。確認GETの失敗でPUT成功を取り消さない。この方針は、サーバーのGETがDBの同一時点の値を返すことや、事前GETとPUTの間に他者の更新が入らないことを保証するものではない。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>API</th>
+                <th>用途</th>
+                <th>保存対象</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <code>GET /issues/:id.json?include=children,journals</code>
+                </td>
+                <td>詳細取得・競合確認</td>
+                <td>IssueAggregateと関連する取得情報</td>
+              </tr>
+              <tr>
+                <td><code>PUT /issues/:id.json</code></td>
+                <td>Issue属性の保存</td>
+                <td>送信したIssue属性</td>
+              </tr>
+              <tr>
+                <td><code>PUT /issues/:id.json</code>の<code>notes</code></td>
+                <td>Journalの新規投稿</td>
+                <td>LocalJournalまたはDeletedJournalのnotes</td>
+              </tr>
+              <tr>
+                <td><code>PUT /journals/:id.json</code></td>
+                <td>既存Journalの保存</td>
+                <td>対象Journalのnotes</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Issue属性、既存Journal、LocalJournal、DeletedJournalは個別に保存する。APIがIssue属性とnotesの同時送信に対応していても、今回の保存操作は統合しない。
+        </p>
+        <h3>IssueAggregateがJournal本体を所有する</h3>
+        <p>
+          IssueAggregateに親を示す<code>parent_id: Option&lt;IssueId&gt;</code
+          >とJournal一覧を持たせる。IssueAggregateと、その中の一覧用Issueの名前は維持する。ProjectIssuesStoreの一覧モデルも変更しない。
+        </p>
+        <p>
+          Journal本体の所有先をIssueAggregateに一本化し、JournalStoreは撤去する。JournalActionの処理、Issue属性とJournal間のupload排他、Journalのgetterは、IssueStoreがIssueの取得状態とあわせて扱う。IssueStoreへ移す状態型はRemoteJournalStateであり、Journal本体を内包するRemoteJournalEntryは使わない。
+        </p>
+        <p>
+          <code>include=journals</code
+          >では、JournalのID、投稿者、notes、作成日時、更新日時、更新者、非公開フラグ、変更詳細を取得できる。Journal内のissue_idは外側のIssueから補える。現在のJournalを構築する情報は、このGETで得られる。
+        </p>
+        <p>
+          取得対象は利用者に見える履歴である。権限によって非公開notesや一部の変更詳細が除外され、notesも可視の変更詳細もないJournalも返らない。取得結果から消えたことと、DBから削除されたことは区別する。
+        </p>
+        <h3>子Issueの情報は表示用の取得データとして扱う</h3>
+        <p>
+          <code>include=children</code
+          >の各要素にはID、トラッカー、題名と、その下のchildrenが再帰的に含まれる。子Issueの説明文、ステータス、Journalなどの詳細は含まれない。子Issue自身の親IDは詳細GETの<code>parent.id</code>で取得し、親変更の送信には<code>parent_issue_id</code>を使う。
+        </p>
+        <p>
+          子一覧はStoreに取得済みの関連情報として保持する。子Issueの詳細が取得済みなら、表示にはStoreから得た編集反映後の値を使う。未取得なら子一覧の取得情報を使う。取得済みIssueだけからの逆引きでは、未取得の子が欠落するため、取得した子一覧を保持する。
+        </p>
+        <p>
+          子の題名などを表示用に保持する場合も、子Issueの編集対象として二重に管理しない。親変更の編集UIは別の機能として扱う。
+        </p>
+        <h3>既存IssueEntry enumを維持し、本体をローカル編集で変更しない</h3>
+        <p>
+          <a href="011.html">ADR 11</a>のIssueEntry
+          enumを維持する。取得済みの各variantが保持するIssueAggregateはサーバーから取得した基準値とし、ローカル編集では変更しない。Issue属性の編集はIssuePropertyDiff、既存Journalの編集はJournalNotesDiffとして保持する。画面へ返す値は、基準値に差分を適用して作る。
+        </p>
+        <p>
+          差分を元に戻して実効的な変更がなくなれば、該当対象をSyncedへ戻す。再取得時は新しいサーバー値と差分を比較してから基準値を更新する。競合判定に必要なbeforeを、比較前に新しい値へ置き換えない。
+        </p>
+        <p>
+          IssueStateのSynced、Edited、UploadingはIssue属性の保存状態だけを表す。Journalの編集や投稿下書きは含めない。IssueStateがSyncedで、あるJournalのRemoteJournalStateがEditedである状態を許可する。
+        </p>
+        <p>取得済みのIssueEntryには、次の付加情報を持たせる。</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>付加情報</th>
+                <th>保持する内容</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>JournalIdごとのRemoteJournalState</td>
+                <td>全JournalのSynced、編集差分、保存状態、競合・失敗情報</td>
+              </tr>
+              <tr>
+                <td>LocalJournalEntry</td>
+                <td>0件または1件の新規投稿下書きと保存状態</td>
+              </tr>
+              <tr>
+                <td>DeletedJournalの一覧</td>
+                <td>複数の消失Journalの元ID、編集後notes、保存状態</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          RemoteJournalStateはSyncedも含めて全件を明示する。状態MapにないことをSyncedと解釈しない。Issue属性の状態が変わるときも、Journalの差分と下書きを引き継ぐ。付加情報の共通部分をstructにまとめても、IssueEntryのenumによる状態の区別は維持する。
+        </p>
+        <p>
+          Journal操作はIssue取得済みの場合だけ許可する。Issue本体がない状態でJournalだけを登録する経路は廃止し、初回GETでまとめて登録する。
+        </p>
+        <h3>Issue保存前GETでJournalの競合も検出する</h3>
+        <p>Issue保存Usecaseでは、次の順序で取得と競合解決を進める。</p>
+        <ol>
+          <li>Issue本体、Journal、子一覧をGETする。</li>
+          <li>
+            取得結果から消えた編集中JournalをDeletedJournalへ退避する。残存Journalのnotesも差分と比較し、競合を各Journalの状態へ保持する。
+          </li>
+          <li>
+            Issue属性に競合があれば、利用者が項目ごとの値を選択した後、再び1から確認する。
+          </li>
+          <li>
+            Issue属性に競合がなければ、GET結果でIssueAggregateを更新する。未保存の差分、LocalJournal、DeletedJournalは保持する。
+          </li>
+        </ol>
+        <p>
+          Journalの競合確認では、diff.before、diff.after、取得したnotesを比較する。編集後と同じ値がサーバーに反映済みなら差分を解消する。Journalの競合解決は、そのJournalを個別に保存する操作で扱う。
+        </p>
+        <p>
+          現行RemoteJournalStateはUploadingだけに競合情報を持つ。Issue保存前GETでは、未送信のJournalでも競合を検出するため、送信中でなくても競合を保持できるよう状態定義を調整する。
+        </p>
+        <p>
+          手順4はサーバーから取得した基準値の更新である。その後、Issue差分を適用した更新要求をPUTし、成功した送信分を確定する。確認GETでは更新日時や自動生成されたJournalを取り込む。確認GETに失敗した場合の再試行はGETだけを行う。
+        </p>
+        <p>
+          同じIssueについて同時にuploadできる操作は1件とする。Issue属性とJournal間の排他検査はIssueStore内で行う。各リクエストの完了Actionを適用してから後続のリクエストへ進み、Componentに通信手順を持たせない。
+        </p>
+        <h3>消失した編集中JournalをDeletedJournalへ退避する</h3>
+        <p>
+          DeletedJournalはIssueEntryの付加情報として保持する。元JournalIdと編集後notesを残し、通常のRemoteJournalStateから退避対象を外す。IssueAggregateの取得済みJournal一覧には含めない。
+        </p>
+        <p>
+          退避は元JournalIdで識別する。競合解決によってGETを繰り返しても、同じJournalを二重に退避しない。DeletedJournalの退避や保存によって、既存LocalJournalを置き換えない。
+        </p>
+        <p>
+          DeletedJournalは対象を選択してctrl+sを押すと、新規Journalとして投稿する。LocalJournalと同じく、<code
+            >PUT /issues/:id.json</code
+          >のnotesを使う。元の投稿者、日時、変更履歴を新規投稿として送信しない。Issue保存中の自動再投稿や、破棄・再投稿の選択確認は行わない。
+        </p>
+        <p>
+          IssueのGETで元JournalIdが再出現したら、GET時のサーバーnotesをbefore、DeletedJournalの保存notesをafterとするJournalNotesDiffを作る。通常のRemote
+          Journalの編集へ戻すと同時にDeletedJournalを除去する。両値が同じなら差分を残さずSyncedにする。
+        </p>
+        <h3>投稿PUTの成功時に下書きを削除する</h3>
+        <p>
+          LocalJournalとDeletedJournalは、投稿PUTの成功Actionで対象を削除する。後続GETに失敗しても復元しない。確認GETに失敗したことを通知し、再取得を可能にする。PUT成功からGET成功まで、新しいJournalが一覧にまだ現れない場合がある。
+        </p>
+        <p>
+          PUTが失敗した場合は、投稿内容を保持して失敗を通知する。通信が切れて成功応答を受け取れない場合も同様に扱う。サーバーでは保存済みだった場合、利用者の手動再送で二重投稿になり得るが、これを許容する。重複防止の専用状態や照合処理は設けない。
+        </p>
+        <h3>API固有の値表現はRedmineClientで変換する</h3>
+        <p>
+          Entity、Store、UsecaseはOptionなどのRustの表現を使う。Redmine
+          APIが要求するnull、空文字、項目省略への変換はRedmineClientのHTTP実装が担当する。例えば担当者解除はRust側でNoneとして表し、ClientがAPIの解除表現に変換する。
+        </p>
+        <p>
+          部分更新で送信対象を選ぶ場合は差分などで対象を示し、Noneと「今回は送信しない」を区別する。編集差分と更新要求は、送信可能な属性に合わせて整理する。
+        </p>
+        <h2 id="error-handling">Error Handling</h2>
+        <p>
+          <a href="009.html">ADR 9</a>のエラー分類と、<a href="012.html"
+            >ADR 12</a
+          >の存在を前提にするgetterの契約を維持する。不正な状態遷移、要求IDとの不一致、Journalの所有関係・ID重複は適用前に検査する。一部のデータだけを書き換えてから不正なActionを拒否しない。
+        </p>
+        <p>
+          外部通信の失敗は状態へ反映し、利用者に通知する。GET失敗で編集差分や退避データを破棄しない。成功したPUTと、後続GETの失敗は別の結果として保持する。
+        </p>
+        <h2 id="rationale">Rationale</h2>
+        <p>
+          Issue詳細GETの応答とStoreの適用単位を揃えることで、IssueとJournalの部分的な反映をなくす。Entityには取得値、IssueEntryには編集差分と通信状態を置き、画面表示と競合判定の基準を明確にする。
+        </p>
+        <p>
+          既存IssueEntry
+          enumを維持するため、状態と付加情報の組み合わせを型で制限する設計を継続できる。Issue属性とJournalはAPIごとに保存し、それぞれの成功・失敗を独立して扱う。
+        </p>
+        <p>
+          DeletedJournalを別に保持すれば、LocalJournalを最大1件とする契約を維持したまま複数の編集内容を退避できる。手動保存にすることで、Issue保存Usecaseに複数投稿の順序や途中再開を組み込む必要もなくなる。
+        </p>
+        <h2 id="consequences">Consequences</h2>
+        <p>
+          JournalStoreを撤去し、そのAction処理とgetterをIssueStoreへ移す。IssueAggregateがJournalを所有するため、HTTP実装、Demo
+          client、fixture変換、テストデータの組み立ても更新する。fixture形式を変える場合はseeder、SQL、整合性テストへの影響を確認する。
+        </p>
+        <p>
+          現在のget_issueはIssueAggregateへの参照を返す。差分を適用した表示値を返すため、getterと呼び出し側を変更する必要がある。所有値を返すか、参照を組み合わせた表示用の型を返すかは実装時に決める。保存済み本体の存在を要求する契約は維持する。
+        </p>
+        <p>
+          実装時にはdocs/architecture.mdを更新する。既存ADRは書き換えず、本ADRを所有関係と同期処理の更新として参照する。
+        </p>
+        <p>
+          検証では、1回のAction適用で取得結果が揃うこと、未保存差分が維持されること、Issue属性の状態遷移でJournalの作業が失われないことを確認する。消失と再出現、再GETでの二重退避防止、複数DeletedJournalとLocalJournalの共存も対象とする。
+        </p>
+        <p>
+          投稿については、PUT成功時の下書き削除、確認GET失敗後のGETのみの再試行、PUT失敗時の内容保持を検証する。Redmine
+          clientテストで親IDとJournalの取得・更新契約を確認し、UI変更ではsnapshotとctrl+sによる保存操作を確認する。
+        </p>
+        <p>
+          Journalの空notes更新では、取得一覧からの消失とDB上の削除を同一視しない。対象Redmineの応答を契約テストで確認する。共通層の変更はnativeのテストとWebのcompileでも検証する。
+        </p>
+        <h2 id="alternatives-considered">Alternatives Considered</h2>
+        <p>
+          Issue本体を編集しながら差分も保持する方式は、同じ編集を二重に適用する必要があるため変更する。IssueStateを差分から毎回計算する方式も採らず、既存enumを維持する。
+        </p>
+        <p>
+          消失Journalを複数のLocalJournalへ変換する案に代えて、元IDを保持するDeletedJournalを採用する。元IDが再出現した場合に、サーバー値から退避値への編集として戻せる。
+        </p>
+        <p>
+          RemoteJournalStateを編集中のJournalだけに持たせる案は採用しない。全件のSyncedを明示し、本体と状態の対応を検査できるようにする。
+        </p>
+        <h2 id="future-work">Future Work</h2>
+        <p>
+          親変更の編集UIと、Project
+          Entityが現在の一覧用Issue相当を所有するかは別途検討する。DeletedJournalの表示、選択、編集、ローカルでの破棄操作の詳細は実装時に具体化する。
+        </p>
+        <h2 id="references">References</h2>
+        <p>APIの調査は開発用containerの既定であるRedmine 6.1を対象とした。</p>
+        <ul>
+          <li>
+            <a href="https://www.redmine.org/projects/redmine/wiki/Rest_Issues"
+              >Issue REST API</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://www.redmine.org/projects/redmine/wiki/Rest_Journals"
+              >Journal REST API</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/redmine/redmine/blob/6.1-stable/app/views/issues/show.api.rsb"
+              >Issue詳細の応答項目</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/redmine/redmine/blob/6.1-stable/app/helpers/issues_helper.rb#L626"
+              >子Issueの応答生成</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/redmine/redmine/blob/6.1-stable/app/models/issue.rb#L853"
+              >Journalの取得範囲</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/redmine/redmine/blob/6.1-stable/app/models/journal.rb#L111"
+              >Journal変更詳細の可視性</a
+            >
+          </li>
+        </ul>
+      </main>
+    </div>
+  </body>
+</html>
