@@ -22,6 +22,16 @@ pub enum HostEvent {
     Ignored,
 }
 
+/// カーソルをterminalに表示させるか、アプリがbufferへ代替を描画するか。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorRendering {
+    #[cfg_attr(not(feature = "native"), allow(dead_code))]
+    Terminal,
+    /// backendがカーソルを表示しないため、カーソル位置のセルをreverseして代替する。
+    #[cfg_attr(not(feature = "web-demo"), allow(dead_code))]
+    Emulated,
+}
+
 /// 共通runnerが一つのloopでnative/Webを駆動するために必要なplatform操作。
 ///
 /// editorのFutureはeditorへの参照を完了まで保持するため、editorはhostに所有させず
@@ -30,6 +40,7 @@ pub trait PlatformHost {
     fn area(&mut self) -> Rect;
     /// host生成時を起点とする単調な経過時間を返す。
     fn elapsed(&self) -> Duration;
+    fn cursor_rendering(&self) -> CursorRendering;
     fn draw(&mut self, render: impl FnOnce(&mut Frame)) -> io::Result<()>;
     /// event受信時は`Some`、指定時間内にeventがなければ`None`を返す。
     fn next_event(

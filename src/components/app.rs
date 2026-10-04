@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
+use ratatui::style::Modifier;
 
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueComponent, IssueDetailEventProcessResult,
@@ -20,6 +21,7 @@ use crate::components::remote_journal_conflict_popup::{
     EventProcessResult as RemoteJournalConflictEventProcessResult, RemoteJournalConflictComponent,
 };
 use crate::platform::editor::{EditorOutcome, EditorRequest, InteractionMode};
+use crate::platform::host::CursorRendering;
 use crate::platform::input::{InputEvent, KeyCode};
 use crate::stores::{
     Action, Dispatcher, IssueAction, IssueState, JournalAction, LocalJournalState,
@@ -146,10 +148,15 @@ pub struct AppComponent<'a> {
     pending_effect: Option<AppEffect>,
     pending_editor_context: Option<PendingEditorContext>,
     interaction_mode: InteractionMode,
+    cursor_rendering: CursorRendering,
 }
 
 impl<'a> AppComponent<'a> {
-    pub fn new(dispatcher: Rc<RefCell<Dispatcher>>, issue_id: Option<IssueId>) -> Self {
+    pub fn new(
+        dispatcher: Rc<RefCell<Dispatcher>>,
+        issue_id: Option<IssueId>,
+        cursor_rendering: CursorRendering,
+    ) -> Self {
         let (issue_component, issue_result) = match issue_id {
             Some(issue_id) => {
                 let dispatcher_ref = dispatcher.borrow();
@@ -165,6 +172,7 @@ impl<'a> AppComponent<'a> {
             pending_effect: None,
             pending_editor_context: None,
             interaction_mode: InteractionMode::Application,
+            cursor_rendering,
         };
         if let Some(result) = issue_result {
             app.handle_issue_component_result(result);
@@ -763,7 +771,15 @@ impl<'a> AppComponent<'a> {
         // popupより後に描画して最前面へ重ねる。toastはfocusを持たずcursor位置も変えない。
         frame.render_widget(create_toast_widget(store), area);
         if let Some(cursor_position) = self.cursor_position(store, area) {
-            frame.set_cursor_position(cursor_position);
+            match self.cursor_rendering {
+                CursorRendering::Terminal => frame.set_cursor_position(cursor_position),
+                CursorRendering::Emulated => {
+                    // 元のstyleが既にreverseでもカーソル位置が判別できるよう、反転を打ち消す。
+                    if let Some(cell) = frame.buffer_mut().cell_mut(cursor_position) {
+                        cell.modifier.toggle(Modifier::REVERSED);
+                    }
+                }
+            }
         }
     }
 
@@ -1012,7 +1028,11 @@ mod tests {
     #[test]
     fn submitted_empty_issue_body_is_applied_and_releases_editor_context() {
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
         app.pending_editor_context = Some(PendingEditorContext::IssueBody { id: 3.into() });
 
         app.handle_editor_response(EditorOutcome::Submitted {
@@ -1031,7 +1051,11 @@ mod tests {
     #[test]
     fn cancelled_or_failed_editor_releases_context_without_dispatching_for_each_context() {
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
         for failed in [false, true] {
             for context in [
                 PendingEditorContext::IssueBody { id: 3.into() },
@@ -1276,7 +1300,7 @@ mod tests {
     #[test]
     fn new_with_loaded_initial_issue_creates_issue_component_without_fetch_effect() {
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher, Some(3.into()));
+        let mut app = AppComponent::new(dispatcher, Some(3.into()), CursorRendering::Terminal);
 
         assert_eq!(
             app.issue_component.as_ref().unwrap().issue_id(),
@@ -1289,7 +1313,11 @@ mod tests {
     #[test]
     fn editing_mode_ignores_input_without_opening_popup_or_effect() {
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
         app.interaction_mode = InteractionMode::Editing;
 
         app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
@@ -1302,7 +1330,7 @@ mod tests {
     #[test]
     fn new_with_unknown_initial_issue_requests_exactly_one_fetch() {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-        let mut app = AppComponent::new(dispatcher, Some(42.into()));
+        let mut app = AppComponent::new(dispatcher, Some(42.into()), CursorRendering::Terminal);
 
         assert_eq!(
             app.issue_component.as_ref().unwrap().issue_id(),
@@ -1327,7 +1355,7 @@ mod tests {
             message: "offline".to_string(),
         });
         dispatcher.borrow_mut().consume_action();
-        let mut app = AppComponent::new(dispatcher, Some(42.into()));
+        let mut app = AppComponent::new(dispatcher, Some(42.into()), CursorRendering::Terminal);
 
         assert!(matches!(app.take_effect(), Some(AppEffect::FetchIssue(id)) if id == 42));
         assert!(app.take_effect().is_none());
@@ -1346,7 +1374,11 @@ mod tests {
             message: "offline".to_string(),
         });
         dispatcher.borrow_mut().consume_action();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(42.into()));
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(42.into()),
+            CursorRendering::Terminal,
+        );
 
         app.process_event(key_event(KeyCode::Char('r')), dispatcher);
     }
@@ -1354,7 +1386,7 @@ mod tests {
     #[test]
     fn process_event_without_initial_issue_ignores_issue_detail_keys() {
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), None);
+        let mut app = AppComponent::new(dispatcher.clone(), None, CursorRendering::Terminal);
         let _ = app.take_effect();
         app.process_event(key_event(KeyCode::Char('q')), dispatcher.clone());
 
@@ -1375,7 +1407,11 @@ mod tests {
     #[test]
     fn update_opens_issue_property_conflict_popup_only_once() {
         let dispatcher = loaded_dispatcher_with_edited_issue();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
         let conflicts = dispatcher
             .borrow()
             .store()
@@ -1423,7 +1459,11 @@ mod tests {
             dispatcher.borrow_mut().consume_action();
         }
 
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
         for _ in 0..100 {
             app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
@@ -1442,7 +1482,11 @@ mod tests {
     #[test]
     fn ctrl_s_on_synced_journal_notes_installs_no_effect() {
         let dispatcher = loaded_dispatcher_with_journals();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
         focus_first_journal_notes(&mut app, dispatcher.clone());
@@ -1455,7 +1499,7 @@ mod tests {
     #[test]
     fn startup_issue_select_popup_exposes_its_initial_page_fetch_effect_once() {
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher, None);
+        let mut app = AppComponent::new(dispatcher, None, CursorRendering::Terminal);
 
         assert!(matches!(
             app.take_effect(),
@@ -1502,7 +1546,7 @@ mod tests {
             }
         }
 
-        let mut app = AppComponent::new(dispatcher, None);
+        let mut app = AppComponent::new(dispatcher, None, CursorRendering::Terminal);
 
         assert!(matches!(
             app.take_effect(),
@@ -1514,7 +1558,7 @@ mod tests {
     #[test]
     fn startup_issue_select_popup_exposes_fetch_without_dispatching_project_issues_action() {
         let dispatcher = dispatcher_with_selectable_issues();
-        let mut app = AppComponent::new(dispatcher.clone(), None);
+        let mut app = AppComponent::new(dispatcher.clone(), None, CursorRendering::Terminal);
 
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
         assert!(matches!(
@@ -1529,7 +1573,7 @@ mod tests {
     #[test]
     fn q_closes_issue_select_popup_without_dispatching_project_issues_action() {
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), None);
+        let mut app = AppComponent::new(dispatcher.clone(), None, CursorRendering::Terminal);
         complete_initial_popup_page_fetch(&mut app, dispatcher.clone());
 
         let should_continue =
@@ -1543,7 +1587,11 @@ mod tests {
     fn app_with_remote_journal_conflict_popup() -> (Rc<RefCell<Dispatcher>>, AppComponent<'static>)
     {
         let dispatcher = loaded_dispatcher_with_journals();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
@@ -1581,5 +1629,43 @@ mod tests {
             PopupComponent::RemoteJournalConflict { issue_id, journal_id, .. }
                 if *issue_id == IssueId::new(3) && *journal_id == JournalId::new(1)
         ));
+    }
+
+    fn render_loaded_issue(
+        cursor_rendering: CursorRendering,
+    ) -> ratatui::Terminal<ratatui::backend::TestBackend> {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()), cursor_rendering);
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(AREA.width, AREA.height))
+                .unwrap();
+        terminal
+            .draw(|frame| app.render(dispatcher.borrow().store(), frame, frame.area()))
+            .unwrap();
+        terminal
+    }
+
+    #[test]
+    fn terminal_cursor_rendering_sets_terminal_cursor_without_reversing_cell() {
+        let mut terminal = render_loaded_issue(CursorRendering::Terminal);
+
+        // sample_parent_issueを開いた直後のheaderの初期cursor位置。
+        assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(4, 0));
+        assert!(
+            !terminal.backend().buffer()[(4, 0)]
+                .modifier
+                .contains(Modifier::REVERSED)
+        );
+    }
+
+    #[test]
+    fn emulated_cursor_rendering_reverses_only_the_cursor_cell() {
+        let terminal = render_loaded_issue(CursorRendering::Emulated);
+
+        let buffer = terminal.backend().buffer();
+        assert!(buffer[(4, 0)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(3, 0)].modifier.contains(Modifier::REVERSED));
+        assert!(!buffer[(5, 0)].modifier.contains(Modifier::REVERSED));
     }
 }
