@@ -8,6 +8,8 @@ use super::widget::DatePickerPopupWidget;
 pub enum EventProcessResult {
     Entered,
     Canceled,
+    /// popupを開いたまま、イベントを内部で処理した
+    Handled,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,8 +17,10 @@ pub enum FocusField {
     Year,
     Month,
     Day,
-    Calendar,
+    CalendarButton,
     Cancel,
+    /// 開いている間はhjklなどの操作を閉じるまでカレンダー内に留める
+    Calendar,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,10 +29,12 @@ enum Action {
     FocusPrevious,
     FocusLeft,
     FocusRight,
-    FocusCalendar,
+    FocusDown,
+    FocusUp,
     MoveFocusedDate(i64),
     MoveFocusedMonth(i32),
     Confirm,
+    CloseCalendar,
     InputKey(KeyEvent),
 }
 
@@ -81,6 +87,7 @@ impl<'a> DatePickerPopupComponent<'a> {
             self.focused_field == FocusField::Year,
             self.focused_field == FocusField::Month,
             self.focused_field == FocusField::Day,
+            self.focused_field == FocusField::CalendarButton,
             self.focused_field == FocusField::Cancel,
             self.display_start,
             if self.focused_field == FocusField::Calendar {
@@ -93,48 +100,37 @@ impl<'a> DatePickerPopupComponent<'a> {
     }
 
     fn interpret_key_event(&self, key: KeyEvent) -> Option<Action> {
+        if self.focused_field == FocusField::Calendar {
+            return Self::interpret_calendar_key_event(key);
+        }
         match key.code {
             KeyCode::Tab => Some(Action::FocusNext),
             KeyCode::BackTab => Some(Action::FocusPrevious),
             KeyCode::Enter => Some(Action::Confirm),
-            KeyCode::Char('h') => match self.focused_field {
-                FocusField::Year | FocusField::Month | FocusField::Day => Some(Action::FocusLeft),
-                FocusField::Calendar => Some(Action::MoveFocusedDate(-1)),
-                FocusField::Cancel => None,
-            },
-            KeyCode::Char('l') => match self.focused_field {
-                FocusField::Year | FocusField::Month | FocusField::Day => Some(Action::FocusRight),
-                FocusField::Calendar => Some(Action::MoveFocusedDate(1)),
-                FocusField::Cancel => None,
-            },
-            KeyCode::Char('j') => match self.focused_field {
-                FocusField::Year | FocusField::Month | FocusField::Day => {
-                    Some(Action::FocusCalendar)
-                }
-                FocusField::Calendar => Some(Action::MoveFocusedDate(7)),
-                FocusField::Cancel => None,
-            },
-            KeyCode::Char('k') => match self.focused_field {
-                FocusField::Year | FocusField::Month | FocusField::Day => {
-                    Some(Action::FocusCalendar)
-                }
-                FocusField::Calendar => Some(Action::MoveFocusedDate(-7)),
-                FocusField::Cancel => None,
-            },
-            KeyCode::Char('D') if key.modifiers.is_shift() => match self.focused_field {
-                FocusField::Calendar => Some(Action::MoveFocusedMonth(1)),
-                _ => None,
-            },
-            KeyCode::Char('U') if key.modifiers.is_shift() => match self.focused_field {
-                FocusField::Calendar => Some(Action::MoveFocusedMonth(-1)),
-                _ => None,
-            },
+            KeyCode::Char('h') => Some(Action::FocusLeft),
+            KeyCode::Char('l') => Some(Action::FocusRight),
+            KeyCode::Char('j') => Some(Action::FocusDown),
+            KeyCode::Char('k') => Some(Action::FocusUp),
             _ => match self.focused_field {
                 FocusField::Year | FocusField::Month | FocusField::Day => {
                     Some(Action::InputKey(key))
                 }
-                FocusField::Calendar | FocusField::Cancel => None,
+                FocusField::CalendarButton | FocusField::Cancel | FocusField::Calendar => None,
             },
+        }
+    }
+
+    fn interpret_calendar_key_event(key: KeyEvent) -> Option<Action> {
+        match key.code {
+            KeyCode::Enter => Some(Action::Confirm),
+            KeyCode::Esc | KeyCode::Char('q') => Some(Action::CloseCalendar),
+            KeyCode::Char('h') => Some(Action::MoveFocusedDate(-1)),
+            KeyCode::Char('l') => Some(Action::MoveFocusedDate(1)),
+            KeyCode::Char('j') => Some(Action::MoveFocusedDate(7)),
+            KeyCode::Char('k') => Some(Action::MoveFocusedDate(-7)),
+            KeyCode::Char('D') if key.modifiers.is_shift() => Some(Action::MoveFocusedMonth(1)),
+            KeyCode::Char('U') if key.modifiers.is_shift() => Some(Action::MoveFocusedMonth(-1)),
+            _ => None,
         }
     }
 
@@ -156,12 +152,12 @@ impl<'a> DatePickerPopupComponent<'a> {
                 self.focus_right();
                 None
             }
-            Action::FocusCalendar => {
-                self.focused_field = FocusField::Calendar;
-                if let Some(input_date) = self.input_date() {
-                    self.focused_date = input_date;
-                    self.display_start = recent_sunday(input_date);
-                }
+            Action::FocusDown => {
+                self.focus_down();
+                None
+            }
+            Action::FocusUp => {
+                self.focus_up();
                 None
             }
             Action::MoveFocusedDate(days) => {
@@ -173,6 +169,10 @@ impl<'a> DatePickerPopupComponent<'a> {
                 None
             }
             Action::Confirm => self.confirm(),
+            Action::CloseCalendar => {
+                self.focused_field = FocusField::CalendarButton;
+                Some(EventProcessResult::Handled)
+            }
             Action::InputKey(key) => {
                 self.focused_textarea_mut().input(Self::textarea_input(key));
                 None
@@ -202,23 +202,24 @@ impl<'a> DatePickerPopupComponent<'a> {
         }
     }
 
+    // Calendarは開閉で出入りするため、Tab順に含めない
     fn focus_next(&mut self) {
         self.focused_field = match self.focused_field {
             FocusField::Year => FocusField::Month,
             FocusField::Month => FocusField::Day,
-            FocusField::Day => FocusField::Calendar,
-            FocusField::Calendar => FocusField::Cancel,
-            FocusField::Cancel => FocusField::Cancel,
+            FocusField::Day => FocusField::CalendarButton,
+            FocusField::CalendarButton => FocusField::Cancel,
+            field => field,
         };
     }
 
     fn focus_previous(&mut self) {
         self.focused_field = match self.focused_field {
-            FocusField::Year => FocusField::Year,
             FocusField::Month => FocusField::Year,
             FocusField::Day => FocusField::Month,
-            FocusField::Calendar => FocusField::Day,
-            FocusField::Cancel => FocusField::Calendar,
+            FocusField::CalendarButton => FocusField::Day,
+            FocusField::Cancel => FocusField::CalendarButton,
+            field => field,
         };
     }
 
@@ -226,6 +227,7 @@ impl<'a> DatePickerPopupComponent<'a> {
         self.focused_field = match self.focused_field {
             FocusField::Month => FocusField::Year,
             FocusField::Day => FocusField::Month,
+            FocusField::Cancel => FocusField::CalendarButton,
             field => field,
         };
     }
@@ -234,8 +236,40 @@ impl<'a> DatePickerPopupComponent<'a> {
         self.focused_field = match self.focused_field {
             FocusField::Year => FocusField::Month,
             FocusField::Month => FocusField::Day,
+            FocusField::CalendarButton => FocusField::Cancel,
             field => field,
         };
+    }
+
+    fn focus_down(&mut self) {
+        self.focused_field = match self.focused_field {
+            FocusField::Year | FocusField::Month | FocusField::Day => FocusField::CalendarButton,
+            field => field,
+        };
+    }
+
+    fn focus_up(&mut self) {
+        self.focused_field = match self.focused_field {
+            FocusField::CalendarButton | FocusField::Cancel => FocusField::Year,
+            field => field,
+        };
+    }
+
+    fn open_calendar(&mut self) {
+        self.focused_field = FocusField::Calendar;
+        // 入力欄が日付として不正な場合は、前回カレンダーで見ていた日付から始める
+        if let Some(input_date) = self.input_date() {
+            self.focused_date = input_date;
+            self.display_start = recent_sunday(input_date);
+        }
+    }
+
+    fn apply_calendar_date(&mut self) {
+        let date = self.focused_date;
+        self.year_textarea = textarea_with_value(&format!("{:04}", date.year()));
+        self.month_textarea = textarea_with_value(&format!("{:02}", date.month()));
+        self.day_textarea = textarea_with_value(&format!("{:02}", date.day()));
+        self.focused_field = FocusField::CalendarButton;
     }
 
     fn move_focused_date(&mut self, days: i64) {
@@ -274,10 +308,13 @@ impl<'a> DatePickerPopupComponent<'a> {
                 (self.observer)(date);
                 Some(EventProcessResult::Entered)
             }
+            FocusField::CalendarButton => {
+                self.open_calendar();
+                None
+            }
             FocusField::Calendar => {
-                self.selected_date = Some(self.focused_date);
-                (self.observer)(self.focused_date);
-                Some(EventProcessResult::Entered)
+                self.apply_calendar_date();
+                Some(EventProcessResult::Handled)
             }
             FocusField::Cancel => Some(EventProcessResult::Canceled),
         }
@@ -288,7 +325,7 @@ impl<'a> DatePickerPopupComponent<'a> {
             FocusField::Year => &mut self.year_textarea,
             FocusField::Month => &mut self.month_textarea,
             FocusField::Day => &mut self.day_textarea,
-            FocusField::Calendar | FocusField::Cancel => {
+            FocusField::CalendarButton | FocusField::Cancel | FocusField::Calendar => {
                 unreachable!("only date input fields accept text input")
             }
         }
@@ -396,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn tab_and_shift_tab_move_focus_in_widget_order() {
+    fn tab_and_shift_tab_move_focus_in_widget_order_without_calendar() {
         let selected = Rc::new(RefCell::new(None));
         let mut component = component_with_observer(selected);
 
@@ -406,12 +443,14 @@ mod tests {
         component.process_event(key_event(KeyCode::Tab));
         assert_eq!(component.focused_field, FocusField::Day);
         component.process_event(key_event(KeyCode::Tab));
-        assert_eq!(component.focused_field, FocusField::Calendar);
+        assert_eq!(component.focused_field, FocusField::CalendarButton);
+        component.process_event(key_event(KeyCode::Tab));
+        assert_eq!(component.focused_field, FocusField::Cancel);
         component.process_event(key_event(KeyCode::Tab));
         assert_eq!(component.focused_field, FocusField::Cancel);
 
         component.process_event(key_event(KeyCode::BackTab));
-        assert_eq!(component.focused_field, FocusField::Calendar);
+        assert_eq!(component.focused_field, FocusField::CalendarButton);
         component.process_event(key_event(KeyCode::BackTab));
         assert_eq!(component.focused_field, FocusField::Day);
         component.process_event(key_event(KeyCode::BackTab));
@@ -436,22 +475,76 @@ mod tests {
     }
 
     #[test]
-    fn j_and_k_move_from_each_date_input_to_calendar() {
+    fn h_and_l_move_focus_between_buttons() {
+        let selected = Rc::new(RefCell::new(None));
+        let mut component = component_with_observer(selected);
+        component.focused_field = FocusField::CalendarButton;
+
+        component.process_event(key_event(KeyCode::Char('l')));
+        assert_eq!(component.focused_field, FocusField::Cancel);
+        component.process_event(key_event(KeyCode::Char('h')));
+        assert_eq!(component.focused_field, FocusField::CalendarButton);
+    }
+
+    #[test]
+    fn j_moves_from_each_date_input_to_calendar_button() {
         for field in [FocusField::Year, FocusField::Month, FocusField::Day] {
-            for key in [KeyCode::Char('j'), KeyCode::Char('k')] {
-                let selected = Rc::new(RefCell::new(None));
-                let mut component = component_with_observer(selected);
-                component.focused_field = field;
+            let selected = Rc::new(RefCell::new(None));
+            let mut component = component_with_observer(selected);
+            component.focused_field = field;
 
-                component.process_event(key_event(key));
+            component.process_event(key_event(KeyCode::Char('j')));
 
-                assert_eq!(component.focused_field, FocusField::Calendar);
-                assert_eq!(
-                    component.focused_date,
-                    local_datetime("2026-02-16T00:00:00+09:00")
-                );
-            }
+            assert_eq!(component.focused_field, FocusField::CalendarButton);
         }
+    }
+
+    #[test]
+    fn k_moves_from_each_button_to_year_input() {
+        for field in [FocusField::CalendarButton, FocusField::Cancel] {
+            let selected = Rc::new(RefCell::new(None));
+            let mut component = component_with_observer(selected);
+            component.focused_field = field;
+
+            component.process_event(key_event(KeyCode::Char('k')));
+
+            assert_eq!(component.focused_field, FocusField::Year);
+        }
+    }
+
+    #[test]
+    fn enter_on_calendar_button_opens_calendar_at_input_date() {
+        let selected = Rc::new(RefCell::new(None));
+        let mut component = component_with_observer(selected.clone());
+        component.day_textarea.delete_line_by_head();
+        component.day_textarea.insert_str("25");
+        component.focused_field = FocusField::CalendarButton;
+
+        let result = component.process_event(key_event(KeyCode::Enter));
+
+        assert!(result.is_none());
+        assert_eq!(component.focused_field, FocusField::Calendar);
+        assert_eq!(
+            component.focused_date,
+            local_datetime("2026-02-25T00:00:00+09:00")
+        );
+        assert_eq!(
+            component.display_start,
+            local_datetime("2026-02-22T00:00:00+09:00")
+        );
+        assert_eq!(*selected.borrow(), None);
+    }
+
+    #[test]
+    fn calendar_keeps_focus_on_tab_and_shift_tab() {
+        let selected = Rc::new(RefCell::new(None));
+        let mut component = component_with_observer(selected);
+        component.focused_field = FocusField::Calendar;
+
+        component.process_event(key_event(KeyCode::Tab));
+        assert_eq!(component.focused_field, FocusField::Calendar);
+        component.process_event(key_event(KeyCode::BackTab));
+        assert_eq!(component.focused_field, FocusField::Calendar);
     }
 
     #[test]
@@ -532,19 +625,43 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_calendar_notifies_observer_with_focused_date() {
+    fn enter_on_calendar_writes_focused_date_to_inputs_and_closes_calendar() {
         let selected = Rc::new(RefCell::new(None));
         let mut component = component_with_observer(selected.clone());
         component.focused_field = FocusField::Calendar;
+        component.process_event(key_event_with_modifiers(
+            KeyCode::Char('D'),
+            KeyModifiers::shift(),
+        ));
         component.process_event(key_event(KeyCode::Char('l')));
 
         let result = component.process_event(key_event(KeyCode::Enter));
 
-        assert!(matches!(result, Some(EventProcessResult::Entered)));
-        assert_eq!(
-            *selected.borrow(),
-            Some(local_datetime("2026-02-17T00:00:00+09:00"))
-        );
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
+        assert_eq!(component.focused_field, FocusField::CalendarButton);
+        assert_eq!(textarea_text(&component.year_textarea), "2026");
+        assert_eq!(textarea_text(&component.month_textarea), "03");
+        assert_eq!(textarea_text(&component.day_textarea), "17");
+        assert_eq!(*selected.borrow(), None);
+    }
+
+    #[test]
+    fn q_and_esc_on_calendar_discard_focused_date_and_close_calendar() {
+        for code in [KeyCode::Char('q'), KeyCode::Esc] {
+            let selected = Rc::new(RefCell::new(None));
+            let mut component = component_with_observer(selected.clone());
+            component.focused_field = FocusField::Calendar;
+            component.process_event(key_event(KeyCode::Char('l')));
+
+            let result = component.process_event(key_event(code));
+
+            assert!(matches!(result, Some(EventProcessResult::Handled)));
+            assert_eq!(component.focused_field, FocusField::CalendarButton);
+            assert_eq!(textarea_text(&component.year_textarea), "2026");
+            assert_eq!(textarea_text(&component.month_textarea), "02");
+            assert_eq!(textarea_text(&component.day_textarea), "16");
+            assert_eq!(*selected.borrow(), None);
+        }
     }
 
     #[test]
@@ -607,9 +724,14 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let popup_area = DatePickerPopupWidget::popup_area(buffer.area);
+        let popup_area = DatePickerPopupWidget::popup_area(buffer.area, false);
+        let button_y = popup_area.y + popup_area.height - 4;
         assert_eq!(
-            buffer[(popup_area.x + 1, popup_area.y + popup_area.height - 4)].fg,
+            buffer[(popup_area.x + 1, button_y)].fg,
+            ratatui::style::Color::Reset
+        );
+        assert_eq!(
+            buffer[(popup_area.x + 13, button_y)].fg,
             ratatui::style::Color::LightGreen
         );
     }

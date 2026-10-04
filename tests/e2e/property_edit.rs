@@ -130,15 +130,18 @@ fn date_picker_changes_the_start_date_and_the_due_date() {
     // Given Issue 3（開始日: 2026/02/16）の開始日popupを開いている
     let mut session = open_property_popup_of_issue_3(START_DATE_LINE);
 
-    // When 日付欄へ移り、翌日を選ぶ
-    // Tabで年・月の欄を越えて日の欄へ移り、lで1日進める。
-    press_keys(&mut session, &["Tab", "Tab", "Tab", "l", "Enter"]);
+    // When カレンダーで翌日を選び、入力欄で確定する
+    // Tabで年・月・日の欄を越えてカレンダーボタンへ移り、Enterでカレンダーを開く。
+    // lで1日進めてEnterで入力欄へ反映し、kで年の欄へ戻ってEnterで確定する。
+    let pick_next_day = ["Tab", "Tab", "Tab", "Enter", "l", "Enter", "k", "Enter"];
+    press_keys(&mut session, &pick_next_day);
 
     // Then 開始日が翌日になる
     wait_for_property(&mut session, "開始日", "2026/02/17");
 
     // When 期日（2026/02/17）のpopupを開き、翌日を選ぶ
-    press_keys(&mut session, &["j", "e", "Tab", "Tab", "Tab", "l", "Enter"]);
+    press_keys(&mut session, &["j", "e"]);
+    press_keys(&mut session, &pick_next_day);
 
     // Then 期日が翌日になる
     wait_for_property(&mut session, "期日", "2026/02/18");

@@ -9,7 +9,8 @@ use ratatui_textarea::TextArea;
 use crate::widgets::monthly_calendar_widget::MonthlyCalendarWidget;
 
 const POPUP_WIDTH: u16 = 31;
-const POPUP_HEIGHT: u16 = 17;
+const POPUP_HEIGHT_WITH_CALENDAR: u16 = 17;
+const POPUP_HEIGHT_WITHOUT_CALENDAR: u16 = 8;
 
 pub struct DatePickerPopupWidget<'a> {
     year_textarea: &'a TextArea<'a>,
@@ -18,8 +19,10 @@ pub struct DatePickerPopupWidget<'a> {
     year_textarea_focused: bool,
     month_textarea_focused: bool,
     day_textarea_focused: bool,
+    calendar_button_focused: bool,
     cancel_button_focused: bool,
     display_start: DateTime<Local>,
+    /// Someの間だけカレンダーを表示する
     focused_date: Option<DateTime<Local>>,
     selected_date: Option<DateTime<Local>>,
 }
@@ -32,6 +35,7 @@ impl<'a> DatePickerPopupWidget<'a> {
         year_textarea_focused: bool,
         month_textarea_focused: bool,
         day_textarea_focused: bool,
+        calendar_button_focused: bool,
         cancel_button_focused: bool,
         display_start: DateTime<Local>,
         focused_date: Option<DateTime<Local>>,
@@ -44,6 +48,7 @@ impl<'a> DatePickerPopupWidget<'a> {
             year_textarea_focused,
             month_textarea_focused,
             day_textarea_focused,
+            calendar_button_focused,
             cancel_button_focused,
             display_start,
             focused_date,
@@ -51,9 +56,14 @@ impl<'a> DatePickerPopupWidget<'a> {
         }
     }
 
-    pub fn popup_area(area: Rect) -> Rect {
+    pub fn popup_area(area: Rect, calendar_visible: bool) -> Rect {
+        let popup_height = if calendar_visible {
+            POPUP_HEIGHT_WITH_CALENDAR
+        } else {
+            POPUP_HEIGHT_WITHOUT_CALENDAR
+        };
         let width = area.width.min(POPUP_WIDTH);
-        let height = area.height.min(POPUP_HEIGHT);
+        let height = area.height.min(popup_height);
 
         Rect {
             x: area.x.saturating_add(area.width.saturating_sub(width) / 2),
@@ -69,7 +79,8 @@ impl<'a> DatePickerPopupWidget<'a> {
 impl Widget for DatePickerPopupWidget<'_> {
     /// クライアント領域に対する描画(したがってClearの責務がある)
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let area = Self::popup_area(area);
+        let calendar_visible = self.focused_date.is_some();
+        let area = Self::popup_area(area, calendar_visible);
         if area.width < 3 || area.height < 3 {
             return;
         }
@@ -84,12 +95,13 @@ impl Widget for DatePickerPopupWidget<'_> {
             return;
         }
 
+        let calendar_height = if calendar_visible { 1 } else { 0 };
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3),
-                Constraint::Length(1),
-                Constraint::Fill(1),
+                Constraint::Length(calendar_height),
+                Constraint::Fill(calendar_height),
                 Constraint::Length(3),
             ])
             .split(inner);
@@ -124,9 +136,17 @@ impl Widget for DatePickerPopupWidget<'_> {
             self.day_textarea_focused,
         );
 
-        MonthlyCalendarWidget::new(self.display_start, self.focused_date, self.selected_date)
-            .render(rows[2], buf);
-        render_cancel_button(rows[3], buf, self.cancel_button_focused);
+        if calendar_visible {
+            MonthlyCalendarWidget::new(self.display_start, self.focused_date, self.selected_date)
+                .render(rows[2], buf);
+        }
+        render_buttons(
+            rows[3],
+            buf,
+            !calendar_visible,
+            self.calendar_button_focused,
+            self.cancel_button_focused,
+        );
     }
 }
 
@@ -159,21 +179,40 @@ fn textarea_border_style(focused: bool) -> Style {
     }
 }
 
-fn render_cancel_button(area: Rect, buf: &mut Buffer, focused: bool) {
+fn render_buttons(
+    area: Rect,
+    buf: &mut Buffer,
+    calendar_button_visible: bool,
+    calendar_button_focused: bool,
+    cancel_button_focused: bool,
+) {
     if area.width == 0 || area.height == 0 {
         return;
     }
 
     let cols = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(12), Constraint::Fill(1)])
+        .constraints([
+            Constraint::Length(12),
+            Constraint::Length(12),
+            Constraint::Fill(1),
+        ])
         .split(area);
-    let button = Paragraph::new(Line::from("キャンセル")).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(button_border_style(focused)),
-    );
-    button.render(cols[0], buf);
+    // カレンダー表示中もキャンセルボタンの位置は変えない
+    if calendar_button_visible {
+        render_button("カレンダー", cols[0], buf, calendar_button_focused);
+    }
+    render_button("キャンセル", cols[1], buf, cancel_button_focused);
+}
+
+fn render_button(label: &'static str, area: Rect, buf: &mut Buffer, focused: bool) {
+    Paragraph::new(Line::from(label))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(button_border_style(focused)),
+        )
+        .render(area, buf);
 }
 
 fn button_border_style(focused: bool) -> Style {
@@ -196,12 +235,16 @@ mod tests {
         textarea
     }
 
-    fn render_popup_snapshot(name: &str, width: u16, height: u16) {
+    fn render_popup_snapshot(
+        name: &str,
+        width: u16,
+        height: u16,
+        focused_date: Option<DateTime<Local>>,
+    ) {
         let year_textarea = textarea_with_value("2026");
         let month_textarea = textarea_with_value("02");
         let day_textarea = textarea_with_value("16");
         let display_start = local_datetime("2026-02-01T00:00:00+09:00");
-        let focused_date = local_datetime("2026-02-16T00:00:00+09:00");
         let selected_date = local_datetime("2026-02-16T00:00:00+09:00");
 
         render_snapshot(
@@ -216,8 +259,9 @@ mod tests {
                 false,
                 false,
                 false,
+                false,
                 display_start,
-                Some(focused_date),
+                focused_date,
                 Some(selected_date),
             ),
         );
@@ -225,8 +269,14 @@ mod tests {
 
     #[test]
     fn snapshot_date_picker_popup_renders_whole_widget_for_client_sizes() {
-        render_popup_snapshot("date_picker_popup_whole_widget_60x24", 60, 24);
-        render_popup_snapshot("date_picker_popup_whole_widget_31x17", 31, 17);
+        let focused_date = Some(local_datetime("2026-02-16T00:00:00+09:00"));
+        render_popup_snapshot("date_picker_popup_whole_widget_60x24", 60, 24, focused_date);
+        render_popup_snapshot("date_picker_popup_whole_widget_31x17", 31, 17, focused_date);
+    }
+
+    #[test]
+    fn snapshot_date_picker_popup_hides_calendar_while_closed() {
+        render_popup_snapshot("date_picker_popup_calendar_closed_60x24", 60, 24, None);
     }
 
     #[test]
@@ -250,6 +300,7 @@ mod tests {
                         true,
                         false,
                         false,
+                        false,
                         display_start,
                         Some(focused_date),
                         Some(selected_date),
@@ -260,7 +311,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let popup_area = DatePickerPopupWidget::popup_area(buffer.area);
+        let popup_area = DatePickerPopupWidget::popup_area(buffer.area, true);
         let input_y = popup_area.y + 1;
         let input_x = popup_area.x + 1;
 
