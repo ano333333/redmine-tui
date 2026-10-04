@@ -3,7 +3,6 @@ use super::focus_state::FocusState;
 use super::widget::{BodyWidget, BodyWidgetState};
 use ratatui::layout::Position;
 
-use crate::entities::IssueAggregate;
 use crate::platform::input::InputEvent;
 use crate::vos::IssueId;
 
@@ -53,8 +52,8 @@ impl BodyComponent {
         self.focus_state.focus_event(event);
     }
 
-    pub fn update(&mut self, issue: &IssueAggregate, width: u16) {
-        self.body = issue.issue.description.clone();
+    pub fn update(&mut self, description: &str, width: u16) {
+        self.body = description.to_string();
         self.widget_state.update(width, &self.body);
         // フォーカスは本文の行だけを対象にする。line_count は末尾の余白行を
         // 含むので、そのまま渡すと空行にカーソルが乗る。
@@ -80,7 +79,7 @@ mod tests {
     use super::super::focus_state::FocusEvent;
     use super::*;
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
-    use crate::test_support::{render_snapshot, sample_issue_aggregate};
+    use crate::test_support::render_snapshot;
     use crate::widgets::gutter::GUTTER_WIDTH;
     use ratatui::layout::Position;
 
@@ -101,20 +100,6 @@ mod tests {
         InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
-    fn issue_with_body(body: &str) -> IssueAggregate {
-        let mut issue = sample_issue_aggregate(
-            ISSUE_ID,
-            "Body component issue",
-            1.into(),
-            Some(1),
-            None,
-            None,
-            0,
-        );
-        issue.issue.description = body.to_string();
-        issue
-    }
-
     fn wrapping_body() -> &'static str {
         "# Heading\n\n- first item\n- second item\n\nParagraph text that should wrap."
     }
@@ -124,9 +109,8 @@ mod tests {
     }
 
     fn updated_component(width: u16, body: &str) -> BodyComponent {
-        let issue = issue_with_body(body);
         let mut component = BodyComponent::new(ISSUE_ID);
-        component.update(&issue, width);
+        component.update(body, width);
         component
     }
 
@@ -266,14 +250,13 @@ mod tests {
 
     #[test]
     fn update_to_narrower_width_tracks_line_count_and_current_cursor_clamp() {
-        let issue = issue_with_body(wrapping_body());
         let mut component = BodyComponent::new(ISSUE_ID);
-        component.update(&issue, WIDE_WIDTH);
+        component.update(wrapping_body(), WIDE_WIDTH);
         component.focus_event(FocusEvent::Focused {
             position: Position::new(31, WIDE_LAST_LINE),
         });
 
-        component.update(&issue, NARROW_WIDTH);
+        component.update(wrapping_body(), NARROW_WIDTH);
 
         assert_layout_contract(
             &component,
@@ -292,12 +275,11 @@ mod tests {
     #[test]
     fn update_to_different_issue_body_changes_widget_and_edit_body() {
         let mut component = updated_component(WIDE_WIDTH, wrapping_body());
-        let issue = issue_with_body(edited_body());
         component.focus_event(FocusEvent::Focused {
             position: Position::new(6, 2),
         });
 
-        component.update(&issue, WIDE_WIDTH);
+        component.update(edited_body(), WIDE_WIDTH);
         let result = component.process_event(key_event(KeyCode::Char('e')));
 
         match result {

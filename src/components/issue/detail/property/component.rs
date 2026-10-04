@@ -2,7 +2,7 @@ use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
 use super::widget::PropertyWidget;
 use ratatui::layout::Position;
 
-use crate::entities::{IssueAggregate, IssueStatus};
+use crate::entities::{IssueStatus, IssueView};
 use crate::platform::input::InputEvent;
 use crate::stores::Store;
 use crate::vos::IssueId;
@@ -38,7 +38,7 @@ impl PropertyComponent {
         let paragraph = create_property_widget(
             issue,
             store,
-            store.get_issue_status(issue.issue.status_id),
+            store.get_issue_status(issue.status_id()),
             None,
         );
         paragraph.line_count(width) as u16
@@ -49,7 +49,7 @@ impl PropertyComponent {
         create_property_widget(
             issue,
             store,
-            store.get_issue_status(issue.issue.status_id),
+            store.get_issue_status(issue.status_id()),
             self.focus_state.focused_y(),
         )
     }
@@ -60,36 +60,36 @@ impl PropertyComponent {
 }
 
 fn create_property_widget<'a>(
-    issue: &'a IssueAggregate,
+    issue: IssueView<'a>,
     store: &'a Store,
     issue_status: Option<&'a IssueStatus>,
     focused_y: Option<u16>,
 ) -> PropertyWidget<'a> {
     let author = store
-        .get_user(issue.author_id)
+        .get_user(issue.author_id())
         .map(|user| user.name.as_str())
         .unwrap_or("(unknown)");
     let assigned_to = issue
-        .assigned_to_id
+        .assigned_to_id()
         .and_then(|user_id| store.get_user(user_id))
         .map(|user| user.name.as_str());
     let priority = store
-        .get_priority(issue.priority_id)
+        .get_priority(issue.priority_id())
         .map(|priority| priority.name.as_str())
         .unwrap_or("(unknown)");
     let project = store
-        .get_project(issue.issue.project_id)
+        .get_project(issue.project_id())
         .map(|project| project.name.as_str())
         .unwrap_or("(unknown)");
     let tracker = store
-        .get_tracker(issue.tracker_id)
+        .get_tracker(issue.tracker_id())
         .map(|tracker| tracker.name.as_str())
         .unwrap_or("(unknown)");
     let target_version = issue
-        .target_version_id
+        .target_version_id()
         .and_then(|target_version_id| store.get_target_version(target_version_id))
         .map(|target_version| target_version.name.as_str());
-    let category = match issue.category_id {
+    let category = match issue.category_id() {
         Some(category_id) => store
             .get_category(category_id)
             .map(|category| category.name.as_str())
@@ -97,10 +97,10 @@ fn create_property_widget<'a>(
         None => "-",
     };
     PropertyWidget::new(
-        issue.issue.id,
+        issue.id(),
         author,
-        issue.created_on,
-        issue.updated_on,
+        issue.created_on(),
+        issue.updated_on(),
         issue_status
             .map(|issue_status| issue_status.name.as_str())
             .unwrap_or("(unknown)"),
@@ -109,11 +109,11 @@ fn create_property_widget<'a>(
         project,
         assigned_to,
         target_version,
-        issue.start_date,
-        issue.due_date,
-        issue.done_ratio,
-        issue.estimated_hours,
-        issue.total_spent_hours,
+        issue.start_date(),
+        issue.due_date(),
+        issue.done_ratio(),
+        issue.estimated_hours(),
+        issue.total_spent_hours(),
         category,
         focused_y,
     )

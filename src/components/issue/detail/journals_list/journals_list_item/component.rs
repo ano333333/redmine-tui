@@ -129,7 +129,7 @@ fn resolve_parent_label(id: crate::vos::IssueId, store: &Store) -> String {
         return format!("#{}", id);
     }
     let (issue, _) = store.get_issue(id);
-    format!("#{} {}", id, issue.issue.subject)
+    format!("#{} {}", id, issue.subject())
 }
 
 fn format_date(date: Option<chrono::DateTime<chrono::Local>>) -> String {

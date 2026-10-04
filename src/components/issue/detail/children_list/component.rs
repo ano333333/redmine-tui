@@ -23,15 +23,15 @@ impl ChildrenListComponent {
 
     pub fn update(&mut self, store: &Store) {
         let (issue, _) = store.get_issue(self.id);
-        self.focus_state.update(&issue.child_ids);
+        self.focus_state.update(issue.child_ids());
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> ChildrenListWidget<'a> {
         let (issue, _) = store.get_issue(self.id);
 
         let (child_all_num, child_closed_num, child_opened_num) =
-            child_status_counts(store, &issue.child_ids);
-        let children = create_child_rows(store, &issue.child_ids);
+            child_status_counts(store, issue.child_ids());
+        let children = create_child_rows(store, issue.child_ids());
 
         ChildrenListWidget::new(
             child_all_num,
@@ -44,7 +44,7 @@ impl ChildrenListComponent {
 
     pub fn line_count(&self, store: &Store) -> u16 {
         let (issue, _) = store.get_issue(self.id);
-        2 + (issue.child_ids.len() as u16) + 1
+        2 + (issue.child_ids().len() as u16) + 1
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
@@ -67,9 +67,7 @@ fn child_status_counts(store: &Store, child_ids: &[IssueId]) -> (u16, u16, u16) 
         .filter(|id| {
             store.try_get_issue_state(**id).is_some() && {
                 let (issue, _) = store.get_issue(**id);
-                store
-                    .get_issue_status(issue.issue.status_id)
-                    .is_closed_status()
+                store.get_issue_status(issue.status_id()).is_closed_status()
             }
         })
         .count() as u16;
@@ -85,9 +83,9 @@ fn create_child_rows<'a>(store: &'a Store, child_ids: &[IssueId]) -> Vec<ChildIs
         .map(|id| store.get_issue(*id))
         .map(|(issue, _)| ChildIssueRow {
             issue,
-            issue_status: store.get_issue_status(issue.issue.status_id),
+            issue_status: store.get_issue_status(issue.status_id()),
             assigned_to_name: issue
-                .assigned_to_id
+                .assigned_to_id()
                 .and_then(|user_id| store.get_user(user_id))
                 .map(|user| user.name.as_str()),
         })
@@ -132,6 +130,27 @@ mod tests {
         store
     }
 
+    #[test]
+    fn child_rows_show_unsaved_edits_of_loaded_children() {
+        let mut store = store_with_parent_and_children();
+        store.consume_action(
+            IssueAction::UpdateDoneRatio {
+                id: 1.into(),
+                done_ratio: 40,
+            }
+            .into(),
+        );
+        let (parent, _) = store.get_issue(ISSUE_ID);
+
+        let rows = create_child_rows(&store, parent.child_ids());
+
+        let row = rows
+            .iter()
+            .find(|row| row.issue.id() == crate::vos::IssueId::from(1))
+            .expect("child 1 is loaded");
+        assert_eq!(row.issue.done_ratio(), 40);
+    }
+
     fn store_with_parent_and_unknown_status_child() -> Store {
         let mut store = store_with_parent_and_children();
         store.consume_action(Action::SyncIssueStatuses {
@@ -166,9 +185,9 @@ mod tests {
         let mut component = ChildrenListComponent::new(ISSUE_ID);
         component.update(&store);
         let (parent, _) = store.get_issue(ISSUE_ID);
-        let children = create_child_rows(&store, &parent.child_ids);
+        let children = create_child_rows(&store, parent.child_ids());
         let (child_all_num, child_closed_num, child_opened_num) =
-            child_status_counts(&store, &parent.child_ids);
+            child_status_counts(&store, parent.child_ids());
 
         assert!(store.get_issue_status(5.into()).is_none());
         assert_eq!(children.len(), 2);

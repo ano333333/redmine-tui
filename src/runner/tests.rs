@@ -988,7 +988,7 @@ fn edited_remote_journal_dispatcher() -> Dispatcher {
 
 fn edited_issue_dispatcher() -> (Dispatcher, IssueAggregate) {
     let mut dispatcher = loaded_journal_upload_dispatcher();
-    let server_issue = dispatcher.store().get_issue(IssueId::new(3)).0.clone();
+    let server_issue = crate::test_support::sample_parent_issue();
     dispatcher.dispatch(IssueAction::UpdateDescription {
         id: IssueId::new(3),
         body: "locally edited description".to_string(),

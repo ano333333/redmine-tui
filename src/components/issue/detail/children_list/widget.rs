@@ -5,7 +5,7 @@ use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
-use crate::entities::{IssueAggregate, IssueStatus, IssueStatusExt};
+use crate::entities::{IssueStatus, IssueStatusExt, IssueView};
 use crate::vos::IssueId;
 use crate::widgets::gutter::{Gutter, indented_area};
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED, SECTION_BAR};
@@ -16,7 +16,7 @@ pub const HEADER_LINES: u16 = 2;
 const GUTTER_TRAILING_LINES: u16 = 1;
 
 pub struct ChildIssueRow<'a> {
-    pub issue: &'a IssueAggregate,
+    pub issue: IssueView<'a>,
     pub issue_status: Option<&'a IssueStatus>,
     pub assigned_to_name: Option<&'a str>,
 }
@@ -135,13 +135,13 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
             Constraint::Length(4), // progress
         ])
         .split(row);
-    create_id_widget(issue.issue.id, is_closed).render(cols[0], buffer);
-    create_title_widget(&issue.issue.subject).render(cols[2], buffer);
+    create_id_widget(issue.id(), is_closed).render(cols[0], buffer);
+    create_title_widget(issue.subject()).render(cols[2], buffer);
     create_status_widget(status_name).render(cols[4], buffer);
     create_person_in_charge_widget(child.assigned_to_name).render(cols[6], buffer);
-    create_start_date_widget(&issue.start_date).render(cols[8], buffer);
-    create_due_widget(&issue.due_date).render(cols[10], buffer);
-    create_progress_widget(issue.done_ratio).render(cols[12], buffer);
+    create_start_date_widget(&issue.start_date()).render(cols[8], buffer);
+    create_due_widget(&issue.due_date()).render(cols[10], buffer);
+    create_progress_widget(issue.done_ratio()).render(cols[12], buffer);
 
     if focused {
         for x in 0..row.width {
@@ -252,17 +252,17 @@ mod tests {
                 2,
                 vec![
                     ChildIssueRow {
-                        issue: &done,
+                        issue: IssueView::new(&done, &[]),
                         issue_status: Some(&done_status),
                         assigned_to_name: Some("alice"),
                     },
                     ChildIssueRow {
-                        issue: &open,
+                        issue: IssueView::new(&open, &[]),
                         issue_status: Some(&open_status),
                         assigned_to_name: None,
                     },
                     ChildIssueRow {
-                        issue: &unknown,
+                        issue: IssueView::new(&unknown, &[]),
                         issue_status: None,
                         assigned_to_name: None,
                     },
@@ -293,17 +293,17 @@ mod tests {
             2,
             vec![
                 ChildIssueRow {
-                    issue: &child_a,
+                    issue: IssueView::new(&child_a, &[]),
                     issue_status: Some(&child_a_status),
                     assigned_to_name: Some("alice"),
                 },
                 ChildIssueRow {
-                    issue: &child_b,
+                    issue: IssueView::new(&child_b, &[]),
                     issue_status: Some(&child_b_status),
                     assigned_to_name: None,
                 },
                 ChildIssueRow {
-                    issue: &child_c,
+                    issue: IssueView::new(&child_c, &[]),
                     issue_status: None,
                     assigned_to_name: None,
                 },

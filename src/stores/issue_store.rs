@@ -4,11 +4,12 @@
 
 use std::collections::HashMap;
 
-use crate::entities::IssueAggregate;
+use crate::entities::{IssueAggregate, IssueView};
 use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
     IssueDueDateDiff, IssueEstimatedHoursDiff, IssuePriorityIdDiff, IssueProjectIdDiff,
     IssueStartDateDiff, IssueStatusIdDiff, IssueTargetVersionIdDiff, IssueTrackerIdDiff,
+    fold_property_diffs,
 };
 use crate::vos::{
     CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
@@ -275,24 +276,21 @@ impl IssueStore {
                 }
             }
             IssueAction::UpdateDescription { id, body } => self.update_issue(id, |issue| {
-                let before = issue.issue.description.clone();
-                issue.issue.description = body.clone();
+                let before = issue.description().to_string();
                 IssuePropertyDiff::Description(IssueDescriptionDiff {
                     before,
                     after: body,
                 })
             }),
             IssueAction::UpdateStatus { id, status_id } => self.update_issue(id, |issue| {
-                let before = issue.issue.status_id;
-                issue.issue.status_id = status_id;
+                let before = issue.status_id();
                 IssuePropertyDiff::StatusId(IssueStatusIdDiff {
                     before,
                     after: status_id,
                 })
             }),
             IssueAction::UpdateTracker { id, tracker_id } => self.update_issue(id, |issue| {
-                let before = issue.tracker_id;
-                issue.tracker_id = tracker_id;
+                let before = issue.tracker_id();
                 IssuePropertyDiff::TrackerId(IssueTrackerIdDiff {
                     before,
                     after: tracker_id,
@@ -301,11 +299,10 @@ impl IssueStore {
             IssueAction::UpdateProject { id, project_id } => {
                 self.update_issue_with_diffs(id, |issue| {
                     let mut diffs = vec![IssuePropertyDiff::ProjectId(IssueProjectIdDiff {
-                        before: issue.issue.project_id,
+                        before: issue.project_id(),
                         after: project_id,
                     })];
-                    issue.issue.project_id = project_id;
-                    if let Some(before) = issue.target_version_id.take() {
+                    if let Some(before) = issue.target_version_id() {
                         diffs.push(IssuePropertyDiff::TargetVersionId(
                             IssueTargetVersionIdDiff {
                                 before: Some(before),
@@ -313,7 +310,7 @@ impl IssueStore {
                             },
                         ));
                     }
-                    if let Some(before) = issue.category_id.take() {
+                    if let Some(before) = issue.category_id() {
                         diffs.push(IssuePropertyDiff::CategoryId(IssueCategoryIdDiff {
                             before: Some(before),
                             after: None,
@@ -323,8 +320,7 @@ impl IssueStore {
                 })
             }
             IssueAction::UpdatePriority { id, priority_id } => self.update_issue(id, |issue| {
-                let before = issue.priority_id;
-                issue.priority_id = priority_id;
+                let before = issue.priority_id();
                 IssuePropertyDiff::PriorityId(IssuePriorityIdDiff {
                     before,
                     after: priority_id,
@@ -332,8 +328,7 @@ impl IssueStore {
             }),
             IssueAction::UpdateAssignedTo { id, assigned_to_id } => {
                 self.update_issue(id, |issue| {
-                    let before = issue.assigned_to_id;
-                    issue.assigned_to_id = assigned_to_id;
+                    let before = issue.assigned_to_id();
                     IssuePropertyDiff::AssignedToId(IssueAssignedToIdDiff {
                         before,
                         after: assigned_to_id,
@@ -344,24 +339,21 @@ impl IssueStore {
                 id,
                 target_version_id,
             } => self.update_issue(id, |issue| {
-                let before = issue.target_version_id;
-                issue.target_version_id = target_version_id;
+                let before = issue.target_version_id();
                 IssuePropertyDiff::TargetVersionId(IssueTargetVersionIdDiff {
                     before,
                     after: target_version_id,
                 })
             }),
             IssueAction::UpdateCategory { id, category_id } => self.update_issue(id, |issue| {
-                let before = issue.category_id;
-                issue.category_id = category_id;
+                let before = issue.category_id();
                 IssuePropertyDiff::CategoryId(IssueCategoryIdDiff {
                     before,
                     after: category_id,
                 })
             }),
             IssueAction::UpdateDoneRatio { id, done_ratio } => self.update_issue(id, |issue| {
-                let before = issue.done_ratio;
-                issue.done_ratio = done_ratio;
+                let before = issue.done_ratio();
                 IssuePropertyDiff::DoneRatio(IssueDoneRatioDiff {
                     before,
                     after: done_ratio,
@@ -371,24 +363,21 @@ impl IssueStore {
                 id,
                 estimated_hours,
             } => self.update_issue(id, |issue| {
-                let before = issue.estimated_hours;
-                issue.estimated_hours = estimated_hours;
+                let before = issue.estimated_hours();
                 IssuePropertyDiff::EstimatedHours(IssueEstimatedHoursDiff {
                     before,
                     after: estimated_hours,
                 })
             }),
             IssueAction::UpdateStartDate { id, start_date } => self.update_issue(id, |issue| {
-                let before = issue.start_date;
-                issue.start_date = start_date;
+                let before = issue.start_date();
                 IssuePropertyDiff::StartDate(IssueStartDateDiff {
                     before,
                     after: start_date,
                 })
             }),
             IssueAction::UpdateDueDate { id, due_date } => self.update_issue(id, |issue| {
-                let before = issue.due_date;
-                issue.due_date = due_date;
+                let before = issue.due_date();
                 IssuePropertyDiff::DueDate(IssueDueDateDiff {
                     before,
                     after: due_date,
@@ -424,30 +413,35 @@ impl IssueStore {
     }
 
     #[track_caller]
-    pub(super) fn get_issue(&self, issue_id: impl Into<IssueId>) -> (&IssueAggregate, IssueState) {
+    pub(super) fn get_issue(&self, issue_id: impl Into<IssueId>) -> (IssueView<'_>, IssueState) {
         let issue_id = issue_id.into();
-        match self.entries.get(&issue_id) {
-            Some(IssueEntry::Synced { issue }) => (issue, IssueState::Synced),
-            Some(IssueEntry::Edited { issue, .. }) => (issue, IssueState::Edited),
-            Some(IssueEntry::Uploading { issue, .. }) => (issue, IssueState::Uploading),
-            entry => panic!(
+        let entry = self.entries.get(&issue_id);
+        match Self::loaded_view(entry) {
+            Some(loaded) => loaded,
+            None => panic!(
                 "cannot get issue {issue_id} while it is {}",
                 Self::entry_state_name(entry)
             ),
         }
     }
 
-    pub(super) fn get_issues(&self) -> impl Iterator<Item = (&IssueId, &IssueAggregate)> {
-        self.entries.iter().filter_map(|(id, entry)| {
-            if let IssueEntry::Synced { issue }
-            | IssueEntry::Edited { issue, .. }
-            | IssueEntry::Uploading { issue, .. } = entry
-            {
-                Some((id, issue))
-            } else {
-                None
+    pub(super) fn get_issues(&self) -> impl Iterator<Item = (IssueView<'_>, IssueState)> {
+        self.entries
+            .values()
+            .filter_map(|entry| Self::loaded_view(Some(entry)))
+    }
+
+    fn loaded_view(entry: Option<&IssueEntry>) -> Option<(IssueView<'_>, IssueState)> {
+        match entry? {
+            IssueEntry::Synced { issue } => Some((IssueView::new(issue, &[]), IssueState::Synced)),
+            IssueEntry::Edited { issue, diffs, .. } => {
+                Some((IssueView::new(issue, diffs), IssueState::Edited))
             }
-        })
+            IssueEntry::Uploading { issue, diffs, .. } => {
+                Some((IssueView::new(issue, diffs), IssueState::Uploading))
+            }
+            IssueEntry::Fetching | IssueEntry::FetchFailed { .. } => None,
+        }
     }
 
     pub(super) fn get_issue_property_diffs(
@@ -517,19 +511,17 @@ impl IssueStore {
         }
     }
 
-    fn update_issue(
-        &mut self,
-        id: IssueId,
-        edit: impl FnOnce(&mut IssueAggregate) -> IssuePropertyDiff,
-    ) {
+    fn update_issue(&mut self, id: IssueId, edit: impl FnOnce(IssueView<'_>) -> IssuePropertyDiff) {
         self.update_issue_with_diffs(id, |issue| vec![edit(issue)]);
     }
 
     /// 1つの操作で複数のpropertyを変更する場合に、変更したproperty分のdiffをまとめて記録する。
+    ///
+    /// `edit`は編集を反映した現在の値を受け取り、その値を`before`にしたdiffを返す。
     fn update_issue_with_diffs(
         &mut self,
         id: IssueId,
-        edit: impl FnOnce(&mut IssueAggregate) -> Vec<IssuePropertyDiff>,
+        edit: impl FnOnce(IssueView<'_>) -> Vec<IssuePropertyDiff>,
     ) {
         match self.entries.get(&id) {
             Some(IssueEntry::Synced { .. }) | Some(IssueEntry::Edited { .. }) => {}
@@ -544,37 +536,29 @@ impl IssueStore {
             }
             None => panic!("cannot update missing issue {id}"),
         }
-        let entry = self.entries.remove(&id).unwrap();
-        match entry {
-            IssueEntry::Synced { mut issue } => {
-                let diffs = edit(&mut issue);
-                self.entries.insert(
-                    id,
-                    IssueEntry::Edited {
-                        issue,
-                        diffs,
-                        failure: None,
-                    },
-                );
-            }
+        let (issue, mut diffs, failure) = match self.entries.remove(&id).unwrap() {
+            IssueEntry::Synced { issue } => (issue, Vec::new(), None),
             IssueEntry::Edited {
-                mut issue,
-                mut diffs,
+                issue,
+                diffs,
                 failure,
-            } => {
-                diffs.extend(edit(&mut issue));
-                self.entries.insert(
-                    id,
-                    IssueEntry::Edited {
-                        issue,
-                        diffs,
-                        failure,
-                    },
-                );
-            }
+            } => (issue, diffs, failure),
             _ => {
                 unreachable!("update_issue受理検査により、遷移先はSynced / Edited以外が存在しない")
             }
-        }
+        };
+        let edited = edit(IssueView::new(&issue, &diffs));
+        diffs.extend(edited);
+        // diffは編集履歴として順に残し、差し引きで変更がなくなった時点でSyncedへ戻す。
+        let entry = if fold_property_diffs(&diffs).is_empty() {
+            IssueEntry::Synced { issue }
+        } else {
+            IssueEntry::Edited {
+                issue,
+                diffs,
+                failure,
+            }
+        };
+        self.entries.insert(id, entry);
     }
 }

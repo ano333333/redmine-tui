@@ -203,7 +203,7 @@ mod tests {
     use crate::components::issue::detail::journals_list::journals_list_item::{
         JournalItemWidget, JournalItemWidgetState,
     };
-    use crate::entities::{IssueAggregate, IssueStatus, Journal};
+    use crate::entities::{IssueAggregate, IssueStatus, IssueView, Journal};
     use crate::test_support::{local_datetime, render_snapshot, sample_issue_aggregate};
     use crate::vos::{IssueId, JournalId};
 
@@ -331,7 +331,7 @@ mod tests {
                 0,
                 1,
                 vec![ChildIssueRow {
-                    issue: &self.child_issue,
+                    issue: IssueView::new(&self.child_issue, &[]),
                     issue_status: Some(&self.child_status),
                     assigned_to_name: Some("alice"),
                 }],

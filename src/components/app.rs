@@ -1057,10 +1057,7 @@ mod tests {
         assert!(app.pending_editor_context.is_none());
         assert_eq!(app.interaction_mode(), InteractionMode::Application);
         dispatcher.borrow_mut().consume_action();
-        assert_eq!(
-            dispatcher.borrow().store().get_issue(3).0.issue.description,
-            ""
-        );
+        assert_eq!(dispatcher.borrow().store().get_issue(3).0.description(), "");
     }
 
     #[test]
@@ -1445,7 +1442,7 @@ mod tests {
             .store()
             .get_issue_property_diffs(IssueId::new(3))
             .to_vec();
-        let server_issue = dispatcher.borrow().store().get_issue(3).0.clone();
+        let server_issue = crate::test_support::sample_parent_issue();
         {
             let mut dispatcher = dispatcher.borrow_mut();
             dispatcher.dispatch(IssueAction::StartUpload { id: 3.into() });

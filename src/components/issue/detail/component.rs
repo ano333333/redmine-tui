@@ -594,7 +594,7 @@ impl IssueDetailComponent {
         let (issue, _) = store.get_issue(self.id);
         self.header.update(store);
         self.property.update(self.width);
-        self.body.update(issue, self.width);
+        self.body.update(issue.description(), self.width);
         self.children_list.update(store);
 
         let entries = store.get_remote_journals(self.id);

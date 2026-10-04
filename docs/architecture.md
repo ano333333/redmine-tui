@@ -134,7 +134,7 @@ Issue の getter は、取得済みの本体と読み込み状態を分けて扱
 enum IssueState { Synced, Edited, Uploading }
 enum IssueFetchState { Fetching, FetchFailed { message: String } }
 
-fn get_issue(&self, id: IssueId) -> (&IssueAggregate, IssueState);
+fn get_issue(&self, id: IssueId) -> (IssueView<'_>, IssueState);
 fn try_get_issue_state(&self, id: IssueId) -> Option<IssueState>;
 fn try_get_issue_fetch_state(&self, id: IssueId) -> Option<IssueFetchState>;
 ```
@@ -144,11 +144,15 @@ fn try_get_issue_fetch_state(&self, id: IssueId) -> Option<IssueFetchState>;
 | 未登録                      | `None`                | `None`                      | panic       |
 | Fetching                    | `None`                | `Some(Fetching)`            | panic       |
 | FetchFailed                 | `None`                | `Some(FetchFailed)`         | panic       |
-| Synced / Edited / Uploading | `Some(..)`            | `None`                      | 本体と状態  |
+| Synced / Edited / Uploading | `Some(..)`            | `None`                      | 表示値と状態 |
 
 - 本体の存在が不変条件である経路は `get_issue` を直接使い、不在を事前検査して処理をスキップしない。
 - 子 Issue や親 Issue の表示など不在が正常な経路では、`try_get_issue_state(id).is_some()` を確認してから `get_issue` を使う。
 - 未登録は両方の状態 getter が `None` の場合であり、`try_get_issue_fetch_state` の `None` だけで判定しない。
+
+`IssueStore` が保持する `IssueAggregate` はサーバーから取得した基準値であり、Issue 属性の編集 Action では変更しない。編集は、その時点の表示値を `before` にした `IssuePropertyDiff` を編集した順に追加して表す。差し引きで変更がなくなった場合は Synced へ戻す。
+
+`get_issue` が返す `IssueView` は、属性ごとに最後の diff の `after`、diff がなければ基準値を Store の寿命で参照する。保存時に送る値は `IssueAggregate::with_property_diffs` で同じ規則により求める。
 
 ## Component lifecycle
 

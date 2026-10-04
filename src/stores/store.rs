@@ -10,8 +10,8 @@ use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
-    TimeEntityActivity, Tracker, User,
+    Category, Issue, IssueAggregate, IssueStatus, IssueView, Journal, Priority, Project,
+    TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
     CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, JournalNotesDiff, PriorityId,
@@ -203,7 +203,7 @@ impl Store {
     /// 未登録・取得中・取得失敗のIssueを指定した場合にpanicする。
     /// 取得済みかどうかが不明な経路では、先に`try_get_issue_state`で確認する。
     #[track_caller]
-    pub fn get_issue(&self, issue_id: impl Into<IssueId>) -> (&IssueAggregate, IssueState) {
+    pub fn get_issue(&self, issue_id: impl Into<IssueId>) -> (IssueView<'_>, IssueState) {
         self.issue_store.get_issue(issue_id)
     }
 
@@ -221,7 +221,7 @@ impl Store {
         self.issue_store.try_get_issue_fetch_state(issue_id)
     }
 
-    pub fn get_issues(&self) -> impl Iterator<Item = (&IssueId, &IssueAggregate)> {
+    pub fn get_issues(&self) -> impl Iterator<Item = (IssueView<'_>, IssueState)> {
         self.issue_store.get_issues()
     }
 

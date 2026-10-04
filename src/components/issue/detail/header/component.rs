@@ -37,7 +37,7 @@ impl HeaderComponent {
         let (issue, issue_state) = store.get_issue(self.id);
         let widget = HeaderWidget::new(
             self.id,
-            &issue.issue.subject,
+            issue.subject(),
             self.focus_state.is_focused(),
             Self::title_decorator(&issue_state),
         );
@@ -48,7 +48,7 @@ impl HeaderComponent {
         let (issue, issue_status) = store.get_issue(self.id);
         HeaderWidget::new(
             self.id,
-            &issue.issue.subject,
+            issue.subject(),
             self.focus_state.is_focused(),
             Self::title_decorator(&issue_status),
         )

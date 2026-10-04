@@ -53,10 +53,8 @@ fn get_issues_lists_only_loaded_issues_and_excludes_unfetched_states() {
         .into(),
     );
 
-    let issues: Vec<(&IssueId, &IssueAggregate)> = store.get_issues().collect();
-    assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].0, &IssueId::new(1));
-    assert_eq!(issues[0].1.issue.id, IssueId::new(1));
+    let issue_ids: Vec<IssueId> = store.get_issues().map(|(issue, _)| issue.id()).collect();
+    assert_eq!(issue_ids, vec![IssueId::new(1)]);
 }
 
 #[test]
@@ -73,7 +71,7 @@ fn update_issue_target_version_sets_selected_version() {
     );
 
     let (issue, state) = store.get_issue(2);
-    assert_eq!(issue.target_version_id, Some(TargetVersionId::new(2)));
+    assert_eq!(issue.target_version_id(), Some(TargetVersionId::new(2)));
     assert_eq!(state, IssueState::Edited);
 }
 
@@ -91,7 +89,7 @@ fn update_issue_target_version_can_clear_version() {
     );
 
     let (issue, state) = store.get_issue(1);
-    assert_eq!(issue.target_version_id, None);
+    assert_eq!(issue.target_version_id(), None);
     assert_eq!(state, IssueState::Edited);
 }
 
@@ -109,7 +107,7 @@ fn update_issue_category_sets_selected_category() {
     );
 
     let (issue, state) = store.get_issue(1);
-    assert_eq!(issue.category_id, Some(CategoryId::new(2)));
+    assert_eq!(issue.category_id(), Some(CategoryId::new(2)));
     assert_eq!(state, IssueState::Edited);
 }
 
@@ -127,7 +125,7 @@ fn update_issue_category_can_clear_category() {
     );
 
     let (issue, state) = store.get_issue(1);
-    assert_eq!(issue.category_id, None);
+    assert_eq!(issue.category_id(), None);
     assert_eq!(state, IssueState::Edited);
 }
 
@@ -145,7 +143,7 @@ fn update_issue_tracker_updates_issue_and_records_diff() {
     );
 
     let (issue, state) = store.get_issue(1);
-    assert_eq!(issue.tracker_id, TrackerId::new(2));
+    assert_eq!(issue.tracker_id(), TrackerId::new(2));
     assert_eq!(state, IssueState::Edited);
     assert_eq!(
         store.get_issue_property_diffs(IssueId::new(1)).last(),
@@ -170,9 +168,9 @@ fn update_issue_project_clears_target_version_and_category_and_records_diffs() {
     );
 
     let (issue, state) = store.get_issue(1);
-    assert_eq!(issue.issue.project_id, ProjectId::new(2));
-    assert_eq!(issue.target_version_id, None);
-    assert_eq!(issue.category_id, None);
+    assert_eq!(issue.project_id(), ProjectId::new(2));
+    assert_eq!(issue.target_version_id(), None);
+    assert_eq!(issue.category_id(), None);
     assert_eq!(state, IssueState::Edited);
     assert_eq!(
         store.get_issue_property_diffs(IssueId::new(1)),
@@ -244,7 +242,7 @@ fn update_issue_priority_updates_issue_and_records_diff() {
     );
 
     let (issue, state) = store.get_issue(1);
-    assert_eq!(issue.priority_id, PriorityId::new(3));
+    assert_eq!(issue.priority_id(), PriorityId::new(3));
     assert_eq!(state, IssueState::Edited);
     assert_eq!(
         store.get_issue_property_diffs(IssueId::new(1)).last(),
@@ -269,7 +267,7 @@ fn update_issue_estimated_hours_updates_issue_and_records_diff() {
     );
 
     let (issue, state) = store.get_issue(1);
-    assert_eq!(issue.estimated_hours, Some(2.5));
+    assert_eq!(issue.estimated_hours(), Some(2.5));
     assert_eq!(state, IssueState::Edited);
     assert_eq!(
         store.get_issue_property_diffs(IssueId::new(1)).last(),
@@ -297,7 +295,7 @@ fn update_issue_start_date_updates_issue_and_records_diff() {
         .into(),
     );
 
-    assert_eq!(store.get_issue(1).0.start_date, after);
+    assert_eq!(store.get_issue(1).0.start_date(), after);
     assert_eq!(
         store.get_issue_property_diffs(IssueId::new(1)).last(),
         Some(&IssuePropertyDiff::StartDate(IssueStartDateDiff {
@@ -322,7 +320,7 @@ fn update_issue_due_date_updates_issue_and_records_diff() {
         .into(),
     );
 
-    assert_eq!(store.get_issue(1).0.due_date, after);
+    assert_eq!(store.get_issue(1).0.due_date(), after);
     assert_eq!(
         store.get_issue_property_diffs(IssueId::new(1)).last(),
         Some(&IssuePropertyDiff::DueDate(IssueDueDateDiff {
@@ -349,7 +347,7 @@ fn update_issue_description_updates_issue_and_records_diff() {
     );
 
     let (issue, _) = store.get_issue(id);
-    assert_eq!(issue.issue.description, "nested after");
+    assert_eq!(issue.description(), "nested after");
     assert_eq!(
         store.get_issue_property_diffs(id),
         &[IssuePropertyDiff::Description(IssueDescriptionDiff {
@@ -376,7 +374,7 @@ fn update_issue_status_updates_issue_and_records_diff() {
     );
 
     let (issue, _) = store.get_issue(id);
-    assert_eq!(issue.issue.status_id, IssueStatusId::new(3));
+    assert_eq!(issue.status_id(), IssueStatusId::new(3));
     assert_eq!(
         store.get_issue_property_diffs(id),
         &[IssuePropertyDiff::StatusId(IssueStatusIdDiff {
@@ -745,7 +743,7 @@ fn update_after_failed_upload_appends_diff_and_retains_failure() {
     );
 
     let (issue, state) = store.get_issue(1);
-    assert_eq!(issue.issue.status_id, IssueStatusId::new(2));
+    assert_eq!(issue.status_id(), IssueStatusId::new(2));
     assert_eq!(state, IssueState::Edited);
     let diffs = store.get_issue_property_diffs(IssueId::new(1));
     assert_eq!(diffs.len(), 2);
@@ -810,8 +808,8 @@ fn sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
     );
 
     let (issue, state) = store.get_issue(9);
-    assert_eq!(issue.issue.subject, "server issue after upload");
-    assert_eq!(issue.issue.description, "body");
+    assert_eq!(issue.subject(), "server issue after upload");
+    assert_eq!(issue.description(), "body");
     assert_eq!(state, IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
 }
@@ -869,8 +867,8 @@ fn sync_issue_after_failed_upload_replaces_issue_clears_diffs_and_failure_and_ma
     );
 
     let (issue, state) = store.get_issue(9);
-    assert_eq!(issue.issue.subject, "server issue after upload");
-    assert_eq!(issue.issue.description, "body");
+    assert_eq!(issue.subject(), "server issue after upload");
+    assert_eq!(issue.description(), "body");
     assert_eq!(state, IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
     assert_eq!(store.try_get_issue_upload_failure(9.into()), None);
@@ -918,8 +916,8 @@ fn uploading_issue_sync_replaces_issue_clears_diffs_and_marks_synced() {
     );
 
     let (issue, state) = store.get_issue(9);
-    assert_eq!(issue.issue.subject, "server issue after upload");
-    assert_eq!(issue.issue.description, "body");
+    assert_eq!(issue.subject(), "server issue after upload");
+    assert_eq!(issue.description(), "body");
     assert_eq!(state, IssueState::Synced);
     assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
 }
@@ -1022,7 +1020,7 @@ fn matching_fetch_success_registers_the_issue_as_synced() {
     });
 
     let (issue, state) = store.get_issue(id);
-    assert_eq!(issue.issue.subject, "fetched");
+    assert_eq!(issue.subject(), "fetched");
     assert_eq!(state, IssueState::Synced);
     assert!(store.get_issue_property_diffs(id).is_empty());
     assert!(store.try_get_issue_upload_conflict(id).is_none());
@@ -1316,4 +1314,113 @@ get_issue_without_a_loaded_body_panics! {
                 message: "failed".to_string(),
             },
         ],
+}
+
+#[test]
+fn editing_a_property_back_to_the_fetched_value_returns_to_synced() {
+    let mut store = Store::new();
+    store.consume_action(
+        IssueAction::Sync {
+            issue: issue_with_description(1, "fetched"),
+        }
+        .into(),
+    );
+
+    for body in ["edited", "fetched"] {
+        store.consume_action(
+            IssueAction::UpdateDescription {
+                id: 1.into(),
+                body: body.to_string(),
+            }
+            .into(),
+        );
+    }
+
+    let (issue, state) = store.get_issue(1);
+    assert_eq!(state, IssueState::Synced);
+    assert_eq!(issue.description(), "fetched");
+    assert!(store.get_issue_property_diffs(IssueId::new(1)).is_empty());
+}
+
+#[test]
+fn edits_keep_the_fetched_value_as_the_first_before_and_record_each_step() {
+    let mut store = Store::new();
+    store.consume_action(
+        IssueAction::Sync {
+            issue: issue_with_description(1, "fetched"),
+        }
+        .into(),
+    );
+
+    for body in ["first", "second"] {
+        store.consume_action(
+            IssueAction::UpdateDescription {
+                id: 1.into(),
+                body: body.to_string(),
+            }
+            .into(),
+        );
+    }
+
+    let (issue, state) = store.get_issue(1);
+    assert_eq!(state, IssueState::Edited);
+    assert_eq!(issue.description(), "second");
+    assert_eq!(
+        store.get_issue_property_diffs(IssueId::new(1)),
+        &[
+            IssuePropertyDiff::Description(IssueDescriptionDiff {
+                before: "fetched".to_string(),
+                after: "first".to_string(),
+            }),
+            IssuePropertyDiff::Description(IssueDescriptionDiff {
+                before: "first".to_string(),
+                after: "second".to_string(),
+            }),
+        ]
+    );
+}
+
+#[test]
+fn reverting_one_property_keeps_other_edits_and_the_edit_history() {
+    let mut store = Store::new();
+    store.consume_action(
+        IssueAction::Sync {
+            issue: issue_with_description(1, "fetched"),
+        }
+        .into(),
+    );
+
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: 1.into(),
+            body: "edited".to_string(),
+        }
+        .into(),
+    );
+    store.consume_action(
+        IssueAction::UpdateDoneRatio {
+            id: 1.into(),
+            done_ratio: 50,
+        }
+        .into(),
+    );
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: 1.into(),
+            body: "fetched".to_string(),
+        }
+        .into(),
+    );
+
+    let (issue, state) = store.get_issue(1);
+    assert_eq!(state, IssueState::Edited);
+    assert_eq!(issue.description(), "fetched");
+    assert_eq!(issue.done_ratio(), 50);
+    assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 3);
+}
+
+fn issue_with_description(id: u16, description: &str) -> IssueAggregate {
+    let mut issue = sample_issue_aggregate(id, "subject", 1.into(), None, None, None, 0);
+    issue.issue.description = description.to_string();
+    issue
 }
