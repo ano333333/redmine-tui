@@ -150,7 +150,7 @@ mod tests {
     use super::{EventProcessResult, IssueComponent, IssueWidget};
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::{
-        stores::{Dispatcher, IssueAction},
+        stores::{Action, Dispatcher, IssueAction},
         test_support::render_snapshot,
     };
     use std::{
@@ -162,7 +162,7 @@ mod tests {
         Rc::new(RefCell::new(Dispatcher::new()))
     }
 
-    fn consume(d: &Rc<RefCell<Dispatcher>>, action: IssueAction) {
+    fn consume(d: &Rc<RefCell<Dispatcher>>, action: impl Into<Action>) {
         d.borrow_mut().dispatch(action);
         d.borrow_mut().consume_action();
     }
@@ -283,9 +283,10 @@ mod tests {
         let (mut component, _) = component(&d, 3);
         consume(
             &d,
-            IssueAction::FetchSucceeded {
+            Action::IssueFetchSucceeded {
                 id: 3.into(),
                 issue: crate::test_support::sample_parent_issue(),
+                journals: vec![],
             },
         );
         {
@@ -323,9 +324,10 @@ mod tests {
         consume(&d, IssueAction::StartFetching { id: 3.into() });
         consume(
             &d,
-            IssueAction::FetchSucceeded {
+            Action::IssueFetchSucceeded {
                 id: 3.into(),
                 issue: crate::test_support::sample_parent_issue(),
+                journals: vec![],
             },
         );
         {

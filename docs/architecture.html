@@ -828,6 +828,16 @@ flowchart TD
             <div class="diff-item">
               <div class="diff-bullet"></div>
               <div>
+                Issue 詳細の取得結果は親 <code>Store</code> の
+                <code>Action::IssueFetchSucceeded</code> 1件で Issue と Journal
+                を反映する。親 <code>Store</code> は <code>IssueStore</code> と
+                <code>JournalStore</code>
+                の前提を両方検査してから適用し、片方だけを更新した状態を作らない。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
                 Component と usecase は <code>IssueStore</code>
                 を直接参照せず、親 <code>Store</code> の Issue getter を通して
                 entity、同期状態、diff、競合情報を取得する。

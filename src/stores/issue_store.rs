@@ -62,10 +62,6 @@ pub enum IssueAction {
     StartFetching {
         id: IssueId,
     },
-    FetchSucceeded {
-        id: IssueId,
-        issue: IssueAggregate,
-    },
     FetchFailed {
         id: IssueId,
         message: String,
@@ -173,25 +169,6 @@ impl IssueStore {
                     ),
                 }
                 self.entries.insert(id, IssueEntry::Fetching);
-            }
-            IssueAction::FetchSucceeded { id, issue } => {
-                // 新しい同期結果やローカル編集を遅延した成功で上書きしないよう、
-                // Fetching以外への着弾は制御破綻として拒否する。
-                match self.entries.get(&id) {
-                    Some(IssueEntry::Fetching) => {}
-                    None => panic!("fetch succeeded for issue {id} without an issue state"),
-                    entry => panic!(
-                        "fetch succeeded while issue {id} is {}",
-                        Self::entry_state_name(entry)
-                    ),
-                }
-                let actual_id = issue.issue.id;
-                if actual_id != id {
-                    panic!(
-                        "fetch succeeded with mismatched issue id: requested {id}, got {actual_id}"
-                    );
-                }
-                self.entries.insert(id, IssueEntry::Synced { issue });
             }
             IssueAction::FetchFailed { id, message } => {
                 // 新しい同期結果やローカル編集を遅延した失敗で破棄しないよう、
@@ -418,6 +395,32 @@ impl IssueStore {
                 })
             }),
         }
+    }
+
+    /// `complete_fetch`が受理できない完了を、他Storeへの適用前に拒否する。
+    ///
+    /// 現在はJournalを別Storeが保持するため、親StoreはそのStoreを更新する前にこの検査を呼ぶ。
+    /// TODO: JournalをIssueStoreが所有したら検査は`complete_fetch`内だけで足りるため、この関数は削除する。
+    pub(super) fn assert_fetch_completable(&self, id: IssueId, issue: &IssueAggregate) {
+        // 新しい同期結果やローカル編集を遅延した成功で上書きしないよう、
+        // Fetching以外への着弾は制御破綻として拒否する。
+        match self.entries.get(&id) {
+            Some(IssueEntry::Fetching) => {}
+            None => panic!("fetch succeeded for issue {id} without an issue state"),
+            entry => panic!(
+                "fetch succeeded while issue {id} is {}",
+                Self::entry_state_name(entry)
+            ),
+        }
+        let actual_id = issue.issue.id;
+        if actual_id != id {
+            panic!("fetch succeeded with mismatched issue id: requested {id}, got {actual_id}");
+        }
+    }
+
+    pub(super) fn complete_fetch(&mut self, id: IssueId, issue: IssueAggregate) {
+        self.assert_fetch_completable(id, &issue);
+        self.entries.insert(id, IssueEntry::Synced { issue });
     }
 
     #[track_caller]

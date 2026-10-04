@@ -154,27 +154,19 @@ fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion
         dispatcher.borrow().store().try_get_issue_fetch_state(42),
         None
     );
-    let mut actions = recv_actions(&spawner, 2).into_iter();
-    let first_completion = actions.next().expect("first completion");
-    assert!(matches!(
-        &first_completion,
-        Action::Journal(JournalAction::SyncFetched { issue_id, journals })
-            if *issue_id == IssueId::new(42) && journals.is_empty()
-    ));
-    let completion = actions.next().expect("second completion");
+    let mut actions = recv_actions(&spawner, 1).into_iter();
+    let completion = actions.next().expect("completion");
     assert!(matches!(
         &completion,
-        Action::Issue(IssueAction::FetchSucceeded { id, issue })
-            if *id == IssueId::new(42) && issue.issue.id == IssueId::new(42)
+        Action::IssueFetchSucceeded { id, issue, journals }
+            if *id == IssueId::new(42) && issue.issue.id == IssueId::new(42) && journals.is_empty()
     ));
     assert_eq!(
         dispatcher.borrow().consume_actinos_len(),
         1,
         "the spawned future must not dispatch or consume actions itself"
     );
-    for action in [first_completion, completion] {
-        dispatcher.borrow_mut().dispatch(action);
-    }
+    dispatcher.borrow_mut().dispatch(completion);
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
@@ -185,17 +177,13 @@ fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion
 }
 
 #[test]
-fn issue_detail_shows_journals_from_the_first_frame_after_ordered_fetch_actions() {
+fn issue_detail_shows_journals_from_the_first_frame_after_fetch_completion() {
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
     {
         let mut d = dispatcher.borrow_mut();
         crate::test_support::dispatch_sample_masters(&mut d);
         d.dispatch(IssueAction::StartFetching { id: 42.into() });
-        d.dispatch(Action::Journal(JournalAction::SyncFetched {
-            issue_id: 42.into(),
-            journals: vec![sample_journal(42)],
-        }));
-        d.dispatch(IssueAction::FetchSucceeded {
+        d.dispatch(Action::IssueFetchSucceeded {
             id: 42.into(),
             issue: sample_issue_aggregate(
                 42,
@@ -206,6 +194,7 @@ fn issue_detail_shows_journals_from_the_first_frame_after_ordered_fetch_actions(
                 None,
                 0,
             ),
+            journals: vec![sample_journal(42)],
         });
         while d.consume_actinos_len() > 0 {
             d.consume_action();

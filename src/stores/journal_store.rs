@@ -137,7 +137,7 @@ impl JournalStore {
     pub(super) fn consume_action(&mut self, action: JournalAction) {
         match action {
             JournalAction::SyncFetched { issue_id, journals } => {
-                Self::assert_sync_fetched_is_valid(self, issue_id, &journals);
+                self.assert_sync_fetched_is_valid(issue_id, &journals);
                 let issue_journals =
                     self.by_issue
                         .entry(issue_id)
@@ -455,7 +455,7 @@ impl JournalStore {
     }
 
     // Storeへ到達したSyncFetchedのIDと所有関係の不整合は、取得失敗ではなくAction生成側の制御破綻として拒否する。
-    fn assert_sync_fetched_is_valid(this: &JournalStore, issue_id: IssueId, journals: &[Journal]) {
+    pub(super) fn assert_sync_fetched_is_valid(&self, issue_id: IssueId, journals: &[Journal]) {
         let mut seen: HashSet<JournalId> = HashSet::with_capacity(journals.len());
         for journal in journals {
             let journal_id = journal.id;
@@ -472,7 +472,7 @@ impl JournalStore {
             }
         }
         for journal in journals {
-            let registered_other_issue_id = this
+            let registered_other_issue_id = self
                 .by_issue
                 .iter()
                 .find(|(other_issue_id, issue_journals)| {

@@ -10,7 +10,7 @@ use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
+    Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
     TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
@@ -101,6 +101,22 @@ impl Store {
                     .consume_action(IssueAction::StartUpload { id });
             }
             Action::Issue(action) => self.issue_store.consume_action(action),
+            Action::IssueFetchSucceeded {
+                id,
+                issue,
+                journals,
+            } => {
+                // 片方のStoreだけを更新してからpanicしないよう、両Storeの検査を先に済ませる。
+                self.issue_store.assert_fetch_completable(id, &issue);
+                self.journal_store
+                    .assert_sync_fetched_is_valid(id, &journals);
+                self.journal_store
+                    .consume_action(JournalAction::SyncFetched {
+                        issue_id: id,
+                        journals,
+                    });
+                self.issue_store.complete_fetch(id, issue);
+            }
             Action::ProjectIssues(action) => self.project_issues_store.consume_action(action),
             Action::Journal(JournalAction::StartLocalUpload { issue_id }) => {
                 assert!(
@@ -385,6 +401,15 @@ impl Store {
 
 pub enum Action {
     Issue(IssueAction),
+    /// Issue詳細の初回取得結果を、Issue本体とJournalが揃った状態で一度に反映する。
+    ///
+    /// 対象IssueがFetching以外の場合、要求IDと取得したIssueのIDが異なる場合、
+    /// Journalの所有Issueが異なる・ID重複・他Issueに登録済みの場合はpanicし、どのStoreも更新しない。
+    IssueFetchSucceeded {
+        id: IssueId,
+        issue: IssueAggregate,
+        journals: Vec<Journal>,
+    },
     ProjectIssues(ProjectIssuesAction),
     SyncUsers {
         users: Vec<User>,
@@ -507,6 +532,117 @@ mod tests {
         store.consume_action(IssueAction::StartUpload { id }.into());
 
         assert_eq!(store.try_get_issue_state(id), Some(IssueState::Uploading));
+    }
+
+    fn fetched_journal(id: u16, issue_id: u16) -> Journal {
+        Journal {
+            id: JournalId::new(id),
+            issue_id: IssueId::new(issue_id),
+            user: "alice".to_string(),
+            updated_on: None,
+            details: vec![],
+            notes: format!("notes {id}"),
+        }
+    }
+
+    fn fetch_succeeded(id: u16, issue_id: u16, journals: Vec<Journal>) -> Action {
+        Action::IssueFetchSucceeded {
+            id: IssueId::new(id),
+            issue: sample_issue_aggregate(issue_id, "fetched", 1.into(), None, None, None, 0),
+            journals,
+        }
+    }
+
+    fn consume_expecting_panic(store: &mut Store, action: Action) {
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            store.consume_action(action);
+        }))
+        .is_err();
+        assert!(panicked, "invalid fetch completion must be rejected");
+    }
+
+    #[test]
+    fn issue_fetch_success_registers_the_issue_and_its_journals_in_one_action() {
+        let mut store = Store::new();
+        store.consume_action(IssueAction::StartFetching { id: 1.into() }.into());
+
+        store.consume_action(fetch_succeeded(
+            1,
+            1,
+            vec![fetched_journal(10, 1), fetched_journal(11, 1)],
+        ));
+
+        assert_eq!(store.try_get_issue_state(1), Some(IssueState::Synced));
+        let journal_ids: Vec<u16> = store
+            .get_remote_journals(1)
+            .iter()
+            .map(|entry| entry.journal.id.get())
+            .collect();
+        assert_eq!(journal_ids, vec![10, 11]);
+    }
+
+    #[test]
+    fn issue_fetch_success_without_fetching_state_leaves_journals_unregistered() {
+        let mut store = Store::new();
+
+        consume_expecting_panic(
+            &mut store,
+            fetch_succeeded(1, 1, vec![fetched_journal(10, 1)]),
+        );
+
+        assert!(store.get_remote_journals(1).is_empty());
+        assert_eq!(store.try_get_issue_state(1), None);
+    }
+
+    #[test]
+    fn issue_fetch_success_with_mismatched_issue_leaves_journals_unregistered() {
+        let mut store = Store::new();
+        store.consume_action(IssueAction::StartFetching { id: 1.into() }.into());
+
+        consume_expecting_panic(
+            &mut store,
+            fetch_succeeded(1, 2, vec![fetched_journal(10, 1)]),
+        );
+
+        assert!(store.get_remote_journals(1).is_empty());
+        assert_eq!(
+            store.try_get_issue_fetch_state(1),
+            Some(IssueFetchState::Fetching)
+        );
+    }
+
+    #[test]
+    fn issue_fetch_success_with_duplicate_journals_keeps_the_issue_fetching() {
+        let mut store = Store::new();
+        store.consume_action(IssueAction::StartFetching { id: 1.into() }.into());
+
+        consume_expecting_panic(
+            &mut store,
+            fetch_succeeded(1, 1, vec![fetched_journal(10, 1), fetched_journal(10, 1)]),
+        );
+
+        assert_eq!(
+            store.try_get_issue_fetch_state(1),
+            Some(IssueFetchState::Fetching)
+        );
+        assert!(store.get_remote_journals(1).is_empty());
+    }
+
+    #[test]
+    fn issue_fetch_success_with_a_journal_of_another_issue_keeps_the_issue_fetching() {
+        let mut store = Store::new();
+        store.consume_action(IssueAction::StartFetching { id: 1.into() }.into());
+
+        consume_expecting_panic(
+            &mut store,
+            fetch_succeeded(1, 1, vec![fetched_journal(10, 2)]),
+        );
+
+        assert_eq!(
+            store.try_get_issue_fetch_state(1),
+            Some(IssueFetchState::Fetching)
+        );
+        assert!(store.get_remote_journals(1).is_empty());
     }
 
     #[test]

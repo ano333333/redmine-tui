@@ -105,6 +105,7 @@ Store の更新は原則として Dispatcher を介して行う。
 - Store 更新通知は pub/sub ではなく、上位層が `consume_action -> update` を明示的に呼ぶ。
 - `Dispatcher` は action queue と `Store` を内部に持つ。
 - 親 `Store` は Issue の状態と更新処理を非公開の `IssueStore` に委譲する。
+- Issue 詳細の取得結果は親 `Store` の `Action::IssueFetchSucceeded` 1件で Issue と Journal を反映する。親 `Store` は `IssueStore` と `JournalStore` の前提を両方検査してから適用し、片方だけを更新した状態を作らない。
 - Component と usecase は `IssueStore` を直接参照せず、親 `Store` の Issue getter を通して entity、同期状態、diff、競合情報を取得する。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。

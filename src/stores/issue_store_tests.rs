@@ -1,4 +1,4 @@
-use super::{IssueAction, IssueFetchState, IssueState, Store};
+use super::{Action, IssueAction, IssueFetchState, IssueState, Store};
 use crate::entities::IssueAggregate;
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
@@ -1015,7 +1015,11 @@ fn matching_fetch_success_registers_the_issue_as_synced() {
     let mut store = Store::new();
     store.consume_action(IssueAction::StartFetching { id }.into());
 
-    store.consume_action(IssueAction::FetchSucceeded { id, issue }.into());
+    store.consume_action(Action::IssueFetchSucceeded {
+        id,
+        issue,
+        journals: vec![],
+    });
 
     let (issue, state) = store.get_issue(id);
     assert_eq!(issue.issue.subject, "fetched");
@@ -1032,13 +1036,11 @@ fn mismatched_fetch_success_panics() {
     let mut store = Store::new();
     store.consume_action(IssueAction::StartFetching { id: requested_id }.into());
 
-    store.consume_action(
-        IssueAction::FetchSucceeded {
-            id: requested_id,
-            issue: response_issue,
-        }
-        .into(),
-    );
+    store.consume_action(Action::IssueFetchSucceeded {
+        id: requested_id,
+        issue: response_issue,
+        journals: vec![],
+    });
 }
 
 #[test]
@@ -1134,13 +1136,11 @@ macro_rules! fetch_success_outside_fetching_panics {
                 let mut store = Store::new();
                 $(store.consume_action($setup.into());)*
 
-                store.consume_action(
-                    IssueAction::FetchSucceeded {
-                        id,
-                        issue: sample_issue_aggregate(99, "late", 1.into(), None, None, None, 0),
-                    }
-                    .into(),
-                );
+                store.consume_action(Action::IssueFetchSucceeded {
+                    id,
+                    issue: sample_issue_aggregate(99, "late", 1.into(), None, None, None, 0),
+                    journals: vec![],
+                });
             }
         )+
     };
