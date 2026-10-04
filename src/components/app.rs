@@ -175,21 +175,33 @@ impl<'a> AppComponent<'a> {
         app
     }
 
-    /// 共通の入力イベントを同期的に処理する。updateとrenderがこの順で後続する
-    pub fn process_event(&mut self, event: InputEvent, dispatcher: Rc<RefCell<Dispatcher>>) {
+    /// 共通の入力イベントを同期的に処理する。updateとrenderがこの順で後続する。
+    /// popupが開いたままイベントを処理した場合にtrueを返す。
+    pub fn process_event(
+        &mut self,
+        event: InputEvent,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+    ) -> bool {
         // editor session中の入力はeditorが占有するため、Componentの状態を変更しない。
         if self.interaction_mode == InteractionMode::Editing {
-            return;
+            return false;
         }
         if self.popup_components.back().is_some() {
-            self.process_popup_event(event, dispatcher);
-        } else if self.issue_component.is_some() {
+            return self.process_popup_event(event, dispatcher);
+        }
+        if self.issue_component.is_some() {
             self.process_issue_event(event, dispatcher);
         }
+        false
     }
 
     /// 最前面のpopupへイベントを渡し、結果に応じてpopup stackを更新する。
-    fn process_popup_event(&mut self, event: InputEvent, dispatcher: Rc<RefCell<Dispatcher>>) {
+    /// popupが開いたままイベントを処理した場合にtrueを返す。
+    fn process_popup_event(
+        &mut self,
+        event: InputEvent,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+    ) -> bool {
         let popup_component_rc = self
             .popup_components
             .back()
@@ -233,6 +245,7 @@ impl<'a> AppComponent<'a> {
                     | Some(DatePickerPopupEventProcessResult::Canceled) => {
                         self.popup_components.pop_back();
                     }
+                    Some(DatePickerPopupEventProcessResult::Handled) => return true,
                     None => {}
                 }
             }
@@ -311,6 +324,7 @@ impl<'a> AppComponent<'a> {
                 None => {}
             },
         }
+        false
     }
 
     /// IssueComponentへイベントを渡し、結果に応じてpopupの開閉やeffectの設置を行う。
@@ -653,8 +667,8 @@ impl<'a> AppComponent<'a> {
             InputEvent::Key(key) if key.code == KeyCode::Char('q')
         );
         let popup_before = self.popup_components.back().cloned();
-        self.process_event(event, dispatcher);
-        if !is_q {
+        let handled_by_popup = self.process_event(event, dispatcher);
+        if !is_q || handled_by_popup {
             return true;
         }
         match (popup_before, self.popup_components.back()) {
@@ -1538,6 +1552,28 @@ mod tests {
         assert!(should_continue);
         assert!(app.popup_components.is_empty());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+    }
+
+    #[test]
+    fn q_on_open_calendar_closes_only_calendar_without_quitting() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        app.popup_components
+            .push_back(Rc::new(RefCell::new(PopupComponent::DatePicker(
+                DatePickerPopupComponent::new(None, Box::new(|_| {})),
+            ))));
+        for code in [KeyCode::Tab, KeyCode::Tab, KeyCode::Tab, KeyCode::Enter] {
+            app.handle_key_event(key_event(code), dispatcher.clone());
+        }
+
+        let should_continue =
+            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+
+        assert!(should_continue);
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::DatePicker(_)
+        ));
     }
 
     fn app_with_remote_journal_conflict_popup() -> (Rc<RefCell<Dispatcher>>, AppComponent<'static>)
