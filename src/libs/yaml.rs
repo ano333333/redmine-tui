@@ -247,6 +247,8 @@ pub fn parse_issue(id: IssueId, yaml: &str) -> IssueAggregate {
         total_spent_hours,
         category_id,
         child_ids,
+        // Journalは別のfixtureファイルで管理しており、Issueのfixtureには含めない。
+        journals: vec![],
     }
 }
 

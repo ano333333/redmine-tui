@@ -3,8 +3,8 @@ use serde::Serialize;
 use std::num::NonZeroUsize;
 
 use crate::entities::{
-    Category, IssueAggregate, IssueStatus, Journal, Priority, Project, ProjectIssuesPage,
-    TargetVersion, TimeEntityActivity, Tracker, User,
+    Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, TargetVersion,
+    TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{IssueId, JournalId, ProjectId};
 
@@ -62,13 +62,12 @@ impl std::fmt::Display for RedmineHttpError {
     }
 }
 
-/// RedmineのIssue詳細取得結果を、Issue本体とJournal一覧に分けて受け渡すための型。
+/// RedmineのIssue詳細取得結果。
 ///
 /// 永続的なdomain entityである[`IssueAggregate`]とは異なり、Client境界で一度の
-/// レスポンスから変換した複数の保存単位をまとめて返すためだけに使用する。
+/// レスポンスから変換した取得情報をまとめて返すためだけに使用する。
 pub struct FetchedIssue {
     pub aggregate: IssueAggregate,
-    pub journals: Vec<Journal>,
 }
 
 /// Redmineとの通信をplatform固有の実装から分離する境界。

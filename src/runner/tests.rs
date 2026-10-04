@@ -158,8 +158,8 @@ fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion
     let completion = actions.next().expect("completion");
     assert!(matches!(
         &completion,
-        Action::IssueFetchSucceeded { id, issue, journals }
-            if *id == IssueId::new(42) && issue.issue.id == IssueId::new(42) && journals.is_empty()
+        Action::IssueFetchSucceeded { id, issue }
+            if *id == IssueId::new(42) && issue.issue.id == IssueId::new(42) && issue.journals.is_empty()
     ));
     assert_eq!(
         dispatcher.borrow().consume_actinos_len(),
@@ -183,18 +183,12 @@ fn issue_detail_shows_journals_from_the_first_frame_after_fetch_completion() {
         let mut d = dispatcher.borrow_mut();
         crate::test_support::dispatch_sample_masters(&mut d);
         d.dispatch(IssueAction::StartFetching { id: 42.into() });
+        let mut issue =
+            sample_issue_aggregate(42, "subject", IssueStatusId::new(1), None, None, None, 0);
+        issue.journals = vec![sample_journal(42)];
         d.dispatch(Action::IssueFetchSucceeded {
             id: 42.into(),
-            issue: sample_issue_aggregate(
-                42,
-                "subject",
-                IssueStatusId::new(1),
-                None,
-                None,
-                None,
-                0,
-            ),
-            journals: vec![sample_journal(42)],
+            issue,
         });
         while d.consume_actinos_len() > 0 {
             d.consume_action();
@@ -552,10 +546,9 @@ impl RedmineClient for IssueUploadClient {
         if self.get_error {
             return Err(Self::network_error());
         }
-        Ok(FetchedIssue {
-            aggregate: self.issue.clone().expect("test issue must exist"),
-            journals: self.journals.clone(),
-        })
+        let mut aggregate = self.issue.clone().expect("test issue must exist");
+        aggregate.journals = self.journals.clone();
+        Ok(FetchedIssue { aggregate })
     }
 
     async fn update_issue(
@@ -679,14 +672,10 @@ fn start_edited_journal_upload(dispatcher: &mut Dispatcher, issue_id: u16, notes
         0,
     );
     issue.issue.description = "issue body".to_string();
-    dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-    dispatcher.consume_action();
     let mut journal = sample_journal(issue_id);
     journal.notes = notes.to_string();
-    dispatcher.dispatch(Action::Journal(JournalAction::SyncFetched {
-        issue_id: IssueId::new(issue_id),
-        journals: vec![journal],
-    }));
+    issue.journals = vec![journal];
+    dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
     dispatcher.consume_action();
     dispatcher.dispatch(Action::Journal(JournalAction::EditRemoteNotes {
         issue_id: IssueId::new(issue_id),
@@ -971,12 +960,14 @@ fn loaded_journal_upload_dispatcher() -> Dispatcher {
 }
 
 fn edited_remote_journal_dispatcher() -> Dispatcher {
-    let mut dispatcher = loaded_journal_upload_dispatcher();
-    dispatcher.dispatch(JournalAction::SyncFetched {
-        issue_id: IssueId::new(3),
-        journals: crate::test_support::sample_parent_issue_journals(),
-    });
-    dispatcher.consume_action();
+    let mut dispatcher = Dispatcher::new();
+    crate::test_support::dispatch_sample_masters(&mut dispatcher);
+    let mut issue = crate::test_support::sample_parent_issue();
+    issue.journals = crate::test_support::sample_parent_issue_journals();
+    dispatcher.dispatch(IssueAction::Sync { issue });
+    while dispatcher.consume_actinos_len() > 0 {
+        dispatcher.consume_action();
+    }
     dispatcher.dispatch(JournalAction::EditRemoteNotes {
         issue_id: IssueId::new(3),
         journal_id: JournalId::new(1),

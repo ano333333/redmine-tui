@@ -14,7 +14,7 @@ use super::resolve_remote_journal_upload::{
 };
 
 /// FIXME: usecaseがUI表示物(notice/toast)の文言を組み立てているのは設計上の負債である。
-/// 将来的にはJournalStoreの状態を見て判断するtoast component等を導入し、
+/// 将来的にはStoreのJournal状態を見て判断するtoast component等を導入し、
 /// この処理をそちらへ移すべき。
 pub fn remote_journal_upload_failure_actions(
     issue_id: IssueId,
@@ -123,6 +123,7 @@ where
         );
     }
     let Some(server_journal) = fetched
+        .aggregate
         .journals
         .iter()
         .find(|journal| journal.id == journal_id)
@@ -228,16 +229,19 @@ mod tests {
     }
 
     fn edited_issue_and_journal(dispatcher: &mut Dispatcher) {
+        edited_issue_with_journals(dispatcher, vec![journal()]);
+    }
+
+    /// `journals`を持つIssueを登録し、そのうちJOURNAL_IDのJournalを編集する。
+    fn edited_issue_with_journals(
+        dispatcher: &mut Dispatcher,
+        journals: Vec<crate::entities::Journal>,
+    ) {
         let mut issue =
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         issue.issue.description = "issue body".to_string();
+        issue.journals = journals;
         dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-        dispatcher.consume_action();
-        let journal = journal();
-        dispatcher.dispatch(Action::Journal(JournalAction::SyncFetched {
-            issue_id: ISSUE_ID,
-            journals: vec![journal],
-        }));
         dispatcher.consume_action();
         dispatcher.dispatch(Action::Journal(JournalAction::EditRemoteNotes {
             issue_id: ISSUE_ID,
@@ -330,9 +334,9 @@ mod tests {
         }
 
         async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
-            self.get_result.clone().map(|aggregate| FetchedIssue {
-                aggregate,
-                journals: self.journals.clone(),
+            self.get_result.clone().map(|mut aggregate| {
+                aggregate.journals = self.journals.clone();
+                FetchedIssue { aggregate }
             })
         }
 
@@ -464,13 +468,8 @@ mod tests {
         let mut issue =
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         issue.issue.description = "issue body".to_string();
+        issue.journals = vec![journal()];
         dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-        dispatcher.consume_action();
-        let journal = journal();
-        dispatcher.dispatch(Action::Journal(JournalAction::SyncFetched {
-            issue_id: ISSUE_ID,
-            journals: vec![journal],
-        }));
         dispatcher.consume_action();
         let dispatcher = Rc::new(RefCell::new(dispatcher));
 
@@ -480,15 +479,10 @@ mod tests {
     #[test]
     fn start_panics_when_another_journal_of_the_issue_is_uploading() {
         let mut dispatcher = Dispatcher::new();
-        edited_issue_and_journal(&mut dispatcher);
         let mut other = journal();
         other.id = JournalId::new(11);
         other.notes = "other notes".to_string();
-        dispatcher.dispatch(Action::Journal(JournalAction::SyncFetched {
-            issue_id: ISSUE_ID,
-            journals: vec![other],
-        }));
-        dispatcher.consume_action();
+        edited_issue_with_journals(&mut dispatcher, vec![journal(), other]);
         dispatcher.dispatch(Action::Journal(JournalAction::EditRemoteNotes {
             issue_id: ISSUE_ID,
             journal_id: JournalId::new(11),

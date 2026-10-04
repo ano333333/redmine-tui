@@ -4,7 +4,7 @@ use crate::vos::id::{
     CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum JournalDetailAttr {
     StatusId {
         old: IssueStatusId,
@@ -73,7 +73,7 @@ pub enum JournalDetailAttr {
     },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum JournalDetail {
     Attr(JournalDetailAttr),
     // FIXME:

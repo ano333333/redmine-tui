@@ -2,9 +2,13 @@
 //! entryのvariantで本体・差分・失敗・競合の保持可能な組合せを制限する。
 //! Actionごとの遷移前提条件は受理時に検査する。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::entities::{IssueAggregate, IssueView};
+use super::issue_journals::{IssueJournalStates, JournalAction};
+use super::journal_state::{
+    LocalJournalEntry, RemoteJournalState, RemoteJournalUploadConflict, RemoteJournalView,
+};
+use crate::entities::{IssueAggregate, IssueView, Journal};
 use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
     IssueDueDateDiff, IssueEstimatedHoursDiff, IssuePriorityIdDiff, IssueProjectIdDiff,
@@ -12,8 +16,8 @@ use crate::vos::issue_property_diff::{
     fold_property_diffs,
 };
 use crate::vos::{
-    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
-    TrackerId, UserId,
+    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, JournalNotesDiff, PriorityId,
+    ProjectId, TargetVersionId, TrackerId, UserId,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,16 +41,19 @@ enum IssueEntry {
     },
     Synced {
         issue: IssueAggregate,
+        journal_states: IssueJournalStates,
     },
     Edited {
         issue: IssueAggregate,
         diffs: Vec<IssuePropertyDiff>,
         failure: Option<String>,
+        journal_states: IssueJournalStates,
     },
     Uploading {
         issue: IssueAggregate,
         diffs: Vec<IssuePropertyDiff>,
         conflict: Option<IssueUploadConflict>,
+        journal_states: IssueJournalStates,
     },
 }
 
@@ -148,7 +155,7 @@ impl IssueStore {
 
     pub(super) fn consume_action(&mut self, action: IssueAction) {
         match action {
-            IssueAction::Sync { issue } => {
+            IssueAction::Sync { mut issue } => {
                 let id = issue.issue.id;
                 match self.entries.get(&id) {
                     None | Some(IssueEntry::Edited { .. } | IssueEntry::Uploading { .. }) => {}
@@ -157,7 +164,35 @@ impl IssueStore {
                         Self::entry_state_name(entry)
                     ),
                 }
-                self.entries.insert(id, IssueEntry::Synced { issue });
+                self.assert_fetched_journals_are_valid(id, &issue.journals);
+                // Issue属性の保存が完了しても、Journalの編集と下書きは引き継ぐ。
+                let journal_states = match self.entries.remove(&id) {
+                    None => IssueJournalStates::synced(&issue.journals),
+                    Some(
+                        IssueEntry::Edited {
+                            issue: current,
+                            mut journal_states,
+                            ..
+                        }
+                        | IssueEntry::Uploading {
+                            issue: current,
+                            mut journal_states,
+                            ..
+                        },
+                    ) => {
+                        let fetched = std::mem::take(&mut issue.journals);
+                        issue.journals = journal_states.merge_fetched(current.journals, fetched);
+                        journal_states
+                    }
+                    Some(_) => unreachable!("state check guarantees Edited or Uploading"),
+                };
+                self.entries.insert(
+                    id,
+                    IssueEntry::Synced {
+                        issue,
+                        journal_states,
+                    },
+                );
             }
             IssueAction::StartFetching { id } => {
                 // UIとfetch usecaseは未登録またはFetchFailedの場合にだけこのActionを発行する。
@@ -186,20 +221,30 @@ impl IssueStore {
             }
             IssueAction::StartUpload { id } => {
                 let entry = self.entries.get(&id);
-                if !matches!(entry, Some(IssueEntry::Edited { .. })) {
-                    panic!(
+                match entry {
+                    Some(IssueEntry::Edited { journal_states, .. }) => assert!(
+                        !journal_states.has_uploading(),
+                        "cannot start issue upload while a journal of issue {id} is uploading"
+                    ),
+                    _ => panic!(
                         "cannot start issue upload while issue {id} is {}",
                         Self::entry_state_name(entry)
-                    );
+                    ),
                 }
                 match self.entries.remove(&id).unwrap() {
-                    IssueEntry::Edited { issue, diffs, .. } => {
+                    IssueEntry::Edited {
+                        issue,
+                        diffs,
+                        journal_states,
+                        ..
+                    } => {
                         self.entries.insert(
                             id,
                             IssueEntry::Uploading {
                                 issue,
                                 diffs,
                                 conflict: None,
+                                journal_states,
                             },
                         );
                     }
@@ -215,13 +260,19 @@ impl IssueStore {
                     );
                 }
                 match self.entries.remove(&id).unwrap() {
-                    IssueEntry::Uploading { issue, diffs, .. } => {
+                    IssueEntry::Uploading {
+                        issue,
+                        diffs,
+                        journal_states,
+                        ..
+                    } => {
                         self.entries.insert(
                             id,
                             IssueEntry::Edited {
                                 issue,
                                 diffs,
                                 failure: None,
+                                journal_states,
                             },
                         );
                     }
@@ -244,13 +295,19 @@ impl IssueStore {
                     );
                 }
                 match self.entries.remove(&id).unwrap() {
-                    IssueEntry::Uploading { issue, diffs, .. } => {
+                    IssueEntry::Uploading {
+                        issue,
+                        diffs,
+                        journal_states,
+                        ..
+                    } => {
                         self.entries.insert(
                             id,
                             IssueEntry::Edited {
                                 issue,
                                 diffs,
                                 failure: Some(message),
+                                journal_states,
                             },
                         );
                     }
@@ -386,11 +443,8 @@ impl IssueStore {
         }
     }
 
-    /// `complete_fetch`が受理できない完了を、他Storeへの適用前に拒否する。
-    ///
-    /// 現在はJournalを別Storeが保持するため、親StoreはそのStoreを更新する前にこの検査を呼ぶ。
-    /// TODO: JournalをIssueStoreが所有したら検査は`complete_fetch`内だけで足りるため、この関数は削除する。
-    pub(super) fn assert_fetch_completable(&self, id: IssueId, issue: &IssueAggregate) {
+    /// 初回取得の結果を、Issue本体とJournalが揃った状態で登録する。
+    pub(super) fn complete_fetch(&mut self, id: IssueId, issue: IssueAggregate) {
         // 新しい同期結果やローカル編集を遅延した成功で上書きしないよう、
         // Fetching以外への着弾は制御破綻として拒否する。
         match self.entries.get(&id) {
@@ -405,11 +459,124 @@ impl IssueStore {
         if actual_id != id {
             panic!("fetch succeeded with mismatched issue id: requested {id}, got {actual_id}");
         }
+        self.assert_fetched_journals_are_valid(id, &issue.journals);
+        let journal_states = IssueJournalStates::synced(&issue.journals);
+        self.entries.insert(
+            id,
+            IssueEntry::Synced {
+                issue,
+                journal_states,
+            },
+        );
     }
 
-    pub(super) fn complete_fetch(&mut self, id: IssueId, issue: IssueAggregate) {
-        self.assert_fetch_completable(id, &issue);
-        self.entries.insert(id, IssueEntry::Synced { issue });
+    pub(super) fn consume_journal_action(&mut self, action: JournalAction) {
+        let issue_id = action.issue_id();
+        match &action {
+            JournalAction::CompleteLocalUploadWithFetched { journals, .. } => {
+                self.assert_fetched_journals_are_valid(issue_id, journals);
+            }
+            JournalAction::StartLocalUpload { .. } => assert!(
+                !matches!(
+                    self.entries.get(&issue_id),
+                    Some(IssueEntry::Uploading { .. })
+                ),
+                "cannot start local journal upload while issue {issue_id} is uploading"
+            ),
+            JournalAction::StartRemoteUpload { .. } => assert!(
+                !matches!(
+                    self.entries.get(&issue_id),
+                    Some(IssueEntry::Uploading { .. })
+                ),
+                "cannot start remote journal upload while issue {issue_id} is uploading"
+            ),
+            _ => {}
+        }
+        let state_name = Self::entry_state_name(self.entries.get(&issue_id));
+        let Some((issue, journal_states)) = self.loaded_parts_mut(issue_id) else {
+            panic!("cannot update journals of issue {issue_id} while it is {state_name}");
+        };
+        journal_states.consume_action(&mut issue.journals, action);
+    }
+
+    // Storeへ到達した取得結果のIDと所有関係の不整合は、取得失敗ではなくAction生成側の制御破綻として拒否する。
+    fn assert_fetched_journals_are_valid(&self, issue_id: IssueId, journals: &[Journal]) {
+        let mut seen: HashSet<JournalId> = HashSet::with_capacity(journals.len());
+        for journal in journals {
+            let journal_id = journal.id;
+            if !seen.insert(journal_id) {
+                panic!(
+                    "fetched journals for issue {issue_id} contain duplicate journal {journal_id}"
+                );
+            }
+            if journal.issue_id != issue_id {
+                panic!(
+                    "fetched journal {journal_id} of issue {issue_id} has issue {}",
+                    journal.issue_id
+                );
+            }
+        }
+        for (other_issue_id, entry) in &self.entries {
+            if *other_issue_id == issue_id {
+                continue;
+            }
+            let Some((other_issue, _)) = Self::loaded_parts(Some(entry)) else {
+                continue;
+            };
+            if let Some(journal) = other_issue
+                .journals
+                .iter()
+                .find(|registered| seen.contains(&registered.id))
+            {
+                panic!(
+                    "remote journal {} is already registered for issue {other_issue_id}",
+                    journal.id
+                );
+            }
+        }
+    }
+
+    fn loaded_parts(entry: Option<&IssueEntry>) -> Option<(&IssueAggregate, &IssueJournalStates)> {
+        match entry? {
+            IssueEntry::Synced {
+                issue,
+                journal_states,
+            }
+            | IssueEntry::Edited {
+                issue,
+                journal_states,
+                ..
+            }
+            | IssueEntry::Uploading {
+                issue,
+                journal_states,
+                ..
+            } => Some((issue, journal_states)),
+            IssueEntry::Fetching | IssueEntry::FetchFailed { .. } => None,
+        }
+    }
+
+    fn loaded_parts_mut(
+        &mut self,
+        issue_id: IssueId,
+    ) -> Option<(&mut IssueAggregate, &mut IssueJournalStates)> {
+        match self.entries.get_mut(&issue_id)? {
+            IssueEntry::Synced {
+                issue,
+                journal_states,
+            }
+            | IssueEntry::Edited {
+                issue,
+                journal_states,
+                ..
+            }
+            | IssueEntry::Uploading {
+                issue,
+                journal_states,
+                ..
+            } => Some((issue, journal_states)),
+            IssueEntry::Fetching | IssueEntry::FetchFailed { .. } => None,
+        }
     }
 
     #[track_caller]
@@ -433,7 +600,9 @@ impl IssueStore {
 
     fn loaded_view(entry: Option<&IssueEntry>) -> Option<(IssueView<'_>, IssueState)> {
         match entry? {
-            IssueEntry::Synced { issue } => Some((IssueView::new(issue, &[]), IssueState::Synced)),
+            IssueEntry::Synced { issue, .. } => {
+                Some((IssueView::new(issue, &[]), IssueState::Synced))
+            }
             IssueEntry::Edited { issue, diffs, .. } => {
                 Some((IssueView::new(issue, diffs), IssueState::Edited))
             }
@@ -500,6 +669,73 @@ impl IssueStore {
         }
     }
 
+    /// Issueが取得済みでない場合は空のVecを返す。
+    pub(super) fn get_remote_journals(
+        &self,
+        issue_id: impl Into<IssueId>,
+    ) -> Vec<RemoteJournalView<'_>> {
+        let issue_id = issue_id.into();
+        let Some((issue, journal_states)) = Self::loaded_parts(self.entries.get(&issue_id)) else {
+            return Vec::new();
+        };
+        issue
+            .journals
+            .iter()
+            .map(|journal| RemoteJournalView {
+                journal,
+                state: journal_states
+                    .remote_state(journal.id)
+                    .expect("every journal of a loaded issue has a state"),
+            })
+            .collect()
+    }
+
+    #[track_caller]
+    pub(super) fn get_remote_journal(
+        &self,
+        issue_id: impl Into<IssueId>,
+        journal_id: impl Into<JournalId>,
+    ) -> RemoteJournalView<'_> {
+        let issue_id = issue_id.into();
+        let journal_id = journal_id.into();
+        match self
+            .get_remote_journals(issue_id)
+            .into_iter()
+            .find(|entry| entry.journal.id == journal_id)
+        {
+            Some(entry) => entry,
+            None => panic!("remote journal {journal_id} is not registered for issue {issue_id}"),
+        }
+    }
+
+    pub(super) fn try_get_local_journal(
+        &self,
+        issue_id: impl Into<IssueId>,
+    ) -> Option<&LocalJournalEntry> {
+        Self::loaded_parts(self.entries.get(&issue_id.into()))
+            .and_then(|(_, journal_states)| journal_states.local())
+    }
+
+    pub(super) fn has_uploading_journal(&self, issue_id: impl Into<IssueId>) -> bool {
+        Self::loaded_parts(self.entries.get(&issue_id.into()))
+            .is_some_and(|(_, journal_states)| journal_states.has_uploading())
+    }
+
+    pub(super) fn try_get_remote_journal_upload_conflict(
+        &self,
+        issue_id: impl Into<IssueId>,
+        journal_id: impl Into<JournalId>,
+    ) -> Option<(&JournalNotesDiff, &RemoteJournalUploadConflict)> {
+        let (_, journal_states) = Self::loaded_parts(self.entries.get(&issue_id.into()))?;
+        match journal_states.remote_state(journal_id.into())? {
+            RemoteJournalState::Uploading {
+                diff,
+                conflict: Some(conflict),
+            } => Some((diff, conflict)),
+            _ => None,
+        }
+    }
+
     fn entry_state_name(entry: Option<&IssueEntry>) -> &'static str {
         match entry {
             None => "Unregistered",
@@ -536,13 +772,17 @@ impl IssueStore {
             }
             None => panic!("cannot update missing issue {id}"),
         }
-        let (issue, mut diffs, failure) = match self.entries.remove(&id).unwrap() {
-            IssueEntry::Synced { issue } => (issue, Vec::new(), None),
+        let (issue, mut diffs, failure, journal_states) = match self.entries.remove(&id).unwrap() {
+            IssueEntry::Synced {
+                issue,
+                journal_states,
+            } => (issue, Vec::new(), None, journal_states),
             IssueEntry::Edited {
                 issue,
                 diffs,
                 failure,
-            } => (issue, diffs, failure),
+                journal_states,
+            } => (issue, diffs, failure, journal_states),
             _ => {
                 unreachable!("update_issue受理検査により、遷移先はSynced / Edited以外が存在しない")
             }
@@ -551,12 +791,16 @@ impl IssueStore {
         diffs.extend(edited);
         // diffは編集履歴として順に残し、差し引きで変更がなくなった時点でSyncedへ戻す。
         let entry = if fold_property_diffs(&diffs).is_empty() {
-            IssueEntry::Synced { issue }
+            IssueEntry::Synced {
+                issue,
+                journal_states,
+            }
         } else {
             IssueEntry::Edited {
                 issue,
                 diffs,
                 failure,
+                journal_states,
             }
         };
         self.entries.insert(id, entry);

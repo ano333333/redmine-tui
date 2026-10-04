@@ -825,18 +825,29 @@ flowchart TD
             <div class="diff-item">
               <div class="diff-bullet"></div>
               <div>
-                親 <code>Store</code> は Issue の状態と更新処理を非公開の
-                <code>IssueStore</code> に委譲する。
+                親 <code>Store</code> は Issue と Journal の状態と更新処理を非公開の
+                <code>IssueStore</code> に委譲する。Journal 本体は
+                <code>IssueAggregate::journals</code> が所有し、<code>IssueStore</code>
+                は取得済み Issue ごとに全 Journal の <code>RemoteJournalState</code>
+                と 0 件または 1 件の Local Journal を持つ。Journal の操作は Issue
+                が取得済みの場合だけ受理する。
               </div>
             </div>
             <div class="diff-item">
               <div class="diff-bullet"></div>
               <div>
-                Issue 詳細の取得結果は親 <code>Store</code> の
-                <code>Action::IssueFetchSucceeded</code> 1件で Issue と Journal
-                を反映する。親 <code>Store</code> は <code>IssueStore</code> と
-                <code>JournalStore</code>
-                の前提を両方検査してから適用し、片方だけを更新した状態を作らない。
+                Issue 詳細の取得結果は <code>Action::IssueFetchSucceeded</code>
+                1件で Issue と Journal を反映する。<code>IssueStore</code> は Journal
+                の所有関係と重複を検査してから登録し、一部だけを反映した状態を作らない。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                Issue 属性の状態（Synced / Edited / Uploading）は Journal
+                の編集と下書きを含まない。Issue 属性の状態が変わっても Journal
+                の作業は引き継ぐ。同じ Issue の upload は Issue 属性と Journal
+                を合わせて1件に限り、<code>IssueStore</code> が検査する。
               </div>
             </div>
             <div class="diff-item">
@@ -917,7 +928,7 @@ flowchart TD
               <div class="diff-bullet"></div>
               <div>
                 マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。
-                <code>JournalStore::merge_sync_fetched</code> の dirty entry 保護がこれにあたる。
+                取得した Journal を取り込む際の、編集中・upload 中の Journal の保護がこれにあたる。
               </div>
             </div>
             <div class="diff-item">

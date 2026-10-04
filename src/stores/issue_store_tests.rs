@@ -1013,11 +1013,7 @@ fn matching_fetch_success_registers_the_issue_as_synced() {
     let mut store = Store::new();
     store.consume_action(IssueAction::StartFetching { id }.into());
 
-    store.consume_action(Action::IssueFetchSucceeded {
-        id,
-        issue,
-        journals: vec![],
-    });
+    store.consume_action(Action::IssueFetchSucceeded { id, issue });
 
     let (issue, state) = store.get_issue(id);
     assert_eq!(issue.subject(), "fetched");
@@ -1037,7 +1033,6 @@ fn mismatched_fetch_success_panics() {
     store.consume_action(Action::IssueFetchSucceeded {
         id: requested_id,
         issue: response_issue,
-        journals: vec![],
     });
 }
 
@@ -1137,7 +1132,6 @@ macro_rules! fetch_success_outside_fetching_panics {
                 store.consume_action(Action::IssueFetchSucceeded {
                     id,
                     issue: sample_issue_aggregate(99, "late", 1.into(), None, None, None, 0),
-                    journals: vec![],
                 });
             }
         )+

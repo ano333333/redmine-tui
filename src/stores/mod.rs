@@ -1,16 +1,16 @@
+mod issue_journals;
 mod issue_store;
 mod journal_state;
-mod journal_store;
 mod notice_store;
 mod project_issues_store;
 mod store;
 
+pub use issue_journals::JournalAction;
 pub use issue_store::{IssueAction, IssueFetchState, IssueState};
 pub use journal_state::{
-    JournalUploadFailure, LocalJournalEntry, LocalJournalState, RemoteJournalEntry,
-    RemoteJournalState, RemoteJournalUploadConflict,
+    JournalUploadFailure, LocalJournalEntry, LocalJournalState, RemoteJournalState,
+    RemoteJournalUploadConflict, RemoteJournalView,
 };
-pub use journal_store::JournalAction;
 pub use project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesRequestId,
 };
@@ -19,9 +19,9 @@ pub use store::{Action, Dispatcher, Store};
 pub use notice_store::{Notice, NoticeAction, NoticeId};
 
 #[cfg(test)]
-mod issue_store_tests;
+mod issue_journals_tests;
 #[cfg(test)]
-mod journal_store_tests;
+mod issue_store_tests;
 #[cfg(test)]
 mod notice_store_tests;
 #[cfg(test)]

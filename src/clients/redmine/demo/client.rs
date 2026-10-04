@@ -62,19 +62,17 @@ impl RedmineClient for DemoRedmineClient {
     ) -> impl std::future::Future<Output = Result<FetchedIssue, RedmineClientError>> + Send {
         let snapshot = {
             let state = self.state.lock().expect("demo fixture state lock poisoned");
-            state.issues.get(&id).cloned().map(|aggregate| {
-                let journals = state.journals.get(&id).cloned().unwrap_or_default();
-                (aggregate, journals)
+            state.issues.get(&id).cloned().map(|mut aggregate| {
+                // デモのJournalはサーバー側の保存単位として別に持ち、取得時にIssueへ含める。
+                aggregate.journals = state.journals.get(&id).cloned().unwrap_or_default();
+                aggregate
             })
         };
         async move {
-            let Some((aggregate, journals)) = snapshot else {
+            let Some(aggregate) = snapshot else {
                 return Err(Self::not_found("GET", format!("/issues/{}.json", id.get())));
             };
-            Ok(FetchedIssue {
-                aggregate,
-                journals,
-            })
+            Ok(FetchedIssue { aggregate })
         }
     }
 
@@ -369,6 +367,7 @@ mod tests {
         assert_eq!(fetched.aggregate.issue.id.get(), 3);
         assert_eq!(
             fetched
+                .aggregate
                 .journals
                 .iter()
                 .map(|journal| journal.id.get())
@@ -377,7 +376,7 @@ mod tests {
         );
         let journal_free = runtime.block_on(client.get_issue(IssueId::new(1))).unwrap();
         assert_eq!(journal_free.aggregate.issue.id.get(), 1);
-        assert!(journal_free.journals.is_empty());
+        assert!(journal_free.aggregate.journals.is_empty());
 
         assert!(matches!(
             runtime.block_on(client.get_issue(IssueId::new(999))),
@@ -399,20 +398,20 @@ mod tests {
         let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
         assert_eq!(fetched.aggregate.issue.subject, "changed subject");
         assert_eq!(fetched.aggregate.updated_on, updated_on);
-        assert_eq!(fetched.journals.len(), 3);
+        assert_eq!(fetched.aggregate.journals.len(), 3);
 
         runtime
             .block_on(client.update_journal_notes(JournalId::new(2), "remote replacement"))
             .unwrap();
         let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
-        assert_eq!(fetched.journals[1].notes, "remote replacement");
+        assert_eq!(fetched.aggregate.journals[1].notes, "remote replacement");
 
         runtime
             .block_on(client.update_issue_notes(IssueId::new(3), "local addition"))
             .unwrap();
         let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
-        assert_eq!(fetched.journals.len(), 4);
-        let added = fetched.journals.last().unwrap();
+        assert_eq!(fetched.aggregate.journals.len(), 4);
+        let added = fetched.aggregate.journals.last().unwrap();
         assert_eq!(added.id.get(), 4);
         assert_eq!(added.issue_id, IssueId::new(3));
         assert_eq!(added.user, "user1");
@@ -494,11 +493,6 @@ mod tests {
             issue: fetched.aggregate,
         });
         dispatcher.consume_action();
-        dispatcher.dispatch(JournalAction::SyncFetched {
-            issue_id: IssueId::new(3),
-            journals: fetched.journals,
-        });
-        dispatcher.consume_action();
         Rc::new(RefCell::new(dispatcher))
     }
 
@@ -532,7 +526,10 @@ mod tests {
             )]
         ));
         let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
-        assert_eq!(fetched.journals.last().unwrap().notes, "uploaded local");
+        assert_eq!(
+            fetched.aggregate.journals.last().unwrap().notes,
+            "uploaded local"
+        );
     }
 
     #[test]
@@ -559,7 +556,7 @@ mod tests {
             [Action::Journal(JournalAction::CompleteRemoteUpload { .. })]
         ));
         let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
-        assert_eq!(fetched.journals[1].notes, "uploaded remote");
+        assert_eq!(fetched.aggregate.journals[1].notes, "uploaded remote");
 
         let client = Arc::new(DemoRedmineClient::new());
         let dispatcher = journal_dispatcher(&client, &runtime);

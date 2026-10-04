@@ -42,11 +42,11 @@ fn get_issue_skips_unsupported_journal_detail_properties() {
 
     let fetched = block_on(client.get_issue(IssueId::new(42))).unwrap();
 
-    assert_eq!(fetched.journals.len(), 1);
-    assert_eq!(fetched.journals[0].id, JournalId::new(500));
-    assert_eq!(fetched.journals[0].issue_id, IssueId::new(42));
-    assert_eq!(fetched.journals[0].details.len(), 1);
-    match &fetched.journals[0].details[0] {
+    assert_eq!(fetched.aggregate.journals.len(), 1);
+    assert_eq!(fetched.aggregate.journals[0].id, JournalId::new(500));
+    assert_eq!(fetched.aggregate.journals[0].issue_id, IssueId::new(42));
+    assert_eq!(fetched.aggregate.journals[0].details.len(), 1);
+    match &fetched.aggregate.journals[0].details[0] {
         JournalDetail::Attr(JournalDetailAttr::StatusId { old, new }) => {
             assert_eq!(*old, crate::vos::IssueStatusId::new(1));
             assert_eq!(*new, crate::vos::IssueStatusId::new(2));

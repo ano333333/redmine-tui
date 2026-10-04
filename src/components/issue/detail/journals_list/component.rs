@@ -1,7 +1,7 @@
 use ratatui::layout::Position;
 
 use crate::platform::input::{InputEvent, KeyCode};
-use crate::stores::{LocalJournalEntry, RemoteJournalEntry, Store};
+use crate::stores::{LocalJournalEntry, RemoteJournalView, Store};
 use crate::vos::{EntityIdValue, IssueId, JournalId};
 
 use super::journals_list_item::EventProcessResult as ChildEventProcessResult;
@@ -197,7 +197,7 @@ impl JournalsListComponent {
 
     pub fn update(
         &mut self,
-        entries: &[RemoteJournalEntry],
+        entries: &[RemoteJournalView<'_>],
         local_entry: Option<&LocalJournalEntry>,
         width: u16,
     ) -> Option<EventProcessResult> {
@@ -371,7 +371,7 @@ mod tests {
     use crate::entities::Journal;
     use crate::entities::LocalJournal;
     use crate::stores::{
-        Action, JournalAction, LocalJournalEntry, LocalJournalState, RemoteJournalEntry, Store,
+        Action, JournalAction, LocalJournalEntry, LocalJournalState, RemoteJournalView, Store,
     };
     use crate::test_support::local_datetime;
     use crate::test_support::render_snapshot;
@@ -402,11 +402,22 @@ mod tests {
         }
     }
 
-    fn register_journal<'s>(store: &'s mut Store, journal: &Journal) -> &'s RemoteJournalEntry {
-        store.consume_action(Action::Journal(JournalAction::SyncFetched {
-            issue_id: journal.issue_id,
-            journals: vec![journal.clone()],
-        }));
+    /// 指定したJournalを持つIssue 1を取得済みにしたStore。
+    fn store_with_journals(journals: Vec<Journal>) -> Store {
+        let mut issue =
+            crate::test_support::sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0);
+        issue.journals = journals;
+        let mut store = Store::new();
+        store.consume_action(crate::stores::IssueAction::Sync { issue }.into());
+        store
+    }
+
+    fn store_with_loaded_issue() -> Store {
+        store_with_journals(vec![])
+    }
+
+    fn register_journal<'s>(store: &'s mut Store, journal: &Journal) -> RemoteJournalView<'s> {
+        *store = store_with_journals(vec![journal.clone()]);
         store.get_remote_journal(journal.issue_id, journal.id)
     }
 
@@ -422,12 +433,12 @@ mod tests {
 
     #[test]
     fn process_event_e_on_focused_item_returns_edit_requested() {
-        let mut store = Store::new();
+        let mut store = store_with_loaded_issue();
         let journal = create_journal(1, "first paragraph");
         register_journal(&mut store, &journal);
         let mut component = JournalsListComponent::new(journal.issue_id);
         component.update(
-            store.get_remote_journals(journal.issue_id),
+            &store.get_remote_journals(journal.issue_id),
             None,
             WIDE_WIDTH,
         );
@@ -488,12 +499,12 @@ mod tests {
 
     #[test]
     fn process_event_ctrl_s_on_edited_focused_item_returns_save_requested() {
-        let mut store = Store::new();
+        let mut store = store_with_loaded_issue();
         let journal = create_journal(1, "first paragraph");
         register_journal(&mut store, &journal);
         let mut component = JournalsListComponent::new(journal.issue_id);
         component.update(
-            store.get_remote_journals(journal.issue_id),
+            &store.get_remote_journals(journal.issue_id),
             None,
             WIDE_WIDTH,
         );
@@ -504,7 +515,7 @@ mod tests {
             notes: "edited notes".to_string(),
         }));
         component.update(
-            store.get_remote_journals(journal.issue_id),
+            &store.get_remote_journals(journal.issue_id),
             None,
             WIDE_WIDTH,
         );
@@ -525,12 +536,12 @@ mod tests {
 
     #[test]
     fn process_event_ctrl_s_on_synced_focused_item_returns_handled() {
-        let mut store = Store::new();
+        let mut store = store_with_loaded_issue();
         let journal = create_journal(1, "first paragraph");
         register_journal(&mut store, &journal);
         let mut component = JournalsListComponent::new(journal.issue_id);
         component.update(
-            store.get_remote_journals(journal.issue_id),
+            &store.get_remote_journals(journal.issue_id),
             None,
             WIDE_WIDTH,
         );
@@ -552,13 +563,13 @@ mod tests {
 
     #[test]
     fn process_event_moves_from_last_remote_item_through_local_item_and_button() {
-        let mut store = Store::new();
+        let mut store = store_with_loaded_issue();
         let journal = create_journal(1, "remote notes");
         register_journal(&mut store, &journal);
         let local_entry = local_entry("local notes");
         let mut component = JournalsListComponent::new(journal.issue_id);
         component.update(
-            store.get_remote_journals(journal.issue_id),
+            &store.get_remote_journals(journal.issue_id),
             Some(&local_entry),
             WIDE_WIDTH,
         );
@@ -588,13 +599,13 @@ mod tests {
 
     #[test]
     fn process_event_moves_from_button_through_local_item_to_last_remote_item() {
-        let mut store = Store::new();
+        let mut store = store_with_loaded_issue();
         let journal = create_journal(1, "remote notes");
         register_journal(&mut store, &journal);
         let local_entry = local_entry("local notes");
         let mut component = JournalsListComponent::new(journal.issue_id);
         component.update(
-            store.get_remote_journals(journal.issue_id),
+            &store.get_remote_journals(journal.issue_id),
             Some(&local_entry),
             WIDE_WIDTH,
         );
@@ -771,12 +782,7 @@ mod tests {
         remote_journals: &[Journal],
     ) -> JournalsListComponent {
         let issue_id = IssueId::new(1);
-        if !remote_journals.is_empty() {
-            store.consume_action(Action::Journal(JournalAction::SyncFetched {
-                issue_id,
-                journals: remote_journals.to_vec(),
-            }));
-        }
+        *store = store_with_journals(remote_journals.to_vec());
         store.consume_action(Action::Journal(JournalAction::CreateLocal { issue_id }));
         store.consume_action(Action::Journal(JournalAction::EditLocalNotes {
             issue_id,
@@ -787,7 +793,7 @@ mod tests {
         }));
         let mut component = JournalsListComponent::new(issue_id);
         component.update(
-            store.get_remote_journals(issue_id),
+            &store.get_remote_journals(issue_id),
             store.try_get_local_journal(issue_id),
             WIDE_WIDTH,
         );
@@ -805,7 +811,7 @@ mod tests {
 
     #[test]
     fn update_after_local_upload_completion_keeps_the_focus_index_when_more_items_follow() {
-        let mut store = Store::new();
+        let mut store = store_with_loaded_issue();
         let remotes = vec![create_journal(1, "first"), create_journal(2, "second")];
         let mut component = uploading_local_component(&mut store, &remotes);
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
@@ -823,7 +829,7 @@ mod tests {
         fetched.push(create_journal(3, "local notes"));
         complete_local_upload(&mut store, fetched);
         component.update(
-            store.get_remote_journals(IssueId::new(1)),
+            &store.get_remote_journals(IssueId::new(1)),
             store.try_get_local_journal(IssueId::new(1)),
             WIDE_WIDTH,
         );
@@ -837,7 +843,7 @@ mod tests {
 
     #[test]
     fn update_after_local_upload_completion_clamps_the_focus_index_to_the_last_item() {
-        let mut store = Store::new();
+        let mut store = store_with_loaded_issue();
         let remotes = vec![create_journal(1, "first")];
         let mut component = uploading_local_component(&mut store, &remotes);
         component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
@@ -846,7 +852,7 @@ mod tests {
 
         complete_local_upload(&mut store, remotes.clone());
         component.update(
-            store.get_remote_journals(IssueId::new(1)),
+            &store.get_remote_journals(IssueId::new(1)),
             store.try_get_local_journal(IssueId::new(1)),
             WIDE_WIDTH,
         );
@@ -861,14 +867,14 @@ mod tests {
     #[test]
     fn update_after_local_upload_completion_moves_focus_to_the_create_button_when_the_list_is_empty()
      {
-        let mut store = Store::new();
+        let mut store = store_with_loaded_issue();
         let mut component = uploading_local_component(&mut store, &[]);
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
         assert_eq!(component.focused_item, Some(JournalItemIdentity::Local));
 
         complete_local_upload(&mut store, vec![]);
         component.update(
-            store.get_remote_journals(IssueId::new(1)),
+            &store.get_remote_journals(IssueId::new(1)),
             store.try_get_local_journal(IssueId::new(1)),
             WIDE_WIDTH,
         );
@@ -879,13 +885,13 @@ mod tests {
 
     #[test]
     fn update_moves_focus_to_last_remote_item_when_local_item_disappears() {
-        let mut store = Store::new();
+        let mut store = store_with_loaded_issue();
         let journal = create_journal(1, "remote notes");
         register_journal(&mut store, &journal);
         let local_entry = local_entry("local notes");
         let mut component = JournalsListComponent::new(journal.issue_id);
         component.update(
-            store.get_remote_journals(journal.issue_id),
+            &store.get_remote_journals(journal.issue_id),
             Some(&local_entry),
             WIDE_WIDTH,
         );
@@ -893,7 +899,7 @@ mod tests {
         component.process_event(key_event(KeyCode::Char('k')));
 
         component.update(
-            store.get_remote_journals(journal.issue_id),
+            &store.get_remote_journals(journal.issue_id),
             None,
             WIDE_WIDTH,
         );
@@ -906,7 +912,7 @@ mod tests {
 
     #[test]
     fn snapshot_local_only_item_is_after_remote_items() {
-        let mut store = Store::new();
+        let mut store = store_with_loaded_issue();
         let journal = create_journal(1, "remote notes");
         register_journal(&mut store, &journal);
         store.consume_action(Action::Journal(JournalAction::CreateLocal {
@@ -918,7 +924,7 @@ mod tests {
         }));
         let mut component = JournalsListComponent::new(journal.issue_id);
         component.update(
-            store.get_remote_journals(journal.issue_id),
+            &store.get_remote_journals(journal.issue_id),
             store.try_get_local_journal(journal.issue_id),
             WIDE_WIDTH,
         );
@@ -989,12 +995,12 @@ mod tests {
 
     #[test]
     fn snapshot_list_clips_create_button() {
-        let mut store = Store::new();
+        let mut store = store_with_loaded_issue();
         let journal = create_journal(1, "remote notes");
         register_journal(&mut store, &journal);
         let mut component = JournalsListComponent::new(journal.issue_id);
         component.update(
-            store.get_remote_journals(journal.issue_id),
+            &store.get_remote_journals(journal.issue_id),
             None,
             WIDE_WIDTH,
         );

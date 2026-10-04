@@ -1101,13 +1101,9 @@ mod tests {
             journal_id,
         };
         let mut store = Store::new();
-        store.consume_action(
-            JournalAction::SyncFetched {
-                issue_id,
-                journals: vec![crate::test_support::sample_parent_issue_journals().remove(0)],
-            }
-            .into(),
-        );
+        let mut issue = crate::test_support::sample_parent_issue();
+        issue.journals = vec![crate::test_support::sample_parent_issue_journals().remove(0)];
+        store.consume_action(IssueAction::Sync { issue }.into());
 
         assert!(can_start_editing(
             &context,
@@ -1150,6 +1146,12 @@ mod tests {
         let issue_id = IssueId::new(3);
         let context = PendingEditorContext::LocalJournal { issue_id };
         let mut store = Store::new();
+        store.consume_action(
+            IssueAction::Sync {
+                issue: crate::test_support::sample_parent_issue(),
+            }
+            .into(),
+        );
 
         assert!(!can_start_editing(
             &context,
@@ -1286,13 +1288,13 @@ mod tests {
     }
 
     fn loaded_dispatcher_with_journals() -> Rc<RefCell<Dispatcher>> {
-        let dispatcher = loaded_dispatcher();
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
-            dispatcher_ref.dispatch(Action::Journal(JournalAction::SyncFetched {
-                issue_id: IssueId::new(3),
-                journals: crate::test_support::sample_parent_issue_journals(),
-            }));
+            crate::test_support::dispatch_sample_masters(&mut dispatcher_ref);
+            let mut issue = crate::test_support::sample_parent_issue();
+            issue.journals = crate::test_support::sample_parent_issue_journals();
+            dispatcher_ref.dispatch(IssueAction::Sync { issue });
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }

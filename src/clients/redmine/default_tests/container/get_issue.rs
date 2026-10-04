@@ -55,7 +55,7 @@ async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::
     );
 
     assert_eq!(
-        fetched
+        issue
             .journals
             .iter()
             .map(|journal| (
@@ -91,16 +91,16 @@ async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::
         ]
     );
     assert!(matches!(
-        fetched.journals[0].details.as_slice(),
+        issue.journals[0].details.as_slice(),
         [JournalDetail::Attr(JournalDetailAttr::StatusId { old, new })]
             if old.get() == 1 && new.get() == 2
     ));
     assert!(matches!(
-        fetched.journals[1].details.as_slice(),
+        issue.journals[1].details.as_slice(),
         [JournalDetail::Attr(JournalDetailAttr::DueDate { old, new })]
             if *old == Some(local_date(2026, 2, 16)) && *new == Some(local_date(2026, 2, 17))
     ));
-    assert!(fetched.journals[2].details.is_empty());
+    assert!(issue.journals[2].details.is_empty());
 
     Ok(())
 }

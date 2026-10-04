@@ -44,7 +44,6 @@ where
             Ok(fetched) if fetched.aggregate.issue.id == id => vec![Action::IssueFetchSucceeded {
                 id,
                 issue: fetched.aggregate,
-                journals: fetched.journals,
             }],
             // 応答IDの不一致はサーバー側の外部データ異常のため、Storeでpanicさせず取得失敗にする。
             Ok(fetched) => vec![
@@ -118,14 +117,10 @@ mod tests {
 
         assert_eq!(actions.len(), 1);
         match &actions[0] {
-            Action::IssueFetchSucceeded {
-                id,
-                issue,
-                journals,
-            } => {
+            Action::IssueFetchSucceeded { id, issue } => {
                 assert_eq!(*id, IssueId::new(42));
                 assert_eq!(issue.issue.id, IssueId::new(42));
-                let journal_ids: Vec<JournalId> = journals.iter().map(|j| j.id).collect();
+                let journal_ids: Vec<JournalId> = issue.journals.iter().map(|j| j.id).collect();
                 assert_eq!(journal_ids, vec![JournalId::new(1), JournalId::new(2)]);
             }
             _ => panic!("successful request must return IssueFetchSucceeded"),
@@ -309,9 +304,9 @@ mod tests {
     impl RedmineClient for StubClient {
         async fn get_issue(&self, id: IssueId) -> Result<FetchedIssue, RedmineClientError> {
             self.requested_ids.lock().unwrap().push(id);
-            self.result.clone().map(|aggregate| FetchedIssue {
-                aggregate,
-                journals: self.journals.clone(),
+            self.result.clone().map(|mut aggregate| {
+                aggregate.journals = self.journals.clone();
+                FetchedIssue { aggregate }
             })
         }
 

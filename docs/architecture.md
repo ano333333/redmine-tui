@@ -106,8 +106,9 @@ Store の更新は原則として Dispatcher を介して行う。
 
 - Store 更新通知は pub/sub ではなく、上位層が `consume_action -> update` を明示的に呼ぶ。
 - `Dispatcher` は action queue と `Store` を内部に持つ。
-- 親 `Store` は Issue の状態と更新処理を非公開の `IssueStore` に委譲する。
-- Issue 詳細の取得結果は親 `Store` の `Action::IssueFetchSucceeded` 1件で Issue と Journal を反映する。親 `Store` は `IssueStore` と `JournalStore` の前提を両方検査してから適用し、片方だけを更新した状態を作らない。
+- 親 `Store` は Issue と Journal の状態と更新処理を非公開の `IssueStore` に委譲する。Journal 本体は `IssueAggregate::journals` が所有し、`IssueStore` は取得済み Issue ごとに全 Journal の `RemoteJournalState` と 0 件または 1 件の Local Journal を持つ。Journal の操作は Issue が取得済みの場合だけ受理する。
+- Issue 詳細の取得結果は `Action::IssueFetchSucceeded` 1件で Issue と Journal を反映する。`IssueStore` は Journal の所有関係と重複を検査してから登録し、一部だけを反映した状態を作らない。
+- Issue 属性の状態（Synced / Edited / Uploading）は Journal の編集と下書きを含まない。Issue 属性の状態が変わっても Journal の作業は引き継ぐ。同じ Issue の upload は Issue 属性と Journal を合わせて1件に限り、`IssueStore` が検査する。
 - Component と usecase は `IssueStore` を直接参照せず、親 `Store` の Issue getter を通して entity、同期状態、diff、競合情報を取得する。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。
@@ -119,13 +120,13 @@ Store は、失敗または Action の不受理に見える分岐を以下に区
 - 異常系: 自プロセスの制御破綻を示す状態機械違反。`panic!` で即座に停止する。異常系を `Result` で呼び出し元へ返すのは、Flux を参考にした一方向データフローでは dispatch 時点と consume 時点が分離しておりエラーを返す先がないため採用しない。
 - 準異常系: 外部プロセスや外部データ起因の復帰可能な失敗。message を Action に載せ、状態復帰と notice によるユーザー通知を行う。失敗後の再試行に必要な状態がある場合は、失敗 Action によって対象の状態機械を再試行可能な状態へ戻し、message を状態の一部として保持する。
 - stale completion: 重複を許した非同期要求の追い越し。request ID の一致判定で破棄し、暗黙の状態判定では破棄しない。現時点でこれに該当するのは `ProjectIssuesStore` のみ。`IssueAction` と `JournalAction` は重複を事前条件で排除するため、想定した状態以外へ着弾した完了は stale completion として捨てず異常系として拒否する。
-- マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。`JournalStore::merge_sync_fetched` の dirty entry 保護がこれにあたる。
+- マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。取得した Journal を取り込む際の、編集中・upload 中の Journal の保護がこれにあたる。
 - 冪等 no-op: 同じ `NoticeId` の再追加など、Action 自体が冪等であることを契約として持つ正常な no-op。stale completion とマージ戦略は同じ no-op の見た目になりやすいため独立して扱う。
 
 getter 契約は、API が表す状態と cardinality で決める。不在が示す意味が異なるため、entity の種類だけで一律には決めない。
 
 - strict 単体取得: 存在が呼び出し元の事前条件である getter は `get_xxx` とし、参照を直接返し、不在は異常系として `panic!` する。
-- 状態・cardinality を表す `Option`: 読み込み状態、ページの未要求、0 件・1 件など、不在そのものが状態や cardinality を表す取得は `Option` を返す。`IssueStore` と `JournalStore` の単体 getter では、`Option` を返すものを `try_get_xxx` と命名する。呼び出し側が取得値の存在を特定の経路で前提する場合は、無言の `unwrap()` ではなく `expect(...)` で不変条件を説明する。
+- 状態・cardinality を表す `Option`: 読み込み状態、ページの未要求、0 件・1 件など、不在そのものが状態や cardinality を表す取得は `Option` を返す。`IssueStore` の単体 getter では、`Option` を返すものを `try_get_xxx` と命名する。呼び出し側が取得値の存在を特定の経路で前提する場合は、無言の `unwrap()` ではなく `expect(...)` で不変条件を説明する。
 - master snapshot の `Option`: 起動時に一度だけ同期するマスターデータ（`IssueStatus` など）は、起動後に取得した Issue や Journal がスナップショットに存在しない ID を参照し得るため陳腐化で欠損し得る。単体のマスターデータ getter は `Option` を返し、呼び出し元は表示上の fallback で処理する。
 
 Issue の getter は、取得済みの本体と読み込み状態を分けて扱う。

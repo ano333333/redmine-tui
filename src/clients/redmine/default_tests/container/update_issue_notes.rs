@@ -31,6 +31,7 @@ async fn assert_update_issue_notes_creates_a_journal(
         .get_issue(IssueId::new(1))
         .await
         .map_err(|error| test_error(format!("get_issue(1) returned {error:?}")))?
+        .aggregate
         .journals;
     assert_eq!(
         journals

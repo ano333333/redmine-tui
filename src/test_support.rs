@@ -219,6 +219,7 @@ pub fn sample_issue_aggregate(
         total_spent_hours: Some(3.5),
         category_id: Some(CategoryId::new(1)),
         child_ids: vec![],
+        journals: vec![],
     }
 }
 
@@ -289,6 +290,7 @@ pub fn sample_open_child_issue() -> IssueAggregate {
         total_spent_hours: None,
         category_id: Some(CategoryId::new(1)),
         child_ids: vec![],
+        journals: vec![],
     }
 }
 
@@ -315,6 +317,7 @@ pub fn sample_closed_child_issue() -> IssueAggregate {
         total_spent_hours: None,
         category_id: Some(CategoryId::new(1)),
         child_ids: vec![],
+        journals: vec![],
     }
 }
 
@@ -343,6 +346,7 @@ pub fn sample_parent_issue() -> IssueAggregate {
         total_spent_hours: None,
         category_id: Some(CategoryId::new(1)),
         child_ids: vec![IssueId::new(1), IssueId::new(2)],
+        journals: vec![],
     }
 }
 

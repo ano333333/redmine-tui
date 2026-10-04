@@ -3,7 +3,7 @@ use chrono::{DateTime, Local};
 use crate::vos::{IssueId, JournalDetail, JournalId};
 
 /// Redmineから取得し、[`JournalId`]で識別するJournal。
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Journal {
     pub id: JournalId,
     pub issue_id: IssueId,
@@ -17,7 +17,7 @@ pub struct Journal {
 ///
 /// Issueごとに最大1件だけ保持し、[`IssueId`]で識別する。Redmineへの作成が成功しても、
 /// 作成後の再取得に失敗した場合は引き続きこの型で保持する。
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct LocalJournal {
     pub issue_id: IssueId,
     pub notes: String,

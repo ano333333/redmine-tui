@@ -2,16 +2,16 @@ use std::collections::{HashMap, VecDeque};
 
 use std::num::NonZeroUsize;
 
+use super::issue_journals::JournalAction;
 use super::issue_store::{IssueAction, IssueFetchState, IssueState, IssueStore};
-use super::journal_state::{LocalJournalEntry, RemoteJournalEntry, RemoteJournalUploadConflict};
-use super::journal_store::{JournalAction, JournalStore};
+use super::journal_state::{LocalJournalEntry, RemoteJournalUploadConflict, RemoteJournalView};
 use super::notice_store::{Notice, NoticeAction, NoticeStore};
 use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, IssueView, Journal, Priority, Project,
-    TargetVersion, TimeEntityActivity, Tracker, User,
+    Category, Issue, IssueAggregate, IssueStatus, IssueView, Priority, Project, TargetVersion,
+    TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
     CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, JournalNotesDiff, PriorityId,
@@ -53,7 +53,6 @@ impl Dispatcher {
 pub struct Store {
     issue_store: IssueStore,
     project_issues_store: ProjectIssuesStore,
-    journal_store: JournalStore,
     notice_store: NoticeStore,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
@@ -70,7 +69,6 @@ impl Store {
         Self {
             issue_store: IssueStore::new(),
             project_issues_store: ProjectIssuesStore::new(),
-            journal_store: JournalStore::new(),
             notice_store: NoticeStore::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
@@ -84,69 +82,11 @@ impl Store {
     }
 
     pub fn consume_action(&mut self, action: Action) {
-        // IssueStoreとJournalStoreは互いを参照しないため、両者をまたぐupload排他は
-        // Action処理の共通入口で検査し、検査を通過したActionだけを子Storeへ委譲する。
         match action {
-            Action::Issue(IssueAction::StartUpload { id }) => {
-                if matches!(
-                    self.issue_store.try_get_issue_state(id),
-                    Some(IssueState::Edited)
-                ) {
-                    assert!(
-                        !self.journal_store.has_uploading_journal(id),
-                        "cannot start issue upload while a journal of issue {id} is uploading"
-                    );
-                }
-                self.issue_store
-                    .consume_action(IssueAction::StartUpload { id });
-            }
             Action::Issue(action) => self.issue_store.consume_action(action),
-            Action::IssueFetchSucceeded {
-                id,
-                issue,
-                journals,
-            } => {
-                // 片方のStoreだけを更新してからpanicしないよう、両Storeの検査を先に済ませる。
-                self.issue_store.assert_fetch_completable(id, &issue);
-                self.journal_store
-                    .assert_sync_fetched_is_valid(id, &journals);
-                self.journal_store
-                    .consume_action(JournalAction::SyncFetched {
-                        issue_id: id,
-                        journals,
-                    });
-                self.issue_store.complete_fetch(id, issue);
-            }
+            Action::IssueFetchSucceeded { id, issue } => self.issue_store.complete_fetch(id, issue),
             Action::ProjectIssues(action) => self.project_issues_store.consume_action(action),
-            Action::Journal(JournalAction::StartLocalUpload { issue_id }) => {
-                assert!(
-                    !matches!(
-                        self.issue_store.try_get_issue_state(issue_id),
-                        Some(IssueState::Uploading)
-                    ),
-                    "cannot start local journal upload while issue {issue_id} is uploading"
-                );
-                self.journal_store
-                    .consume_action(JournalAction::StartLocalUpload { issue_id });
-            }
-            Action::Journal(JournalAction::StartRemoteUpload {
-                issue_id,
-                journal_id,
-            }) => {
-                assert!(
-                    !matches!(
-                        self.issue_store.try_get_issue_state(issue_id),
-                        Some(IssueState::Uploading)
-                    ),
-                    "cannot start remote journal upload while issue {issue_id} is uploading"
-                );
-                self.journal_store
-                    .consume_action(JournalAction::StartRemoteUpload {
-                        issue_id,
-                        journal_id,
-                    });
-            }
-            Action::Journal(action) => self.journal_store.consume_action(action),
+            Action::Journal(action) => self.issue_store.consume_journal_action(action),
             Action::Notice(action) => self.notice_store.consume_action(action),
             Action::SyncUsers { users } => {
                 self.users = users.into_iter().map(|user| (user.id, user)).collect();
@@ -248,9 +188,9 @@ impl Store {
 
     /// IssueのRemote Journalを保持順に返す。
     ///
-    /// Issueが未登録の場合は空のsliceを返す。
-    pub fn get_remote_journals(&self, issue_id: impl Into<IssueId>) -> &[RemoteJournalEntry] {
-        self.journal_store.get_remote_journals(issue_id)
+    /// Issueが取得済みでない場合は空のVecを返す。
+    pub fn get_remote_journals(&self, issue_id: impl Into<IssueId>) -> Vec<RemoteJournalView<'_>> {
+        self.issue_store.get_remote_journals(issue_id)
     }
 
     /// Issueに紐づく0件または1件のLocal Journalを返す。
@@ -258,7 +198,7 @@ impl Store {
         &self,
         issue_id: impl Into<IssueId>,
     ) -> Option<&LocalJournalEntry> {
-        self.journal_store.try_get_local_journal(issue_id)
+        self.issue_store.try_get_local_journal(issue_id)
     }
 
     /// # Panics
@@ -266,15 +206,19 @@ impl Store {
     /// Issueが未登録の場合、またはLocal Journalを持たない場合にpanicする。
     #[track_caller]
     pub fn get_local_journal(&self, issue_id: impl Into<IssueId>) -> &LocalJournalEntry {
-        self.journal_store.get_local_journal(issue_id)
+        let issue_id = issue_id.into();
+        match self.issue_store.try_get_local_journal(issue_id) {
+            Some(entry) => entry,
+            None => panic!("local journal is not registered for issue {issue_id}"),
+        }
     }
 
     /// 対象IssueのRemote JournalまたはLocal Journalがupload中かを返す。
     ///
-    /// Journalが未登録のIssue、およびJournalがすべて待機中のIssueでは`false`を返す。
+    /// 取得済みでないIssue、およびJournalがすべて待機中のIssueでは`false`を返す。
     /// usecaseから同一Issue内のJournal upload排他を検査するために使用する。
     pub fn has_uploading_journal(&self, issue_id: impl Into<IssueId>) -> bool {
-        self.journal_store.has_uploading_journal(issue_id)
+        self.issue_store.has_uploading_journal(issue_id)
     }
 
     /// Issueに登録されているRemote Journalを返す。
@@ -282,12 +226,13 @@ impl Store {
     /// # Panics
     ///
     /// 指定したIssueに指定したRemote Journalが登録されていない場合にpanicする。
+    #[track_caller]
     pub fn get_remote_journal(
         &self,
         issue_id: impl Into<IssueId>,
         journal_id: impl Into<JournalId>,
-    ) -> &RemoteJournalEntry {
-        self.journal_store.get_remote_journal(issue_id, journal_id)
+    ) -> RemoteJournalView<'_> {
+        self.issue_store.get_remote_journal(issue_id, journal_id)
     }
 
     /// 競合解決に必要なRemote Journalの編集差分とサーバー値を返す。
@@ -298,7 +243,7 @@ impl Store {
         issue_id: impl Into<IssueId>,
         journal_id: impl Into<JournalId>,
     ) -> Option<(&JournalNotesDiff, &RemoteJournalUploadConflict)> {
-        self.journal_store
+        self.issue_store
             .try_get_remote_journal_upload_conflict(issue_id, journal_id)
     }
 
@@ -404,11 +349,10 @@ pub enum Action {
     /// Issue詳細の初回取得結果を、Issue本体とJournalが揃った状態で一度に反映する。
     ///
     /// 対象IssueがFetching以外の場合、要求IDと取得したIssueのIDが異なる場合、
-    /// Journalの所有Issueが異なる・ID重複・他Issueに登録済みの場合はpanicし、どのStoreも更新しない。
+    /// Journalの所有Issueが異なる・ID重複・他Issueに登録済みの場合はpanicし、Storeを更新しない。
     IssueFetchSucceeded {
         id: IssueId,
         issue: IssueAggregate,
-        journals: Vec<Journal>,
     },
     ProjectIssues(ProjectIssuesAction),
     SyncUsers {
@@ -466,6 +410,7 @@ impl From<NoticeAction> for Action {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::Journal;
     use crate::test_support::sample_issue_aggregate;
     use crate::vos::id::EntityIdValue;
     use crate::vos::{
@@ -491,14 +436,14 @@ mod tests {
     fn issue_upload_start_panics_while_a_journal_of_the_issue_is_uploading() {
         let id = IssueId::new(1);
         let mut store = Store::new();
-        store.consume_action(JournalAction::CreateLocal { issue_id: id }.into());
-        store.consume_action(JournalAction::StartLocalUpload { issue_id: id }.into());
         store.consume_action(
             IssueAction::Sync {
                 issue: sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0),
             }
             .into(),
         );
+        store.consume_action(JournalAction::CreateLocal { issue_id: id }.into());
+        store.consume_action(JournalAction::StartLocalUpload { issue_id: id }.into());
         store.consume_action(
             IssueAction::UpdateDescription {
                 id,
@@ -514,13 +459,13 @@ mod tests {
     fn issue_upload_start_succeeds_while_the_issues_journals_are_idle() {
         let id = IssueId::new(1);
         let mut store = Store::new();
-        store.consume_action(JournalAction::CreateLocal { issue_id: id }.into());
         store.consume_action(
             IssueAction::Sync {
                 issue: sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0),
             }
             .into(),
         );
+        store.consume_action(JournalAction::CreateLocal { issue_id: id }.into());
         store.consume_action(
             IssueAction::UpdateDescription {
                 id,
@@ -546,10 +491,11 @@ mod tests {
     }
 
     fn fetch_succeeded(id: u16, issue_id: u16, journals: Vec<Journal>) -> Action {
+        let mut issue = sample_issue_aggregate(issue_id, "fetched", 1.into(), None, None, None, 0);
+        issue.journals = journals;
         Action::IssueFetchSucceeded {
             id: IssueId::new(id),
-            issue: sample_issue_aggregate(issue_id, "fetched", 1.into(), None, None, None, 0),
-            journals,
+            issue,
         }
     }
 

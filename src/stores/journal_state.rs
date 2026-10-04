@@ -31,11 +31,11 @@ pub enum RemoteJournalState {
     },
 }
 
-/// Remote Journal本体と、そのJournalに固有の編集・保存状態。
-#[derive(Clone)]
-pub struct RemoteJournalEntry {
-    pub journal: Journal,
-    pub state: RemoteJournalState,
+/// Issueが保持するRemote Journal本体と、そのJournalに固有の編集・保存状態への参照。
+#[derive(Clone, Copy)]
+pub struct RemoteJournalView<'a> {
+    pub journal: &'a Journal,
+    pub state: &'a RemoteJournalState,
 }
 
 /// Redmine由来のIDをまだ確認できていないJournalの保存状態。
@@ -51,7 +51,7 @@ pub enum LocalJournalState {
 }
 
 /// Local Journal本体と、そのJournalに固有の保存状態。
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct LocalJournalEntry {
     pub journal: LocalJournal,
     pub state: LocalJournalState,

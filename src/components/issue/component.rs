@@ -286,7 +286,6 @@ mod tests {
             Action::IssueFetchSucceeded {
                 id: 3.into(),
                 issue: crate::test_support::sample_parent_issue(),
-                journals: vec![],
             },
         );
         {
@@ -327,7 +326,6 @@ mod tests {
             Action::IssueFetchSucceeded {
                 id: 3.into(),
                 issue: crate::test_support::sample_parent_issue(),
-                journals: vec![],
             },
         );
         {

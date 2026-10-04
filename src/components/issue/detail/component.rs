@@ -141,15 +141,9 @@ mod tests {
         {
             let mut d = dispatcher.borrow_mut();
             crate::test_support::dispatch_sample_masters(&mut d);
-            d.dispatch(IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            });
-            d.dispatch(crate::stores::Action::Journal(
-                crate::stores::JournalAction::SyncFetched {
-                    issue_id: 3.into(),
-                    journals: crate::test_support::sample_parent_issue_journals(),
-                },
-            ));
+            let mut issue = crate::test_support::sample_parent_issue();
+            issue.journals = crate::test_support::sample_parent_issue_journals();
+            d.dispatch(IssueAction::Sync { issue });
             while d.consume_actinos_len() > 0 {
                 d.consume_action();
             }
@@ -599,7 +593,7 @@ impl IssueDetailComponent {
 
         let entries = store.get_remote_journals(self.id);
         self.journals_list
-            .update(entries, store.try_get_local_journal(self.id), self.width);
+            .update(&entries, store.try_get_local_journal(self.id), self.width);
 
         self.widget_state.update(
             self.calc_cursor_global_position(store),

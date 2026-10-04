@@ -1,7 +1,7 @@
 use ratatui::layout::Position;
 
 use crate::platform::input::InputEvent;
-use crate::stores::{RemoteJournalEntry, RemoteJournalState, Store};
+use crate::stores::{RemoteJournalState, RemoteJournalView, Store};
 use crate::vos::{EntityIdValue, IssueId, JournalDetail, JournalDetailAttr, JournalId};
 
 use super::focus_state;
@@ -208,8 +208,8 @@ impl JournalsListItemComponent {
         self.focus_state.focus_event(event);
     }
 
-    pub fn update(&mut self, entry: &RemoteJournalEntry, width: u16) {
-        let journal = &entry.journal;
+    pub fn update(&mut self, entry: &RemoteJournalView<'_>, width: u16) {
+        let journal = entry.journal;
         let notes = display_notes(&journal.notes, &entry.state).to_owned();
         self.notes = notes;
         self.state = entry.state.clone();
@@ -261,7 +261,7 @@ mod tests {
     use super::*;
     use crate::{
         entities::Journal,
-        stores::{Action, JournalAction, RemoteJournalEntry, Store},
+        stores::{Action, JournalAction, RemoteJournalView, Store},
         test_support::{local_datetime, render_snapshot, sync_sample_masters},
         vos::{IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, UserId},
     };
@@ -277,18 +277,16 @@ mod tests {
         InputEvent::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::control()))
     }
 
-    fn make_edited(store: &mut Store, journal: &Journal) -> RemoteJournalEntry {
+    fn make_edited<'s>(store: &'s mut Store, journal: &Journal) -> RemoteJournalView<'s> {
         store.consume_action(Action::Journal(JournalAction::EditRemoteNotes {
             issue_id: journal.issue_id,
             journal_id: journal.id,
             notes: "edited notes".to_string(),
         }));
-        store
-            .get_remote_journal(journal.issue_id, journal.id)
-            .clone()
+        store.get_remote_journal(journal.issue_id, journal.id)
     }
 
-    fn make_uploading(store: &mut Store, journal: &Journal) -> RemoteJournalEntry {
+    fn make_uploading<'s>(store: &'s mut Store, journal: &Journal) -> RemoteJournalView<'s> {
         store.consume_action(Action::Journal(JournalAction::EditRemoteNotes {
             issue_id: journal.issue_id,
             journal_id: journal.id,
@@ -298,14 +296,21 @@ mod tests {
             issue_id: journal.issue_id,
             journal_id: journal.id,
         }));
-        store
-            .get_remote_journal(journal.issue_id, journal.id)
-            .clone()
+        store.get_remote_journal(journal.issue_id, journal.id)
     }
 
     fn fixture_store() -> Store {
+        fixture_store_with_journals(vec![])
+    }
+
+    /// マスターデータと、指定したJournalを持つIssue 1を登録したStore。
+    fn fixture_store_with_journals(journals: Vec<Journal>) -> Store {
         let mut store = Store::new();
         sync_sample_masters(&mut store);
+        let mut issue =
+            crate::test_support::sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0);
+        issue.journals = journals;
+        store.consume_action(crate::stores::IssueAction::Sync { issue }.into());
         store
     }
 
@@ -350,11 +355,8 @@ mod tests {
         "updated notes with enough text to wrap onto a different set of rendered lines"
     }
 
-    fn register_journal<'s>(store: &'s mut Store, journal: &Journal) -> &'s RemoteJournalEntry {
-        store.consume_action(Action::Journal(JournalAction::SyncFetched {
-            issue_id: journal.issue_id,
-            journals: vec![journal.clone()],
-        }));
+    fn register_journal<'s>(store: &'s mut Store, journal: &Journal) -> RemoteJournalView<'s> {
+        *store = fixture_store_with_journals(vec![journal.clone()]);
         store.get_remote_journal(journal.issue_id, journal.id)
     }
 
@@ -365,7 +367,7 @@ mod tests {
     ) -> JournalsListItemComponent {
         let mut component = JournalsListItemComponent::new(journal.issue_id, journal.id);
         let entry = register_journal(store, journal);
-        component.update(entry, width);
+        component.update(&entry, width);
         component
     }
 
@@ -385,7 +387,7 @@ mod tests {
         let journal = create_journal(1, details(), notes());
         let mut component = JournalsListItemComponent::new(journal.issue_id, journal.id);
 
-        component.update(register_journal(&mut store, &journal), WIDE_WIDTH);
+        component.update(&register_journal(&mut store, &journal), WIDE_WIDTH);
 
         assert_layout_contract(&component, WIDE_WIDTH, 10, Position::new(0, 0));
         render_snapshot(
@@ -408,7 +410,7 @@ mod tests {
         }));
 
         component.update(
-            store.get_remote_journal(journal.issue_id, journal.id),
+            &store.get_remote_journal(journal.issue_id, journal.id),
             WIDE_WIDTH,
         );
 
@@ -427,7 +429,7 @@ mod tests {
         let mut component = component_with_update(&mut store, &initial_journal, WIDE_WIDTH);
         let updated_journal = create_journal(1, one_detail(), updated_notes());
 
-        component.update(register_journal(&mut store, &updated_journal), WIDE_WIDTH);
+        component.update(&register_journal(&mut store, &updated_journal), WIDE_WIDTH);
 
         assert_layout_contract(&component, WIDE_WIDTH, 8, Position::new(0, 0));
         render_snapshot(
@@ -517,7 +519,7 @@ mod tests {
         });
 
         component.update(
-            store.get_remote_journal(journal.issue_id, journal.id),
+            &store.get_remote_journal(journal.issue_id, journal.id),
             NARROW_WIDTH,
         );
 
@@ -608,7 +610,7 @@ mod tests {
         });
         let updated_journal = create_journal(1, one_detail(), notes());
 
-        component.update(register_journal(&mut store, &updated_journal), WIDE_WIDTH);
+        component.update(&register_journal(&mut store, &updated_journal), WIDE_WIDTH);
 
         assert_layout_contract(&component, WIDE_WIDTH, 9, Position::new(2, 2));
     }

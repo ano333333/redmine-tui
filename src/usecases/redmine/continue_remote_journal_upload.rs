@@ -86,6 +86,7 @@ where
         );
     }
     let Some(server_journal) = fetched
+        .aggregate
         .journals
         .iter()
         .find(|journal| journal.id == journal_id)
@@ -192,13 +193,8 @@ mod tests {
         let mut issue =
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         issue.issue.description = "issue body".to_string();
+        issue.journals = vec![journal()];
         dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-        dispatcher.consume_action();
-        let journal = journal();
-        dispatcher.dispatch(Action::Journal(JournalAction::SyncFetched {
-            issue_id: ISSUE_ID,
-            journals: vec![journal],
-        }));
         dispatcher.consume_action();
         dispatcher.dispatch(Action::Journal(JournalAction::EditRemoteNotes {
             issue_id: ISSUE_ID,
@@ -312,9 +308,9 @@ mod tests {
         }
 
         async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
-            self.get_result.clone().map(|aggregate| FetchedIssue {
-                aggregate,
-                journals: self.journals.clone(),
+            self.get_result.clone().map(|mut aggregate| {
+                aggregate.journals = self.journals.clone();
+                FetchedIssue { aggregate }
             })
         }
 
@@ -384,13 +380,8 @@ mod tests {
         let mut issue =
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         issue.issue.description = "issue body".to_string();
+        issue.journals = vec![journal()];
         dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-        dispatcher.consume_action();
-        let journal = journal();
-        dispatcher.dispatch(Action::Journal(JournalAction::SyncFetched {
-            issue_id: ISSUE_ID,
-            journals: vec![journal],
-        }));
         dispatcher.consume_action();
         let dispatcher = Rc::new(RefCell::new(dispatcher));
         assert_panics(&dispatcher);
@@ -402,13 +393,8 @@ mod tests {
         let mut issue =
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         issue.issue.description = "issue body".to_string();
+        issue.journals = vec![journal()];
         dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-        dispatcher.consume_action();
-        let journal = journal();
-        dispatcher.dispatch(Action::Journal(JournalAction::SyncFetched {
-            issue_id: ISSUE_ID,
-            journals: vec![journal],
-        }));
         dispatcher.consume_action();
         dispatcher.dispatch(Action::Journal(JournalAction::EditRemoteNotes {
             issue_id: ISSUE_ID,
@@ -426,13 +412,8 @@ mod tests {
         let mut issue =
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         issue.issue.description = "issue body".to_string();
+        issue.journals = vec![journal()];
         dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-        dispatcher.consume_action();
-        let journal = journal();
-        dispatcher.dispatch(Action::Journal(JournalAction::SyncFetched {
-            issue_id: ISSUE_ID,
-            journals: vec![journal],
-        }));
         dispatcher.consume_action();
         dispatcher.dispatch(Action::Journal(JournalAction::EditRemoteNotes {
             issue_id: ISSUE_ID,

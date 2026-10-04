@@ -122,7 +122,7 @@ where
     vec![
         JournalAction::CompleteLocalUploadWithFetched {
             issue_id,
-            journals: fetched.journals,
+            journals: fetched.aggregate.journals,
         }
         .into(),
     ]
@@ -223,18 +223,17 @@ mod tests {
         async fn get_issue(&self, issue_id: IssueId) -> Result<FetchedIssue, RedmineClientError> {
             self.get_requests.lock().unwrap().push(issue_id);
             let fetched_issue_id = self.get_result.clone()?;
-            Ok(FetchedIssue {
-                aggregate: sample_issue_aggregate(
-                    fetched_issue_id,
-                    "subject",
-                    IssueStatusId::new(1),
-                    None,
-                    None,
-                    None,
-                    0,
-                ),
-                journals: self.journals.clone(),
-            })
+            let mut aggregate = sample_issue_aggregate(
+                fetched_issue_id,
+                "subject",
+                IssueStatusId::new(1),
+                None,
+                None,
+                None,
+                0,
+            );
+            aggregate.journals = self.journals.clone();
+            Ok(FetchedIssue { aggregate })
         }
 
         async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {
@@ -293,7 +292,17 @@ mod tests {
     }
 
     fn local_only_dispatcher() -> Rc<RefCell<Dispatcher>> {
+        local_only_dispatcher_with_journals(vec![])
+    }
+
+    /// `journals`を持つIssueを登録し、notesを入力済みのLocal Journalを作成する。
+    fn local_only_dispatcher_with_journals(journals: Vec<Journal>) -> Rc<RefCell<Dispatcher>> {
         let mut dispatcher = Dispatcher::new();
+        let mut issue =
+            sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
+        issue.journals = journals;
+        dispatcher.dispatch(IssueAction::Sync { issue });
+        dispatcher.consume_action();
         dispatcher.dispatch(JournalAction::CreateLocal { issue_id: ISSUE_ID });
         dispatcher.consume_action();
         dispatcher.dispatch(JournalAction::EditLocalNotes {
@@ -345,12 +354,6 @@ mod tests {
     #[test]
     fn start_panics_when_the_issue_is_uploading() {
         let dispatcher = local_only_dispatcher();
-        let issue =
-            sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
-        dispatcher
-            .borrow_mut()
-            .dispatch(IssueAction::Sync { issue });
-        dispatcher.borrow_mut().consume_action();
         dispatcher
             .borrow_mut()
             .dispatch(IssueAction::UpdateDescription {
@@ -368,22 +371,15 @@ mod tests {
 
     #[test]
     fn start_panics_when_a_remote_journal_is_uploading() {
-        let dispatcher = local_only_dispatcher();
         let journal_id = JournalId::new(10);
-        dispatcher
-            .borrow_mut()
-            .dispatch(JournalAction::SyncFetched {
-                issue_id: ISSUE_ID,
-                journals: vec![Journal {
-                    id: journal_id,
-                    issue_id: ISSUE_ID,
-                    user: "alice".to_string(),
-                    updated_on: Some(local_datetime("2026-09-10T00:00:00+09:00")),
-                    details: vec![],
-                    notes: "remote".to_string(),
-                }],
-            });
-        dispatcher.borrow_mut().consume_action();
+        let dispatcher = local_only_dispatcher_with_journals(vec![Journal {
+            id: journal_id,
+            issue_id: ISSUE_ID,
+            user: "alice".to_string(),
+            updated_on: Some(local_datetime("2026-09-10T00:00:00+09:00")),
+            details: vec![],
+            notes: "remote".to_string(),
+        }]);
         dispatcher
             .borrow_mut()
             .dispatch(JournalAction::EditRemoteNotes {
@@ -534,14 +530,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_failure_keeps_the_existing_remote_journals() {
-        let dispatcher = local_only_dispatcher();
-        dispatcher
-            .borrow_mut()
-            .dispatch(JournalAction::SyncFetched {
-                issue_id: ISSUE_ID,
-                journals: vec![remote_journal(10, "remote")],
-            });
-        dispatcher.borrow_mut().consume_action();
+        let dispatcher = local_only_dispatcher_with_journals(vec![remote_journal(10, "remote")]);
         let client = Arc::new(StubClient {
             journals: vec![remote_journal(10, "remote"), remote_journal(11, "created")],
             ..StubClient::fails_to_get()

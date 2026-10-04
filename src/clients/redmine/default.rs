@@ -143,21 +143,12 @@ impl RedmineClient for DefaultRedmineClient {
     }
 
     async fn get_issue(&self, id: IssueId) -> Result<FetchedIssue, RedmineClientError> {
-        let mut response: IssueResponse = self
+        let response: IssueResponse = self
             .get_json(&format!("/issues/{id}.json?include=children,journals"))
             .await?;
 
-        // Issue変換でresponse.issue全体を消費するため、部分moveを避けつつJournalを先に分離する。
-        let journals = std::mem::take(&mut response.issue.journals);
-        let aggregate = response.issue.try_into()?;
-        let journals = journals
-            .into_iter()
-            .map(|journal| journal_conversion::convert_journal(id, journal))
-            .collect::<Result<Vec<_>, RedmineClientError>>()?;
-
         Ok(FetchedIssue {
-            aggregate,
-            journals,
+            aggregate: response.issue.try_into()?,
         })
     }
 
@@ -749,8 +740,14 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
     type Error = RedmineClientError;
 
     fn try_from(value: RedmineIssue) -> Result<Self, Self::Error> {
+        let issue_id = IssueId::new(value.id);
+        let journals = value
+            .journals
+            .into_iter()
+            .map(|journal| journal_conversion::convert_journal(issue_id, journal))
+            .collect::<Result<Vec<_>, RedmineClientError>>()?;
         let issue = Issue {
-            id: IssueId::new(value.id),
+            id: issue_id,
             project_id: ProjectId::new(value.project.id),
             subject: value.subject.clone(),
             description: value.description.clone().unwrap_or_default(),
@@ -780,6 +777,7 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
                 .into_iter()
                 .map(|child| IssueId::new(child.id))
                 .collect(),
+            journals,
             issue,
         })
     }
