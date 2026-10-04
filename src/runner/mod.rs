@@ -43,7 +43,7 @@ where
     S: BackgroundSpawner,
     C: RedmineClient + Send + Sync + 'static,
 {
-    let mut app_component = AppComponent::new(dispatcher.clone(), None);
+    let mut app_component = AppComponent::new(dispatcher.clone(), None, host.cursor_rendering());
     app_component.update(dispatcher.clone(), dispatcher.borrow().store(), host.area());
     let tick_rate = Duration::from_millis(TICK_RATE_MS);
     let mut last_tick = host.elapsed();

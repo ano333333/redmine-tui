@@ -14,7 +14,7 @@ use ratzilla::{event::KeyEvent as RatzillaKeyEvent, web_sys};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use wasm_bindgen_futures::{JsFuture, js_sys::Promise};
 
-use super::{HostEvent, PlatformHost};
+use super::{CursorRendering, HostEvent, PlatformHost};
 use crate::platform::input::{InputEvent, KeyCode, web::convert_key};
 
 mod backend;
@@ -111,6 +111,11 @@ impl PlatformHost for WebPlatformHost {
 
     fn elapsed(&self) -> Duration {
         Duration::from_secs_f64(((performance().now() - self.started_at) / 1000.0).max(0.0))
+    }
+
+    fn cursor_rendering(&self) -> CursorRendering {
+        // Ratzilla の DomBackend は set_cursor_position を受け取ってもカーソルを表示しない。
+        CursorRendering::Emulated
     }
 
     fn draw(&mut self, render: impl FnOnce(&mut Frame)) -> io::Result<()> {

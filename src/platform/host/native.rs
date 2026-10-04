@@ -11,7 +11,7 @@ use crossterm::{
 };
 use ratatui::{DefaultTerminal, Frame, layout::Rect};
 
-use super::{HostEvent, PlatformHost};
+use super::{CursorRendering, HostEvent, PlatformHost};
 use crate::platform::input::native::convert_key;
 
 static PANIC_HOOK_INSTALLED: AtomicBool = AtomicBool::new(false);
@@ -39,6 +39,10 @@ impl PlatformHost for NativePlatformHost {
 
     fn elapsed(&self) -> Duration {
         self.started_at.elapsed()
+    }
+
+    fn cursor_rendering(&self) -> CursorRendering {
+        CursorRendering::Terminal
     }
 
     fn draw(&mut self, render: impl FnOnce(&mut Frame)) -> io::Result<()> {

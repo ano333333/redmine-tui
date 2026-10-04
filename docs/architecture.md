@@ -359,13 +359,14 @@ flowchart TD
     action --> store
 ```
 
-| port    | native          | Web                   |
-| ------- | --------------- | --------------------- |
-| 入力    | crossterm       | Ratzilla `DomBackend` |
-| Runtime | Tokio           | `spawn_local`         |
-| Redmine | HTTP            | memory mock           |
-| Editor  | external editor | textarea              |
-| Logging | file            | browser console       |
+| port    | native          | Web                       |
+| ------- | --------------- | ------------------------- |
+| 入力    | crossterm       | Ratzilla `DomBackend`     |
+| Runtime | Tokio           | `spawn_local`             |
+| Redmine | HTTP            | memory mock               |
+| Editor  | external editor | textarea                  |
+| Logging | file            | browser console           |
+| Cursor  | terminal cursor | cursor位置のセルをreverse |
 
 ### 実装上の規則
 

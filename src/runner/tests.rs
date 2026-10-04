@@ -1,7 +1,7 @@
 use crate::components::AppComponent;
 use crate::components::app::AppEffect;
 use crate::platform::editor::{EditorOutcome, EditorRequest, TextEditor};
-use crate::platform::host::{HostEvent, PlatformHost};
+use crate::platform::host::{CursorRendering, HostEvent, PlatformHost};
 use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use crate::platform::runtime::tokio_spawner::TokioBackgroundSpawner;
 use crate::platform::runtime::{BackgroundCompletion, BackgroundSpawner};
@@ -123,7 +123,11 @@ fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion
 {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    let mut app = AppComponent::new(dispatcher.clone(), Some(42.into()));
+    let mut app = AppComponent::new(
+        dispatcher.clone(),
+        Some(42.into()),
+        CursorRendering::Terminal,
+    );
     let client = Arc::new(IssueUploadClient::new(sample_issue_aggregate(
         42,
         "fetched issue",
@@ -233,7 +237,7 @@ fn project_page_effect_queues_start_loading_and_routes_only_completion_to_worker
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
-    let mut app = AppComponent::new(dispatcher.clone(), None);
+    let mut app = AppComponent::new(dispatcher.clone(), None, CursorRendering::Terminal);
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
     let client = Arc::new(IssueUploadClient::new(sample_issue_aggregate(
         1,
@@ -952,7 +956,11 @@ fn start_local_journal_upload_action_routes_the_failure_completion_to_worker_cha
 }
 
 fn journal_upload_app(dispatcher: Rc<RefCell<Dispatcher>>) -> AppComponent<'static> {
-    let mut app = AppComponent::new(dispatcher.clone(), Some(IssueId::new(3)));
+    let mut app = AppComponent::new(
+        dispatcher.clone(),
+        Some(IssueId::new(3)),
+        CursorRendering::Terminal,
+    );
     app.update(
         dispatcher.clone(),
         dispatcher.borrow().store(),
@@ -1490,6 +1498,10 @@ impl PlatformHost for RunnerHost {
             .borrow_mut()
             .pop_front()
             .unwrap_or(Duration::ZERO)
+    }
+
+    fn cursor_rendering(&self) -> CursorRendering {
+        CursorRendering::Terminal
     }
 
     fn draw(&mut self, render: impl FnOnce(&mut ratatui::Frame)) -> io::Result<()> {
