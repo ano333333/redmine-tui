@@ -30,8 +30,10 @@
   - native/Web で共有する application lifecycle を置く。
 - `src/entities/`
   - Redmine 由来の永続的な domain entity を置く。
+  - `IssueAggregate::with_property_diffs` は、Issue 属性の差分を適用した値か、競合した差分を返す。差分の `before`/`after` を現在値へ置き換える処理とあわせて、Store と usecase から共用する。
 - `src/vos/`
   - ID、差分、journal detail などの value object を置く。
+  - `issue_property_diff.rs` は同じ属性への複数の差分の集約を持つ。
 - `src/widgets/`
   - 複数 component から使う汎用 widget を置く。
 - `src/libs/`

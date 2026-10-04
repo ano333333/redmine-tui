@@ -8,8 +8,6 @@ use crate::entities::IssueAggregate;
 use crate::stores::{Action, Dispatcher, IssueAction, IssueState, NoticeAction, NoticeId};
 use crate::vos::{IssueId, IssuePropertyDiff};
 
-use super::{apply_issue_property_diffs, fetch_issue_with_conflicts};
-
 /// 競合がないことを確認済みの Issue を Redmine サーバーへアップロードする。
 pub(crate) async fn upload_issue(
     client: &impl RedmineClient,
@@ -60,33 +58,29 @@ pub async fn upload_issue_action(
     id: IssueId,
     diffs: &[IssuePropertyDiff],
 ) -> Vec<Action> {
-    let (mut server_issue, conflicts) = match fetch_issue_with_conflicts(client, id, diffs).await {
-        Ok(result) => result,
+    let server_issue = match client.get_issue(id).await {
+        Ok(fetched) => fetched.aggregate,
         Err(error) => {
             return issue_upload_failure_actions(id, error.to_string());
         }
     };
-    if !conflicts.is_empty() {
-        return vec![
-            IssueAction::UploadConflictsDetected {
-                server_issue,
-                conflicts,
-            }
-            .into(),
-        ];
-    }
-
-    apply_issue_property_diffs(&mut server_issue, diffs);
-    if let Err(error) = upload_issue(client, &server_issue).await {
+    let issue = match server_issue.with_property_diffs(diffs) {
+        Ok(issue) => issue,
+        Err(conflicts) => {
+            return vec![
+                IssueAction::UploadConflictsDetected {
+                    server_issue,
+                    conflicts,
+                }
+                .into(),
+            ];
+        }
+    };
+    if let Err(error) = upload_issue(client, &issue).await {
         return issue_upload_failure_actions(id, error.to_string());
     }
 
-    vec![
-        IssueAction::Sync {
-            issue: server_issue,
-        }
-        .into(),
-    ]
+    vec![IssueAction::Sync { issue }.into()]
 }
 
 // FIXME: usecaseがUI表示物(notice/toast)の文言を組み立てているのは設計上の負債である。

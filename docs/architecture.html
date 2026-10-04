@@ -652,13 +652,17 @@
             <div class="dir-item">
               <span class="dir-path">src/entities/</span>
               <span class="dir-desc"
-                >Redmine 由来の永続的な domain entity を置く。</span
+                >Redmine 由来の永続的な domain entity を置く。<code>IssueAggregate::with_property_diffs</code>
+                は、Issue 属性の差分を適用した値か、競合した差分を返す。差分の
+                <code>before</code>/<code>after</code>
+                を現在値へ置き換える処理とあわせて、Store と usecase から共用する。</span
               >
             </div>
             <div class="dir-item">
               <span class="dir-path">src/vos/</span>
               <span class="dir-desc"
-                >ID、差分、journal detail などの value object を置く。</span
+                >ID、差分、journal detail などの value object を置く。<code>issue_property_diff.rs</code>
+                は同じ属性への複数の差分の集約を持つ。</span
               >
             </div>
             <div class="dir-item">

@@ -1,9 +1,7 @@
 use crate::stores::{Dispatcher, IssueAction};
 use crate::vos::{IssueId, IssuePropertyDiff};
 
-use super::fetch_issue_with_conflicts::{
-    same_issue_property, with_server_value_as_after, with_server_value_as_before,
-};
+use crate::vos::issue_property_diff::same_issue_property;
 
 /// popupの競合解決結果から、最新Issueで再試行するための一時的なdiffを作成する。
 ///
@@ -36,8 +34,8 @@ pub fn continue_issue_upload(
         selected_local_diffs
             .iter()
             .find(|selected| same_issue_property(conflict, selected))
-            .map(|selected| with_server_value_as_before(&server_issue, selected))
-            .unwrap_or_else(|| with_server_value_as_after(&server_issue, conflict))
+            .map(|selected| server_issue.with_value_as_before(selected))
+            .unwrap_or_else(|| server_issue.with_value_as_after(conflict))
     }));
 
     dispatcher.dispatch(IssueAction::ClearUploadConflicts { id });
