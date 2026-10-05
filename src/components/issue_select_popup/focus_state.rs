@@ -9,6 +9,7 @@ pub enum EventProcessResult {
     PreviousPageRequested,
     NextPageRequested,
     RetryRequested,
+    Handled,
 }
 
 enum Action {
@@ -139,7 +140,7 @@ impl FocusState {
             Action::Retry => return Some(EventProcessResult::RetryRequested),
         }
 
-        None
+        Some(EventProcessResult::Handled)
     }
 
     fn clamp_focus(&mut self) {
@@ -244,10 +245,16 @@ mod tests {
     fn process_event_l_and_h_move_between_project_and_issue_columns() {
         let mut state = state_focused_on(0, 0);
 
-        assert!(state.process_event(key_event(KeyCode::Char('l'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('l'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(state.focused_column(), IssueSelectPopupFocusColumn::Issue);
 
-        assert!(state.process_event(key_event(KeyCode::Char('h'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('h'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(state.focused_column(), IssueSelectPopupFocusColumn::Project);
     }
 
@@ -268,7 +275,10 @@ mod tests {
         let mut state = FocusState::new();
         state.replace_project_issue_counts(vec![0]);
 
-        assert!(state.process_event(key_event(KeyCode::Char('l'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('l'))),
+            Some(EventProcessResult::Handled)
+        ));
 
         assert_eq!(state.focused_column(), IssueSelectPopupFocusColumn::Project);
     }
@@ -279,7 +289,10 @@ mod tests {
         state.replace_project_issue_counts(vec![0]);
         state.set_empty_issue_column_enterable(true);
 
-        assert!(state.process_event(key_event(KeyCode::Char('l'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('l'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(state.focused_column(), IssueSelectPopupFocusColumn::Issue);
         assert!(matches!(
             state.process_event(key_event(KeyCode::Char('k'))),
@@ -311,10 +324,16 @@ mod tests {
         let mut state = state_focused_on(1, 0);
         state.process_event(key_event(KeyCode::Char('l')));
 
-        assert!(state.process_event(key_event(KeyCode::Char('j'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(state.focused_issue_index(), 1);
 
-        assert!(state.process_event(key_event(KeyCode::Char('k'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('k'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(state.focused_issue_index(), 0);
     }
 
@@ -402,13 +421,13 @@ mod tests {
     }
 
     #[test]
-    fn process_event_enter_returns_none_when_no_issue_is_focused() {
+    fn process_event_enter_returns_handled_when_no_issue_is_focused() {
         let mut state = FocusState::new();
         state.replace_project_issue_counts(vec![0]);
 
         let result = state.process_event(key_event(KeyCode::Enter));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
     }
 
     #[test]

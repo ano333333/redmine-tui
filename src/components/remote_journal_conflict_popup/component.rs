@@ -15,6 +15,8 @@ pub enum EventProcessResult {
     Canceled,
     /// 選択した本文でuploadを再試行する。
     Continued { resolved_notes: String },
+    /// popupを開いたまま、イベントを内部で処理した。
+    Handled,
 }
 
 /// Remote Journal本文の競合解決popupを管理するComponent。
@@ -52,15 +54,16 @@ impl RemoteJournalConflictComponent {
     pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         self.focus_state
             .process_event(event)
-            .and_then(|result| match result {
+            .map(|result| match result {
                 RawEventProcessResult::Selected(index) => {
                     self.selected_choice = self.choice_at(index);
-                    None
+                    EventProcessResult::Handled
                 }
-                RawEventProcessResult::Canceled => Some(EventProcessResult::Canceled),
-                RawEventProcessResult::Continued => Some(EventProcessResult::Continued {
+                RawEventProcessResult::Canceled => EventProcessResult::Canceled,
+                RawEventProcessResult::Continued => EventProcessResult::Continued {
                     resolved_notes: self.selected_notes(),
-                }),
+                },
+                RawEventProcessResult::Handled => EventProcessResult::Handled,
             })
     }
 
@@ -202,22 +205,20 @@ mod tests {
         let mut component = component();
         component.update(AREA);
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('l')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('l'))),
+            Some(EventProcessResult::Handled)
+        ));
         component.update(AREA);
         assert_eq!(
             component.cursor_position(AREA),
             Some(widget_position(FocusTarget::Choice(1), AREA.width))
         );
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('h')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('h'))),
+            Some(EventProcessResult::Handled)
+        ));
         component.update(AREA);
         assert_eq!(
             component.cursor_position(AREA),
@@ -236,27 +237,24 @@ mod tests {
         let mut component = component();
         component.update(AREA);
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('j')))
-                .is_none()
-        );
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('l')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::Handled)
+        ));
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('l'))),
+            Some(EventProcessResult::Handled)
+        ));
         component.update(AREA);
         assert_button_cursor(
             component.cursor_position(AREA),
             RemoteJournalConflictButton::Cancel,
         );
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('h')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('h'))),
+            Some(EventProcessResult::Handled)
+        ));
         component.update(AREA);
         assert_button_cursor(
             component.cursor_position(AREA),
@@ -285,7 +283,7 @@ mod tests {
         component.process_event(key_event(KeyCode::Char('l')));
         component.process_event(key_event(KeyCode::Enter));
         let result = component.process_event(key_event(KeyCode::Char('j')));
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
 
         let Some(EventProcessResult::Continued { resolved_notes }) =
             component.process_event(key_event(KeyCode::Enter))

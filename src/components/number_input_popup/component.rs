@@ -7,6 +7,7 @@ use crate::platform::input::{InputEvent, KeyCode, KeyEvent};
 pub enum EventProcessResult {
     Entered,
     Canceled,
+    Handled,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -105,7 +106,7 @@ impl<'a> NumberInputPopupComponent<'a> {
             Action::Confirm => {
                 let Some(value) = parse_value(&self.textarea.lines()[0]) else {
                     self.is_invalid = true;
-                    return None;
+                    return Some(EventProcessResult::Handled);
                 };
                 (self.observer)(value);
                 Some(EventProcessResult::Entered)
@@ -114,7 +115,7 @@ impl<'a> NumberInputPopupComponent<'a> {
             Action::InputKey(key) => {
                 self.textarea.input(Self::textarea_input(key));
                 self.is_invalid = false;
-                None
+                Some(EventProcessResult::Handled)
             }
         }
     }
@@ -281,7 +282,7 @@ mod tests {
 
         let result = component.process_event(key_event(KeyCode::Enter));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert!(component.is_invalid);
         assert_eq!(*entered.borrow(), None);
 

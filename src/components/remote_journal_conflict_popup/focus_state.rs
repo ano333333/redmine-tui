@@ -13,6 +13,7 @@ pub enum EventProcessResult {
     Selected(usize),
     Canceled,
     Continued,
+    Handled,
 }
 
 enum Action {
@@ -79,7 +80,7 @@ impl FocusState {
             Action::Enter => return self.enter(),
             Action::Quit => return Some(EventProcessResult::Canceled),
         }
-        None
+        Some(EventProcessResult::Handled)
     }
 
     fn move_down(&mut self) {
@@ -163,9 +164,15 @@ mod tests {
     fn h_and_l_move_target_between_choices() {
         let mut state = FocusState::new(2, 0);
 
-        assert!(state.process_event(key_event(KeyCode::Char('l'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('l'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(state.target(), FocusTarget::Choice(1));
-        assert!(state.process_event(key_event(KeyCode::Char('h'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('h'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(state.target(), FocusTarget::Choice(0));
     }
 
@@ -174,20 +181,29 @@ mod tests {
         let mut state = FocusState::new(2, 0);
         state.process_event(key_event(KeyCode::Char('l')));
 
-        assert!(state.process_event(key_event(KeyCode::Char('l'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('l'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(
             state.target(),
             FocusTarget::Button(RemoteJournalConflictButton::Continue)
         );
 
-        assert!(state.process_event(key_event(KeyCode::Char('h'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('h'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(state.target(), FocusTarget::Choice(1));
     }
 
     #[test]
     fn j_from_choice_focuses_continue_button() {
         let mut state = FocusState::new(2, 0);
-        assert!(state.process_event(key_event(KeyCode::Char('j'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::Handled)
+        ));
 
         assert_eq!(
             state.target(),
@@ -204,7 +220,10 @@ mod tests {
         let mut state = FocusState::new(2, 0);
         state.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(state.process_event(key_event(KeyCode::Char('k'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('k'))),
+            Some(EventProcessResult::Handled)
+        ));
 
         assert_eq!(state.target(), FocusTarget::Choice(0));
         assert_eq!(state.focused_button(), None);
@@ -215,7 +234,10 @@ mod tests {
         let mut state = FocusState::new(2, 0);
         state.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(state.process_event(key_event(KeyCode::Char('l'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('l'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(
             state.target(),
             FocusTarget::Button(RemoteJournalConflictButton::Cancel)
@@ -225,7 +247,10 @@ mod tests {
             Some(RemoteJournalConflictButton::Cancel)
         );
 
-        assert!(state.process_event(key_event(KeyCode::Char('h'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('h'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(
             state.target(),
             FocusTarget::Button(RemoteJournalConflictButton::Continue)

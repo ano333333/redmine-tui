@@ -184,7 +184,7 @@ impl<'a> AppComponent<'a> {
     }
 
     /// 共通の入力イベントを同期的に処理する。updateとrenderがこの順で後続する。
-    /// popupが開いたままイベントを処理した場合にtrueを返す。
+    /// イベントを使った場合にtrueを返す。
     pub fn process_event(
         &mut self,
         event: InputEvent,
@@ -204,7 +204,7 @@ impl<'a> AppComponent<'a> {
     }
 
     /// 最前面のpopupへイベントを渡し、結果に応じてpopup stackを更新する。
-    /// popupが開いたままイベントを処理した場合にtrueを返す。
+    /// popupがイベントを使った場合にtrueを返す。
     fn process_popup_event(
         &mut self,
         event: InputEvent,
@@ -217,54 +217,61 @@ impl<'a> AppComponent<'a> {
             .clone();
         match &mut *(popup_component_rc.borrow_mut()) {
             PopupComponent::SelectBox(popup_component) => {
-                let result = popup_component.process_event(event);
+                let Some(result) = popup_component.process_event(event) else {
+                    return false;
+                };
                 match result {
-                    Some(SelectBoxPopupEventProcessResult::Entered)
-                    | Some(SelectBoxPopupEventProcessResult::Quited) => {
+                    SelectBoxPopupEventProcessResult::Entered
+                    | SelectBoxPopupEventProcessResult::Quited => {
                         self.popup_components.pop_back();
                     }
-                    None => {}
+                    SelectBoxPopupEventProcessResult::Handled => {}
                 }
             }
             PopupComponent::SpentTimeInput(popup_component) => {
-                let result = popup_component.process_event(event);
+                let Some(result) = popup_component.process_event(event) else {
+                    return false;
+                };
                 match result {
-                    Some(SpentTimeInputPopupEventProcessResult::Quited) => {
+                    SpentTimeInputPopupEventProcessResult::Quited => {
                         self.popup_components.pop_back();
                     }
-                    Some(SpentTimeInputPopupEventProcessResult::OpenTimeEntityActivitiesPopup) => {
+                    SpentTimeInputPopupEventProcessResult::OpenTimeEntityActivitiesPopup => {
                         let popup_component = Self::create_spent_time_input_popup_component(
                             dispatcher.clone(),
                             popup_component_rc.clone(),
                         );
                         self.popup_components.push_back(popup_component);
                     }
-                    Some(SpentTimeInputPopupEventProcessResult::Submited) => {
+                    SpentTimeInputPopupEventProcessResult::Submited => {
                         // FIXME: Storeの更新
                         self.popup_components.pop_back();
                     }
-                    None => {}
+                    SpentTimeInputPopupEventProcessResult::Handled => {}
                 }
             }
             PopupComponent::DatePicker(popup_component) => {
-                let result = popup_component.process_event(event);
+                let Some(result) = popup_component.process_event(event) else {
+                    return false;
+                };
                 match result {
-                    Some(DatePickerPopupEventProcessResult::Entered)
-                    | Some(DatePickerPopupEventProcessResult::Canceled) => {
+                    DatePickerPopupEventProcessResult::Entered
+                    | DatePickerPopupEventProcessResult::Canceled => {
                         self.popup_components.pop_back();
                     }
-                    Some(DatePickerPopupEventProcessResult::Handled) => return true,
-                    None => {}
+                    DatePickerPopupEventProcessResult::Handled => {}
                 }
             }
             PopupComponent::NumberInput(popup_component) => {
-                let result = popup_component.process_event(event);
+                let Some(result) = popup_component.process_event(event) else {
+                    return false;
+                };
                 match result {
-                    Some(NumberInputPopupEventProcessResult::Entered)
-                    | Some(NumberInputPopupEventProcessResult::Canceled) => {
+                    NumberInputPopupEventProcessResult::Entered
+                    | NumberInputPopupEventProcessResult::Canceled => {
                         self.popup_components.pop_back();
                     }
-                    None => {}
+                    NumberInputPopupEventProcessResult::Handled => {}
                 }
             }
             PopupComponent::IssueSelect(popup_component) => {
@@ -272,67 +279,79 @@ impl<'a> AppComponent<'a> {
                     let dispatcher = dispatcher.borrow();
                     popup_component.process_event(event, dispatcher.store())
                 };
-                let effect = popup_component.take_effect();
-                if let Some(effect) = effect {
+                if let Some(effect) = popup_component.take_effect() {
                     self.install_issue_select_popup_effect(effect);
                 }
+                let Some(result) = result else {
+                    return false;
+                };
                 match result {
-                    Some(IssueSelectPopupEventProcessResult::Selected { issue_id }) => {
+                    IssueSelectPopupEventProcessResult::Selected { issue_id } => {
                         self.select_issue(issue_id);
                     }
-                    Some(IssueSelectPopupEventProcessResult::Quited) => {
+                    IssueSelectPopupEventProcessResult::Quited => {
                         self.close_issue_select_popup();
                     }
-                    None => {}
+                    IssueSelectPopupEventProcessResult::Handled => {}
                 }
             }
             PopupComponent::IssuePropertyConflict {
                 issue_id,
                 component,
-            } => match component.process_event(event) {
-                Some(IssuePropertyConflictEventProcessResult::Canceled) => {
-                    cancel_issue_upload(&mut dispatcher.borrow_mut(), *issue_id);
-                    self.popup_components.pop_back();
+            } => {
+                let Some(result) = component.process_event(event) else {
+                    return false;
+                };
+                match result {
+                    IssuePropertyConflictEventProcessResult::Canceled => {
+                        cancel_issue_upload(&mut dispatcher.borrow_mut(), *issue_id);
+                        self.popup_components.pop_back();
+                    }
+                    IssuePropertyConflictEventProcessResult::Continued { diffs } => {
+                        let retry_diffs =
+                            continue_issue_upload(&mut dispatcher.borrow_mut(), *issue_id, diffs);
+                        self.pending_effect = Some(AppEffect::ContinueIssueUpload {
+                            id: *issue_id,
+                            diffs: retry_diffs,
+                        });
+                        self.popup_components.pop_back();
+                    }
+                    IssuePropertyConflictEventProcessResult::Handled => {}
                 }
-                Some(IssuePropertyConflictEventProcessResult::Continued { diffs }) => {
-                    let retry_diffs =
-                        continue_issue_upload(&mut dispatcher.borrow_mut(), *issue_id, diffs);
-                    self.pending_effect = Some(AppEffect::ContinueIssueUpload {
-                        id: *issue_id,
-                        diffs: retry_diffs,
-                    });
-                    self.popup_components.pop_back();
-                }
-                None => {}
-            },
+            }
             PopupComponent::RemoteJournalConflict {
                 issue_id,
                 journal_id,
                 component,
-            } => match component.process_event(event) {
-                Some(RemoteJournalConflictEventProcessResult::Canceled) => {
-                    dispatcher
-                        .borrow_mut()
-                        .dispatch(JournalAction::CancelRemoteUploadConflict {
+            } => {
+                let Some(result) = component.process_event(event) else {
+                    return false;
+                };
+                match result {
+                    RemoteJournalConflictEventProcessResult::Canceled => {
+                        dispatcher.borrow_mut().dispatch(
+                            JournalAction::CancelRemoteUploadConflict {
+                                issue_id: *issue_id,
+                                journal_id: *journal_id,
+                            },
+                        );
+                        self.popup_components.pop_back();
+                    }
+                    RemoteJournalConflictEventProcessResult::Continued { resolved_notes } => {
+                        // FIXME: 競合情報を同期的に消さないため、直後のupdateで古いサーバーnotesのままpopupが
+                        // 開き直し、続行中に届いた新しい競合でも更新されない。
+                        self.pending_effect = Some(AppEffect::ContinueRemoteJournalUpload {
                             issue_id: *issue_id,
                             journal_id: *journal_id,
+                            resolved_notes,
                         });
-                    self.popup_components.pop_back();
+                        self.popup_components.pop_back();
+                    }
+                    RemoteJournalConflictEventProcessResult::Handled => {}
                 }
-                Some(RemoteJournalConflictEventProcessResult::Continued { resolved_notes }) => {
-                    // FIXME: 競合情報を同期的に消さないため、直後のupdateで古いサーバーnotesのままpopupが
-                    // 開き直し、続行中に届いた新しい競合でも更新されない。
-                    self.pending_effect = Some(AppEffect::ContinueRemoteJournalUpload {
-                        issue_id: *issue_id,
-                        journal_id: *journal_id,
-                        resolved_notes,
-                    });
-                    self.popup_components.pop_back();
-                }
-                None => {}
-            },
+            }
         }
-        false
+        true
     }
 
     /// IssueComponentへイベントを渡し、結果に応じてpopupの開閉やeffectの設置を行う。
@@ -663,27 +682,18 @@ impl<'a> AppComponent<'a> {
             ))));
     }
 
-    /// popupへ先にキーを渡し、未処理のqだけをアプリ終了として返す。
+    /// どのComponentも使わなかったqだけをアプリ終了としてfalseを返す。
     pub fn handle_key_event(
         &mut self,
         event: InputEvent,
         dispatcher: Rc<RefCell<Dispatcher>>,
     ) -> bool {
-        // FIXME: handle_key_eventが「内部で処理したが他のコンポーネントに影響がない」値を返すようにする
         let is_q = matches!(
             event,
             InputEvent::Key(key) if key.code == KeyCode::Char('q')
         );
-        let popup_before = self.popup_components.back().cloned();
-        let handled_by_popup = self.process_event(event, dispatcher);
-        if !is_q || handled_by_popup {
-            return true;
-        }
-        match (popup_before, self.popup_components.back()) {
-            (Some(before), Some(after)) => !Rc::ptr_eq(&before, after),
-            (Some(_), None) => true,
-            (None, _) => false,
-        }
+        let handled = self.process_event(event, dispatcher);
+        !is_q || handled
     }
 
     /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
@@ -1601,7 +1611,11 @@ mod tests {
     #[test]
     fn q_on_open_calendar_closes_only_calendar_without_quitting() {
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()));
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
         app.popup_components
             .push_back(Rc::new(RefCell::new(PopupComponent::DatePicker(
                 DatePickerPopupComponent::new(None, Box::new(|_| {})),
@@ -1703,5 +1717,82 @@ mod tests {
         assert!(buffer[(4, 0)].modifier.contains(Modifier::REVERSED));
         assert!(!buffer[(3, 0)].modifier.contains(Modifier::REVERSED));
         assert!(!buffer[(5, 0)].modifier.contains(Modifier::REVERSED));
+    }
+
+    fn push_date_picker(app: &mut AppComponent<'static>) {
+        app.popup_components
+            .push_back(Rc::new(RefCell::new(PopupComponent::DatePicker(
+                DatePickerPopupComponent::new(None, Box::new(|_| {})),
+            ))));
+    }
+
+    fn push_spent_time_input(
+        app: &mut AppComponent<'static>,
+        dispatcher: &Rc<RefCell<Dispatcher>>,
+    ) {
+        app.popup_components
+            .push_back(Rc::new(RefCell::new(PopupComponent::SpentTimeInput(
+                SpentTimeInputPopupComponent::new(dispatcher.borrow().store()),
+            ))));
+    }
+
+    #[test]
+    fn q_on_date_picker_year_field_is_input_without_quitting() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
+        push_date_picker(&mut app);
+
+        let should_continue =
+            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+
+        assert!(should_continue);
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::DatePicker(_)
+        ));
+    }
+
+    #[test]
+    fn q_while_editing_spent_time_memo_is_input_without_quitting() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
+        push_spent_time_input(&mut app, &dispatcher);
+        // Activity -> Memo、Enterで編集モードに入る
+        for code in [KeyCode::Char('j'), KeyCode::Enter] {
+            app.handle_key_event(key_event(code), dispatcher.clone());
+        }
+
+        let should_continue =
+            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+
+        assert!(should_continue);
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::SpentTimeInput(_)
+        ));
+    }
+
+    #[test]
+    fn q_without_popup_quits() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        let should_continue =
+            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+
+        assert!(!should_continue);
     }
 }
