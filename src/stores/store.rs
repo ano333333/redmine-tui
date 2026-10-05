@@ -4,7 +4,9 @@ use std::num::NonZeroUsize;
 
 use super::issue_journals::JournalAction;
 use super::issue_store::{IssueAction, IssueFetchState, IssueState, IssueStore};
-use super::journal_state::{LocalJournalEntry, RemoteJournalUploadConflict, RemoteJournalView};
+use super::journal_state::{
+    DeletedJournalEntry, LocalJournalEntry, RemoteJournalUploadConflict, RemoteJournalView,
+};
 use super::notice_store::{Notice, NoticeAction, NoticeStore};
 use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
@@ -222,7 +224,35 @@ impl Store {
         }
     }
 
-    /// 対象IssueのRemote JournalまたはLocal Journalがupload中かを返す。
+    /// 取得結果から消えた編集中のJournalを、退避した順に返す。
+    ///
+    /// Issueが取得済みでない場合は空のsliceを返す。
+    pub fn get_deleted_journals(&self, issue_id: impl Into<IssueId>) -> &[DeletedJournalEntry] {
+        self.issue_store.get_deleted_journals(issue_id)
+    }
+
+    /// # Panics
+    ///
+    /// 指定した元IDの退避データが登録されていない場合にpanicする。
+    #[track_caller]
+    pub fn get_deleted_journal(
+        &self,
+        issue_id: impl Into<IssueId>,
+        original_id: impl Into<JournalId>,
+    ) -> &DeletedJournalEntry {
+        let issue_id = issue_id.into();
+        let original_id = original_id.into();
+        match self
+            .get_deleted_journals(issue_id)
+            .iter()
+            .find(|entry| entry.original_id == original_id)
+        {
+            Some(entry) => entry,
+            None => panic!("deleted journal {original_id} is not registered for issue {issue_id}"),
+        }
+    }
+
+    /// 対象IssueのRemote Journal、Local Journal、退避したJournalのいずれかがupload中かを返す。
     ///
     /// 取得済みでないIssue、およびJournalがすべて待機中のIssueでは`false`を返す。
     /// usecaseから同一Issue内のJournal upload排他を検査するために使用する。

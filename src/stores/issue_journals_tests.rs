@@ -1,7 +1,8 @@
 use super::{Action, IssueAction, IssueState, JournalAction, Store};
 use crate::entities::{IssueAggregate, Journal};
 use crate::stores::journal_state::{
-    JournalUploadFailure, LocalJournalState, RemoteJournalState, RemoteJournalUploadConflict,
+    DeletedJournalEntry, DeletedJournalState, JournalUploadFailure, LocalJournalState,
+    RemoteJournalState, RemoteJournalUploadConflict,
 };
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::{EntityIdValue, IssueId, JournalId, JournalNotesDiff};
@@ -287,7 +288,7 @@ fn issue_transitions_keep_journal_edits_and_the_local_draft() {
 }
 
 #[test]
-fn sync_of_a_saved_issue_takes_in_fetched_journals_protecting_dirty_ones() {
+fn sync_of_a_saved_issue_takes_in_fetched_journals_and_evacuates_missing_edits() {
     let mut store = edited_store(&[10, 11], 10);
     store.consume_action(
         IssueAction::UpdateDescription {
@@ -307,12 +308,13 @@ fn sync_of_a_saved_issue_takes_in_fetched_journals_protecting_dirty_ones() {
         .into(),
     );
 
-    assert_eq!(journal_ids(&store), vec![11, 12, 10]);
+    assert_eq!(journal_ids(&store), vec![11, 12]);
     assert_eq!(
         store.get_remote_journal(ISSUE_ID, 11).journal.notes,
         "updated notes"
     );
     assert_eq!(state(&store, 12), RemoteJournalState::Synced);
+    assert_eq!(deleted_journals(&store), vec![deleted(10, "edited notes")]);
 }
 
 #[test]
@@ -395,30 +397,283 @@ fn fetched_journals_replaces_synced_journals_and_keeps_the_fetched_order() {
     assert_eq!(state(&store, 12), RemoteJournalState::Synced);
 }
 
+fn deleted(original_id: u16, notes: &str) -> DeletedJournalEntry {
+    DeletedJournalEntry {
+        original_id: JournalId::new(original_id),
+        notes: notes.to_string(),
+        state: DeletedJournalState::Pending { failure: None },
+    }
+}
+
+fn deleted_journals(store: &Store) -> Vec<DeletedJournalEntry> {
+    store.get_deleted_journals(ISSUE_ID).to_vec()
+}
+
+fn start_deleted(store: &mut Store, original_id: u16) {
+    apply(
+        store,
+        JournalAction::StartDeletedUpload {
+            issue_id: ISSUE_ID.into(),
+            original_id: original_id.into(),
+        },
+    );
+}
+
+/// Journal 10を編集した後、取得結果から消えて退避されたStore。
+fn store_with_deleted_10() -> Store {
+    let mut store = edited_store(&[10, 11], 10);
+    take_in_fetched_journals(&mut store, vec![journal(11)]);
+    store
+}
+
 #[test]
-fn fetched_journals_appends_dirty_journals_missing_from_the_fetched_result_in_their_previous_relative_order()
- {
+fn fetched_journals_evacuate_missing_edited_journals_in_order_and_keep_missing_uploading_ones() {
     let mut store = store_with(&[10, 11, 12, 13, 14]);
-    edit_remote(&mut store, 11, "edited notes");
+    edit_remote(&mut store, 11, "edited 11");
     edit_remote(&mut store, 12, "uploading notes");
     start_remote(&mut store, 12);
-    edit_remote(&mut store, 14, "edited notes");
+    edit_remote(&mut store, 14, "edited 14");
 
     take_in_fetched_journals(&mut store, vec![journal(10), journal(15)]);
 
-    assert_eq!(journal_ids(&store), vec![10, 15, 11, 12, 14]);
-    assert_eq!(
-        state(&store, 11),
-        edited_state("remote notes 11", "edited notes")
-    );
+    assert_eq!(journal_ids(&store), vec![10, 15, 12]);
     assert_eq!(
         state(&store, 12),
         uploading_state("remote notes 12", "uploading notes")
     );
     assert_eq!(
-        store.get_remote_journal(ISSUE_ID, 11).journal.notes,
-        "remote notes 11"
+        deleted_journals(&store),
+        vec![deleted(11, "edited 11"), deleted(14, "edited 14")]
     );
+}
+
+#[test]
+fn an_evacuated_journal_is_not_evacuated_twice_when_it_is_still_missing() {
+    let mut store = store_with_deleted_10();
+
+    take_in_fetched_journals(&mut store, vec![journal(11)]);
+
+    assert_eq!(deleted_journals(&store), vec![deleted(10, "edited notes")]);
+}
+
+#[test]
+fn a_reappearing_journal_is_restored_as_an_edit_from_the_server_notes() {
+    let mut store = store_with_deleted_10();
+
+    take_in_fetched_journals(
+        &mut store,
+        vec![journal_with_notes(10, "server notes"), journal(11)],
+    );
+
+    assert!(deleted_journals(&store).is_empty());
+    assert_eq!(journal_ids(&store), vec![10, 11]);
+    assert_eq!(
+        state(&store, 10),
+        edited_state("server notes", "edited notes")
+    );
+}
+
+#[test]
+fn a_reappearing_journal_with_the_same_notes_is_restored_as_synced() {
+    let mut store = store_with_deleted_10();
+
+    take_in_fetched_journals(
+        &mut store,
+        vec![journal_with_notes(10, "edited notes"), journal(11)],
+    );
+
+    assert!(deleted_journals(&store).is_empty());
+    assert_eq!(state(&store, 10), RemoteJournalState::Synced);
+}
+
+#[test]
+fn evacuation_keeps_the_local_journal() {
+    let mut store = edited_store(&[10], 10);
+    create_local(&mut store);
+    apply(
+        &mut store,
+        JournalAction::EditLocalNotes {
+            issue_id: ISSUE_ID.into(),
+            notes: "draft".to_string(),
+        },
+    );
+
+    take_in_fetched_journals(&mut store, vec![]);
+
+    assert_eq!(deleted_journals(&store), vec![deleted(10, "edited notes")]);
+    assert_eq!(store.get_local_journal(ISSUE_ID).journal.notes, "draft");
+}
+
+#[test]
+fn edit_deleted_notes_replaces_the_notes_and_drops_a_failure() {
+    let mut store = store_with_deleted_10();
+    start_deleted(&mut store, 10);
+    apply(
+        &mut store,
+        JournalAction::FailDeletedUpload {
+            issue_id: ISSUE_ID.into(),
+            original_id: 10.into(),
+            message: "network error".to_string(),
+        },
+    );
+
+    apply(
+        &mut store,
+        JournalAction::EditDeletedNotes {
+            issue_id: ISSUE_ID.into(),
+            original_id: 10.into(),
+            notes: "rewritten".to_string(),
+        },
+    );
+
+    assert_eq!(deleted_journals(&store), vec![deleted(10, "rewritten")]);
+}
+
+#[test]
+fn fail_deleted_upload_keeps_the_notes_with_the_failure() {
+    let mut store = store_with_deleted_10();
+    start_deleted(&mut store, 10);
+
+    apply(
+        &mut store,
+        JournalAction::FailDeletedUpload {
+            issue_id: ISSUE_ID.into(),
+            original_id: 10.into(),
+            message: "network error".to_string(),
+        },
+    );
+
+    assert_eq!(
+        deleted_journals(&store),
+        vec![DeletedJournalEntry {
+            state: DeletedJournalState::Pending {
+                failure: Some(JournalUploadFailure {
+                    message: "network error".to_string(),
+                }),
+            },
+            ..deleted(10, "edited notes")
+        }]
+    );
+}
+
+#[test]
+fn complete_deleted_upload_with_fetched_removes_only_the_target_and_takes_in_the_new_journal() {
+    let mut store = edited_store(&[10, 11, 12], 10);
+    edit_remote(&mut store, 11, "edited 11");
+    take_in_fetched_journals(&mut store, vec![journal(12)]);
+    create_local(&mut store);
+    start_deleted(&mut store, 10);
+
+    apply(
+        &mut store,
+        JournalAction::CompleteDeletedUploadWithFetched {
+            issue_id: ISSUE_ID.into(),
+            original_id: 10.into(),
+            journals: vec![journal(12), journal_with_notes(13, "edited notes")],
+        },
+    );
+
+    assert_eq!(deleted_journals(&store), vec![deleted(11, "edited 11")]);
+    assert_eq!(journal_ids(&store), vec![12, 13]);
+    assert!(store.try_get_local_journal(ISSUE_ID).is_some());
+}
+
+#[test]
+fn complete_deleted_upload_without_fetch_removes_only_the_target() {
+    let mut store = edited_store(&[10, 11], 10);
+    edit_remote(&mut store, 11, "edited 11");
+    take_in_fetched_journals(&mut store, vec![]);
+    start_deleted(&mut store, 10);
+
+    apply(
+        &mut store,
+        JournalAction::CompleteDeletedUploadWithoutFetch {
+            issue_id: ISSUE_ID.into(),
+            original_id: 10.into(),
+        },
+    );
+
+    assert_eq!(deleted_journals(&store), vec![deleted(11, "edited 11")]);
+}
+
+#[test]
+fn discard_deleted_removes_the_target() {
+    let mut store = store_with_deleted_10();
+
+    apply(
+        &mut store,
+        JournalAction::DiscardDeleted {
+            issue_id: ISSUE_ID.into(),
+            original_id: 10.into(),
+        },
+    );
+
+    assert!(deleted_journals(&store).is_empty());
+}
+
+#[test]
+fn has_uploading_journal_detects_an_uploading_deleted_journal() {
+    let mut store = store_with_deleted_10();
+
+    start_deleted(&mut store, 10);
+
+    assert!(store.has_uploading_journal(ISSUE_ID));
+}
+
+#[test]
+#[should_panic(
+    expected = "cannot start deleted journal upload while another journal of issue 1 is uploading"
+)]
+fn start_deleted_upload_panics_while_the_local_journal_is_uploading() {
+    let mut store = store_with_deleted_10();
+    create_local(&mut store);
+    start_local(&mut store);
+
+    start_deleted(&mut store, 10);
+}
+
+#[test]
+#[should_panic(expected = "cannot start deleted journal upload while issue 1 is uploading")]
+fn start_deleted_upload_panics_while_the_issue_is_uploading() {
+    let mut store = store_with_deleted_10();
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: ISSUE_ID.into(),
+            body: "edited body".to_string(),
+        }
+        .into(),
+    );
+    store.consume_action(
+        IssueAction::StartUpload {
+            id: ISSUE_ID.into(),
+        }
+        .into(),
+    );
+
+    start_deleted(&mut store, 10);
+}
+
+#[test]
+#[should_panic(expected = "cannot discard deleted journal 10 of issue 1 while it is uploading")]
+fn discard_deleted_panics_while_it_is_uploading() {
+    let mut store = store_with_deleted_10();
+    start_deleted(&mut store, 10);
+
+    apply(
+        &mut store,
+        JournalAction::DiscardDeleted {
+            issue_id: ISSUE_ID.into(),
+            original_id: 10.into(),
+        },
+    );
+}
+
+#[test]
+#[should_panic(expected = "deleted journal 12 is not registered for issue 1")]
+fn deleted_journal_actions_panic_for_an_unknown_original_id() {
+    let mut store = store_with_deleted_10();
+
+    start_deleted(&mut store, 12);
 }
 
 #[test]

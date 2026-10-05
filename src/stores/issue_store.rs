@@ -6,7 +6,8 @@ use std::collections::{HashMap, HashSet};
 
 use super::issue_journals::{IssueJournalStates, JournalAction};
 use super::journal_state::{
-    LocalJournalEntry, RemoteJournalState, RemoteJournalUploadConflict, RemoteJournalView,
+    DeletedJournalEntry, LocalJournalEntry, RemoteJournalState, RemoteJournalUploadConflict,
+    RemoteJournalView,
 };
 use crate::entities::{IssueAggregate, IssueChild, IssueView, Journal};
 use crate::vos::issue_property_diff::{
@@ -490,7 +491,8 @@ impl IssueStore {
     pub(super) fn consume_journal_action(&mut self, action: JournalAction) {
         let issue_id = action.issue_id();
         match &action {
-            JournalAction::CompleteLocalUploadWithFetched { journals, .. } => {
+            JournalAction::CompleteLocalUploadWithFetched { journals, .. }
+            | JournalAction::CompleteDeletedUploadWithFetched { journals, .. } => {
                 self.assert_fetched_journals_are_valid(issue_id, journals);
             }
             JournalAction::StartLocalUpload { .. } => assert!(
@@ -506,6 +508,13 @@ impl IssueStore {
                     Some(IssueEntry::Uploading { .. })
                 ),
                 "cannot start remote journal upload while issue {issue_id} is uploading"
+            ),
+            JournalAction::StartDeletedUpload { .. } => assert!(
+                !matches!(
+                    self.entries.get(&issue_id),
+                    Some(IssueEntry::Uploading { .. })
+                ),
+                "cannot start deleted journal upload while issue {issue_id} is uploading"
             ),
             _ => {}
         }
@@ -731,6 +740,16 @@ impl IssueStore {
     ) -> Option<&LocalJournalEntry> {
         Self::loaded_parts(self.entries.get(&issue_id.into()))
             .and_then(|(_, journal_states)| journal_states.local())
+    }
+
+    /// Issueが取得済みでない場合は空のsliceを返す。
+    pub(super) fn get_deleted_journals(
+        &self,
+        issue_id: impl Into<IssueId>,
+    ) -> &[DeletedJournalEntry] {
+        Self::loaded_parts(self.entries.get(&issue_id.into()))
+            .map(|(_, journal_states)| journal_states.deleted())
+            .unwrap_or(&[])
     }
 
     pub(super) fn has_uploading_journal(&self, issue_id: impl Into<IssueId>) -> bool {

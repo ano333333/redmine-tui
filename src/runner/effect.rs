@@ -12,8 +12,9 @@ use crate::{
     },
     stores::{Dispatcher, NoticeAction, NoticeId},
     usecases::redmine::{
-        continue_remote_journal_upload, fetch_issue, fetch_project_issues_page, start_issue_upload,
-        start_local_journal_upload, start_remote_journal_upload, upload_issue_action,
+        continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
+        start_deleted_journal_upload, start_issue_upload, start_local_journal_upload,
+        start_remote_journal_upload, upload_issue_action,
     },
     vos::{IssueId, JournalId, ProjectId},
 };
@@ -72,6 +73,17 @@ pub(crate) fn handle_app_effect<'a, S, C, E, H>(
         }
         AppEffect::StartLocalJournalUpload { issue_id } => {
             start_local_journal_upload_action(dispatcher, spawner, client, issue_id);
+        }
+        AppEffect::StartDeletedJournalUpload {
+            issue_id,
+            original_id,
+        } => {
+            spawner.spawn(start_deleted_journal_upload(
+                dispatcher,
+                client,
+                issue_id,
+                original_id,
+            ));
         }
         AppEffect::ContinueRemoteJournalUpload {
             issue_id,

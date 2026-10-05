@@ -107,7 +107,7 @@ Store の更新は原則として Dispatcher を介して行う。
 
 - Store 更新通知は pub/sub ではなく、上位層が `consume_action -> update` を明示的に呼ぶ。
 - `Dispatcher` は action queue と `Store` を内部に持つ。
-- 親 `Store` は Issue と Journal の状態と更新処理を非公開の `IssueStore` に委譲する。Journal 本体は `IssueAggregate::journals` が所有し、`IssueStore` は取得済み Issue ごとに全 Journal の `RemoteJournalState` と 0 件または 1 件の Local Journal を持つ。Journal の操作は Issue が取得済みの場合だけ受理する。
+- 親 `Store` は Issue と Journal の状態と更新処理を非公開の `IssueStore` に委譲する。Journal 本体は `IssueAggregate::journals` が所有し、`IssueStore` は取得済み Issue ごとに全 Journal の `RemoteJournalState`、0 件または 1 件の Local Journal、取得結果から消えた編集中 Journal の退避データ（DeletedJournal）を持つ。Journal の操作は Issue が取得済みの場合だけ受理する。
 - Issue 詳細の取得結果は `Action::IssueFetchSucceeded` 1件で Issue、Journal、子一覧を反映する。`IssueStore` は Journal の所有関係と重複を検査してから登録し、一部だけを反映した状態を作らない。
 - `IssueAggregate` は親 Issue の ID だけを持ち、子 Issue の ID 一覧は持たない。子一覧は詳細取得で得た `IssueChild`（ID・トラッカー・題名・再帰的な子一覧）として `IssueStore` が Issue ごとに保持する。子の詳細を取得済みなら、表示には `IssueView` の値を使う。
 - Issue 属性の状態（Synced / Edited / Uploading）は Journal の編集と下書きを含まない。Issue 属性の状態が変わっても Journal の作業は引き継ぐ。同じ Issue の upload は Issue 属性と Journal を合わせて1件に限り、`IssueStore` が検査する。
@@ -122,7 +122,7 @@ Store は、失敗または Action の不受理に見える分岐を以下に区
 - 異常系: 自プロセスの制御破綻を示す状態機械違反。`panic!` で即座に停止する。異常系を `Result` で呼び出し元へ返すのは、Flux を参考にした一方向データフローでは dispatch 時点と consume 時点が分離しておりエラーを返す先がないため採用しない。
 - 準異常系: 外部プロセスや外部データ起因の復帰可能な失敗。message を Action に載せ、状態復帰と notice によるユーザー通知を行う。失敗後の再試行に必要な状態がある場合は、失敗 Action によって対象の状態機械を再試行可能な状態へ戻し、message を状態の一部として保持する。
 - stale completion: 重複を許した非同期要求の追い越し。request ID の一致判定で破棄し、暗黙の状態判定では破棄しない。現時点でこれに該当するのは `ProjectIssuesStore` のみ。`IssueAction` と `JournalAction` は重複を事前条件で排除するため、想定した状態以外へ着弾した完了は stale completion として捨てず異常系として拒否する。
-- マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。取得した Journal を取り込む際の、編集中・upload 中の Journal の保護がこれにあたる。
+- マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。取得した Journal を取り込む際に、編集中・upload 中の Journal を取得値で上書きしないことがこれにあたる。取得結果から消えた編集中の Journal は元の ID と編集後の notes で退避し、同じ ID が再び現れたらサーバーの notes からの編集として戻す。退避した Journal は利用者が個別に新規投稿するか破棄する。
 - 冪等 no-op: 同じ `NoticeId` の再追加など、Action 自体が冪等であることを契約として持つ正常な no-op。stale completion とマージ戦略は同じ no-op の見た目になりやすいため独立して扱う。
 
 getter 契約は、API が表す状態と cardinality で決める。不在が示す意味が異なるため、entity の種類だけで一律には決めない。

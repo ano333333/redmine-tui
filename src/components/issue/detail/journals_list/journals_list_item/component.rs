@@ -189,23 +189,24 @@ impl JournalsListItemComponent {
     pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         self.focus_state
             .process_event(event)
-            .map(|result| match result {
+            .and_then(|result| match result {
                 focus_state::EventProcessResult::CursorLeavedFromBelow { x } => {
-                    EventProcessResult::CursorLeavedFromBelow { x }
+                    Some(EventProcessResult::CursorLeavedFromBelow { x })
                 }
                 focus_state::EventProcessResult::CursorLeavedFromAbove { x } => {
-                    EventProcessResult::CursorLeavedFromAbove { x }
+                    Some(EventProcessResult::CursorLeavedFromAbove { x })
                 }
-                focus_state::EventProcessResult::Edit => EventProcessResult::EditRequested {
+                focus_state::EventProcessResult::Edit => Some(EventProcessResult::EditRequested {
                     id: JournalId::new(self.id),
                     notes: self.notes.clone(),
-                },
+                }),
                 focus_state::EventProcessResult::SaveRequested => {
-                    EventProcessResult::SaveRequested {
+                    Some(EventProcessResult::SaveRequested {
                         id: JournalId::new(self.id),
-                    }
+                    })
                 }
-                focus_state::EventProcessResult::Handled => EventProcessResult::Handled,
+                focus_state::EventProcessResult::Handled => Some(EventProcessResult::Handled),
+                focus_state::EventProcessResult::DiscardRequested => None,
             })
     }
 

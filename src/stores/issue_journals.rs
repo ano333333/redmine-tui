@@ -1,13 +1,13 @@
 //! 取得済みIssueが持つJournalの編集・保存状態と、その状態を遷移させるAction。
 //!
-//! Journal本体は`IssueAggregate::journals`が所有し、ここでは本体ごとの状態と
-//! 0件または1件のLocal Journalを保持する。
+//! Journal本体は`IssueAggregate::journals`が所有し、ここでは本体ごとの状態、
+//! 0件または1件のLocal Journal、取得結果から消えた編集中Journalの退避データを保持する。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::journal_state::{
-    JournalUploadFailure, LocalJournalEntry, LocalJournalState, RemoteJournalState,
-    RemoteJournalUploadConflict,
+    DeletedJournalEntry, DeletedJournalState, JournalUploadFailure, LocalJournalEntry,
+    LocalJournalState, RemoteJournalState, RemoteJournalUploadConflict,
 };
 use crate::entities::{Journal, LocalJournal};
 use crate::vos::{IssueId, JournalId, JournalNotesDiff};
@@ -99,6 +99,52 @@ pub enum JournalAction {
         issue_id: IssueId,
         journals: Vec<Journal>,
     },
+    /// 退避したJournalのnotesを置き換え、以前のupload失敗情報を破棄する。
+    ///
+    /// 対象が未登録の場合、またはupload中の場合はpanicする。
+    EditDeletedNotes {
+        issue_id: IssueId,
+        original_id: JournalId,
+        notes: String,
+    },
+    /// 退避したJournalを新規Journalとして投稿し始める。
+    ///
+    /// 対象が未登録の場合、Pending以外の状態の場合、Issue属性または同じIssueの別Journalが
+    /// upload中の場合はpanicする。
+    StartDeletedUpload {
+        issue_id: IssueId,
+        original_id: JournalId,
+    },
+    /// 投稿のPUT失敗後もnotesを維持し、失敗情報を保持したPendingへ戻す。
+    ///
+    /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
+    FailDeletedUpload {
+        issue_id: IssueId,
+        original_id: JournalId,
+        message: String,
+    },
+    /// 投稿の成功後、取得したJournal一覧の取り込みと対象の退避データの削除を一度に行う。
+    ///
+    /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
+    CompleteDeletedUploadWithFetched {
+        issue_id: IssueId,
+        original_id: JournalId,
+        journals: Vec<Journal>,
+    },
+    /// 投稿のPUT成功後、確認の取得に失敗した場合に対象の退避データを削除する。
+    ///
+    /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
+    CompleteDeletedUploadWithoutFetch {
+        issue_id: IssueId,
+        original_id: JournalId,
+    },
+    /// 退避したJournalを投稿せずに破棄する。
+    ///
+    /// 対象が未登録の場合、またはupload中の場合はpanicする。
+    DiscardDeleted {
+        issue_id: IssueId,
+        original_id: JournalId,
+    },
     /// Local JournalのPUT成功後、確認の取得に失敗した場合に下書きを削除する。
     ///
     /// 再試行で同じnotesを二重に投稿しないよう、下書きは復元しない。投稿したJournalは、
@@ -122,18 +168,26 @@ impl JournalAction {
             | JournalAction::CancelRemoteUploadConflict { issue_id, .. }
             | JournalAction::RemoveMissingRemoteJournal { issue_id, .. }
             | JournalAction::CompleteLocalUploadWithFetched { issue_id, .. }
-            | JournalAction::CompleteLocalUploadWithoutFetch { issue_id } => *issue_id,
+            | JournalAction::CompleteLocalUploadWithoutFetch { issue_id }
+            | JournalAction::EditDeletedNotes { issue_id, .. }
+            | JournalAction::StartDeletedUpload { issue_id, .. }
+            | JournalAction::FailDeletedUpload { issue_id, .. }
+            | JournalAction::CompleteDeletedUploadWithFetched { issue_id, .. }
+            | JournalAction::CompleteDeletedUploadWithoutFetch { issue_id, .. }
+            | JournalAction::DiscardDeleted { issue_id, .. } => *issue_id,
         }
     }
 }
 
-/// 取得済みIssueが持つ全Remote Journalの状態と、0件または1件のLocal Journal。
+/// 取得済みIssueが持つ全Remote Journalの状態、0件または1件のLocal Journal、退避データ。
 ///
 /// `remote`は`IssueAggregate::journals`の各Journalについて、Syncedも含めて必ず1件ずつ持つ。
+/// `deleted`は退避した順に並び、元のIDは`remote`とも互いとも重複しない。
 #[derive(Debug)]
 pub(super) struct IssueJournalStates {
     remote: HashMap<JournalId, RemoteJournalState>,
     local: Option<LocalJournalEntry>,
+    deleted: Vec<DeletedJournalEntry>,
 }
 
 impl IssueJournalStates {
@@ -144,6 +198,7 @@ impl IssueJournalStates {
                 .map(|journal| (journal.id, RemoteJournalState::Synced))
                 .collect(),
             local: None,
+            deleted: Vec::new(),
         }
     }
 
@@ -155,6 +210,10 @@ impl IssueJournalStates {
         self.local.as_ref()
     }
 
+    pub(super) fn deleted(&self) -> &[DeletedJournalEntry] {
+        &self.deleted
+    }
+
     /// Remote JournalまたはLocal Journalのいずれかがupload中かを返す。
     pub(super) fn has_uploading(&self) -> bool {
         self.has_uploading_except(None)
@@ -164,30 +223,68 @@ impl IssueJournalStates {
         matches!(
             self.local.as_ref().map(|entry| &entry.state),
             Some(LocalJournalState::Uploading)
-        ) || self.remote.iter().any(|(journal_id, state)| {
-            Some(*journal_id) != excluded_journal_id
-                && matches!(state, RemoteJournalState::Uploading { .. })
-        })
+        ) || self
+            .deleted
+            .iter()
+            .any(|entry| matches!(entry.state, DeletedJournalState::Uploading))
+            || self.remote.iter().any(|(journal_id, state)| {
+                Some(*journal_id) != excluded_journal_id
+                    && matches!(state, RemoteJournalState::Uploading { .. })
+            })
     }
 
     /// 取得したJournal一覧を現在の本体と状態へ取り込み、新しい本体の一覧を返す。
+    ///
+    /// 取得結果から消えた編集中のJournalは退避し、退避済みの元IDが再び現れたら
+    /// サーバーのnotesから退避したnotesへの編集として復帰させる。
     pub(super) fn merge_fetched(
         &mut self,
         current: Vec<Journal>,
         fetched: Vec<Journal>,
     ) -> Vec<Journal> {
-        // 表示順は取得順を優先し、取得結果にないdirty entryは以前の相対順で末尾に残す。
-        let dirty_order: Vec<JournalId> = current
-            .iter()
-            .map(|journal| journal.id)
-            .filter(|journal_id| !self.is_synced(*journal_id))
-            .collect();
-        let mut current_by_id: HashMap<JournalId, Journal> = current
-            .into_iter()
-            .map(|journal| (journal.id, journal))
-            .collect();
-        let mut merged = Vec::with_capacity(fetched.len());
+        let fetched_ids: HashSet<JournalId> = fetched.iter().map(|journal| journal.id).collect();
+        let mut current_by_id: HashMap<JournalId, Journal> = HashMap::with_capacity(current.len());
+        // upload中のJournalは同じIssueで他の取得結果と同時に扱わないが、消えていた場合も
+        // 作業内容を失わないよう、以前の相対順で末尾に残す。
+        let mut kept_uploading = Vec::new();
+        for journal in current {
+            match self.remote.get(&journal.id) {
+                Some(RemoteJournalState::Edited { diff, .. })
+                    if !fetched_ids.contains(&journal.id) =>
+                {
+                    self.deleted.push(DeletedJournalEntry {
+                        original_id: journal.id,
+                        notes: diff.after.clone(),
+                        state: DeletedJournalState::Pending { failure: None },
+                    });
+                    self.remote.remove(&journal.id);
+                }
+                Some(RemoteJournalState::Uploading { .. })
+                    if !fetched_ids.contains(&journal.id) =>
+                {
+                    kept_uploading.push(journal.id);
+                    current_by_id.insert(journal.id, journal);
+                }
+                _ => {
+                    current_by_id.insert(journal.id, journal);
+                }
+            }
+        }
+        let mut merged = Vec::with_capacity(fetched.len() + kept_uploading.len());
         for journal in fetched {
+            if let Some(index) = self
+                .deleted
+                .iter()
+                .position(|entry| entry.original_id == journal.id)
+            {
+                let restored = self.deleted.remove(index);
+                self.remote.insert(
+                    journal.id,
+                    Self::edited_or_synced_state(journal.notes.clone(), restored.notes),
+                );
+                merged.push(journal);
+                continue;
+            }
             match current_by_id.remove(&journal.id) {
                 // Edited/Uploadingの未保存の作業内容は、取得値で上書きしない意図的なmerge no-opとする。
                 Some(kept) if !self.is_synced(kept.id) => merged.push(kept),
@@ -199,9 +296,9 @@ impl IssueJournalStates {
                 }
             }
         }
-        for journal_id in dirty_order {
-            if let Some(kept_dirty) = current_by_id.remove(&journal_id) {
-                merged.push(kept_dirty);
+        for journal_id in kept_uploading {
+            if let Some(kept) = current_by_id.remove(&journal_id) {
+                merged.push(kept);
             }
         }
         for removed_synced in current_by_id.keys() {
@@ -457,6 +554,86 @@ impl IssueJournalStates {
                 *journals = self.merge_fetched(current, fetched);
                 self.local = None;
             }
+            JournalAction::EditDeletedNotes {
+                issue_id,
+                original_id,
+                notes,
+            } => {
+                let entry = self.deleted_mut(issue_id, original_id);
+                match entry.state {
+                    DeletedJournalState::Pending { .. } => {
+                        entry.notes = notes;
+                        entry.state = DeletedJournalState::Pending { failure: None };
+                    }
+                    DeletedJournalState::Uploading => panic!(
+                        "cannot edit deleted journal {original_id} of issue {issue_id} while it is uploading"
+                    ),
+                }
+            }
+            JournalAction::StartDeletedUpload {
+                issue_id,
+                original_id,
+            } => {
+                if matches!(
+                    self.deleted_mut(issue_id, original_id).state,
+                    DeletedJournalState::Uploading
+                ) {
+                    panic!(
+                        "cannot start deleted journal {original_id} upload of issue {issue_id} while it is uploading"
+                    );
+                }
+                if self.has_uploading() {
+                    panic!(
+                        "cannot start deleted journal upload while another journal of issue {issue_id} is uploading"
+                    );
+                }
+                self.deleted_mut(issue_id, original_id).state = DeletedJournalState::Uploading;
+            }
+            JournalAction::FailDeletedUpload {
+                issue_id,
+                original_id,
+                message,
+            } => {
+                let entry = self.uploading_deleted_mut(issue_id, original_id);
+                entry.state = DeletedJournalState::Pending {
+                    failure: Some(JournalUploadFailure { message }),
+                };
+            }
+            JournalAction::CompleteDeletedUploadWithFetched {
+                issue_id,
+                original_id,
+                journals: fetched,
+            } => {
+                // 取得結果に元IDが現れても、投稿済みの退避データを復帰させないよう先に削除する。
+                self.uploading_deleted_mut(issue_id, original_id);
+                self.deleted
+                    .retain(|entry| entry.original_id != original_id);
+                let current = std::mem::take(journals);
+                *journals = self.merge_fetched(current, fetched);
+            }
+            JournalAction::CompleteDeletedUploadWithoutFetch {
+                issue_id,
+                original_id,
+            } => {
+                self.uploading_deleted_mut(issue_id, original_id);
+                self.deleted
+                    .retain(|entry| entry.original_id != original_id);
+            }
+            JournalAction::DiscardDeleted {
+                issue_id,
+                original_id,
+            } => {
+                if matches!(
+                    self.deleted_mut(issue_id, original_id).state,
+                    DeletedJournalState::Uploading
+                ) {
+                    panic!(
+                        "cannot discard deleted journal {original_id} of issue {issue_id} while it is uploading"
+                    );
+                }
+                self.deleted
+                    .retain(|entry| entry.original_id != original_id);
+            }
             JournalAction::CompleteLocalUploadWithoutFetch { issue_id } => {
                 match self.local_mut(issue_id).state {
                     LocalJournalState::Uploading => {}
@@ -473,6 +650,33 @@ impl IssueJournalStates {
         self.local
             .as_mut()
             .unwrap_or_else(|| panic!("local journal is not registered for issue {issue_id}"))
+    }
+
+    fn deleted_mut(
+        &mut self,
+        issue_id: IssueId,
+        original_id: JournalId,
+    ) -> &mut DeletedJournalEntry {
+        self.deleted
+            .iter_mut()
+            .find(|entry| entry.original_id == original_id)
+            .unwrap_or_else(|| {
+                panic!("deleted journal {original_id} is not registered for issue {issue_id}")
+            })
+    }
+
+    fn uploading_deleted_mut(
+        &mut self,
+        issue_id: IssueId,
+        original_id: JournalId,
+    ) -> &mut DeletedJournalEntry {
+        let entry = self.deleted_mut(issue_id, original_id);
+        if !matches!(entry.state, DeletedJournalState::Uploading) {
+            panic!(
+                "cannot finish deleted journal {original_id} upload of issue {issue_id} while it is pending"
+            );
+        }
+        entry
     }
 
     fn remote_mut(&mut self, issue_id: IssueId, journal_id: JournalId) -> &mut RemoteJournalState {

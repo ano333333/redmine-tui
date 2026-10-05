@@ -1,8 +1,8 @@
 use testty::session::PtySession;
 
 use crate::support::{
-    FakeEditor, open_issue_from_initial_popup, press_keys, property_value, reseed_redmine,
-    spawn_app, wait_for_redmine, wait_for_text, wait_until,
+    FakeEditor, open_issue_from_initial_popup, press_keys, property_value, redmine_api,
+    reseed_redmine, spawn_app, wait_for_redmine, wait_for_text, wait_until,
 };
 
 // headerから下へ移るjの回数。editing.rsと同じく、幅120の端末でseedのIssueを表示した状態で数えた。
@@ -96,5 +96,49 @@ fn ctrl_s_uploads_the_local_journal_as_a_new_journal() {
         ISSUE_3_WITH_JOURNALS,
         "uploading the local journal",
         |issue| journal_notes(issue, 4).as_deref() == Some("uploaded local notes"),
+    );
+}
+
+// Scenario: サーバーから消えた編集中のJournalは退避され、ctrl+sで新しいJournalとして投稿される
+#[test]
+fn ctrl_s_posts_an_evacuated_journal_as_a_new_journal() {
+    // Given Issue 3のJournal 3のnotesを編集した後、Redmine上でJournal 3が削除されている
+    // detailを持たないJournalはnotesを空にすると削除される。
+    let editor = FakeEditor::new("post_evacuated_journal");
+    reseed_redmine();
+    let mut session = editor.spawn_app("rescued notes");
+    open_issue_from_initial_popup(&mut session, 0);
+    // 作成ボタンの1つ上がJournal 3のnotesの最終行。
+    press_j(&mut session, J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON);
+    press_keys(&mut session, &["k", "e"]);
+    editor.finish_editing(&mut session);
+    wait_for_text(&mut session, "rescued notes");
+    assert_eq!(
+        redmine_api(
+            reqwest::Method::PUT,
+            "/journals/3.json",
+            Some(serde_json::json!({ "journal": { "notes": "" } })),
+        ),
+        reqwest::StatusCode::NO_CONTENT
+    );
+
+    // When Local Journalを投稿して取得結果を取り込み、退避された項目でctrl+sを押す
+    press_keys(&mut session, &["j", "Enter"]);
+    editor.finish_editing(&mut session);
+    // editorの結果を反映するまでは編集中として入力が無視されるため、表示を待つ。
+    wait_for_text(&mut session, "(local)");
+    press_keys(&mut session, &["j", "k", "ctrl+s"]);
+    // Local Journalが消えると、同じ位置にある退避の項目へfocusが移る。
+    wait_for_text(&mut session, "(deleted #3)");
+    session.press_key("ctrl+s").expect("failed to press ctrl+s");
+
+    // Then seedのJournal 1〜3に続き、Local JournalがJournal 4、退避したnotesがJournal 5として作成される
+    wait_for_redmine(
+        ISSUE_3_WITH_JOURNALS,
+        "posting the evacuated journal",
+        |issue| {
+            journal_notes(issue, 3).is_none()
+                && journal_notes(issue, 5).as_deref() == Some("rescued notes")
+        },
     );
 }

@@ -8,8 +8,8 @@ mod store;
 pub use issue_journals::JournalAction;
 pub use issue_store::{IssueAction, IssueFetchState, IssueState};
 pub use journal_state::{
-    JournalUploadFailure, LocalJournalEntry, LocalJournalState, RemoteJournalState,
-    RemoteJournalUploadConflict, RemoteJournalView,
+    DeletedJournalEntry, DeletedJournalState, JournalUploadFailure, LocalJournalEntry,
+    LocalJournalState, RemoteJournalState, RemoteJournalUploadConflict, RemoteJournalView,
 };
 pub use project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesRequestId,

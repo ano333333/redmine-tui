@@ -47,6 +47,19 @@ pub enum EventProcessResult {
     SaveLocalJournalRequested {
         issue_id: IssueId,
     },
+    EditDeletedJournalRequested {
+        issue_id: IssueId,
+        original_id: JournalId,
+        notes: String,
+    },
+    SaveDeletedJournalRequested {
+        issue_id: IssueId,
+        original_id: JournalId,
+    },
+    DiscardDeletedJournalRequested {
+        issue_id: IssueId,
+        original_id: JournalId,
+    },
     OpenIssueStatusPopup,
     OpenTrackerPopup,
     OpenPriorityPopup,
@@ -392,6 +405,12 @@ impl IssueDetailComponent {
                                 issue_id: self.id,
                             })
                         }
+                        Some(JournalsListEventProcessResult::SaveDeletedJournalRequested {
+                            original_id,
+                        }) => Some(EventProcessResult::SaveDeletedJournalRequested {
+                            issue_id: self.id,
+                            original_id,
+                        }),
                         Some(JournalsListEventProcessResult::Handled) => {
                             Some(EventProcessResult::Handled)
                         }
@@ -577,6 +596,32 @@ impl IssueDetailComponent {
                     Some(JournalsListEventProcessResult::Handled) => {
                         return Some(EventProcessResult::Handled);
                     }
+                    Some(JournalsListEventProcessResult::EditDeletedJournalRequested {
+                        original_id,
+                        notes,
+                    }) => {
+                        return Some(EventProcessResult::EditDeletedJournalRequested {
+                            issue_id: self.id,
+                            original_id,
+                            notes,
+                        });
+                    }
+                    Some(JournalsListEventProcessResult::SaveDeletedJournalRequested {
+                        original_id,
+                    }) => {
+                        return Some(EventProcessResult::SaveDeletedJournalRequested {
+                            issue_id: self.id,
+                            original_id,
+                        });
+                    }
+                    Some(JournalsListEventProcessResult::DiscardDeletedJournalRequested {
+                        original_id,
+                    }) => {
+                        return Some(EventProcessResult::DiscardDeletedJournalRequested {
+                            issue_id: self.id,
+                            original_id,
+                        });
+                    }
                     None => {}
                 }
             }
@@ -594,8 +639,12 @@ impl IssueDetailComponent {
         self.children_list.update(store);
 
         let entries = store.get_remote_journals(self.id);
-        self.journals_list
-            .update(&entries, store.try_get_local_journal(self.id), self.width);
+        self.journals_list.update(
+            &entries,
+            store.get_deleted_journals(self.id),
+            store.try_get_local_journal(self.id),
+            self.width,
+        );
 
         self.widget_state.update(
             self.calc_cursor_global_position(store),

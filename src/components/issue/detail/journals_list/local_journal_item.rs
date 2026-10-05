@@ -68,6 +68,7 @@ impl LocalJournalItemComponent {
             focus_state::EventProcessResult::Edit
             | focus_state::EventProcessResult::SaveRequested
             | focus_state::EventProcessResult::Handled => Some(EventProcessResult::Handled),
+            focus_state::EventProcessResult::DiscardRequested => None,
         }
     }
 

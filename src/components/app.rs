@@ -24,8 +24,8 @@ use crate::platform::editor::{EditorOutcome, EditorRequest, InteractionMode};
 use crate::platform::host::CursorRendering;
 use crate::platform::input::{InputEvent, KeyCode};
 use crate::stores::{
-    Action, Dispatcher, IssueAction, IssueState, JournalAction, LocalJournalState,
-    RemoteJournalState, Store,
+    Action, DeletedJournalState, Dispatcher, IssueAction, IssueState, JournalAction,
+    LocalJournalState, RemoteJournalState, Store,
 };
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
@@ -79,6 +79,10 @@ pub enum AppEffect {
     StartLocalJournalUpload {
         issue_id: IssueId,
     },
+    StartDeletedJournalUpload {
+        issue_id: IssueId,
+        original_id: JournalId,
+    },
 }
 
 enum PendingEditorContext {
@@ -91,6 +95,10 @@ enum PendingEditorContext {
     },
     LocalJournal {
         issue_id: IssueId,
+    },
+    DeletedJournal {
+        issue_id: IssueId,
+        original_id: JournalId,
     },
 }
 
@@ -119,6 +127,13 @@ fn can_start_editing(
         PendingEditorContext::LocalJournal { issue_id } => matches!(
             store.try_get_local_journal(*issue_id),
             Some(entry) if matches!(entry.state, LocalJournalState::LocalOnly { .. })
+        ),
+        PendingEditorContext::DeletedJournal {
+            issue_id,
+            original_id,
+        } => matches!(
+            store.get_deleted_journal(*issue_id, *original_id).state,
+            DeletedJournalState::Pending { .. }
         ),
     }
 }
@@ -548,6 +563,50 @@ impl<'a> AppComponent<'a> {
                 self.pending_effect = Some(AppEffect::StartLocalJournalUpload { issue_id });
             }
             IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::SaveDeletedJournalRequested {
+                    issue_id,
+                    original_id,
+                },
+            ) => {
+                // 退避したJournal側が投稿可能な状態でだけ要求を返すため、ここでは状態を再検査しない。
+                self.pending_effect = Some(AppEffect::StartDeletedJournalUpload {
+                    issue_id,
+                    original_id,
+                });
+            }
+            IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::DiscardDeletedJournalRequested {
+                    issue_id,
+                    original_id,
+                },
+            ) => {
+                self.dispatcher.borrow_mut().dispatch(Action::Journal(
+                    JournalAction::DiscardDeleted {
+                        issue_id,
+                        original_id,
+                    },
+                ));
+            }
+            IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::EditDeletedJournalRequested {
+                    issue_id,
+                    original_id,
+                    notes,
+                },
+            ) => {
+                let context = PendingEditorContext::DeletedJournal {
+                    issue_id,
+                    original_id,
+                };
+                if can_start_editing(&context, self.interaction_mode, dispatcher.borrow().store()) {
+                    self.pending_editor_context = Some(context);
+                    self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                        initial_text: notes,
+                    }));
+                    self.interaction_mode = InteractionMode::Editing;
+                }
+            }
+            IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::EditJournalRequested {
                     issue_id,
                     id,
@@ -838,6 +897,18 @@ impl<'a> AppComponent<'a> {
                 self.dispatcher.borrow_mut().dispatch(Action::Journal(
                     JournalAction::EditLocalNotes {
                         issue_id,
+                        notes: edited_text,
+                    },
+                ));
+            }
+            Some(PendingEditorContext::DeletedJournal {
+                issue_id,
+                original_id,
+            }) => {
+                self.dispatcher.borrow_mut().dispatch(Action::Journal(
+                    JournalAction::EditDeletedNotes {
+                        issue_id,
+                        original_id,
                         notes: edited_text,
                     },
                 ));
