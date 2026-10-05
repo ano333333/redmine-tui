@@ -123,6 +123,7 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
     fn interpret_key_event(&self, key: KeyEvent) -> Option<Action> {
         match key.code {
             KeyCode::Esc => Some(Action::Quit),
+            KeyCode::Char('q') if self.input_mode == InputMode::Navigating => Some(Action::Quit),
             KeyCode::Char('l')
                 if self.input_mode == InputMode::Navigating
                     && self.focused_field == FocusField::Activity =>
@@ -518,6 +519,16 @@ mod tests {
         assert!(matches!(result, Some(EventProcessResult::Submited)));
         assert_eq!(component.focused_field, FocusField::Submit);
         assert_eq!(component.input_mode, InputMode::Navigating);
+    }
+
+    #[test]
+    fn q_while_navigating_returns_quited() {
+        let store = store_with_time_entity_activities();
+        let mut component = SpentTimeInputPopupComponent::new(&store);
+
+        let result = component.process_event(key_event(KeyCode::Char('q')));
+
+        assert!(matches!(result, Some(EventProcessResult::Quited)));
     }
 
     #[test]

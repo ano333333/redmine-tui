@@ -1757,6 +1757,46 @@ mod tests {
     }
 
     #[test]
+    fn q_on_date_picker_buttons_closes_popup_without_quitting() {
+        // Tab3回でカレンダーボタン、4回でキャンセルボタン
+        for tab_count in [3, 4] {
+            let dispatcher = loaded_dispatcher();
+            let mut app = AppComponent::new(
+                dispatcher.clone(),
+                Some(3.into()),
+                CursorRendering::Terminal,
+            );
+            push_date_picker(&mut app);
+            for _ in 0..tab_count {
+                app.handle_key_event(key_event(KeyCode::Tab), dispatcher.clone());
+            }
+
+            let should_continue =
+                app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+
+            assert!(should_continue, "tab_count={tab_count}");
+            assert!(app.popup_components.is_empty(), "tab_count={tab_count}");
+        }
+    }
+
+    #[test]
+    fn q_on_navigating_spent_time_input_closes_popup_without_quitting() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
+        push_spent_time_input(&mut app, &dispatcher);
+
+        let should_continue =
+            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+
+        assert!(should_continue);
+        assert!(app.popup_components.is_empty());
+    }
+
+    #[test]
     fn q_while_editing_spent_time_memo_is_input_without_quitting() {
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(
