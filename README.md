@@ -1,215 +1,70 @@
 # redmine-tui
 
-A draft terminal UI for browsing and editing Redmine issue data.
+[日本語の README はこちら](README.ja.md)。
 
-The current application is a local Ratatui prototype. It reads data from a Redmine server running in a container and can update issues and journals.
+redmine-tui is a draft terminal UI for browsing and editing Redmine issues from your terminal. It connects to a Redmine server through the REST API.
 
-A Web demo renders the terminal UI in a browser (see the Web Demo section).
+## Features
+
+- Browse issues and their properties, descriptions, child issues, and journals.
+- Update issue properties such as status, priority, assignee, dates, category, and estimated hours.
+- Edit issue descriptions and journal notes in your configured terminal editor.
+- Add journal notes and record spent time.
+- Save changes to Redmine and review conflicts when the server data changed during editing.
+
+This project is still a prototype, and its interface and feature set may change.
 
 ## Requirements
 
 - Rust toolchain compatible with edition 2024
-- Docker and Docker Compose v2, for the local Redmine test server
-- Nix, optional, for the provided development shell
-
-## Development Shell
-
-If you use Nix:
-
-```sh
-nix develop
-```
-
-This shell provides Rust, Cargo, Clippy, `cargo-insta`, LLVM coverage tools, Trunk, and actionlint.
+- A Redmine account with REST API access enabled and an API key for the native TUI
+- Nix (optional), to use the provided development shell
 
 ## Run the TUI
 
-```sh
-cargo run
-```
-
-The TUI requires `REDMINE_API_KEY` to load initial Redmine entities from a
-Redmine server at startup. If the required environment variable is missing, or
-if the initial load fails, the app prints the error reason and exits.
+Set your API key and start the app:
 
 ```sh
-REDMINE_API_KEY=0123456789abcdef0123456789abcdef01234567 cargo run
+REDMINE_API_KEY=<your-api-key> cargo run
 ```
 
-TUI connection environment variables:
+The app loads Redmine data at startup. `REDMINE_API_KEY` is required; if it is missing or the initial load fails, the app prints an error and exits.
 
-- `REDMINE_API_KEY`: required Redmine REST API access key. The TUI loads users,
-  statuses, priorities, projects, trackers, versions, categories, and time entry
-  activities from Redmine at startup.
-- `REDMINE_URL`: Redmine base URL. If omitted, the TUI uses
-  `http://127.0.0.1:${REDMINE_PORT:-8080}`.
-- `REDMINE_PORT`: fallback port used only when `REDMINE_URL` is omitted.
+Connection settings:
 
-Key bindings shown in the application:
+- `REDMINE_API_KEY`: Redmine REST API access key (required)
+- `REDMINE_URL`: Redmine base URL (optional; defaults to `http://127.0.0.1:${REDMINE_PORT:-8080}`)
+- `REDMINE_PORT`: fallback port used only when `REDMINE_URL` is not set (optional; defaults to `8080`)
 
-- `Left` / `Right`: shrink or expand the rendered width
-- `Up` / `Down`: shrink or expand the rendered height
-- `q`: quit
-
-## Test
+For example, connect to a Redmine server on a non-default URL:
 
 ```sh
-cargo test
+REDMINE_URL=https://redmine.example.com REDMINE_API_KEY=<your-api-key> cargo run
 ```
 
-Snapshot tests use `cargo-insta`:
+## Basic controls
 
-```sh
-cargo insta test
-```
+The app is keyboard-driven. The focused panel handles input, and available actions are shown in the interface.
 
-Seeder file checks:
+| Key       | Action                                               |
+| --------- | ---------------------------------------------------- |
+| `j` / `k` | Move down / up through items or fields               |
+| `h` / `l` | Move between panels or columns where available       |
+| `e`       | Edit the focused field or text                       |
+| `y`       | Open the issue picker                                |
+| `Ctrl-S`  | Save the current issue or journal entry to Redmine   |
+| `Enter`   | Confirm a selection                                  |
+| `q`       | Quit from the main screen or close the focused popup |
 
-```sh
-bash tests/redmine_seeder_files_test.sh
-```
+When editing text, the configured external editor is opened. Popup controls can vary; check the hints shown in each screen.
 
-### Redmine Client Integration Tests
+## Typical workflow
 
-Tests that talk to a real Redmine instance live in `src/clients/redmine/default_tests/container/`, compile only with the `container-tests` feature, and run through `xtask`. Docker is required.
+1. Start the app with your Redmine API key.
+2. Press `y` to choose an issue, then use `j` and `k` to move through the list and `Enter` to open it.
+3. Navigate issue fields and journal entries with `j` and `k`. Press `e` to edit a field or note.
+4. Press `Ctrl-S` to send the changes to Redmine. If a conflict is detected, review the server and local values in the conflict screen.
 
-```sh
-cargo xtask test-redmine-client
-```
+## Development
 
-The command starts one Redmine instance with Docker Compose under a unique project name and a random host port, then runs every test in that module in a single serial `cargo test` run. Each test re-seeds the database before it runs, so tests do not depend on each other's changes. The seed resets `AUTO_INCREMENT`, so records created through the API get the same IDs on every run. The containers and volumes are removed when the command finishes.
-
-These tests read the connection from `REDMINE_TUI_TEST_BASE_URL` and `REDMINE_TUI_TEST_PROJECT_NAME`, which `xtask` sets. Running them directly with `cargo test --features container-tests` fails with a message pointing to the command above. Tests using `wiremock` cover only responses that are hard to produce with a real Redmine, and run with normal `cargo test`.
-
-### E2E
-
-E2E scenarios live in `tests/e2e/`, compile only with the `e2e-tests` feature, and run through `xtask`. Docker is required.
-
-```sh
-cargo xtask test-e2e
-```
-
-The command starts Redmine the same way as the client integration tests, then runs the `e2e` test target serially. Each scenario re-seeds the database, launches the native binary in a PTY with `testty`, and checks both the screen and the Redmine API. Scenarios that edit text replace the editor with a fake editor set through `VISUAL`.
-
-`.github/workflows/ci.yml` runs these jobs in parallel: `unit` (`cargo fmt --check`, `cargo build --workspace`, `cargo test --workspace`, and the seeder file checks), `redmine-client` (`cargo xtask test-redmine-client`), `e2e` (`cargo xtask test-e2e`), and `web` (wasm32 `cargo build`, `trunk build`).
-
-## Web Demo
-
-The Web version renders the terminal UI in a browser with Ratzilla and runs against a memory mock (`DemoRedmineClient`) that embeds the fixtures. It does not connect to a real Redmine server and requires no API key. Edits exist only in memory; reloading or leaving the page discards them and restores the fixture state.
-
-```sh
-nix develop -c trunk serve --port 8081
-```
-
-Open `http://127.0.0.1:8081/` (the default port 8080 is used by the local Redmine server, so use a different port).
-
-## Local Redmine With Docker
-
-This repository includes a Docker Compose setup for a local Redmine instance used during development and testing.
-
-Start Redmine:
-
-```sh
-docker compose -f compose.redmine.yml up -d
-```
-
-Open:
-
-```text
-http://localhost:8080
-```
-
-Default Redmine login:
-
-```text
-admin / admin
-```
-
-Stop Redmine:
-
-```sh
-docker compose -f compose.redmine.yml down
-```
-
-Reset all Redmine data, including the MySQL database and uploaded files:
-
-```sh
-docker compose -f compose.redmine.yml down -v
-```
-
-## Redmine Configuration
-
-The Compose file is intended for local testing only. It uses Docker named volumes for MySQL data and Redmine uploaded files.
-
-Common environment variables:
-
-- `REDMINE_IMAGE`, default `redmine:6.1`
-- `REDMINE_DB_IMAGE`, default `mysql:8.0`
-- `REDMINE_PORT`, default `8080`
-- `REDMINE_DB_DATABASE`, default `redmine`
-- `REDMINE_DB_USERNAME`, default `redmine`
-- `REDMINE_DB_PASSWORD`, default `redmine`
-- `REDMINE_DB_ROOT_PASSWORD`, default `redmine-root`
-- `REDMINE_SECRET_KEY_BASE`, default `redmine-tui-local-test-secret`
-
-Example using a different host port:
-
-```sh
-REDMINE_PORT=18080 docker compose -f compose.redmine.yml up -d
-```
-
-## Seed Redmine Test Data
-
-Start Redmine first, then run:
-
-```sh
-cargo xtask seed-redmine
-```
-
-This command generates SQL from `datas/` and pipes it into the MySQL service in `compose.redmine.yml`. It first applies `docker/redmine/fresh_test_data.sql`, so the local test data is reset before seeding.
-
-To inspect the generated SQL without touching the database:
-
-```sh
-cargo xtask seed-redmine --dry-run
-```
-
-The seeder currently inserts the fixture data present in `datas/`:
-
-- projects from `datas/projects.yml`
-- users from `datas/users.yml`
-- trackers, statuses, priorities, versions, categories, and time entry activities
-- issues from `datas/issues/*.yml`, preserving issue IDs
-- journals and journal details from `datas/journals/*.yml`
-- a `Developer` role, membership of every fixture user in every project with that role, and workflow transitions between every pair of statuses for every tracker, so that API updates can change assignees and statuses
-- REST API access for the Redmine admin user via API key `0123456789abcdef0123456789abcdef01234567`
-
-When seeding a Docker Compose project with a non-default project name, pass it through:
-
-```sh
-cargo xtask seed-redmine --project-name redmine-tui-client-test
-```
-
-The compatibility wrapper remains available:
-
-```sh
-scripts/seed-redmine-test-data.sh
-```
-
-## Redmine References
-
-- Redmine install guide: https://www.redmine.org/projects/redmine/wiki/redmineinstall
-- Docker official Redmine image: https://hub.docker.com/_/redmine
-
-## Repository Layout
-
-- `src/`: Rust TUI source
-- `tests/e2e/`: E2E scenarios driven through a PTY
-- `xtask/`: Cargo development tasks, including Redmine YAML seeding and Pages builds
-- `index.html`: Trunk entry HTML for the Web build
-- `Trunk.toml`: Trunk configuration for the Web build
-- `datas/`: local YAML fixture data
-- `compose.redmine.yml`: local Redmine Docker Compose setup
-- `docker/redmine/fresh_test_data.sql`: Redmine test-data reset SQL used before YAML seeding
-- `scripts/seed-redmine-test-data.sh`: seeder execution wrapper
-- `.github/workflows/`: CI and GitHub Pages workflows
+Contributor setup, local Redmine instructions, test commands, and repository guidelines are in [CONTRIBUTING.md](CONTRIBUTING.md).
