@@ -158,7 +158,7 @@ fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion
     let completion = actions.next().expect("completion");
     assert!(matches!(
         &completion,
-        Action::IssueFetchSucceeded { id, issue }
+        Action::IssueFetchSucceeded { id, issue, .. }
             if *id == IssueId::new(42) && issue.issue.id == IssueId::new(42) && issue.journals.is_empty()
     ));
     assert_eq!(
@@ -189,6 +189,7 @@ fn issue_detail_shows_journals_from_the_first_frame_after_fetch_completion() {
         d.dispatch(Action::IssueFetchSucceeded {
             id: 42.into(),
             issue,
+            children: vec![],
         });
         while d.consume_actinos_len() > 0 {
             d.consume_action();
@@ -548,7 +549,10 @@ impl RedmineClient for IssueUploadClient {
         }
         let mut aggregate = self.issue.clone().expect("test issue must exist");
         aggregate.journals = self.journals.clone();
-        Ok(FetchedIssue { aggregate })
+        Ok(FetchedIssue {
+            aggregate,
+            children: vec![],
+        })
     }
 
     async fn update_issue(
@@ -950,9 +954,9 @@ fn journal_upload_app(dispatcher: Rc<RefCell<Dispatcher>>) -> AppComponent<'stat
 fn loaded_journal_upload_dispatcher() -> Dispatcher {
     let mut dispatcher = Dispatcher::new();
     crate::test_support::dispatch_sample_masters(&mut dispatcher);
-    dispatcher.dispatch(IssueAction::Sync {
-        issue: crate::test_support::sample_parent_issue(),
-    });
+    for action in crate::test_support::fetch_sample_parent_issue_actions(vec![]) {
+        dispatcher.dispatch(action);
+    }
     while dispatcher.consume_actinos_len() > 0 {
         dispatcher.consume_action();
     }
@@ -962,9 +966,11 @@ fn loaded_journal_upload_dispatcher() -> Dispatcher {
 fn edited_remote_journal_dispatcher() -> Dispatcher {
     let mut dispatcher = Dispatcher::new();
     crate::test_support::dispatch_sample_masters(&mut dispatcher);
-    let mut issue = crate::test_support::sample_parent_issue();
-    issue.journals = crate::test_support::sample_parent_issue_journals();
-    dispatcher.dispatch(IssueAction::Sync { issue });
+    for action in crate::test_support::fetch_sample_parent_issue_actions(
+        crate::test_support::sample_parent_issue_journals(),
+    ) {
+        dispatcher.dispatch(action);
+    }
     while dispatcher.consume_actinos_len() > 0 {
         dispatcher.consume_action();
     }

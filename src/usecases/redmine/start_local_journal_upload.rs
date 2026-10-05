@@ -233,7 +233,10 @@ mod tests {
                 0,
             );
             aggregate.journals = self.journals.clone();
-            Ok(FetchedIssue { aggregate })
+            Ok(FetchedIssue {
+                aggregate,
+                children: vec![],
+            })
         }
 
         async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {

@@ -8,7 +8,7 @@ use super::issue_journals::{IssueJournalStates, JournalAction};
 use super::journal_state::{
     LocalJournalEntry, RemoteJournalState, RemoteJournalUploadConflict, RemoteJournalView,
 };
-use crate::entities::{IssueAggregate, IssueView, Journal};
+use crate::entities::{IssueAggregate, IssueChild, IssueView, Journal};
 use crate::vos::issue_property_diff::{
     IssueAssignedToIdDiff, IssueCategoryIdDiff, IssueDescriptionDiff, IssueDoneRatioDiff,
     IssueDueDateDiff, IssueEstimatedHoursDiff, IssuePriorityIdDiff, IssueProjectIdDiff,
@@ -144,12 +144,15 @@ pub enum IssueAction {
 
 pub(super) struct IssueStore {
     entries: HashMap<IssueId, IssueEntry>,
+    /// 詳細取得で得た子Issueの一覧。子Issue自身の詳細の取得状態とは独立して保持する。
+    children: HashMap<IssueId, Vec<IssueChild>>,
 }
 
 impl IssueStore {
     pub(super) fn new() -> Self {
         Self {
             entries: HashMap::new(),
+            children: HashMap::new(),
         }
     }
 
@@ -444,7 +447,12 @@ impl IssueStore {
     }
 
     /// 初回取得の結果を、Issue本体とJournalが揃った状態で登録する。
-    pub(super) fn complete_fetch(&mut self, id: IssueId, issue: IssueAggregate) {
+    pub(super) fn complete_fetch(
+        &mut self,
+        id: IssueId,
+        issue: IssueAggregate,
+        children: Vec<IssueChild>,
+    ) {
         // 新しい同期結果やローカル編集を遅延した成功で上書きしないよう、
         // Fetching以外への着弾は制御破綻として拒否する。
         match self.entries.get(&id) {
@@ -468,6 +476,15 @@ impl IssueStore {
                 journal_states,
             },
         );
+        self.children.insert(id, children);
+    }
+
+    /// 詳細取得で得た子Issueの一覧を返す。子一覧を取得していないIssueでは空のsliceを返す。
+    pub(super) fn get_issue_children(&self, issue_id: impl Into<IssueId>) -> &[IssueChild] {
+        self.children
+            .get(&issue_id.into())
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     pub(super) fn consume_journal_action(&mut self, action: JournalAction) {

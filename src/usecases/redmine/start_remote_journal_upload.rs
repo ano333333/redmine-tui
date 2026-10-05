@@ -336,7 +336,10 @@ mod tests {
         async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
             self.get_result.clone().map(|mut aggregate| {
                 aggregate.journals = self.journals.clone();
-                FetchedIssue { aggregate }
+                FetchedIssue {
+                    aggregate,
+                    children: vec![],
+                }
             })
         }
 

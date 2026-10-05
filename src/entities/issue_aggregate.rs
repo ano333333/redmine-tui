@@ -24,7 +24,7 @@ pub struct IssueAggregate {
     pub estimated_hours: Option<f64>,
     pub total_spent_hours: Option<f64>,
     pub category_id: Option<CategoryId>,
-    pub child_ids: Vec<IssueId>,
+    pub parent_id: Option<IssueId>,
     /// 取得順のJournal。
     pub journals: Vec<Journal>,
 }
@@ -74,7 +74,6 @@ impl IssueAggregate {
             IssuePropertyDiff::TotalSpentHours(diff) => self.total_spent_hours = diff.after,
             IssuePropertyDiff::CategoryId(diff) => self.category_id = diff.after,
             IssuePropertyDiff::Description(diff) => self.issue.description = diff.after.clone(),
-            IssuePropertyDiff::ChildIds(diff) => self.child_ids = diff.after.clone(),
             IssuePropertyDiff::FixedVersion(_) => {
                 panic!("cannot apply FixedVersion diff: Issue has no fixed_version property")
             }
@@ -110,7 +109,6 @@ impl IssueAggregate {
             IssuePropertyDiff::TotalSpentHours(diff) => conflict!(self.total_spent_hours, diff),
             IssuePropertyDiff::CategoryId(diff) => conflict!(self.category_id, diff),
             IssuePropertyDiff::Description(diff) => conflict!(self.issue.description, diff),
-            IssuePropertyDiff::ChildIds(diff) => conflict!(self.child_ids, diff),
             IssuePropertyDiff::FixedVersion(_) => {
                 panic!("cannot compare FixedVersion diff: Issue has no fixed_version property")
             }
@@ -141,7 +139,6 @@ impl IssueAggregate {
             IssuePropertyDiff::TotalSpentHours(diff) => diff.before = self.total_spent_hours,
             IssuePropertyDiff::CategoryId(diff) => diff.before = self.category_id,
             IssuePropertyDiff::Description(diff) => diff.before = self.issue.description.clone(),
-            IssuePropertyDiff::ChildIds(diff) => diff.before = self.child_ids.clone(),
             IssuePropertyDiff::FixedVersion(_) => {
                 panic!("サーバーIssueにfixed_version propertyがないため解決できません")
             }
@@ -173,7 +170,6 @@ impl IssueAggregate {
             IssuePropertyDiff::TotalSpentHours(diff) => diff.after = self.total_spent_hours,
             IssuePropertyDiff::CategoryId(diff) => diff.after = self.category_id,
             IssuePropertyDiff::Description(diff) => diff.after = self.issue.description.clone(),
-            IssuePropertyDiff::ChildIds(diff) => diff.after = self.child_ids.clone(),
             IssuePropertyDiff::FixedVersion(_) => {
                 panic!("サーバーIssueにfixed_version propertyがないため解決できません")
             }

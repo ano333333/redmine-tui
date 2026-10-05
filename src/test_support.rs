@@ -3,8 +3,8 @@ use insta::assert_snapshot;
 use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
-    TimeEntityActivity, Tracker, User,
+    Category, Issue, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
+    TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::stores::{Action, Dispatcher, Store};
 use crate::vos::{
@@ -218,7 +218,7 @@ pub fn sample_issue_aggregate(
         estimated_hours: Some(8.0),
         total_spent_hours: Some(3.5),
         category_id: Some(CategoryId::new(1)),
-        child_ids: vec![],
+        parent_id: None,
         journals: vec![],
     }
 }
@@ -289,7 +289,7 @@ pub fn sample_open_child_issue() -> IssueAggregate {
         estimated_hours: None,
         total_spent_hours: None,
         category_id: Some(CategoryId::new(1)),
-        child_ids: vec![],
+        parent_id: Some(IssueId::new(3)),
         journals: vec![],
     }
 }
@@ -316,7 +316,7 @@ pub fn sample_closed_child_issue() -> IssueAggregate {
         estimated_hours: None,
         total_spent_hours: None,
         category_id: Some(CategoryId::new(1)),
-        child_ids: vec![],
+        parent_id: Some(IssueId::new(3)),
         journals: vec![],
     }
 }
@@ -345,9 +345,44 @@ pub fn sample_parent_issue() -> IssueAggregate {
         estimated_hours: None,
         total_spent_hours: None,
         category_id: Some(CategoryId::new(1)),
-        child_ids: vec![IssueId::new(1), IssueId::new(2)],
+        parent_id: None,
         journals: vec![],
     }
+}
+
+/// `sample_parent_issue`の詳細取得で得られる子一覧。子Issue 1・2のID・トラッカー・題名を持つ。
+pub fn sample_parent_issue_children() -> Vec<IssueChild> {
+    vec![
+        IssueChild {
+            id: IssueId::new(1),
+            tracker_id: TrackerId::new(1),
+            subject: "issue1".to_string(),
+            children: vec![],
+        },
+        IssueChild {
+            id: IssueId::new(2),
+            tracker_id: TrackerId::new(2),
+            subject: "issue2".to_string(),
+            children: vec![],
+        },
+    ]
+}
+
+/// `sample_parent_issue`を、子一覧とともに詳細取得した状態にするAction。
+pub fn fetch_sample_parent_issue_actions(journals: Vec<Journal>) -> [Action; 2] {
+    let mut issue = sample_parent_issue();
+    issue.journals = journals;
+    [
+        crate::stores::IssueAction::StartFetching {
+            id: IssueId::new(3),
+        }
+        .into(),
+        Action::IssueFetchSucceeded {
+            id: IssueId::new(3),
+            issue,
+            children: sample_parent_issue_children(),
+        },
+    ]
 }
 
 pub fn sample_parent_issue_journals() -> Vec<Journal> {

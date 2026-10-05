@@ -44,6 +44,7 @@ where
             Ok(fetched) if fetched.aggregate.issue.id == id => vec![Action::IssueFetchSucceeded {
                 id,
                 issue: fetched.aggregate,
+                children: fetched.children,
             }],
             // 応答IDの不一致はサーバー側の外部データ異常のため、Storeでpanicさせず取得失敗にする。
             Ok(fetched) => vec![
@@ -117,7 +118,7 @@ mod tests {
 
         assert_eq!(actions.len(), 1);
         match &actions[0] {
-            Action::IssueFetchSucceeded { id, issue } => {
+            Action::IssueFetchSucceeded { id, issue, .. } => {
                 assert_eq!(*id, IssueId::new(42));
                 assert_eq!(issue.issue.id, IssueId::new(42));
                 let journal_ids: Vec<JournalId> = issue.journals.iter().map(|j| j.id).collect();
@@ -306,7 +307,10 @@ mod tests {
             self.requested_ids.lock().unwrap().push(id);
             self.result.clone().map(|mut aggregate| {
                 aggregate.journals = self.journals.clone();
-                FetchedIssue { aggregate }
+                FetchedIssue {
+                    aggregate,
+                    children: vec![],
+                }
             })
         }
 

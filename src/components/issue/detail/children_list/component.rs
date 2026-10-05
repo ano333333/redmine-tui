@@ -1,12 +1,12 @@
 use ratatui::layout::Position;
 
-use crate::entities::IssueStatusExt;
+use crate::entities::{IssueChild, IssueStatusExt};
 use crate::platform::input::InputEvent;
 use crate::stores::Store;
 use crate::vos::IssueId;
 
 use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
-use super::widget::{ChildIssueRow, ChildrenListWidget};
+use super::widget::{ChildIssueDetail, ChildIssueRow, ChildrenListWidget};
 
 pub struct ChildrenListComponent {
     id: IssueId,
@@ -22,16 +22,17 @@ impl ChildrenListComponent {
     }
 
     pub fn update(&mut self, store: &Store) {
-        let (issue, _) = store.get_issue(self.id);
-        self.focus_state.update(issue.child_ids());
+        let child_ids: Vec<IssueId> = store
+            .get_issue_children(self.id)
+            .iter()
+            .map(|child| child.id)
+            .collect();
+        self.focus_state.update(&child_ids);
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> ChildrenListWidget<'a> {
-        let (issue, _) = store.get_issue(self.id);
-
-        let (child_all_num, child_closed_num, child_opened_num) =
-            child_status_counts(store, issue.child_ids());
-        let children = create_child_rows(store, issue.child_ids());
+        let children = create_child_rows(store, store.get_issue_children(self.id));
+        let (child_all_num, child_closed_num, child_opened_num) = child_status_counts(&children);
 
         ChildrenListWidget::new(
             child_all_num,
@@ -43,8 +44,7 @@ impl ChildrenListComponent {
     }
 
     pub fn line_count(&self, store: &Store) -> u16 {
-        let (issue, _) = store.get_issue(self.id);
-        2 + (issue.child_ids().len() as u16) + 1
+        2 + (store.get_issue_children(self.id).len() as u16) + 1
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
@@ -60,15 +60,16 @@ impl ChildrenListComponent {
     }
 }
 
-fn child_status_counts(store: &Store, child_ids: &[IssueId]) -> (u16, u16, u16) {
-    let child_all_num = child_ids.len() as u16;
-    let child_closed_num = child_ids
+/// 詳細が未取得の子はstatusが分からないため、未完了として数える。
+fn child_status_counts(children: &[ChildIssueRow]) -> (u16, u16, u16) {
+    let child_all_num = children.len() as u16;
+    let child_closed_num = children
         .iter()
-        .filter(|id| {
-            store.try_get_issue_state(**id).is_some() && {
-                let (issue, _) = store.get_issue(**id);
-                store.get_issue_status(issue.status_id()).is_closed_status()
-            }
+        .filter(|child| {
+            child
+                .detail
+                .as_ref()
+                .is_some_and(|detail| detail.issue_status.is_closed_status())
         })
         .count() as u16;
     let child_opened_num = child_all_num - child_closed_num;
@@ -76,18 +77,35 @@ fn child_status_counts(store: &Store, child_ids: &[IssueId]) -> (u16, u16, u16) 
     (child_all_num, child_closed_num, child_opened_num)
 }
 
-fn create_child_rows<'a>(store: &'a Store, child_ids: &[IssueId]) -> Vec<ChildIssueRow<'a>> {
-    child_ids
+// FIXME: 行の並びは取得した子一覧で決めるが、値は詳細を取得済みの子だけIssueViewで補っている。
+// 詳細が未取得の子はIDと題名しか表示できず、子一覧が持つトラッカーと孫の一覧も使っていない。
+// 子一覧の情報から子Issueとして表示する形へ見直す。
+fn create_child_rows<'a>(store: &'a Store, children: &'a [IssueChild]) -> Vec<ChildIssueRow<'a>> {
+    children
         .iter()
-        .filter(|id| store.try_get_issue_state(**id).is_some())
-        .map(|id| store.get_issue(*id))
-        .map(|(issue, _)| ChildIssueRow {
-            issue,
-            issue_status: store.get_issue_status(issue.status_id()),
-            assigned_to_name: issue
-                .assigned_to_id()
-                .and_then(|user_id| store.get_user(user_id))
-                .map(|user| user.name.as_str()),
+        .map(|child| {
+            if store.try_get_issue_state(child.id).is_none() {
+                return ChildIssueRow {
+                    id: child.id,
+                    subject: &child.subject,
+                    detail: None,
+                };
+            }
+            let (issue, _) = store.get_issue(child.id);
+            ChildIssueRow {
+                id: child.id,
+                subject: issue.subject(),
+                detail: Some(ChildIssueDetail {
+                    issue_status: store.get_issue_status(issue.status_id()),
+                    assigned_to_name: issue
+                        .assigned_to_id()
+                        .and_then(|user_id| store.get_user(user_id))
+                        .map(|user| user.name.as_str()),
+                    start_date: issue.start_date(),
+                    due_date: issue.due_date(),
+                    done_ratio: issue.done_ratio(),
+                }),
+            }
         })
         .collect()
 }
@@ -121,12 +139,9 @@ mod tests {
             }
             .into(),
         );
-        store.consume_action(
-            IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            }
-            .into(),
-        );
+        for action in crate::test_support::fetch_sample_parent_issue_actions(vec![]) {
+            store.consume_action(action);
+        }
         store
     }
 
@@ -140,15 +155,40 @@ mod tests {
             }
             .into(),
         );
-        let (parent, _) = store.get_issue(ISSUE_ID);
 
-        let rows = create_child_rows(&store, parent.child_ids());
+        let rows = create_child_rows(&store, store.get_issue_children(ISSUE_ID));
 
         let row = rows
             .iter()
-            .find(|row| row.issue.id() == crate::vos::IssueId::from(1))
-            .expect("child 1 is loaded");
-        assert_eq!(row.issue.done_ratio(), 40);
+            .find(|row| row.id == crate::vos::IssueId::from(1))
+            .expect("child 1 is listed");
+        assert_eq!(
+            row.detail.as_ref().map(|detail| detail.done_ratio),
+            Some(40)
+        );
+    }
+
+    #[test]
+    fn unloaded_children_are_listed_with_the_fetched_subject_and_counted_as_open() {
+        let mut store = Store::new();
+        sync_sample_masters(&mut store);
+        store.consume_action(
+            IssueAction::Sync {
+                issue: crate::test_support::sample_closed_child_issue(),
+            }
+            .into(),
+        );
+        for action in crate::test_support::fetch_sample_parent_issue_actions(vec![]) {
+            store.consume_action(action);
+        }
+
+        let rows = create_child_rows(&store, store.get_issue_children(ISSUE_ID));
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].subject, "issue1");
+        assert!(rows[0].detail.is_none());
+        assert!(rows[1].detail.is_some());
+        assert_eq!(child_status_counts(&rows), (2, 1, 1));
     }
 
     fn store_with_parent_and_unknown_status_child() -> Store {
@@ -184,10 +224,8 @@ mod tests {
         let store = store_with_parent_and_unknown_status_child();
         let mut component = ChildrenListComponent::new(ISSUE_ID);
         component.update(&store);
-        let (parent, _) = store.get_issue(ISSUE_ID);
-        let children = create_child_rows(&store, parent.child_ids());
-        let (child_all_num, child_closed_num, child_opened_num) =
-            child_status_counts(&store, parent.child_ids());
+        let children = create_child_rows(&store, store.get_issue_children(ISSUE_ID));
+        let (child_all_num, child_closed_num, child_opened_num) = child_status_counts(&children);
 
         assert!(store.get_issue_status(5.into()).is_none());
         assert_eq!(children.len(), 2);

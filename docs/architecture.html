@@ -837,8 +837,17 @@ flowchart TD
               <div class="diff-bullet"></div>
               <div>
                 Issue 詳細の取得結果は <code>Action::IssueFetchSucceeded</code>
-                1件で Issue と Journal を反映する。<code>IssueStore</code> は Journal
+                1件で Issue、Journal、子一覧を反映する。<code>IssueStore</code> は Journal
                 の所有関係と重複を検査してから登録し、一部だけを反映した状態を作らない。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                <code>IssueAggregate</code> は親 Issue の ID だけを持ち、子 Issue の ID
+                一覧は持たない。子一覧は詳細取得で得た <code>IssueChild</code>（ID・トラッカー・題名・再帰的な子一覧）として
+                <code>IssueStore</code> が Issue ごとに保持する。子の詳細を取得済みなら、表示には
+                <code>IssueView</code> の値を使う。
               </div>
             </div>
             <div class="diff-item">

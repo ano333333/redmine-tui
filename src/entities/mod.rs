@@ -1,6 +1,7 @@
 pub mod category;
 pub mod issue;
 pub mod issue_aggregate;
+pub mod issue_child;
 pub mod issue_status;
 pub mod issue_view;
 pub mod journal;
@@ -14,6 +15,7 @@ pub mod user;
 pub use category::Category;
 pub use issue::{Issue, ProjectIssuesPage};
 pub use issue_aggregate::IssueAggregate;
+pub use issue_child::IssueChild;
 pub use issue_status::{IssueStatus, IssueStatusExt};
 pub use issue_view::IssueView;
 pub use journal::{Journal, LocalJournal};

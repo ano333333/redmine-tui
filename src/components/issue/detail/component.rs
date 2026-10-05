@@ -141,9 +141,11 @@ mod tests {
         {
             let mut d = dispatcher.borrow_mut();
             crate::test_support::dispatch_sample_masters(&mut d);
-            let mut issue = crate::test_support::sample_parent_issue();
-            issue.journals = crate::test_support::sample_parent_issue_journals();
-            d.dispatch(IssueAction::Sync { issue });
+            for action in crate::test_support::fetch_sample_parent_issue_actions(
+                crate::test_support::sample_parent_issue_journals(),
+            ) {
+                d.dispatch(action);
+            }
             while d.consume_actinos_len() > 0 {
                 d.consume_action();
             }

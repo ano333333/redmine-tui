@@ -215,26 +215,6 @@ fn diff_value_text(server_issue: &IssueAggregate, diff: &IssuePropertyDiff) -> D
         IssuePropertyDiff::Description(diff) => {
             diff_text(&diff.before, &diff.after, &server_issue.issue.description)
         }
-        IssuePropertyDiff::ChildIds(diff) => diff_text(
-            &diff
-                .before
-                .iter()
-                .map(|id| id.get().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-            &diff
-                .after
-                .iter()
-                .map(|id| id.get().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-            &server_issue
-                .child_ids
-                .iter()
-                .map(|id| id.get().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-        ),
     }
 }
 
@@ -317,7 +297,6 @@ fn property_name(diff: &IssuePropertyDiff) -> &'static str {
         IssuePropertyDiff::ResolveWay(_) => "解決方法",
         IssuePropertyDiff::CategoryId(_) => "カテゴリ",
         IssuePropertyDiff::Description(_) => "説明",
-        IssuePropertyDiff::ChildIds(_) => "子チケット",
     }
 }
 

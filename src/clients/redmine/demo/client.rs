@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT, RedmineHttpError};
 use crate::clients::redmine::{RedmineClient, RedmineClientError};
 use crate::entities::{
-    Category, IssueAggregate, IssueStatus, Journal, Priority, Project, ProjectIssuesPage,
-    TargetVersion, TimeEntityActivity, Tracker, User,
+    Category, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
+    ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{EntityIdValue, IssueId, JournalId, ProjectId};
 
@@ -27,6 +27,23 @@ impl DemoRedmineClient {
                 response_body: String::new(),
             },
         }
+    }
+
+    /// 実Redmineの`include=children`と同じく、子孫を再帰的に含む子一覧をID順で返す。
+    fn children_of(
+        issues: &std::collections::BTreeMap<IssueId, IssueAggregate>,
+        parent_id: IssueId,
+    ) -> Vec<IssueChild> {
+        issues
+            .values()
+            .filter(|issue| issue.parent_id == Some(parent_id))
+            .map(|issue| IssueChild {
+                id: issue.issue.id,
+                tracker_id: issue.tracker_id,
+                subject: issue.issue.subject.clone(),
+                children: Self::children_of(issues, issue.issue.id),
+            })
+            .collect()
     }
 
     pub fn new() -> Self {
@@ -65,14 +82,17 @@ impl RedmineClient for DemoRedmineClient {
             state.issues.get(&id).cloned().map(|mut aggregate| {
                 // デモのJournalはサーバー側の保存単位として別に持ち、取得時にIssueへ含める。
                 aggregate.journals = state.journals.get(&id).cloned().unwrap_or_default();
-                aggregate
+                (aggregate, Self::children_of(&state.issues, id))
             })
         };
         async move {
-            let Some(aggregate) = snapshot else {
+            let Some((aggregate, children)) = snapshot else {
                 return Err(Self::not_found("GET", format!("/issues/{}.json", id.get())));
             };
-            Ok(FetchedIssue { aggregate })
+            Ok(FetchedIssue {
+                aggregate,
+                children,
+            })
         }
     }
 

@@ -3,8 +3,8 @@ use serde::Serialize;
 use std::num::NonZeroUsize;
 
 use crate::entities::{
-    Category, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage, TargetVersion,
-    TimeEntityActivity, Tracker, User,
+    Category, IssueAggregate, IssueChild, IssueStatus, Priority, Project, ProjectIssuesPage,
+    TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{IssueId, JournalId, ProjectId};
 
@@ -68,6 +68,8 @@ impl std::fmt::Display for RedmineHttpError {
 /// レスポンスから変換した取得情報をまとめて返すためだけに使用する。
 pub struct FetchedIssue {
     pub aggregate: IssueAggregate,
+    /// 子Issueの一覧。子Issue自身の詳細は含まない。
+    pub children: Vec<IssueChild>,
 }
 
 /// Redmineとの通信をplatform固有の実装から分離する境界。

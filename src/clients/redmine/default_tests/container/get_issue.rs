@@ -1,6 +1,6 @@
 use super::integration_support::{
-    authenticated_client, expect_not_found, expect_unauthorized, run_contract, test_error,
-    unauthorized_client,
+    TEST_API_KEY, authenticated_client, expect_not_found, expect_unauthorized, run_contract,
+    test_error, unauthorized_client,
 };
 use crate::clients::redmine::RedmineClient;
 use crate::test_support::{SAMPLE_MARKDOWN, local_date, local_datetime};
@@ -10,13 +10,14 @@ use crate::vos::{EntityIdValue, IssueId, JournalDetail, JournalDetailAttr};
 fn get_issue_contract_against_redmine_container() {
     run_contract(|base_url| async move {
         assert_get_issue_200(&base_url).await?;
+        assert_get_issue_returns_parent_and_grandchildren(&base_url).await?;
         assert_get_issue_401(&base_url).await?;
         assert_get_issue_404(&base_url).await?;
         Ok(())
     });
 }
 
-/// seedのIssue 3は子Issue 1・2と、status変更・期日変更・notesのJournal 1〜3を持つ。
+/// seedのIssue 3は親を持たず、子Issue 1・2と、status変更・期日変更・notesのJournal 1〜3を持つ。
 async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     let fetched = authenticated_client(base_url)
         .get_issue(IssueId::new(3))
@@ -45,13 +46,19 @@ async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::
     assert_eq!(issue.estimated_hours, None);
     assert_eq!(issue.total_spent_hours, Some(0.0));
     assert_eq!(issue.category_id.map(|id| id.get()), Some(1));
+    assert_eq!(issue.parent_id, None);
     assert_eq!(
-        issue
-            .child_ids
+        fetched
+            .children
             .iter()
-            .map(|id| id.get())
+            .map(|child| (
+                child.id.get(),
+                child.tracker_id.get(),
+                child.subject.as_str(),
+                child.children.len()
+            ))
             .collect::<Vec<_>>(),
-        vec![1, 2]
+        vec![(1, 1, "issue1", 0), (2, 2, "issue2", 0)]
     );
 
     assert_eq!(
@@ -102,6 +109,55 @@ async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::
     ));
     assert!(issue.journals[2].details.is_empty());
 
+    Ok(())
+}
+
+/// seedのIssue 1は親Issue 3を持つ。Issue 1の子をAPIで作成し、孫として取得できることも確かめる。
+async fn assert_get_issue_returns_parent_and_grandchildren(
+    base_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let response = reqwest::Client::new()
+        .post(format!("{base_url}/issues.json"))
+        .header("X-Redmine-API-Key", TEST_API_KEY)
+        .json(&serde_json::json!({
+            "issue": {
+                "project_id": 1,
+                "tracker_id": 1,
+                "status_id": 1,
+                "priority_id": 1,
+                "subject": "grandchild",
+                "parent_issue_id": 1,
+            }
+        }))
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        return Err(test_error(format!(
+            "create grandchild returned {}",
+            response.status()
+        )));
+    }
+    let client = authenticated_client(base_url);
+
+    let child = client
+        .get_issue(IssueId::new(1))
+        .await
+        .map_err(|error| test_error(format!("get_issue(1) returned {error:?}")))?;
+    let parent = client
+        .get_issue(IssueId::new(3))
+        .await
+        .map_err(|error| test_error(format!("get_issue(3) returned {error:?}")))?;
+
+    assert_eq!(child.aggregate.parent_id, Some(IssueId::new(3)));
+    // seedのIssueは3件で、再投入時にAUTO_INCREMENTを戻すため、作成したIssueのIDは4になる。
+    assert_eq!(
+        parent.children[0]
+            .children
+            .iter()
+            .map(|grandchild| (grandchild.id.get(), grandchild.subject.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(4, "grandchild")]
+    );
     Ok(())
 }
 

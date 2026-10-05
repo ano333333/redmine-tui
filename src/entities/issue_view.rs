@@ -110,11 +110,6 @@ impl<'a> IssueView<'a> {
     pub fn category_id(&self) -> Option<CategoryId> {
         *last_after!(self, CategoryId, self.base.category_id)
     }
-
-    pub fn child_ids(&self) -> &'a [IssueId] {
-        let base = self.base;
-        last_after!(self, ChildIds, base.child_ids)
-    }
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT};
 use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage,
+    Category, Issue, IssueAggregate, IssueChild, IssueStatus, Priority, Project, ProjectIssuesPage,
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
@@ -143,12 +143,18 @@ impl RedmineClient for DefaultRedmineClient {
     }
 
     async fn get_issue(&self, id: IssueId) -> Result<FetchedIssue, RedmineClientError> {
-        let response: IssueResponse = self
+        let mut response: IssueResponse = self
             .get_json(&format!("/issues/{id}.json?include=children,journals"))
             .await?;
 
+        // Issue変換でresponse.issue全体を消費するため、子一覧を先に分離する。
+        let children = std::mem::take(&mut response.issue.children)
+            .into_iter()
+            .map(IssueChild::from)
+            .collect();
         Ok(FetchedIssue {
             aggregate: response.issue.try_into()?,
+            children,
         })
     }
 
@@ -731,7 +737,9 @@ struct RedmineIssue {
     #[serde(default)]
     description: Option<String>,
     #[serde(default)]
-    children: Vec<RedmineIdRef>,
+    parent: Option<RedmineIdRef>,
+    #[serde(default)]
+    children: Vec<RedmineChild>,
     #[serde(default)]
     journals: Vec<journal_conversion::RedmineJournal>,
 }
@@ -772,11 +780,7 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
             estimated_hours: value.estimated_hours,
             total_spent_hours: value.total_spent_hours,
             category_id: value.category.map(|category| CategoryId::new(category.id)),
-            child_ids: value
-                .children
-                .into_iter()
-                .map(|child| IssueId::new(child.id))
-                .collect(),
+            parent_id: value.parent.map(|parent| IssueId::new(parent.id)),
             journals,
             issue,
         })
@@ -786,6 +790,26 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
 #[derive(Deserialize)]
 struct RedmineIdRef {
     id: u16,
+}
+
+#[derive(Deserialize)]
+struct RedmineChild {
+    id: u16,
+    tracker: RedmineIdRef,
+    subject: String,
+    #[serde(default)]
+    children: Vec<RedmineChild>,
+}
+
+impl From<RedmineChild> for IssueChild {
+    fn from(value: RedmineChild) -> Self {
+        Self {
+            id: IssueId::new(value.id),
+            tracker_id: TrackerId::new(value.tracker.id),
+            subject: value.subject,
+            children: value.children.into_iter().map(IssueChild::from).collect(),
+        }
+    }
 }
 
 #[cfg(test)]

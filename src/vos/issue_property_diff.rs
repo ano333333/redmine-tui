@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local};
 
 use crate::vos::{
-    CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
+    CategoryId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -119,12 +119,6 @@ pub struct IssueDescriptionDiff {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct IssueChildIdsDiff {
-    pub before: Vec<IssueId>,
-    pub after: Vec<IssueId>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub enum IssuePropertyDiff {
     Subject(IssueSubjectDiff),
     AuthorId(IssueAuthorIdDiff),
@@ -145,7 +139,6 @@ pub enum IssuePropertyDiff {
     ResolveWay(IssueResolveWayDiff),
     CategoryId(IssueCategoryIdDiff),
     Description(IssueDescriptionDiff),
-    ChildIds(IssueChildIdsDiff),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,7 +162,6 @@ enum IssueProperty {
     ResolveWay,
     CategoryId,
     Description,
-    ChildIds,
 }
 
 /// 同じ property の diff を最初の `before` から最後の `after` へ畳み込み、差し引きで変更が
@@ -212,7 +204,6 @@ fn property_of(diff: &IssuePropertyDiff) -> IssueProperty {
         IssuePropertyDiff::ResolveWay(_) => IssueProperty::ResolveWay,
         IssuePropertyDiff::CategoryId(_) => IssueProperty::CategoryId,
         IssuePropertyDiff::Description(_) => IssueProperty::Description,
-        IssuePropertyDiff::ChildIds(_) => IssueProperty::ChildIds,
     }
 }
 
@@ -247,7 +238,6 @@ macro_rules! match_same_diff {
             (IssuePropertyDiff::ResolveWay($a), IssuePropertyDiff::ResolveWay($b)) => $body,
             (IssuePropertyDiff::CategoryId($a), IssuePropertyDiff::CategoryId($b)) => $body,
             (IssuePropertyDiff::Description($a), IssuePropertyDiff::Description($b)) => $body,
-            (IssuePropertyDiff::ChildIds($a), IssuePropertyDiff::ChildIds($b)) => $body,
             _ => unreachable!("property identity must match diff variants"),
         }
     };

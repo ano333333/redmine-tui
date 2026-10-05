@@ -10,8 +10,8 @@ use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, IssueView, Priority, Project, TargetVersion,
-    TimeEntityActivity, Tracker, User,
+    Category, Issue, IssueAggregate, IssueChild, IssueStatus, IssueView, Priority, Project,
+    TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
     CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, JournalNotesDiff, PriorityId,
@@ -84,7 +84,11 @@ impl Store {
     pub fn consume_action(&mut self, action: Action) {
         match action {
             Action::Issue(action) => self.issue_store.consume_action(action),
-            Action::IssueFetchSucceeded { id, issue } => self.issue_store.complete_fetch(id, issue),
+            Action::IssueFetchSucceeded {
+                id,
+                issue,
+                children,
+            } => self.issue_store.complete_fetch(id, issue, children),
             Action::ProjectIssues(action) => self.project_issues_store.consume_action(action),
             Action::Journal(action) => self.issue_store.consume_journal_action(action),
             Action::Notice(action) => self.notice_store.consume_action(action),
@@ -159,6 +163,11 @@ impl Store {
         issue_id: impl Into<IssueId>,
     ) -> Option<IssueFetchState> {
         self.issue_store.try_get_issue_fetch_state(issue_id)
+    }
+
+    /// 詳細取得で得た子Issueの一覧を返す。子一覧を取得していないIssueでは空のsliceを返す。
+    pub fn get_issue_children(&self, issue_id: impl Into<IssueId>) -> &[IssueChild] {
+        self.issue_store.get_issue_children(issue_id)
     }
 
     pub fn get_issues(&self) -> impl Iterator<Item = (IssueView<'_>, IssueState)> {
@@ -353,6 +362,7 @@ pub enum Action {
     IssueFetchSucceeded {
         id: IssueId,
         issue: IssueAggregate,
+        children: Vec<IssueChild>,
     },
     ProjectIssues(ProjectIssuesAction),
     SyncUsers {
@@ -496,6 +506,7 @@ mod tests {
         Action::IssueFetchSucceeded {
             id: IssueId::new(id),
             issue,
+            children: vec![],
         }
     }
 
