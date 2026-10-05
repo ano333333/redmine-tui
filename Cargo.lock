@@ -3033,9 +3033,9 @@ dependencies = [
 
 [[package]]
 name = "testty"
-version = "0.15.15"
+version = "0.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ecd525b629ea0ccb7b06c82b4da40c3726b09a5c511e4dbccd38532b20fe1bb"
+checksum = "52e3ba1c146cfd774fb1bfec725efa34ae33b7a99bf8ef715612c3f903ad2e23"
 dependencies = [
  "base64 0.23.1",
  "clap",
