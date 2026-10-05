@@ -39,6 +39,8 @@ pub enum EditableField {
 enum Action {
     Quit,
     Focus(FocusField),
+    /// 移動先がない端での navigation key。状態は変えず`Handled`だけ返す。
+    NoOpNavigation,
     Confirm,
     InputKey(KeyEvent),
 }
@@ -124,17 +126,17 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
         match key.code {
             KeyCode::Esc => Some(Action::Quit),
             KeyCode::Char('q') if self.input_mode == InputMode::Navigating => Some(Action::Quit),
-            KeyCode::Char('l')
-                if self.input_mode == InputMode::Navigating
-                    && self.focused_field == FocusField::Activity =>
-            {
-                Some(Action::Focus(FocusField::Hours))
+            KeyCode::Char('l') if self.input_mode == InputMode::Navigating => {
+                match self.focused_field {
+                    FocusField::Activity => Some(Action::Focus(FocusField::Hours)),
+                    _ => Some(Action::NoOpNavigation),
+                }
             }
-            KeyCode::Char('h')
-                if self.input_mode == InputMode::Navigating
-                    && self.focused_field == FocusField::Hours =>
-            {
-                Some(Action::Focus(FocusField::Activity))
+            KeyCode::Char('h') if self.input_mode == InputMode::Navigating => {
+                match self.focused_field {
+                    FocusField::Hours => Some(Action::Focus(FocusField::Activity)),
+                    _ => Some(Action::NoOpNavigation),
+                }
             }
             KeyCode::Char('j') if self.input_mode == InputMode::Navigating => {
                 match self.focused_field {
@@ -142,14 +144,14 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
                         Some(Action::Focus(FocusField::Memo))
                     }
                     FocusField::Memo => Some(Action::Focus(FocusField::Submit)),
-                    FocusField::Submit => None,
+                    FocusField::Submit => Some(Action::NoOpNavigation),
                 }
             }
             KeyCode::Char('k') if self.input_mode == InputMode::Navigating => {
                 match self.focused_field {
                     FocusField::Memo => Some(Action::Focus(FocusField::Activity)),
                     FocusField::Submit => Some(Action::Focus(FocusField::Memo)),
-                    FocusField::Activity | FocusField::Hours => None,
+                    FocusField::Activity | FocusField::Hours => Some(Action::NoOpNavigation),
                 }
             }
             KeyCode::Enter => Some(Action::Confirm),
@@ -170,6 +172,7 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
                 self.focus(field);
                 Some(EventProcessResult::Handled)
             }
+            Some(Action::NoOpNavigation) => Some(EventProcessResult::Handled),
             Some(Action::Confirm) => match self.focused_field {
                 FocusField::Activity => Some(EventProcessResult::OpenTimeEntityActivitiesPopup),
                 FocusField::Hours => {
@@ -398,11 +401,10 @@ mod tests {
         ));
         assert_eq!(component.focused_field, FocusField::Submit);
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('j')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(component.focused_field, FocusField::Submit);
 
         assert!(matches!(
@@ -426,11 +428,30 @@ mod tests {
         ));
         assert_eq!(component.focused_field, FocusField::Activity);
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('k')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('k'))),
+            Some(EventProcessResult::Handled)
+        ));
+        assert_eq!(component.focused_field, FocusField::Activity);
+    }
+
+    #[test]
+    fn l_on_hours_and_h_on_activity_are_handled_without_moving_focus() {
+        let store = store_with_time_entity_activities();
+        let mut component = SpentTimeInputPopupComponent::new(&store);
+        component.process_event(key_event(KeyCode::Char('l')));
+
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('l'))),
+            Some(EventProcessResult::Handled)
+        ));
+        assert_eq!(component.focused_field, FocusField::Hours);
+
+        component.process_event(key_event(KeyCode::Char('h')));
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('h'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(component.focused_field, FocusField::Activity);
     }
 
