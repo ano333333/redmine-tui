@@ -16,6 +16,7 @@ use super::widget::{
 pub enum EventProcessResult {
     Selected { issue_id: IssueId },
     Quited,
+    Handled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,11 +115,14 @@ impl IssueSelectPopupComponent {
     ) -> Option<EventProcessResult> {
         self.focus_state
             .process_event(event)
-            .and_then(|result| match result {
+            .map(|result| match result {
                 focus_state::EventProcessResult::Selected => self
                     .focused_issue_id(store)
-                    .map(|issue_id| EventProcessResult::Selected { issue_id }),
-                focus_state::EventProcessResult::Quited => Some(EventProcessResult::Quited),
+                    .map_or(EventProcessResult::Handled, |issue_id| {
+                        EventProcessResult::Selected { issue_id }
+                    }),
+                focus_state::EventProcessResult::Quited => EventProcessResult::Quited,
+                focus_state::EventProcessResult::Handled => EventProcessResult::Handled,
                 focus_state::EventProcessResult::ProjectChanged => {
                     if let Some(project_id) = self.focused_project_id() {
                         let page = *self
@@ -128,7 +132,7 @@ impl IssueSelectPopupComponent {
                         self.activate_focused_project(store);
                         self.request_page(project_id, page);
                     }
-                    None
+                    EventProcessResult::Handled
                 }
                 focus_state::EventProcessResult::PreviousPageRequested => {
                     if let Some((project_id, page)) = self.focused_project_and_page()
@@ -141,7 +145,7 @@ impl IssueSelectPopupComponent {
                     {
                         self.navigate_to_page(store, project_id, previous);
                     }
-                    None
+                    EventProcessResult::Handled
                 }
                 focus_state::EventProcessResult::NextPageRequested => {
                     if let Some((project_id, page)) = self.focused_project_and_page()
@@ -157,7 +161,7 @@ impl IssueSelectPopupComponent {
                     {
                         self.navigate_to_page(store, project_id, next);
                     }
-                    None
+                    EventProcessResult::Handled
                 }
                 focus_state::EventProcessResult::RetryRequested => {
                     if let Some((project_id, page)) = self.focused_project_and_page()
@@ -168,7 +172,7 @@ impl IssueSelectPopupComponent {
                     {
                         self.request_page(project_id, page);
                     }
-                    None
+                    EventProcessResult::Handled
                 }
             })
     }
@@ -897,11 +901,10 @@ mod tests {
             component.create_widget(&store).focused_column,
             IssueSelectPopupFocusColumn::Project
         );
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Enter), &store)
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Enter), &store),
+            Some(EventProcessResult::Handled)
+        ));
         component.process_event(key_event(KeyCode::Char('r')), &store);
         assert!(component.take_effect().is_none());
     }

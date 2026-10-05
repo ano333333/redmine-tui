@@ -13,6 +13,7 @@ use super::widget::{
 pub enum EventProcessResult {
     Canceled,
     Continued { diffs: Vec<IssuePropertyDiff> },
+    Handled,
 }
 
 pub struct IssuePropertyConflictComponent {
@@ -48,17 +49,18 @@ impl IssuePropertyConflictComponent {
     pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         self.focus_state
             .process_event(event)
-            .and_then(|result| match result {
+            .map(|result| match result {
                 RawEventProcessResult::Selected { row_index, choice } => {
                     if let Some(selected_choice) = self.selected_choices.get_mut(row_index) {
                         *selected_choice = choice;
                     }
-                    None
+                    EventProcessResult::Handled
                 }
-                RawEventProcessResult::Canceled => Some(EventProcessResult::Canceled),
-                RawEventProcessResult::Continued => Some(EventProcessResult::Continued {
+                RawEventProcessResult::Canceled => EventProcessResult::Canceled,
+                RawEventProcessResult::Continued => EventProcessResult::Continued {
                     diffs: self.resolved_diffs(),
-                }),
+                },
+                RawEventProcessResult::Handled => EventProcessResult::Handled,
             })
     }
 
@@ -405,22 +407,20 @@ mod tests {
         let mut component = component(diffs());
         component.update(AREA);
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('j')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::Handled)
+        ));
         component.update(AREA);
         assert_eq!(
             component.cursor_position(AREA),
             Some(Position { x: 39, y: 4 })
         );
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('k')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('k'))),
+            Some(EventProcessResult::Handled)
+        ));
         component.update(AREA);
         assert_eq!(
             component.cursor_position(AREA),
@@ -433,22 +433,20 @@ mod tests {
         let mut component = component(diffs());
         component.update(AREA);
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('l')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('l'))),
+            Some(EventProcessResult::Handled)
+        ));
         component.update(AREA);
         assert_eq!(
             component.cursor_position(AREA),
             Some(Position { x: 60, y: 3 })
         );
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('h')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('h'))),
+            Some(EventProcessResult::Handled)
+        ));
         component.update(AREA);
         assert_eq!(
             component.cursor_position(AREA),
@@ -463,7 +461,7 @@ mod tests {
         component.process_event(key_event(KeyCode::Char('l')));
         let result = component.process_event(key_event(KeyCode::Enter));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         component.process_event(key_event(KeyCode::Char('j')));
         component.process_event(key_event(KeyCode::Char('j')));
 

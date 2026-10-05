@@ -15,6 +15,7 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromAbove,
     CursorLeavedFromBelow,
+    Handled,
 }
 
 pub struct FocusState {
@@ -78,16 +79,17 @@ impl FocusState {
                     return Some(EventProcessResult::CursorLeavedFromBelow);
                 }
                 self.focused_id = self.ids.get(focused_index + 1).copied();
+                Some(EventProcessResult::Handled)
             }
             KeyCode::Char('k') => {
                 if focused_index == 0 {
                     return Some(EventProcessResult::CursorLeavedFromAbove);
                 }
                 self.focused_id = self.ids.get(focused_index - 1).copied();
+                Some(EventProcessResult::Handled)
             }
-            _ => {}
+            _ => None,
         }
-        None
     }
 
     pub fn get_cursor_position(&self) -> Position {
@@ -194,18 +196,16 @@ mod tests {
         state.update(&ids(&[1, 2, 3]));
         state.focus_event(FocusEvent::CursorEnteredFromAbove);
 
-        assert!(
-            state
-                .process_event(&key_event(KeyCode::Char('j')))
-                .is_none()
-        );
+        assert!(matches!(
+            state.process_event(&key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(state.focused_index(), Some(1));
 
-        assert!(
-            state
-                .process_event(&key_event(KeyCode::Char('k')))
-                .is_none()
-        );
+        assert!(matches!(
+            state.process_event(&key_event(KeyCode::Char('k'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(state.focused_index(), Some(0));
     }
 

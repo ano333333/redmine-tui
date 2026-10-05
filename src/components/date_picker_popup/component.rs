@@ -34,6 +34,7 @@ enum Action {
     MoveFocusedDate(i64),
     MoveFocusedMonth(i32),
     Confirm,
+    Cancel,
     CloseCalendar,
     InputKey(KeyEvent),
 }
@@ -111,6 +112,14 @@ impl<'a> DatePickerPopupComponent<'a> {
             KeyCode::Char('l') => Some(Action::FocusRight),
             KeyCode::Char('j') => Some(Action::FocusDown),
             KeyCode::Char('k') => Some(Action::FocusUp),
+            KeyCode::Char('q')
+                if matches!(
+                    self.focused_field,
+                    FocusField::CalendarButton | FocusField::Cancel
+                ) =>
+            {
+                Some(Action::Cancel)
+            }
             _ => match self.focused_field {
                 FocusField::Year | FocusField::Month | FocusField::Day => {
                     Some(Action::InputKey(key))
@@ -138,44 +147,45 @@ impl<'a> DatePickerPopupComponent<'a> {
         match action {
             Action::FocusNext => {
                 self.focus_next();
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::FocusPrevious => {
                 self.focus_previous();
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::FocusLeft => {
                 self.focus_left();
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::FocusRight => {
                 self.focus_right();
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::FocusDown => {
                 self.focus_down();
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::FocusUp => {
                 self.focus_up();
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::MoveFocusedDate(days) => {
                 self.move_focused_date(days);
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::MoveFocusedMonth(months) => {
                 self.move_focused_month(months);
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::Confirm => self.confirm(),
+            Action::Cancel => Some(EventProcessResult::Canceled),
             Action::CloseCalendar => {
                 self.focused_field = FocusField::CalendarButton;
                 Some(EventProcessResult::Handled)
             }
             Action::InputKey(key) => {
                 self.focused_textarea_mut().input(Self::textarea_input(key));
-                None
+                Some(EventProcessResult::Handled)
             }
         }
     }
@@ -303,14 +313,16 @@ impl<'a> DatePickerPopupComponent<'a> {
     fn confirm(&mut self) -> Option<EventProcessResult> {
         match self.focused_field {
             FocusField::Year | FocusField::Month | FocusField::Day => {
-                let date = self.input_date()?;
+                let Some(date) = self.input_date() else {
+                    return Some(EventProcessResult::Handled);
+                };
                 self.selected_date = Some(date);
                 (self.observer)(date);
                 Some(EventProcessResult::Entered)
             }
             FocusField::CalendarButton => {
                 self.open_calendar();
-                None
+                Some(EventProcessResult::Handled)
             }
             FocusField::Calendar => {
                 self.apply_calendar_date();
@@ -522,7 +534,7 @@ mod tests {
 
         let result = component.process_event(key_event(KeyCode::Enter));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(component.focused_field, FocusField::Calendar);
         assert_eq!(
             component.focused_date,
@@ -695,7 +707,7 @@ mod tests {
 
         let result = component.process_event(key_event(KeyCode::Enter));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(*selected.borrow(), None);
     }
 
@@ -709,6 +721,37 @@ mod tests {
 
         assert!(matches!(result, Some(EventProcessResult::Canceled)));
         assert_eq!(*selected.borrow(), None);
+    }
+
+    #[test]
+    fn q_on_year_field_is_input_and_handled() {
+        let mut component = DatePickerPopupComponent::new(None, Box::new(|_| {}));
+
+        let result = component.process_event(key_event(KeyCode::Char('q')));
+
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
+        assert!(textarea_text(&component.year_textarea).contains('q'));
+    }
+
+    #[test]
+    fn q_on_cancel_button_returns_canceled() {
+        let mut component = DatePickerPopupComponent::new(None, Box::new(|_| {}));
+        for _ in 0..4 {
+            component.process_event(key_event(KeyCode::Tab));
+        }
+
+        let result = component.process_event(key_event(KeyCode::Char('q')));
+
+        assert!(matches!(result, Some(EventProcessResult::Canceled)));
+    }
+
+    #[test]
+    fn focus_move_returns_handled() {
+        let mut component = DatePickerPopupComponent::new(None, Box::new(|_| {}));
+
+        let result = component.process_event(key_event(KeyCode::Tab));
+
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
     }
 
     #[test]

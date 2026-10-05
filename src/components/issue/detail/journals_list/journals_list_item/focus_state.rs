@@ -13,16 +13,11 @@ pub enum FocusEvent {
 }
 
 pub enum EventProcessResult {
-    CursorLeavedFromBelow {
-        x: u16,
-    },
-    CursorLeavedFromAbove {
-        x: u16,
-    },
+    CursorLeavedFromBelow { x: u16 },
+    CursorLeavedFromAbove { x: u16 },
     Edit,
     SaveRequested,
-    /// 保存キーを正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
-    SaveSuppressed,
+    Handled,
 }
 
 enum FocusedPosition {
@@ -162,7 +157,7 @@ impl FocusState {
                     position.x += 1;
                 }
             }
-            // Notes位置の場合のみaction_from_eventで発生するが、防御的にDetail位置ではNoneを返す
+            // Notes位置の場合のみaction_from_eventで発生するが、防御的にDetail位置では何もしない
             Action::Edit => {
                 if matches!(focused_position, FocusedPosition::Notes(_)) {
                     return Some(EventProcessResult::Edit);
@@ -170,12 +165,12 @@ impl FocusState {
             }
             Action::Save => {
                 if self.save_key_is_no_op {
-                    return Some(EventProcessResult::SaveSuppressed);
+                    return Some(EventProcessResult::Handled);
                 }
                 return Some(EventProcessResult::SaveRequested);
             }
         }
-        None
+        Some(EventProcessResult::Handled)
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
@@ -442,7 +437,7 @@ mod tests {
 
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(state.get_cursor_position(), Position::new(2, 3));
     }
 
@@ -453,7 +448,7 @@ mod tests {
 
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(state.get_cursor_position(), Position::new(2, 4));
     }
 
@@ -464,7 +459,7 @@ mod tests {
 
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(state.get_cursor_position(), Position::new(2, 4));
     }
 
@@ -472,11 +467,14 @@ mod tests {
     fn process_event_j_moves_between_comment_lines() {
         let mut state = state(WIDE_WIDTH, 1, NOTE_LINE_COUNT);
         state.focus_event(FocusEvent::CursorEnteredFromAbove { x: 6 });
-        assert!(state.process_event(key_event(KeyCode::Char('j'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::Handled)
+        ));
 
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(state.get_cursor_position(), Position::new(2, 5));
     }
 
@@ -495,11 +493,14 @@ mod tests {
     fn process_event_k_moves_between_properties() {
         let mut state = state(WIDE_WIDTH, 2, NOTE_LINE_COUNT);
         state.focus_event(FocusEvent::CursorEnteredFromAbove { x: 0 });
-        assert!(state.process_event(key_event(KeyCode::Char('j'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::Handled)
+        ));
 
         let result = state.process_event(key_event(KeyCode::Char('k')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(state.get_cursor_position(), Position::new(2, 2));
     }
 
@@ -512,7 +513,7 @@ mod tests {
 
         let result = state.process_event(key_event(KeyCode::Char('k')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(state.get_cursor_position(), Position::new(2, 3));
     }
 
@@ -525,7 +526,7 @@ mod tests {
 
         let result = state.process_event(key_event(KeyCode::Char('k')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(state.get_cursor_position(), Position::new(8, 4));
     }
 
@@ -558,13 +559,22 @@ mod tests {
             position: Position::new(1, 3),
         });
 
-        assert!(state.process_event(key_event(KeyCode::Char('h'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('h'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(state.get_cursor_position(), Position::new(2, 4));
-        assert!(state.process_event(key_event(KeyCode::Char('h'))).is_none());
+        assert!(matches!(
+            state.process_event(key_event(KeyCode::Char('h'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(state.get_cursor_position(), Position::new(2, 4));
 
         for _ in 0..40 {
-            assert!(state.process_event(key_event(KeyCode::Char('l'))).is_none());
+            assert!(matches!(
+                state.process_event(key_event(KeyCode::Char('l'))),
+                Some(EventProcessResult::Handled)
+            ));
         }
 
         assert_eq!(state.get_cursor_position(), Position::new(33, 4));
@@ -605,13 +615,13 @@ mod tests {
     }
 
     #[test]
-    fn process_event_ctrl_s_on_no_op_state_returns_save_suppressed() {
+    fn process_event_ctrl_s_on_no_op_state_returns_handled() {
         let mut state = state(WIDE_WIDTH, 1, NOTE_LINE_COUNT);
         state.focus_event(FocusEvent::CursorEnteredFromBelow { x: 6 });
 
         let result = state.process_event(ctrl_s_event());
 
-        assert!(matches!(result, Some(EventProcessResult::SaveSuppressed)));
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
     }
 
     #[test]

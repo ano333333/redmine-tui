@@ -5,6 +5,7 @@ use super::SelectBoxPopupWidget;
 pub enum EventProcessResult {
     Entered,
     Quited,
+    Handled,
 }
 
 const NONE_CHOICE_LABEL: &str = "選択なし(None)";
@@ -42,23 +43,22 @@ impl<'a> SelectBoxPopupComponent<'a> {
                 if self.focused_index + 1 < self.items.len() {
                     self.focused_index += 1;
                 }
+                Some(EventProcessResult::Handled)
             }
             KeyCode::Char('k') => {
                 if self.focused_index > 0 {
                     self.focused_index -= 1;
                 }
+                Some(EventProcessResult::Handled)
             }
             KeyCode::Enter => {
                 let (id, _) = self.items[self.focused_index];
                 (self.observer)(id);
-                return Some(EventProcessResult::Entered);
+                Some(EventProcessResult::Entered)
             }
-            KeyCode::Char('q') => {
-                return Some(EventProcessResult::Quited);
-            }
-            _ => {}
+            KeyCode::Char('q') => Some(EventProcessResult::Quited),
+            _ => None,
         }
-        None
     }
 
     pub fn create_widget<'b>(&'b self) -> SelectBoxPopupWidget<'b> {
@@ -150,7 +150,7 @@ mod tests {
 
         let result = component.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(component.create_widget().focused_index, 1);
     }
 
@@ -162,7 +162,7 @@ mod tests {
 
         let result = component.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(component.create_widget().focused_index, 2);
     }
 
@@ -174,7 +174,7 @@ mod tests {
 
         let result = component.process_event(key_event(KeyCode::Char('k')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(component.create_widget().focused_index, 1);
     }
 
@@ -186,7 +186,7 @@ mod tests {
 
         let result = component.process_event(key_event(KeyCode::Char('k')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(component.create_widget().focused_index, 0);
     }
 
@@ -213,11 +213,22 @@ mod tests {
         let move_result = component.process_event(key_event(KeyCode::Char('k')));
         let result = component.process_event(key_event(KeyCode::Enter));
 
-        assert!(move_result.is_none());
+        assert!(matches!(move_result, Some(EventProcessResult::Handled)));
         assert!(matches!(result, Some(EventProcessResult::Entered)));
         assert_eq!(*selected_id.borrow(), Some(None));
         assert!(selected_dispatcher.borrow().is_none());
         assert_eq!(component.create_widget().focused_index, 0);
+    }
+
+    #[test]
+    fn j_on_last_item_returns_handled() {
+        let selected_id = Rc::new(RefCell::new(None));
+        let selected_dispatcher = Rc::new(RefCell::new(None));
+        let mut component = component_with_observer(2, false, selected_id, selected_dispatcher);
+
+        let result = component.process_event(key_event(KeyCode::Char('j')));
+
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
     }
 
     #[test]

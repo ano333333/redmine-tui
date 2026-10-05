@@ -11,6 +11,7 @@ pub enum EventProcessResult {
     CursorLeavedFromBelow { x: u16 },
     CursorLeavedFromAbove { x: u16 },
     EditRequested { id: IssueId, body: String },
+    Handled,
 }
 
 pub struct BodyComponent {
@@ -44,6 +45,7 @@ impl BodyComponent {
                     id: self.id,
                     body: self.body.clone(),
                 },
+                focus_state::EventProcessResult::Handled => EventProcessResult::Handled,
             })
     }
 
@@ -174,7 +176,7 @@ mod tests {
 
         let result = component.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_layout_contract(&component, WIDE_WIDTH, WIDE_LINE_COUNT, Position::new(6, 2));
         render_snapshot(
             "body_component_process_j",

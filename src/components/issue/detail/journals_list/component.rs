@@ -29,21 +29,12 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromBelow,
     CursorLeavedFromAbove,
-    EditRequested {
-        id: JournalId,
-        notes: String,
-    },
-    EditLocalJournalRequested {
-        notes: String,
-    },
-    EditSuppressed,
+    EditRequested { id: JournalId, notes: String },
+    EditLocalJournalRequested { notes: String },
     CreateLocalJournalRequested,
     SaveLocalJournalRequested,
-    SaveRequested {
-        id: JournalId,
-    },
-    /// 保存キーを正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
-    SaveSuppressed,
+    SaveRequested { id: JournalId },
+    Handled,
 }
 
 pub struct JournalsListComponent {
@@ -69,11 +60,14 @@ impl JournalsListComponent {
 
     pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         if self.create_button_focused {
-            return match event {
-                InputEvent::Key(key) if key.code == KeyCode::Enter && self.local_item.is_none() => {
+            let InputEvent::Key(key) = event;
+            return match key.code {
+                KeyCode::Enter if self.local_item.is_none() => {
                     Some(EventProcessResult::CreateLocalJournalRequested)
                 }
-                InputEvent::Key(key) if key.code == KeyCode::Char('k') => {
+                // Local Journalがある間は作成ボタンが無効なので、押下を消費するだけにする
+                KeyCode::Enter => Some(EventProcessResult::Handled),
+                KeyCode::Char('k') => {
                     let Some(item) = self
                         .item_count()
                         .checked_sub(1)
@@ -84,11 +78,9 @@ impl JournalsListComponent {
                     self.create_button_focused = false;
                     self.focused_item = Some(item);
                     self.focus_item(item, ChildFocusEvent::CursorEnteredFromBelow { x: 0 });
-                    None
+                    Some(EventProcessResult::Handled)
                 }
-                InputEvent::Key(key) if key.code == KeyCode::Char('j') => {
-                    Some(EventProcessResult::CursorLeavedFromBelow)
-                }
+                KeyCode::Char('j') => Some(EventProcessResult::CursorLeavedFromBelow),
                 _ => None,
             };
         }
@@ -109,15 +101,10 @@ impl JournalsListComponent {
                 LocalEventProcessResult::EditRequested { notes } => {
                     return Some(EventProcessResult::EditLocalJournalRequested { notes });
                 }
-                LocalEventProcessResult::EditSuppressed => {
-                    return Some(EventProcessResult::EditSuppressed);
-                }
                 LocalEventProcessResult::SaveRequested => {
                     return Some(EventProcessResult::SaveLocalJournalRequested);
                 }
-                LocalEventProcessResult::SaveSuppressed => {
-                    return Some(EventProcessResult::SaveSuppressed);
-                }
+                LocalEventProcessResult::Handled => return Some(EventProcessResult::Handled),
             },
         };
 
@@ -128,12 +115,12 @@ impl JournalsListComponent {
                     self.unfocus_item(focused_item);
                     self.focused_item = Some(next_item);
                     self.focus_item(next_item, ChildFocusEvent::CursorEnteredFromAbove { x });
-                    None
+                    Some(EventProcessResult::Handled)
                 } else {
                     self.unfocus_item(focused_item);
                     self.focused_item = None;
                     self.create_button_focused = true;
-                    None
+                    Some(EventProcessResult::Handled)
                 }
             }
             ChildEventProcessResult::CursorLeavedFromAbove { x } => {
@@ -143,7 +130,7 @@ impl JournalsListComponent {
                     self.unfocus_item(focused_item);
                     self.focused_item = Some(previous_item);
                     self.focus_item(previous_item, ChildFocusEvent::CursorEnteredFromBelow { x });
-                    None
+                    Some(EventProcessResult::Handled)
                 } else {
                     Some(EventProcessResult::CursorLeavedFromAbove)
                 }
@@ -154,7 +141,7 @@ impl JournalsListComponent {
             ChildEventProcessResult::SaveRequested { id } => {
                 Some(EventProcessResult::SaveRequested { id })
             }
-            ChildEventProcessResult::SaveSuppressed => Some(EventProcessResult::SaveSuppressed),
+            ChildEventProcessResult::Handled => Some(EventProcessResult::Handled),
         }
     }
 
@@ -487,13 +474,16 @@ mod tests {
     }
 
     #[test]
-    fn process_event_enter_on_disabled_create_button_is_a_no_op() {
+    fn process_event_enter_on_disabled_create_button_returns_handled() {
         let local_entry = local_entry("local notes");
         let mut component = JournalsListComponent::new(IssueId::new(1));
         component.update(&[], Some(&local_entry), WIDE_WIDTH);
         component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 0 });
 
-        assert!(component.process_event(key_event(KeyCode::Enter)).is_none());
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Enter)),
+            Some(EventProcessResult::Handled)
+        ));
     }
 
     #[test]
@@ -534,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_ctrl_s_on_synced_focused_item_returns_save_suppressed() {
+    fn process_event_ctrl_s_on_synced_focused_item_returns_handled() {
         let mut store = Store::new();
         let journal = create_journal(1, "first paragraph");
         register_journal(&mut store, &journal);
@@ -548,7 +538,7 @@ mod tests {
 
         let result = component.process_event(ctrl_s_event());
 
-        assert!(matches!(result, Some(EventProcessResult::SaveSuppressed)));
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
     }
 
     #[test]
@@ -574,11 +564,10 @@ mod tests {
         );
         component.focus_event(FocusEvent::CursorEnteredFromAbove { x: 3 });
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('j')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(component.focused_item, Some(JournalItemIdentity::Local));
         assert_eq!(
             component.get_cursor_position(WIDE_WIDTH),
@@ -587,7 +576,7 @@ mod tests {
 
         assert!(matches!(
             component.process_event(key_event(KeyCode::Char('j'))),
-            None
+            Some(EventProcessResult::Handled)
         ));
         assert!(component.create_button_focused);
 
@@ -611,18 +600,16 @@ mod tests {
         );
         component.focus_event(FocusEvent::CursorEnteredFromBelow { x: 4 });
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('k')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('k'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(component.focused_item, Some(JournalItemIdentity::Local));
 
-        assert!(
-            component
-                .process_event(key_event(KeyCode::Char('k')))
-                .is_none()
-        );
+        assert!(matches!(
+            component.process_event(key_event(KeyCode::Char('k'))),
+            Some(EventProcessResult::Handled)
+        ));
         assert_eq!(
             component.focused_item,
             Some(JournalItemIdentity::Remote(journal.id))
@@ -742,7 +729,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_ctrl_s_on_uploading_local_item_returns_save_suppressed() {
+    fn process_event_ctrl_s_on_uploading_local_item_returns_handled() {
         let local_entry = LocalJournalEntry {
             journal: LocalJournal {
                 issue_id: IssueId::new(1),
@@ -756,12 +743,12 @@ mod tests {
 
         assert!(matches!(
             component.process_event(ctrl_s_event()),
-            Some(EventProcessResult::SaveSuppressed)
+            Some(EventProcessResult::Handled)
         ));
     }
 
     #[test]
-    fn process_event_e_on_uploading_local_item_returns_edit_suppressed() {
+    fn process_event_e_on_uploading_local_item_returns_handled() {
         let local_entry = LocalJournalEntry {
             journal: LocalJournal {
                 issue_id: IssueId::new(1),
@@ -775,7 +762,7 @@ mod tests {
 
         assert!(matches!(
             component.process_event(key_event(KeyCode::Char('e'))),
-            Some(EventProcessResult::EditSuppressed)
+            Some(EventProcessResult::Handled)
         ));
     }
 

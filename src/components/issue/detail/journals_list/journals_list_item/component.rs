@@ -141,21 +141,11 @@ fn format_bool(b: bool) -> String {
 }
 
 pub enum EventProcessResult {
-    CursorLeavedFromBelow {
-        x: u16,
-    },
-    CursorLeavedFromAbove {
-        x: u16,
-    },
-    EditRequested {
-        id: JournalId,
-        notes: String,
-    },
-    SaveRequested {
-        id: JournalId,
-    },
-    /// 保存キーを正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
-    SaveSuppressed,
+    CursorLeavedFromBelow { x: u16 },
+    CursorLeavedFromAbove { x: u16 },
+    EditRequested { id: JournalId, notes: String },
+    SaveRequested { id: JournalId },
+    Handled,
 }
 
 pub struct JournalsListItemComponent {
@@ -210,9 +200,7 @@ impl JournalsListItemComponent {
                         id: JournalId::new(self.id),
                     }
                 }
-                focus_state::EventProcessResult::SaveSuppressed => {
-                    EventProcessResult::SaveSuppressed
-                }
+                focus_state::EventProcessResult::Handled => EventProcessResult::Handled,
             })
     }
 
@@ -494,7 +482,7 @@ mod tests {
 
         let result = component.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_layout_contract(&component, WIDE_WIDTH, 10, Position::new(2, 3));
     }
 
@@ -555,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_ctrl_s_on_synced_returns_save_suppressed() {
+    fn process_event_ctrl_s_on_synced_returns_handled() {
         let mut store = fixture_store();
         let journal = create_journal(1, one_detail(), notes());
         let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
@@ -563,11 +551,11 @@ mod tests {
 
         let result = component.process_event(ctrl_s_event());
 
-        assert!(matches!(result, Some(EventProcessResult::SaveSuppressed)));
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
     }
 
     #[test]
-    fn process_event_ctrl_s_on_uploading_returns_save_suppressed() {
+    fn process_event_ctrl_s_on_uploading_returns_handled() {
         let mut store = fixture_store();
         let journal = create_journal(1, one_detail(), notes());
         let mut component = component_with_update(&mut store, &journal, WIDE_WIDTH);
@@ -576,7 +564,7 @@ mod tests {
 
         let result = component.process_event(ctrl_s_event());
 
-        assert!(matches!(result, Some(EventProcessResult::SaveSuppressed)));
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
     }
 
     #[test]
