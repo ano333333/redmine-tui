@@ -64,8 +64,7 @@ pub enum EventProcessResult {
         issue_id: IssueId,
         id: JournalId,
     },
-    /// 入力を正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
-    Suppressed,
+    Handled,
 }
 
 #[cfg(test)]
@@ -107,6 +106,18 @@ mod tests {
         });
         dispatcher.borrow_mut().consume_action();
         dispatcher
+    }
+
+    #[test]
+    fn process_event_j_moving_focus_returns_handled() {
+        let dispatcher = dispatcher_with_issue();
+        let mut component = IssueDetailComponent::new(3);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+
+        // Header -> Property
+        let result = component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+
+        assert_eq!(result, Some(EventProcessResult::Handled));
     }
 
     #[test]
@@ -208,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_ctrl_s_on_synced_journals_list_notes_is_suppressed() {
+    fn process_event_ctrl_s_on_synced_journals_list_notes_returns_handled() {
         let dispatcher = dispatcher_with_issue_and_journals();
         let mut component = IssueDetailComponent::new(3);
         component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
@@ -220,11 +231,11 @@ mod tests {
 
         let result = component.process_event(ctrl_s_event(), dispatcher.clone());
 
-        assert!(matches!(result, Some(EventProcessResult::Suppressed)));
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
     }
 
     #[test]
-    fn process_event_ctrl_s_during_remote_journal_upload_is_suppressed() {
+    fn process_event_ctrl_s_during_remote_journal_upload_returns_handled() {
         let dispatcher = dispatcher_with_issue_and_journals();
         edit_first_journal(&dispatcher);
         dispatcher
@@ -241,11 +252,11 @@ mod tests {
 
         let result = component.process_event(ctrl_s_event(), dispatcher);
 
-        assert!(matches!(result, Some(EventProcessResult::Suppressed)));
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
     }
 
     #[test]
-    fn process_event_ctrl_s_during_issue_upload_is_suppressed() {
+    fn process_event_ctrl_s_during_issue_upload_returns_handled() {
         let dispatcher = dispatcher_with_issue_and_journals();
         dispatcher
             .borrow_mut()
@@ -262,7 +273,7 @@ mod tests {
 
         let result = component.process_event(ctrl_s_event(), dispatcher);
 
-        assert!(matches!(result, Some(EventProcessResult::Suppressed)));
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
     }
 
     #[test]
@@ -368,7 +379,7 @@ impl IssueDetailComponent {
                     Some(IssueState::Uploading)
                 ) || store.store().has_uploading_journal(self.id)
                 {
-                    return Some(EventProcessResult::Suppressed);
+                    return Some(EventProcessResult::Handled);
                 }
                 drop(store);
                 if self.focused_component == FocusedComponent::JournalsList {
@@ -385,8 +396,8 @@ impl IssueDetailComponent {
                                 issue_id: self.id,
                             })
                         }
-                        Some(JournalsListEventProcessResult::SaveSuppressed) => {
-                            Some(EventProcessResult::Suppressed)
+                        Some(JournalsListEventProcessResult::Handled) => {
+                            Some(EventProcessResult::Handled)
                         }
                         _ => None,
                     };
@@ -408,6 +419,7 @@ impl IssueDetailComponent {
                     self.focused_component = FocusedComponent::Property;
                     self.property
                         .focus_event(PropertyFocusTransitionEvent::CursorEnteredFromAbove);
+                    return Some(EventProcessResult::Handled);
                 }
             }
             FocusedComponent::Property => {
@@ -419,6 +431,7 @@ impl IssueDetailComponent {
                         self.focused_component = FocusedComponent::Header;
                         self.header
                             .focus_event(HeaderFocusEvent::CursorEnteredFromBelow);
+                        return Some(EventProcessResult::Handled);
                     }
                     Some(PropertyEventProcessResult::CursorLeavedFromBelow) => {
                         self.property
@@ -426,6 +439,7 @@ impl IssueDetailComponent {
                         self.focused_component = FocusedComponent::Body;
                         self.body
                             .focus_event(BodyFocusEvent::CursorEnteredFromAbove { x: 0 });
+                        return Some(EventProcessResult::Handled);
                     }
                     Some(PropertyEventProcessResult::OpenIssueStatusPopup) => {
                         return Some(EventProcessResult::OpenIssueStatusPopup);
@@ -463,6 +477,9 @@ impl IssueDetailComponent {
                     Some(PropertyEventProcessResult::OpenCategoryPopup) => {
                         return Some(EventProcessResult::OpenCategoryPopup);
                     }
+                    Some(PropertyEventProcessResult::Handled) => {
+                        return Some(EventProcessResult::Handled);
+                    }
                     None => {}
                 }
             }
@@ -475,15 +492,20 @@ impl IssueDetailComponent {
                         self.focused_component = FocusedComponent::Property;
                         self.property
                             .focus_event(PropertyFocusTransitionEvent::CursorEnteredFromBelow);
+                        return Some(EventProcessResult::Handled);
                     }
                     Some(BodyEventProcessResult::CursorLeavedFromBelow { .. }) => {
                         self.body.focus_event(BodyFocusEvent::Unfocused);
                         self.focused_component = FocusedComponent::ChildrenList;
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::CursorEnteredFromAbove);
+                        return Some(EventProcessResult::Handled);
                     }
                     Some(BodyEventProcessResult::EditRequested { id, body }) => {
                         return Some(EventProcessResult::EditIssueBodyRequested { id, body });
+                    }
+                    Some(BodyEventProcessResult::Handled) => {
+                        return Some(EventProcessResult::Handled);
                     }
                     None => {}
                 }
@@ -497,6 +519,7 @@ impl IssueDetailComponent {
                         self.focused_component = FocusedComponent::Body;
                         self.body
                             .focus_event(BodyFocusEvent::CursorEnteredFromBelow { x: 0 });
+                        return Some(EventProcessResult::Handled);
                     }
                     Some(ChildrenListEventProcessResult::CursorLeavedFromBelow) => {
                         self.children_list
@@ -504,6 +527,10 @@ impl IssueDetailComponent {
                         self.focused_component = FocusedComponent::JournalsList;
                         self.journals_list
                             .focus_event(JournalsListFocusEvent::CursorEnteredFromAbove { x: 0 });
+                        return Some(EventProcessResult::Handled);
+                    }
+                    Some(ChildrenListEventProcessResult::Handled) => {
+                        return Some(EventProcessResult::Handled);
                     }
                     None => {}
                 }
@@ -511,13 +538,16 @@ impl IssueDetailComponent {
             FocusedComponent::JournalsList => {
                 let result = self.journals_list.process_event(event.clone());
                 match result {
-                    Some(JournalsListEventProcessResult::CursorLeavedFromBelow) => {}
+                    Some(JournalsListEventProcessResult::CursorLeavedFromBelow) => {
+                        return Some(EventProcessResult::Handled);
+                    }
                     Some(JournalsListEventProcessResult::CursorLeavedFromAbove) => {
                         self.journals_list
                             .focus_event(JournalsListFocusEvent::Unfocused);
                         self.focused_component = FocusedComponent::ChildrenList;
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::CursorEnteredFromBelow);
+                        return Some(EventProcessResult::Handled);
                     }
                     Some(JournalsListEventProcessResult::EditRequested { id, notes }) => {
                         return Some(EventProcessResult::EditJournalRequested {
@@ -531,9 +561,6 @@ impl IssueDetailComponent {
                             issue_id: self.id,
                             notes,
                         });
-                    }
-                    Some(JournalsListEventProcessResult::EditSuppressed) => {
-                        return Some(EventProcessResult::Suppressed);
                     }
                     Some(JournalsListEventProcessResult::CreateLocalJournalRequested) => {
                         return Some(EventProcessResult::CreateLocalJournalRequested {
@@ -551,8 +578,8 @@ impl IssueDetailComponent {
                             issue_id: self.id,
                         });
                     }
-                    Some(JournalsListEventProcessResult::SaveSuppressed) => {
-                        return Some(EventProcessResult::Suppressed);
+                    Some(JournalsListEventProcessResult::Handled) => {
+                        return Some(EventProcessResult::Handled);
                     }
                     None => {}
                 }

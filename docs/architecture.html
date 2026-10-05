@@ -1114,6 +1114,13 @@ flowchart TD
                   上下左右移動、境界到達、編集開始などを
                   <code>EventProcessResult</code> として返す
                 </li>
+                <li>
+                  戻り値 <code>Option&lt;EventProcessResult&gt;</code>
+                  は、<code>None</code>
+                  をイベントを解釈しなかった(未処理)、<code>Some(Handled)</code>
+                  をイベントを使ったが親への要求はない、それ以外を親への要求とする。端で動かなかった場合も、解釈したキーなら
+                  <code>Some(Handled)</code> を返す。Component も同じ意味で返す
+                </li>
               </ul>
             </div>
             <div class="resp-card denied">
@@ -1185,6 +1192,7 @@ flowchart TD
               <ul>
                 <li>key event による focus/cursor 移動</li>
                 <li>境界到達時の EventProcessResult</li>
+                <li>解釈したキーで Some(_)、解釈しないキーで None を返すこと</li>
                 <li>focus_event による入退場</li>
                 <li>update による範囲補正</li>
                 <li>unfocused 時に入力を無視すること</li>

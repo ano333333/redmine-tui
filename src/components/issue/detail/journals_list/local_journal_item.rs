@@ -9,20 +9,11 @@ use super::journals_list_item::widget::local_state_marker;
 use super::journals_list_item::{JournalItemWidget, JournalItemWidgetState, LocalJournalItemView};
 
 pub enum EventProcessResult {
-    CursorLeavedFromBelow {
-        x: u16,
-    },
-    CursorLeavedFromAbove {
-        x: u16,
-    },
-    EditRequested {
-        notes: String,
-    },
-    /// 編集キーを正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
-    EditSuppressed,
+    CursorLeavedFromBelow { x: u16 },
+    CursorLeavedFromAbove { x: u16 },
+    EditRequested { notes: String },
     SaveRequested,
-    /// 保存キーを正常なno-opとして消費済みであり、未処理を表す`None`とは区別する。
-    SaveSuppressed,
+    Handled,
 }
 
 /// Local Journalの表示内容、本文の描画cache、focus状態を保持するcomponent。
@@ -74,13 +65,9 @@ impl LocalJournalItemComponent {
             focus_state::EventProcessResult::SaveRequested if self.editable => {
                 Some(EventProcessResult::SaveRequested)
             }
-            focus_state::EventProcessResult::SaveSuppressed => {
-                Some(EventProcessResult::SaveSuppressed)
-            }
-            focus_state::EventProcessResult::Edit => Some(EventProcessResult::EditSuppressed),
-            focus_state::EventProcessResult::SaveRequested => {
-                Some(EventProcessResult::SaveSuppressed)
-            }
+            focus_state::EventProcessResult::Edit
+            | focus_state::EventProcessResult::SaveRequested
+            | focus_state::EventProcessResult::Handled => Some(EventProcessResult::Handled),
         }
     }
 
@@ -161,7 +148,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_e_and_ctrl_s_on_uploading_local_item_are_suppressed() {
+    fn process_event_e_and_ctrl_s_on_uploading_local_item_return_handled() {
         let entry = LocalJournalEntry {
             journal: LocalJournal {
                 issue_id: IssueId::new(1),
@@ -175,11 +162,11 @@ mod tests {
 
         assert!(matches!(
             component.process_event(key_event(KeyCode::Char('e'), KeyModifiers::none())),
-            Some(EventProcessResult::EditSuppressed)
+            Some(EventProcessResult::Handled)
         ));
         assert!(matches!(
             component.process_event(key_event(KeyCode::Char('s'), KeyModifiers::control())),
-            Some(EventProcessResult::SaveSuppressed)
+            Some(EventProcessResult::Handled)
         ));
     }
 }

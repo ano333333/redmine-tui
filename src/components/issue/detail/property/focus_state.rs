@@ -29,6 +29,7 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromAbove,
     CursorLeavedFromBelow,
+    Handled,
     OpenIssueStatusPopup,
     OpenTrackerPopup,
     OpenPriorityPopup,
@@ -181,7 +182,7 @@ impl FocusState {
                     return Some(EventProcessResult::CursorLeavedFromBelow);
                 }
                 *focused_y += 1;
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::MoveUp => {
                 let focused_y = self.focused_y.as_mut()?;
@@ -191,28 +192,28 @@ impl FocusState {
                     return Some(EventProcessResult::CursorLeavedFromAbove);
                 }
                 *focused_y -= 1;
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::MoveLeft => {
                 if !self.is_two_column {
-                    return None;
+                    return Some(EventProcessResult::Handled);
                 }
                 let focused_y = self.focused_y.as_mut()?;
                 if *focused_y >= RIGHT_COLUMN_FIRST_LINE {
                     *focused_y -= RIGHT_COLUMN_FIRST_LINE;
                 }
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::MoveRight => {
                 if !self.is_two_column {
-                    return None;
+                    return Some(EventProcessResult::Handled);
                 }
                 let focused_y = self.focused_y.as_mut()?;
                 if *focused_y < RIGHT_COLUMN_FIRST_LINE {
                     // 右カラムは1行少ないので、左カラム最下行からは右カラム最下行へ寄せる
                     *focused_y = (*focused_y + RIGHT_COLUMN_FIRST_LINE).min(LINE_COUNT - 1);
                 }
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::OpenIssueStatusPopup => Some(EventProcessResult::OpenIssueStatusPopup),
             Action::OpenTrackerPopup => Some(EventProcessResult::OpenTrackerPopup),
@@ -403,7 +404,7 @@ mod tests {
 
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(state.focused_y(), Some(1));
     }
 
@@ -712,6 +713,17 @@ mod tests {
             ));
             assert_eq!(state.focused_y(), Some(top));
         }
+    }
+
+    #[test]
+    fn j_inside_column_returns_handled() {
+        let mut state = FocusState::new();
+        state.update(false);
+        state.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        let result = state.process_event(key_event(KeyCode::Char('j')));
+
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
     }
 
     #[test]

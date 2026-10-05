@@ -210,7 +210,7 @@ mod tests {
 
         let result = component.process_event(&key_event(KeyCode::Char('j')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_layout_contract(&component, &store, Position { x: 0, y: 3 });
         render_snapshot(
             "children_list_component_process_j",

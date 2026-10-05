@@ -15,6 +15,7 @@ pub enum EventProcessResult {
     CursorLeavedFromBelow { x: u16 },
     CursorLeavedFromAbove { x: u16 },
     Edit,
+    Handled,
 }
 
 enum Action {
@@ -122,7 +123,7 @@ impl FocusState {
                     x: cursor.x.saturating_sub(1),
                     y: cursor.y,
                 });
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::MoveRight => {
                 if cursor.x + 1 < self.width {
@@ -131,7 +132,7 @@ impl FocusState {
                         y: cursor.y,
                     });
                 }
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::MoveDown => {
                 if cursor.y + 1 >= self.height {
@@ -141,7 +142,7 @@ impl FocusState {
                     x: cursor.x,
                     y: cursor.y + 1,
                 });
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::MoveUp => {
                 if cursor.y == 0 {
@@ -151,7 +152,7 @@ impl FocusState {
                     x: cursor.x,
                     y: cursor.y - 1,
                 });
-                None
+                Some(EventProcessResult::Handled)
             }
             Action::Edit => Some(EventProcessResult::Edit),
         }
@@ -193,7 +194,7 @@ mod tests {
 
         let result = state.process_event(key_event(KeyCode::Char('h')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(state.get_cursor_position(), gutter_indented_position(2, 2));
     }
 
@@ -207,7 +208,7 @@ mod tests {
 
         let result = state.process_event(key_event(KeyCode::Char('l')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(state.get_cursor_position(), gutter_indented_position(4, 2));
     }
 
@@ -221,7 +222,7 @@ mod tests {
 
         let result = state.process_event(key_event(KeyCode::Char('j')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(state.get_cursor_position(), gutter_indented_position(3, 3));
     }
 
@@ -235,7 +236,7 @@ mod tests {
 
         let result = state.process_event(key_event(KeyCode::Char('k')));
 
-        assert!(result.is_none());
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
         assert_eq!(state.get_cursor_position(), gutter_indented_position(3, 1));
     }
 

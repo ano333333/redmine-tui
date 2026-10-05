@@ -198,7 +198,7 @@ impl<'a> AppComponent<'a> {
             return self.process_popup_event(event, dispatcher);
         }
         if self.issue_component.is_some() {
-            self.process_issue_event(event, dispatcher);
+            return self.process_issue_event(event, dispatcher);
         }
         false
     }
@@ -355,7 +355,12 @@ impl<'a> AppComponent<'a> {
     }
 
     /// IssueComponentへイベントを渡し、結果に応じてpopupの開閉やeffectの設置を行う。
-    fn process_issue_event(&mut self, event: InputEvent, dispatcher: Rc<RefCell<Dispatcher>>) {
+    /// IssueComponentがイベントを使った場合にtrueを返す。
+    fn process_issue_event(
+        &mut self,
+        event: InputEvent,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+    ) -> bool {
         let (result, issue_id) = {
             let issue_component = self
                 .issue_component
@@ -366,16 +371,19 @@ impl<'a> AppComponent<'a> {
                 issue_component.issue_id(),
             )
         };
+        let Some(result) = result else {
+            return false;
+        };
         match result {
-            Some(IssueEventProcessResult::FetchRequested { id }) => {
+            IssueEventProcessResult::FetchRequested { id } => {
                 self.install_effect(AppEffect::FetchIssue(id));
             }
-            Some(IssueEventProcessResult::OpenIssueSelectPopup) => {
+            IssueEventProcessResult::OpenIssueSelectPopup => {
                 self.open_issue_select_popup(Some(issue_id));
             }
-            Some(IssueEventProcessResult::Detail(
+            IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::EditIssueBodyRequested { id, body },
-            )) => {
+            ) => {
                 let context = PendingEditorContext::IssueBody { id };
                 if can_start_editing(&context, self.interaction_mode, dispatcher.borrow().store()) {
                     self.pending_editor_context = Some(context);
@@ -384,9 +392,9 @@ impl<'a> AppComponent<'a> {
                     self.interaction_mode = InteractionMode::Editing;
                 }
             }
-            Some(IssueEventProcessResult::Detail(
+            IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::OpenIssueStatusPopup,
-            )) => {
+            ) => {
                 let (items, focused_index) =
                     build_issue_status_options(dispatcher.borrow().store());
                 self.push_select_box_popup(
@@ -396,9 +404,7 @@ impl<'a> AppComponent<'a> {
                     issue_status_popup_observer(dispatcher.clone(), issue_id),
                 );
             }
-            Some(IssueEventProcessResult::Detail(
-                IssueDetailEventProcessResult::OpenTrackerPopup,
-            )) => {
+            IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenTrackerPopup) => {
                 let (items, focused_index) =
                     build_tracker_options(dispatcher.borrow().store(), issue_id);
                 self.push_select_box_popup(
@@ -410,9 +416,7 @@ impl<'a> AppComponent<'a> {
             }
             // FIXME: 子Issueを持つ親Issueの優先度・開始日・期日・進捗率は子から計算され、Redmineは更新を
             // エラーなしで無視する。親Issueでも編集できるため、ローカルでは変更済みに見えてしまう。
-            Some(IssueEventProcessResult::Detail(
-                IssueDetailEventProcessResult::OpenPriorityPopup,
-            )) => {
+            IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenPriorityPopup) => {
                 let (items, focused_index) =
                     build_priority_options(dispatcher.borrow().store(), issue_id);
                 self.push_select_box_popup(
@@ -422,9 +426,7 @@ impl<'a> AppComponent<'a> {
                     priority_popup_observer(dispatcher.clone(), issue_id),
                 );
             }
-            Some(IssueEventProcessResult::Detail(
-                IssueDetailEventProcessResult::OpenProjectPopup,
-            )) => {
+            IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenProjectPopup) => {
                 let (items, focused_index) =
                     build_project_options(dispatcher.borrow().store(), issue_id);
                 self.push_select_box_popup(
@@ -434,9 +436,7 @@ impl<'a> AppComponent<'a> {
                     project_popup_observer(dispatcher.clone(), issue_id),
                 );
             }
-            Some(IssueEventProcessResult::Detail(
-                IssueDetailEventProcessResult::OpenAssignedToPopup,
-            )) => {
+            IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenAssignedToPopup) => {
                 let (items, focused_index) =
                     build_assigned_to_options(dispatcher.borrow().store(), issue_id);
                 self.push_select_box_popup(
@@ -446,9 +446,9 @@ impl<'a> AppComponent<'a> {
                     assigned_to_popup_observer(dispatcher.clone(), issue_id),
                 );
             }
-            Some(IssueEventProcessResult::Detail(
+            IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::OpenTargetVersionPopup,
-            )) => {
+            ) => {
                 let (items, focused_index) =
                     build_target_version_options(dispatcher.borrow().store(), issue_id);
                 self.push_select_box_popup(
@@ -458,9 +458,7 @@ impl<'a> AppComponent<'a> {
                     target_version_popup_observer(dispatcher.clone(), issue_id),
                 );
             }
-            Some(IssueEventProcessResult::Detail(
-                IssueDetailEventProcessResult::OpenStartDatePopup,
-            )) => {
+            IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenStartDatePopup) => {
                 let selected_date = current_start_date(dispatcher.borrow().store(), issue_id);
                 self.popup_components
                     .push_back(Rc::new(RefCell::new(PopupComponent::DatePicker(
@@ -470,9 +468,7 @@ impl<'a> AppComponent<'a> {
                         ),
                     ))));
             }
-            Some(IssueEventProcessResult::Detail(
-                IssueDetailEventProcessResult::OpenDueDatePopup,
-            )) => {
+            IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenDueDatePopup) => {
                 let selected_date = current_due_date(dispatcher.borrow().store(), issue_id);
                 self.popup_components
                     .push_back(Rc::new(RefCell::new(PopupComponent::DatePicker(
@@ -482,9 +478,7 @@ impl<'a> AppComponent<'a> {
                         ),
                     ))));
             }
-            Some(IssueEventProcessResult::Detail(
-                IssueDetailEventProcessResult::OpenDoneRatioPopup,
-            )) => {
+            IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenDoneRatioPopup) => {
                 let (items, focused_index) =
                     build_done_ratio_options(dispatcher.borrow().store(), issue_id);
                 self.push_select_box_popup(
@@ -494,9 +488,7 @@ impl<'a> AppComponent<'a> {
                     done_ratio_popup_observer(dispatcher.clone(), issue_id),
                 );
             }
-            Some(IssueEventProcessResult::Detail(
-                IssueDetailEventProcessResult::OpenCategoryPopup,
-            )) => {
+            IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenCategoryPopup) => {
                 let (items, focused_index) =
                     build_category_options(dispatcher.borrow().store(), issue_id);
                 self.push_select_box_popup(
@@ -506,9 +498,9 @@ impl<'a> AppComponent<'a> {
                     category_popup_observer(dispatcher.clone(), issue_id),
                 );
             }
-            Some(IssueEventProcessResult::Detail(
+            IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::OpenEstimatedHoursPopup,
-            )) => {
+            ) => {
                 let estimated_hours =
                     current_estimated_hours(dispatcher.borrow().store(), issue_id);
                 self.popup_components.push_back(Rc::new(RefCell::new(
@@ -519,23 +511,22 @@ impl<'a> AppComponent<'a> {
                     )),
                 )));
             }
-            Some(IssueEventProcessResult::Detail(
+            IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::OpenSpentTimeInputPopup,
-            )) => {
+            ) => {
                 self.popup_components.push_back(Rc::new(RefCell::new(
                     PopupComponent::SpentTimeInput(SpentTimeInputPopupComponent::new(
                         dispatcher.borrow().store(),
                     )),
                 )));
             }
-            Some(IssueEventProcessResult::Detail(
-                IssueDetailEventProcessResult::StartIssueUpload,
-            )) => {
+            IssueEventProcessResult::Detail(IssueDetailEventProcessResult::StartIssueUpload) => {
                 self.pending_effect = Some(AppEffect::StartIssueUpload(issue_id));
             }
-            Some(IssueEventProcessResult::Detail(
-                IssueDetailEventProcessResult::SaveRequested { issue_id, id },
-            )) => {
+            IssueEventProcessResult::Detail(IssueDetailEventProcessResult::SaveRequested {
+                issue_id,
+                id,
+            }) => {
                 let is_edited = {
                     let dispatcher = dispatcher.borrow();
                     matches!(
@@ -550,19 +541,19 @@ impl<'a> AppComponent<'a> {
                     });
                 }
             }
-            Some(IssueEventProcessResult::Detail(
+            IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::SaveLocalJournalRequested { issue_id },
-            )) => {
+            ) => {
                 // Local Journal側が保存可能な状態でだけ要求を返すため、ここでは状態を再検査しない。
                 self.pending_effect = Some(AppEffect::StartLocalJournalUpload { issue_id });
             }
-            Some(IssueEventProcessResult::Detail(
+            IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::EditJournalRequested {
                     issue_id,
                     id,
                     notes,
                 },
-            )) => {
+            ) => {
                 let context = PendingEditorContext::RemoteJournal {
                     issue_id,
                     journal_id: id,
@@ -575,9 +566,9 @@ impl<'a> AppComponent<'a> {
                     self.interaction_mode = InteractionMode::Editing;
                 }
             }
-            Some(IssueEventProcessResult::Detail(
+            IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::EditLocalJournalRequested { issue_id, notes },
-            )) => {
+            ) => {
                 let context = PendingEditorContext::LocalJournal { issue_id };
                 if can_start_editing(&context, self.interaction_mode, dispatcher.borrow().store()) {
                     self.pending_editor_context = Some(context);
@@ -587,9 +578,9 @@ impl<'a> AppComponent<'a> {
                     self.interaction_mode = InteractionMode::Editing;
                 }
             }
-            Some(IssueEventProcessResult::Detail(
+            IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::CreateLocalJournalRequested { issue_id },
-            )) => {
+            ) => {
                 if self.interaction_mode == InteractionMode::Application {
                     self.dispatcher
                         .borrow_mut()
@@ -603,9 +594,9 @@ impl<'a> AppComponent<'a> {
                 }
             }
             // 子Componentが正常なno-opとして消費済みなので、App全体ではupload状態を再判定しない。
-            Some(IssueEventProcessResult::Detail(IssueDetailEventProcessResult::Suppressed)) => {}
-            None => {}
+            IssueEventProcessResult::Detail(IssueDetailEventProcessResult::Handled) => {}
         }
+        true
     }
 
     fn select_issue(&mut self, issue_id: IssueId) {
@@ -1332,6 +1323,19 @@ mod tests {
         );
         assert_eq!(app.interaction_mode(), InteractionMode::Application);
         assert!(app.take_effect().is_none());
+    }
+
+    #[test]
+    fn process_event_returns_true_when_issue_detail_moves_focus() {
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+        );
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        assert!(app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone()));
     }
 
     #[test]
