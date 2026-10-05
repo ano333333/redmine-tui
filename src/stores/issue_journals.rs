@@ -99,6 +99,12 @@ pub enum JournalAction {
         issue_id: IssueId,
         journals: Vec<Journal>,
     },
+    /// Local JournalのPUT成功後、確認の取得に失敗した場合に下書きを削除する。
+    ///
+    /// 再試行で同じnotesを二重に投稿しないよう、下書きは復元しない。投稿したJournalは、
+    /// 次にIssueのJournalを取り込むまで一覧に現れない。
+    /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
+    CompleteLocalUploadWithoutFetch { issue_id: IssueId },
 }
 
 impl JournalAction {
@@ -115,7 +121,8 @@ impl JournalAction {
             | JournalAction::DetectRemoteUploadConflict { issue_id, .. }
             | JournalAction::CancelRemoteUploadConflict { issue_id, .. }
             | JournalAction::RemoveMissingRemoteJournal { issue_id, .. }
-            | JournalAction::CompleteLocalUploadWithFetched { issue_id, .. } => *issue_id,
+            | JournalAction::CompleteLocalUploadWithFetched { issue_id, .. }
+            | JournalAction::CompleteLocalUploadWithoutFetch { issue_id } => *issue_id,
         }
     }
 }
@@ -448,6 +455,15 @@ impl IssueJournalStates {
                 }
                 let current = std::mem::take(journals);
                 *journals = self.merge_fetched(current, fetched);
+                self.local = None;
+            }
+            JournalAction::CompleteLocalUploadWithoutFetch { issue_id } => {
+                match self.local_mut(issue_id).state {
+                    LocalJournalState::Uploading => {}
+                    LocalJournalState::LocalOnly { .. } => panic!(
+                        "cannot complete local journal upload for issue {issue_id} while it is local only"
+                    ),
+                }
                 self.local = None;
             }
         }

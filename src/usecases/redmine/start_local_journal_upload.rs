@@ -13,38 +13,29 @@ use crate::vos::{EntityIdValue, IssueId};
 pub type StartLocalJournalUploadFuture =
     Pin<Box<dyn Future<Output = Vec<Action>> + Send + 'static>>;
 
-fn local_journal_upload_failure_actions(
-    issue_id: IssueId,
-    notice_message: String,
-    message: String,
-) -> Vec<Action> {
+fn local_journal_put_failure_actions(issue_id: IssueId, message: String) -> Vec<Action> {
     vec![
         NoticeAction::Push {
             id: NoticeId::new(),
-            message: notice_message,
+            message: format!("Local Journalの保存に失敗しました: {message}"),
         }
         .into(),
         JournalAction::FailLocalUpload { issue_id, message }.into(),
     ]
 }
 
-fn local_journal_put_failure_actions(issue_id: IssueId, message: String) -> Vec<Action> {
-    local_journal_upload_failure_actions(
-        issue_id,
-        format!("Local Journalの保存に失敗しました: {message}"),
-        message,
-    )
-}
-
 /// PUT成功後の確認GETが失敗したときのActionを生成する。
 ///
-/// この時点ではサーバー側にnotesが追加済みの可能性があるため、PUT失敗時とは異なる文言にして
-/// 再試行が重複投稿になりうることを利用者へ伝える。
+/// notesは投稿済みのため、下書きを削除して再試行による二重投稿を防ぐ。
 fn local_journal_fetch_failure_actions(issue_id: IssueId, reason: String) -> Vec<Action> {
-    let message = format!(
-        "Local Journalの保存は完了した可能性がありますが、確認の取得に失敗しました: {reason}"
-    );
-    local_journal_upload_failure_actions(issue_id, message.clone(), message)
+    vec![
+        NoticeAction::Push {
+            id: NoticeId::new(),
+            message: format!("Local Journalを保存しましたが、確認の取得に失敗しました: {reason}"),
+        }
+        .into(),
+        JournalAction::CompleteLocalUploadWithoutFetch { issue_id }.into(),
+    ]
 }
 
 /// 未保存のLocal Journalのuploadを開始する。
@@ -94,6 +85,9 @@ where
     Box::pin(async move { upload_local_journal(client.as_ref(), issue_id, notes).await })
 }
 
+// FIXME: PUTと確認GETを1つのFutureで続けて実行し、結果を最後に1つのActionで反映している。
+// PUT成功をStoreへ確定してからGETを始められず、確認GETだけを再試行する経路もない。
+// リクエストごとに完了Actionを適用して次のリクエストへ進む実行方式を導入して分割する。
 async fn upload_local_journal<C>(client: &C, issue_id: IssueId, notes: String) -> Vec<Action>
 where
     C: RedmineClient + Send + Sync + 'static,
@@ -487,7 +481,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_failure_returns_failure_actions_whose_message_says_the_put_may_have_succeeded() {
+    async fn get_failure_removes_the_draft_and_tells_that_the_notes_were_saved() {
         let dispatcher = local_only_dispatcher();
         let client = Arc::new(StubClient::fails_to_get());
 
@@ -502,17 +496,13 @@ mod tests {
         };
         assert_eq!(
             message,
-            "Local Journalの保存は完了した可能性がありますが、確認の取得に失敗しました: network error: offline"
+            "Local Journalを保存しましたが、確認の取得に失敗しました: network error: offline"
         );
-        let Action::Journal(JournalAction::FailLocalUpload { issue_id, message }) = &actions[1]
-        else {
-            panic!("expected fail local upload action");
-        };
-        assert_eq!(*issue_id, ISSUE_ID);
-        assert_eq!(
-            message,
-            "Local Journalの保存は完了した可能性がありますが、確認の取得に失敗しました: network error: offline"
-        );
+        assert!(matches!(
+            &actions[1],
+            Action::Journal(JournalAction::CompleteLocalUploadWithoutFetch { issue_id })
+                if *issue_id == ISSUE_ID
+        ));
 
         for action in actions {
             dispatcher.borrow_mut().dispatch(action);
@@ -520,18 +510,12 @@ mod tests {
         dispatcher.borrow_mut().consume_action();
         dispatcher.borrow_mut().consume_action();
 
-        let dispatcher = dispatcher.borrow();
-        let entry = dispatcher.store().get_local_journal(ISSUE_ID);
-        assert_eq!(entry.journal.notes, "local notes");
-        let LocalJournalState::LocalOnly {
-            failure: Some(failure),
-        } = &entry.state
-        else {
-            panic!("expected local only state with a failure");
-        };
-        assert_eq!(
-            failure.message,
-            "Local Journalの保存は完了した可能性がありますが、確認の取得に失敗しました: network error: offline"
+        assert!(
+            dispatcher
+                .borrow()
+                .store()
+                .try_get_local_journal(ISSUE_ID)
+                .is_none()
         );
     }
 
@@ -559,7 +543,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_fetched_issue_id_mismatch_returns_failure_actions_with_both_ids() {
+    async fn a_fetched_issue_id_mismatch_is_treated_as_a_confirmation_failure() {
         let dispatcher = local_only_dispatcher();
         let client = Arc::new(StubClient::succeeds_with_fetched_issue_id(
             99,
@@ -570,14 +554,12 @@ mod tests {
         dispatcher.borrow_mut().consume_action();
 
         assert_eq!(actions.len(), 2);
-        let Action::Journal(JournalAction::FailLocalUpload { issue_id, message }) = &actions[1]
-        else {
-            panic!("expected fail local upload action");
+        let Action::Notice(NoticeAction::Push { message, .. }) = &actions[0] else {
+            panic!("expected notice action");
         };
-        assert_eq!(*issue_id, ISSUE_ID);
         assert_eq!(
             message,
-            "Local Journalの保存は完了した可能性がありますが、確認の取得に失敗しました: requested issue 1 but Redmine returned issue 99"
+            "Local Journalを保存しましたが、確認の取得に失敗しました: requested issue 1 but Redmine returned issue 99"
         );
 
         for action in actions {
@@ -587,12 +569,7 @@ mod tests {
         dispatcher.borrow_mut().consume_action();
 
         let dispatcher = dispatcher.borrow();
-        let entry = dispatcher.store().get_local_journal(ISSUE_ID);
-        assert_eq!(entry.journal.notes, "local notes");
-        assert!(matches!(
-            entry.state,
-            LocalJournalState::LocalOnly { failure: Some(_) }
-        ));
+        assert!(dispatcher.store().try_get_local_journal(ISSUE_ID).is_none());
         assert!(dispatcher.store().get_remote_journals(ISSUE_ID).is_empty());
     }
 

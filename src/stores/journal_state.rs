@@ -41,9 +41,9 @@ pub struct RemoteJournalView<'a> {
 /// Redmine由来のIDをまだ確認できていないJournalの保存状態。
 #[derive(Clone, Debug, PartialEq)]
 pub enum LocalJournalState {
-    /// 対応するRemote JournalをStoreでまだ確認できていない状態。
+    /// 投稿していない、または投稿のPUTが失敗した状態。
     ///
-    /// PUT後の再取得だけが失敗した場合もこの状態へ戻るため、未送信とは限らない。
+    /// 通信切断などでPUTの応答を受け取れずに失敗した場合は、サーバーに保存済みのことがある。
     LocalOnly {
         failure: Option<JournalUploadFailure>,
     },

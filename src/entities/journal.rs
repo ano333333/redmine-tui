@@ -15,8 +15,8 @@ pub struct Journal {
 
 /// Redmine由来のIDをまだ確認できていない、Issue単位のJournal。
 ///
-/// Issueごとに最大1件だけ保持し、[`IssueId`]で識別する。Redmineへの作成が成功しても、
-/// 作成後の再取得に失敗した場合は引き続きこの型で保持する。
+/// Issueごとに最大1件だけ保持し、[`IssueId`]で識別する。Redmineへの投稿が成功したら、
+/// 確認の取得の成否にかかわらず削除する。
 #[derive(Clone, Debug)]
 pub struct LocalJournal {
     pub issue_id: IssueId,

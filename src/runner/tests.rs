@@ -1311,9 +1311,9 @@ fn local_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     assert_eq!(*client.get_requests.lock().unwrap(), 1);
 }
 
-// Local PUT成功後の確認GET失敗を部分成功として通知し、同じ入力位置から再保存できることを検証する。
+// Local PUT成功後の確認GET失敗では保存済みと通知し、下書きを消して再投稿させないことを検証する。
 #[test]
-fn local_confirmation_get_failure_warns_about_possible_success_and_retry_succeeds() {
+fn local_confirmation_get_failure_tells_that_the_notes_were_saved_and_removes_the_draft() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let initial_dispatcher = local_journal_dispatcher();
     let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
@@ -1325,19 +1325,19 @@ fn local_confirmation_get_failure_warns_about_possible_success_and_retry_succeed
     ));
     *client.get_failures_remaining.lock().unwrap() = 1;
 
-    for expected_actions in [2, 1] {
-        press_ctrl_s(&mut app, dispatcher.clone());
-        let Some(AppEffect::StartLocalJournalUpload { issue_id }) = app.take_effect() else {
-            panic!("toast must not take focus from local journal notes");
-        };
-        start_local_journal_upload_action(dispatcher.clone(), &spawner, client.clone(), issue_id);
-        update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-        route_worker_actions(&spawner, expected_actions, dispatcher.clone(), &mut app);
-        if expected_actions == 2 {
-            assert_toast_contains(&app, dispatcher.clone(), "保存は完了した可能性がありますが");
-        }
-    }
+    press_ctrl_s(&mut app, dispatcher.clone());
+    let Some(AppEffect::StartLocalJournalUpload { issue_id }) = app.take_effect() else {
+        panic!("ctrl+s on local journal notes must start the upload");
+    };
+    start_local_journal_upload_action(dispatcher.clone(), &spawner, client.clone(), issue_id);
+    update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+    route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
 
+    assert_toast_contains(
+        &app,
+        dispatcher.clone(),
+        "保存しましたが、確認の取得に失敗しました",
+    );
     assert!(
         dispatcher
             .borrow()
@@ -1345,8 +1345,8 @@ fn local_confirmation_get_failure_warns_about_possible_success_and_retry_succeed
             .try_get_local_journal(3)
             .is_none()
     );
-    assert_eq!(client.uploaded_issue_notes.lock().unwrap().len(), 2);
-    assert_eq!(*client.get_requests.lock().unwrap(), 2);
+    assert_eq!(client.uploaded_issue_notes.lock().unwrap().len(), 1);
+    assert_eq!(*client.get_requests.lock().unwrap(), 1);
 }
 
 struct FailingClient;

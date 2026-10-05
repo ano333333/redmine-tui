@@ -1024,6 +1024,43 @@ fn complete_local_upload_with_fetched_panics_when_the_local_entry_is_local_only(
 }
 
 #[test]
+fn complete_local_upload_without_fetch_removes_the_draft_and_keeps_remote_journals() {
+    let mut store = edited_store(&[10], 10);
+    create_local(&mut store);
+    start_local(&mut store);
+
+    apply(
+        &mut store,
+        JournalAction::CompleteLocalUploadWithoutFetch {
+            issue_id: ISSUE_ID.into(),
+        },
+    );
+
+    assert!(store.try_get_local_journal(ISSUE_ID).is_none());
+    assert_eq!(journal_ids(&store), vec![10]);
+    assert_eq!(
+        state(&store, 10),
+        edited_state("remote notes 10", "edited notes")
+    );
+}
+
+#[test]
+#[should_panic(
+    expected = "cannot complete local journal upload for issue 1 while it is local only"
+)]
+fn complete_local_upload_without_fetch_panics_when_the_local_entry_is_local_only() {
+    let mut store = store_with(&[]);
+    create_local(&mut store);
+
+    apply(
+        &mut store,
+        JournalAction::CompleteLocalUploadWithoutFetch {
+            issue_id: ISSUE_ID.into(),
+        },
+    );
+}
+
+#[test]
 #[should_panic(expected = "local journal is not registered for issue 1")]
 fn get_local_journal_panics_for_an_issue_without_a_local_journal() {
     let store = store_with(&[]);
