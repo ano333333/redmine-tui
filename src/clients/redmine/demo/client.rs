@@ -541,7 +541,8 @@ mod tests {
         ));
         assert!(matches!(
             actions.as_slice(),
-            [Action::Issue(IssueAction::Sync { .. })]
+            [Action::Issue(IssueAction::UploadSucceeded { issue, .. })]
+                if issue.issue.subject == "local edit"
         ));
         assert_eq!(
             runtime

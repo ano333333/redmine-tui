@@ -264,7 +264,7 @@ fn project_page_effect_queues_start_loading_and_routes_only_completion_to_worker
 }
 
 #[tokio::test]
-async fn issue_upload_uses_server_issue_as_merge_base() {
+async fn issue_upload_puts_only_edited_properties_and_completes_with_the_confirmed_issue() {
     let mut server_issue = sample_issue_aggregate(
         1,
         "server subject",
@@ -294,12 +294,13 @@ async fn issue_upload_uses_server_issue_as_merge_base() {
 
     assert_eq!(actions.len(), 1);
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-    let [Action::Issue(IssueAction::Sync { issue })] = actions.as_slice() else {
-        panic!("expected Sync");
+    // stubは保存後も同じIssueを返すため、確認の取得値はサーバー側の値のままになる。
+    let [Action::Issue(IssueAction::UploadSucceeded { issue, .. })] = actions.as_slice() else {
+        panic!("expected UploadSucceeded");
     };
     assert_eq!(issue.issue.subject, "server subject");
-    assert_eq!(issue.updated_on, server_issue.updated_on);
-    assert_eq!(issue.issue.description, "local description");
+    assert_eq!(issue.issue.description, "original description");
+    assert_eq!(*client.get_requests.lock().unwrap(), 2);
     assert_eq!(
         *client.uploaded.lock().unwrap(),
         vec![(
@@ -389,6 +390,7 @@ async fn issue_upload_returns_conflict_action_when_property_conflicts() {
         Action::Issue(IssueAction::UploadConflictsDetected {
             server_issue,
             conflicts,
+            ..
         }),
     ] = actions.as_slice()
     else {

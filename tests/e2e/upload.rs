@@ -8,6 +8,8 @@ use crate::support::{
 // headerから下へ移るjの回数。editing.rsと同じく、幅120の端末でseedのIssueを表示した状態で数えた。
 // propertyの優先度は、最初のjでpropertyへ入った後、5行下にある。
 const J_PRESSES_TO_PRIORITY: usize = 6;
+// propertyの左列8行を越える9回目で本文の先頭に入る。
+const J_PRESSES_TO_BODY: usize = 9;
 const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 47;
 const J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON: usize = 85;
 
@@ -141,4 +143,42 @@ fn ctrl_s_posts_an_evacuated_journal_as_a_new_journal() {
                 && journal_notes(issue, 5).as_deref() == Some("rescued notes")
         },
     );
+}
+
+// Scenario: 編集中のJournalがサーバーで書き換えられていても、Issueの保存は続き、Journalの編集は送られずに残る
+#[test]
+fn issue_upload_continues_and_keeps_an_edited_journal_changed_on_the_server() {
+    // Given Issue 3のJournal 1のnotesと本文を編集した後、Redmine上でJournal 1のnotesが書き換えられている
+    let editor = FakeEditor::new("issue_upload_with_journal_conflict");
+    reseed_redmine();
+    let mut session = editor.spawn_app("local text");
+    open_issue_from_initial_popup(&mut session, 0);
+    press_j(&mut session, J_PRESSES_TO_FIRST_JOURNAL_NOTES);
+    session.press_key("e").expect("failed to press e");
+    editor.finish_editing(&mut session);
+    wait_for_text(&mut session, "(edited)");
+    for _ in 0..J_PRESSES_TO_FIRST_JOURNAL_NOTES - J_PRESSES_TO_BODY {
+        session.press_key("k").expect("failed to press k");
+    }
+    session.press_key("e").expect("failed to press e");
+    editor.finish_editing(&mut session);
+    wait_for_text(&mut session, "(edited)");
+    assert_eq!(
+        redmine_api(
+            reqwest::Method::PUT,
+            "/journals/1.json",
+            Some(serde_json::json!({ "journal": { "notes": "server text" } })),
+        ),
+        reqwest::StatusCode::NO_CONTENT
+    );
+
+    // When 本文でctrl+sを押してIssueを保存する
+    session.press_key("ctrl+s").expect("failed to press ctrl+s");
+
+    // Then 本文は保存され、Journal 1はサーバーの値のまま、画面では編集中として残る
+    wait_for_redmine(ISSUE_3_WITH_JOURNALS, "uploading the issue body", |issue| {
+        issue["issue"]["description"] == "local text"
+            && journal_notes(issue, 1).as_deref() == Some("server text")
+    });
+    wait_for_text(&mut session, "(edited)");
 }

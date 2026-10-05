@@ -941,10 +941,21 @@ flowchart TD
               <div class="diff-bullet"></div>
               <div>
                 マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。
-                取得した Journal を取り込む際に、編集中・upload 中の Journal
-                を取得値で上書きしないことがこれにあたる。取得結果から消えた編集中の Journal は元の
-                ID と編集後の notes で退避し、同じ ID が再び現れたらサーバーの notes
+                取得した Journal を取り込む際に、未送信の編集差分を取得値で置き換えないことがこれにあたる。編集中の
+                Journal は本体だけを取得値に更新して <code>diff.before</code>
+                を残し、サーバーの notes が <code>after</code> と同じなら Synced にする。notes
+                の競合はその Journal を保存するときの取得で判定する。upload 中の Journal
+                は取得値で上書きしない。取得結果から消えた編集中の Journal は元の ID と編集後の
+                notes で退避し、同じ ID が再び現れたらサーバーの notes
                 からの編集として戻す。退避した Journal は利用者が個別に新規投稿するか破棄する。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                Issue 属性の保存は、保存前の取得・PUT・確認の取得を順に行う。保存前の取得で得た
+                Journal と子一覧は、Issue 属性の競合の有無にかかわらず取り込む。確認の取得だけが失敗した場合は
+                PUT を繰り返さず、送信した差分を適用した値を新しい基準値にする。
               </div>
             </div>
             <div class="diff-item">

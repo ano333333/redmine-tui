@@ -1,5 +1,5 @@
 use super::{Action, IssueAction, IssueState, JournalAction, Store};
-use crate::entities::{IssueAggregate, Journal};
+use crate::entities::{IssueAggregate, IssueChild, Journal};
 use crate::stores::journal_state::{
     DeletedJournalEntry, DeletedJournalState, JournalUploadFailure, LocalJournalState,
     RemoteJournalState, RemoteJournalUploadConflict,
@@ -270,8 +270,9 @@ fn issue_transitions_keep_journal_edits_and_the_local_draft() {
         .into(),
     );
     store.consume_action(
-        IssueAction::Sync {
-            issue: issue_with_journals(ISSUE_ID, vec![journal_with_notes(10, "server notes")]),
+        IssueAction::UploadSucceeded {
+            issue: issue_with_journals(ISSUE_ID, vec![journal_with_notes(10, "remote notes 10")]),
+            children: vec![],
         }
         .into(),
     );
@@ -677,7 +678,7 @@ fn deleted_journal_actions_panic_for_an_unknown_original_id() {
 }
 
 #[test]
-fn fetched_journals_keeps_a_dirty_journal_present_in_the_fetched_result_in_the_fetched_position() {
+fn fetched_journals_update_the_body_of_an_edited_journal_and_keep_its_diff() {
     let mut store = edited_store(&[10, 11], 10);
 
     take_in_fetched_journals(
@@ -695,11 +696,24 @@ fn fetched_journals_keeps_a_dirty_journal_present_in_the_fetched_result_in_the_f
     );
     assert_eq!(
         store.get_remote_journal(ISSUE_ID, 10).journal.notes,
-        "remote notes 10"
+        "server edited notes"
     );
     assert_eq!(
         store.get_remote_journal(ISSUE_ID, 11).journal.notes,
         "updated notes"
+    );
+}
+
+#[test]
+fn fetched_journals_sync_an_edited_journal_whose_edit_is_already_on_the_server() {
+    let mut store = edited_store(&[10], 10);
+
+    take_in_fetched_journals(&mut store, vec![journal_with_notes(10, "edited notes")]);
+
+    assert_eq!(state(&store, 10), RemoteJournalState::Synced);
+    assert_eq!(
+        store.get_remote_journal(ISSUE_ID, 10).journal.notes,
+        "edited notes"
     );
 }
 
@@ -1224,7 +1238,7 @@ fn complete_local_upload_with_fetched_merges_the_remote_collection_and_clears_th
 }
 
 #[test]
-fn complete_local_upload_with_fetched_keeps_dirty_remote_entries_even_when_refetched() {
+fn complete_local_upload_with_fetched_keeps_the_diff_of_edited_remote_entries() {
     let mut store = edited_store(&[10], 10);
     create_local(&mut store);
     start_local(&mut store);
@@ -1241,10 +1255,7 @@ fn complete_local_upload_with_fetched_keeps_dirty_remote_entries_even_when_refet
         state(&store, 10),
         edited_state("remote notes 10", "edited notes")
     );
-    assert_eq!(
-        store.get_remote_journal(ISSUE_ID, 10).journal.notes,
-        "remote notes 10"
-    );
+    assert!(store.try_get_local_journal(ISSUE_ID).is_none());
 }
 
 #[test]
@@ -1458,4 +1469,113 @@ remote_action_panics! {
             issue_id: ISSUE_ID.into(),
             journal_id: 11.into(),
         } => "remote journal 11 is not registered for issue 1";
+}
+
+fn child(id: u16, subject: &str) -> IssueChild {
+    IssueChild {
+        id: IssueId::new(id),
+        tracker_id: 1.into(),
+        subject: subject.to_string(),
+        children: vec![],
+    }
+}
+
+/// Journal 10を編集し、Issue属性も編集して保存を始めたStore。
+fn uploading_issue_store() -> Store {
+    let mut store = edited_store(&[10, 11], 10);
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: ISSUE_ID.into(),
+            body: "local body".to_string(),
+        }
+        .into(),
+    );
+    store.consume_action(
+        IssueAction::StartUpload {
+            id: ISSUE_ID.into(),
+        }
+        .into(),
+    );
+    store
+}
+
+#[test]
+fn upload_conflicts_take_in_fetched_journals_and_children_but_keep_the_issue_base() {
+    let mut store = uploading_issue_store();
+    let mut server_issue = issue_with_journals(
+        ISSUE_ID,
+        vec![journal_with_notes(10, "server notes"), journal(12)],
+    );
+    server_issue.issue.description = "server body".to_string();
+
+    store.consume_action(
+        IssueAction::UploadConflictsDetected {
+            server_issue,
+            conflicts: vec![],
+            children: vec![child(2, "fetched child")],
+        }
+        .into(),
+    );
+
+    assert_eq!(journal_ids(&store), vec![10, 12]);
+    assert_eq!(
+        state(&store, 10),
+        edited_state("remote notes 10", "edited notes")
+    );
+    assert_eq!(
+        store.get_issue_children(ISSUE_ID),
+        &[child(2, "fetched child")]
+    );
+    let (issue, issue_state) = store.get_issue(ISSUE_ID);
+    assert_eq!(issue_state, IssueState::Uploading);
+    assert_eq!(issue.description(), "local body");
+}
+
+#[test]
+fn upload_succeeded_replaces_the_issue_base_and_children_and_keeps_journal_edits() {
+    let mut store = uploading_issue_store();
+    let mut confirmed = issue_with_journals(ISSUE_ID, vec![journal(10), journal(11), journal(12)]);
+    confirmed.issue.description = "local body".to_string();
+
+    store.consume_action(
+        IssueAction::UploadSucceeded {
+            issue: confirmed,
+            children: vec![child(2, "confirmed child")],
+        }
+        .into(),
+    );
+
+    let (issue, issue_state) = store.get_issue(ISSUE_ID);
+    assert_eq!(issue_state, IssueState::Synced);
+    assert_eq!(issue.description(), "local body");
+    assert_eq!(journal_ids(&store), vec![10, 11, 12]);
+    assert_eq!(
+        state(&store, 10),
+        edited_state("remote notes 10", "edited notes")
+    );
+    assert_eq!(
+        store.get_issue_children(ISSUE_ID),
+        &[child(2, "confirmed child")]
+    );
+}
+
+#[test]
+#[should_panic(expected = "cannot complete issue upload while issue 1 is Edited")]
+fn upload_succeeded_panics_unless_the_issue_is_uploading() {
+    let mut store = edited_store(&[10], 10);
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: ISSUE_ID.into(),
+            body: "local body".to_string(),
+        }
+        .into(),
+    );
+
+    store.consume_action(
+        IssueAction::UploadSucceeded {
+            issue: issue_with_journals(ISSUE_ID, vec![journal(10)]),
+            children: vec![],
+        }
+        .into(),
+    );
 }

@@ -451,6 +451,7 @@ fn issue_upload_conflicts_are_retained_while_uploading() {
         IssueAction::UploadConflictsDetected {
             server_issue: server_issue.clone(),
             conflicts: conflicts.clone(),
+            children: vec![],
         }
         .into(),
     );
@@ -689,6 +690,7 @@ fn fail_issue_upload_returns_issue_to_edited_and_retains_diffs_and_message() {
         IssueAction::UploadConflictsDetected {
             server_issue: sample_issue_aggregate(1, "server issue", 1.into(), None, None, None, 0),
             conflicts: store.get_issue_property_diffs(1).to_vec(),
+            children: vec![],
         }
         .into(),
     );

@@ -64,6 +64,7 @@ mod tests {
         dispatcher.dispatch(IssueAction::UploadConflictsDetected {
             server_issue,
             conflicts,
+            children: vec![],
         });
         dispatcher.consume_action();
 

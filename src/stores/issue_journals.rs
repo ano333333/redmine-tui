@@ -92,8 +92,8 @@ pub enum JournalAction {
     /// Local Journalのupload成功後、取得したJournal一覧の同期とLocal Journalの削除を一度に行う。
     ///
     /// 作成されたJournalはRemote側にしか現れないため、取得結果を取り込みつつ、同じAction内で
-    /// Local Journalを削除して二重表示を避ける。編集中・upload中のRemote Journalは取得値で
-    /// 上書きせず、取得結果から消えていても削除しない。
+    /// Local Journalを削除して二重表示を避ける。編集中のRemote Journalは差分を残したまま
+    /// 本体だけを取得値にし、取得結果から消えていれば退避する。
     /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
     CompleteLocalUploadWithFetched {
         issue_id: IssueId,
@@ -286,8 +286,29 @@ impl IssueJournalStates {
                 continue;
             }
             match current_by_id.remove(&journal.id) {
-                // Edited/Uploadingの未保存の作業内容は、取得値で上書きしない意図的なmerge no-opとする。
-                Some(kept) if !self.is_synced(kept.id) => merged.push(kept),
+                // upload中の作業内容は、取得値で上書きしない意図的なmerge no-opとする。
+                Some(kept)
+                    if matches!(
+                        self.remote.get(&kept.id),
+                        Some(RemoteJournalState::Uploading { .. })
+                    ) =>
+                {
+                    merged.push(kept)
+                }
+                Some(_)
+                    if matches!(
+                        self.remote.get(&journal.id),
+                        Some(RemoteJournalState::Edited { .. })
+                    ) =>
+                {
+                    // 本体は新しい取得値にするが、保存時の競合判定の基準となるdiff.beforeは置き換えない。
+                    let state = self.remote.get_mut(&journal.id).expect("checked above");
+                    if matches!(state, RemoteJournalState::Edited { diff, .. } if diff.after == journal.notes)
+                    {
+                        *state = RemoteJournalState::Synced;
+                    }
+                    merged.push(journal);
+                }
                 _ => {
                     self.remote
                         .entry(journal.id)
@@ -305,13 +326,6 @@ impl IssueJournalStates {
             self.remote.remove(removed_synced);
         }
         merged
-    }
-
-    fn is_synced(&self, journal_id: JournalId) -> bool {
-        matches!(
-            self.remote.get(&journal_id),
-            Some(RemoteJournalState::Synced)
-        )
     }
 
     /// JournalActionを適用する。`journals`は対象Issueが所有するJournal本体の一覧である。

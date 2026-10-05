@@ -88,9 +88,22 @@ pub enum IssueAction {
         id: IssueId,
         message: String,
     },
+    /// 保存前の取得でIssue属性の競合を検出した結果を保持する。
+    ///
+    /// Issue属性の基準値は競合の解決後に取得し直すまで更新しない。取得したJournalと子一覧は
+    /// この時点で取り込む。Uploading以外の状態の場合はpanicする。
     UploadConflictsDetected {
         server_issue: IssueAggregate,
         conflicts: Vec<IssuePropertyDiff>,
+        children: Vec<IssueChild>,
+    },
+    /// Issue属性の保存が成功した後、取得したIssueを新しい基準値としてSyncedへ戻す。
+    ///
+    /// Journalの編集・下書き・退避データは取得したJournalを取り込みながら引き継ぐ。
+    /// Uploading以外の状態の場合はpanicする。
+    UploadSucceeded {
+        issue: IssueAggregate,
+        children: Vec<IssueChild>,
     },
     UpdateDescription {
         id: IssueId,
@@ -321,20 +334,64 @@ impl IssueStore {
             IssueAction::UploadConflictsDetected {
                 server_issue,
                 conflicts,
+                children,
             } => {
                 let id = server_issue.issue.id;
-                match self.entries.get_mut(&id) {
-                    Some(IssueEntry::Uploading { conflict, .. }) => {
-                        *conflict = Some(IssueUploadConflict {
-                            server_issue,
-                            conflicts,
-                        });
-                    }
-                    entry => panic!(
+                if !matches!(self.entries.get(&id), Some(IssueEntry::Uploading { .. })) {
+                    panic!(
                         "cannot retain issue upload conflicts while issue {id} is {}",
-                        Self::entry_state_name(entry.as_deref())
-                    ),
+                        Self::entry_state_name(self.entries.get(&id))
+                    );
                 }
+                self.assert_fetched_journals_are_valid(id, &server_issue.journals);
+                let Some(IssueEntry::Uploading {
+                    issue,
+                    conflict,
+                    journal_states,
+                    ..
+                }) = self.entries.get_mut(&id)
+                else {
+                    unreachable!("state check guarantees Uploading");
+                };
+                let current = std::mem::take(&mut issue.journals);
+                issue.journals =
+                    journal_states.merge_fetched(current, server_issue.journals.clone());
+                *conflict = Some(IssueUploadConflict {
+                    server_issue,
+                    conflicts,
+                });
+                self.children.insert(id, children);
+            }
+            IssueAction::UploadSucceeded {
+                mut issue,
+                children,
+            } => {
+                let id = issue.issue.id;
+                if !matches!(self.entries.get(&id), Some(IssueEntry::Uploading { .. })) {
+                    panic!(
+                        "cannot complete issue upload while issue {id} is {}",
+                        Self::entry_state_name(self.entries.get(&id))
+                    );
+                }
+                self.assert_fetched_journals_are_valid(id, &issue.journals);
+                let Some(IssueEntry::Uploading {
+                    issue: current,
+                    mut journal_states,
+                    ..
+                }) = self.entries.remove(&id)
+                else {
+                    unreachable!("state check guarantees Uploading");
+                };
+                let fetched = std::mem::take(&mut issue.journals);
+                issue.journals = journal_states.merge_fetched(current.journals, fetched);
+                self.entries.insert(
+                    id,
+                    IssueEntry::Synced {
+                        issue,
+                        journal_states,
+                    },
+                );
+                self.children.insert(id, children);
             }
             IssueAction::UpdateDescription { id, body } => self.update_issue(id, |issue| {
                 let before = issue.description().to_string();

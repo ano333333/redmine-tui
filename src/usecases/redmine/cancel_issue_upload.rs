@@ -33,6 +33,7 @@ mod tests {
         dispatcher.dispatch(IssueAction::UploadConflictsDetected {
             server_issue: sample_issue_aggregate(1, "server issue", 1.into(), None, None, None, 0),
             conflicts: dispatcher.store().get_issue_property_diffs(id).to_vec(),
+            children: vec![],
         });
         dispatcher.consume_action();
 
