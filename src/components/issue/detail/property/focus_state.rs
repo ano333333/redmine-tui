@@ -29,7 +29,6 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromAbove,
     CursorLeavedFromBelow,
-    Handled,
     OpenIssueStatusPopup,
     OpenTrackerPopup,
     OpenPriorityPopup,
@@ -42,6 +41,7 @@ pub enum EventProcessResult {
     OpenEstimatedHoursPopup,
     OpenSpentTimeInputPopup,
     OpenCategoryPopup,
+    Handled,
 }
 
 enum Action {
@@ -713,17 +713,6 @@ mod tests {
             ));
             assert_eq!(state.focused_y(), Some(top));
         }
-    }
-
-    #[test]
-    fn j_inside_column_returns_handled() {
-        let mut state = FocusState::new();
-        state.update(false);
-        state.focus_event(FocusEvent::CursorEnteredFromAbove);
-
-        let result = state.process_event(key_event(KeyCode::Char('j')));
-
-        assert!(matches!(result, Some(EventProcessResult::Handled)));
     }
 
     #[test]

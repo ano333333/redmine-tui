@@ -593,7 +593,7 @@ impl<'a> AppComponent<'a> {
                     self.interaction_mode = InteractionMode::Editing;
                 }
             }
-            // 子Componentが正常なno-opとして消費済みなので、App全体ではupload状態を再判定しない。
+            // 子Componentがキーを解釈済みで、App側に要求はない。
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::Handled) => {}
         }
         true

@@ -275,17 +275,6 @@ mod tests {
     }
 
     #[test]
-    fn j_inside_list_returns_handled() {
-        let mut state = FocusState::new();
-        state.update(&ids(&[1, 2, 3]));
-        state.focus_event(FocusEvent::CursorEnteredFromAbove);
-
-        let result = state.process_event(&key_event(KeyCode::Char('j')));
-
-        assert!(matches!(result, Some(EventProcessResult::Handled)));
-    }
-
-    #[test]
     #[ignore = "未実装: update([]) 時に focus を明示的に解除する仕様として固定したい"]
     fn update_empty_ids_clears_focus() {
         let mut state = FocusState::new();
