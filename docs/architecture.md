@@ -226,6 +226,7 @@ FocusState の責務:
 - cursor position を返す。
 - 上下左右移動、境界到達、編集開始などを `EventProcessResult` として返す。
 - 戻り値`Option<EventProcessResult>`は、`None`をイベントを解釈しなかった（未処理）、`Some(Handled)`をイベントを使ったが親への要求はない、それ以外を親への要求とする。端で動かなかった場合も、解釈したキーなら`Some(Handled)`を返す。Componentも同じ意味で返す。
+- 親は子の`Handled`をそのまま`Handled`で返す。子の`CursorLeavedFrom*`を受けて隣の子へフォーカスを移したら`Handled`を返す。移せない場合、中間の親は`CursorLeavedFrom*`を外へ返し、最上位のComponent（`IssueDetailComponent`）は`Handled`を返す。`AppComponent`はどのComponentも使わなかった`q`だけでアプリを終了する。
 
 FocusState に入れない責務:
 

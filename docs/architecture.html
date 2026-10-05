@@ -1121,6 +1121,18 @@ flowchart TD
                   をイベントを使ったが親への要求はない、それ以外を親への要求とする。端で動かなかった場合も、解釈したキーなら
                   <code>Some(Handled)</code> を返す。Component も同じ意味で返す
                 </li>
+                <li>
+                  親は子の <code>Handled</code> をそのまま
+                  <code>Handled</code> で返す。子の
+                  <code>CursorLeavedFrom*</code>
+                  を受けて隣の子へフォーカスを移したら
+                  <code>Handled</code> を返す。移せない場合、中間の親は
+                  <code>CursorLeavedFrom*</code>
+                  を外へ返し、最上位の Component(<code>IssueDetailComponent</code>)は
+                  <code>Handled</code> を返す。<code>AppComponent</code>
+                  はどの Component も使わなかった <code>q</code>
+                  だけでアプリを終了する
+                </li>
               </ul>
             </div>
             <div class="resp-card denied">
