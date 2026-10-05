@@ -701,6 +701,23 @@ fn start_edited_journal_upload(dispatcher: &mut Dispatcher, issue_id: u16, notes
     dispatcher.consume_action();
 }
 
+/// `start_edited_journal_upload`の編集を保存した後に取得するIssue。
+fn saved_journal_issue(issue_id: u16) -> IssueAggregate {
+    let mut issue = sample_issue_aggregate(
+        issue_id,
+        "subject",
+        IssueStatusId::new(1),
+        None,
+        None,
+        None,
+        0,
+    );
+    let mut journal = sample_journal(issue_id);
+    journal.notes = "edited notes".to_string();
+    issue.journals = vec![journal];
+    issue
+}
+
 #[test]
 fn move_worker_action_dispatches_worker_actions_without_extra_notice() {
     let mut dispatcher = Dispatcher::new();
@@ -752,9 +769,9 @@ fn move_worker_action_dispatches_no_notice_for_complete_remote_upload() {
     let dispatcher = Rc::new(RefCell::new(dispatcher));
     let spawner =
         CompletionSpawner::new(vec![Action::Journal(JournalAction::CompleteRemoteUpload {
-            issue_id: IssueId::new(3),
             journal_id: JournalId::new(1),
-            notes: "edited notes".to_string(),
+            issue: saved_journal_issue(3),
+            children: vec![],
         })]);
 
     let panic_message = move_worker_action(&spawner, dispatcher.clone());
@@ -815,8 +832,8 @@ fn start_remote_journal_upload_action_routes_the_upload_completion_to_worker_cha
     let completion = recv_actions(&spawner, 1).remove(0);
     assert!(matches!(
         completion,
-        Action::Journal(JournalAction::CompleteRemoteUpload { issue_id, journal_id, .. })
-            if issue_id == IssueId::new(3) && journal_id == JournalId::new(1)
+        Action::Journal(JournalAction::CompleteRemoteUpload { ref issue, journal_id, .. })
+            if issue.issue.id == IssueId::new(3) && journal_id == JournalId::new(1)
     ));
     assert_eq!(
         *client.uploaded_journal_notes.lock().unwrap(),
@@ -1218,7 +1235,7 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
             .state,
         crate::stores::RemoteJournalState::Synced
     ));
-    assert_eq!(*client.get_requests.lock().unwrap(), 2);
+    assert_eq!(*client.get_requests.lock().unwrap(), 3);
     assert_eq!(client.uploaded_journal_notes.lock().unwrap().len(), 1);
 }
 
@@ -1263,7 +1280,7 @@ fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
         }
     }
 
-    assert_eq!(*client.get_requests.lock().unwrap(), 2);
+    assert_eq!(*client.get_requests.lock().unwrap(), 3);
     assert_eq!(client.uploaded_journal_notes.lock().unwrap().len(), 2);
     assert!(matches!(
         dispatcher.borrow().store().get_remote_journal(3, 1).state,

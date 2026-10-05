@@ -77,13 +77,25 @@ fn start_remote(store: &mut Store, journal_id: u16) {
     );
 }
 
+/// 現在のJournalのうち対象のnotesだけが`server_notes`に変わった取得結果で、競合を検出する。
 fn detect_conflict(store: &mut Store, journal_id: u16, server_notes: &str) {
+    let journals = store
+        .get_remote_journals(ISSUE_ID)
+        .iter()
+        .map(|entry| {
+            if entry.journal.id.get() == journal_id {
+                journal_with_notes(journal_id, server_notes)
+            } else {
+                entry.journal.clone()
+            }
+        })
+        .collect();
     apply(
         store,
         JournalAction::DetectRemoteUploadConflict {
-            issue_id: ISSUE_ID.into(),
             journal_id: journal_id.into(),
-            server_notes: server_notes.to_string(),
+            issue: issue_with_journals(ISSUE_ID, journals),
+            children: vec![],
         },
     );
 }
@@ -1180,17 +1192,58 @@ fn cancel_remote_upload_conflict_panics_when_uploading_without_a_conflict() {
     );
 }
 
+/// Journal 10の保存中に、Journal 11とIssue属性も編集したStore。
+fn uploading_store_with_other_edits() -> Store {
+    let mut store = uploading_store(&[10, 11], 10);
+    edit_remote(&mut store, 11, "other edit");
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: ISSUE_ID.into(),
+            body: "local body".to_string(),
+        }
+        .into(),
+    );
+    store
+}
+
+/// Issue本体の説明と件名が変わった取得結果。
+fn server_issue(journals: Vec<Journal>) -> IssueAggregate {
+    let mut issue = issue_with_journals(ISSUE_ID, journals);
+    issue.issue.subject = "server subject".to_string();
+    issue.issue.description = "server body".to_string();
+    issue
+}
+
+/// 取得結果の取り込みで、未編集のIssue属性と子一覧は取得値になり、編集中の値は残ることを確かめる。
+fn assert_issue_taken_in_with_local_edits(store: &Store) {
+    let (issue, issue_state) = store.get_issue(ISSUE_ID);
+    assert_eq!(issue_state, IssueState::Edited);
+    assert_eq!(issue.subject(), "server subject");
+    assert_eq!(issue.description(), "local body");
+    assert_eq!(
+        store.get_issue_children(ISSUE_ID),
+        &[child(2, "fetched child")]
+    );
+}
+
 #[test]
-fn complete_remote_upload_moves_an_uploading_journal_to_synced_with_the_notes_and_keeps_updated_on()
-{
-    let mut store = uploading_store(&[10], 10);
+fn complete_remote_upload_syncs_the_target_with_the_fetched_issue_and_keeps_other_edits() {
+    let mut store = uploading_store_with_other_edits();
+    let saved = Journal {
+        updated_on: Some(local_datetime("2026-09-11T00:00:00+09:00")),
+        ..journal_with_notes(10, "edited notes")
+    };
 
     apply(
         &mut store,
         JournalAction::CompleteRemoteUpload {
-            issue_id: ISSUE_ID.into(),
             journal_id: 10.into(),
-            notes: "edited notes".to_string(),
+            issue: server_issue(vec![
+                saved,
+                journal_with_notes(11, "server notes 11"),
+                journal(12),
+            ]),
+            children: vec![child(2, "fetched child")],
         },
     );
 
@@ -1199,23 +1252,114 @@ fn complete_remote_upload_moves_an_uploading_journal_to_synced_with_the_notes_an
     assert_eq!(completed.journal.notes, "edited notes");
     assert_eq!(
         completed.journal.updated_on,
-        Some(local_datetime("2026-09-10T00:00:00+09:00"))
+        Some(local_datetime("2026-09-11T00:00:00+09:00"))
     );
+    assert_eq!(journal_ids(&store), vec![10, 11, 12]);
+    assert_eq!(
+        state(&store, 11),
+        edited_state("remote notes 11", "other edit")
+    );
+    assert_issue_taken_in_with_local_edits(&store);
 }
 
 #[test]
-fn remove_missing_remote_journal_removes_an_uploading_entry_and_keeps_the_rest() {
+fn complete_remote_upload_removes_the_target_missing_from_the_fetched_issue() {
     let mut store = uploading_store(&[10, 11], 10);
 
     apply(
         &mut store,
-        JournalAction::RemoveMissingRemoteJournal {
-            issue_id: ISSUE_ID.into(),
+        JournalAction::CompleteRemoteUpload {
             journal_id: 10.into(),
+            issue: issue_with_journals(ISSUE_ID, vec![journal(11)]),
+            children: vec![],
         },
     );
 
     assert_eq!(journal_ids(&store), vec![11]);
+    assert!(deleted_journals(&store).is_empty());
+}
+
+#[test]
+fn detect_remote_upload_conflict_keeps_the_target_body_and_takes_in_the_rest() {
+    let mut store = uploading_store_with_other_edits();
+
+    apply(
+        &mut store,
+        JournalAction::DetectRemoteUploadConflict {
+            journal_id: 10.into(),
+            issue: server_issue(vec![
+                journal_with_notes(10, "server notes"),
+                journal_with_notes(11, "server notes 11"),
+            ]),
+            children: vec![child(2, "fetched child")],
+        },
+    );
+
+    let conflicted = store.get_remote_journal(ISSUE_ID, 10);
+    assert_eq!(conflicted.journal.notes, "remote notes 10");
+    assert_eq!(
+        *conflicted.state,
+        RemoteJournalState::Uploading {
+            diff: JournalNotesDiff {
+                before: "remote notes 10".to_string(),
+                after: "edited notes".to_string(),
+            },
+            conflict: Some(RemoteJournalUploadConflict {
+                server_notes: "server notes".to_string(),
+            }),
+        }
+    );
+    assert_eq!(
+        store.get_remote_journal(ISSUE_ID, 11).journal.notes,
+        "server notes 11"
+    );
+    assert_eq!(
+        state(&store, 11),
+        edited_state("remote notes 11", "other edit")
+    );
+    assert_issue_taken_in_with_local_edits(&store);
+}
+
+#[test]
+fn evacuate_missing_remote_upload_moves_the_notes_to_deleted_and_takes_in_the_rest() {
+    let mut store = uploading_store_with_other_edits();
+
+    apply(
+        &mut store,
+        JournalAction::EvacuateMissingRemoteUpload {
+            journal_id: 10.into(),
+            notes: "resolved notes".to_string(),
+            issue: server_issue(vec![journal(11)]),
+            children: vec![child(2, "fetched child")],
+        },
+    );
+
+    assert_eq!(journal_ids(&store), vec![11]);
+    assert_eq!(
+        deleted_journals(&store),
+        vec![deleted(10, "resolved notes")]
+    );
+    assert!(!store.has_uploading_journal(ISSUE_ID));
+    assert_eq!(
+        state(&store, 11),
+        edited_state("remote notes 11", "other edit")
+    );
+    assert_issue_taken_in_with_local_edits(&store);
+}
+
+#[test]
+#[should_panic(expected = "cannot take in a journal upload result while issue 1 is Uploading")]
+fn remote_upload_results_panic_while_the_issue_is_uploading() {
+    let mut store = uploading_issue_store();
+
+    apply(
+        &mut store,
+        JournalAction::CompleteRemoteUpload {
+            journal_id: 10.into(),
+            issue: issue_with_journals(ISSUE_ID, vec![journal(10)]),
+            children: vec![],
+        },
+    );
 }
 
 #[test]
@@ -1394,24 +1538,31 @@ remote_action_panics! {
     detect_remote_upload_conflict_panics_when_the_journal_is_synced:
         store_with(&[10]),
         JournalAction::DetectRemoteUploadConflict {
-            issue_id: ISSUE_ID.into(),
             journal_id: 10.into(),
-            server_notes: "server".to_string(),
+            issue: issue_with_journals(ISSUE_ID, vec![journal(10)]),
+            children: vec![],
         } => "cannot detect remote journal 10 upload conflict while it is synced";
     detect_remote_upload_conflict_panics_when_the_journal_is_edited:
         edited_store(&[10], 10),
         JournalAction::DetectRemoteUploadConflict {
-            issue_id: ISSUE_ID.into(),
             journal_id: 10.into(),
-            server_notes: "server".to_string(),
+            issue: issue_with_journals(ISSUE_ID, vec![journal(10)]),
+            children: vec![],
         } => "cannot detect remote journal 10 upload conflict while it is edited";
     detect_remote_upload_conflict_panics_when_the_journal_is_not_registered:
         store_with(&[10]),
         JournalAction::DetectRemoteUploadConflict {
-            issue_id: ISSUE_ID.into(),
             journal_id: 11.into(),
-            server_notes: "server".to_string(),
+            issue: issue_with_journals(ISSUE_ID, vec![journal(10), journal(11)]),
+            children: vec![],
         } => "remote journal 11 is not registered for issue 1";
+    detect_remote_upload_conflict_panics_when_the_fetched_issue_lacks_the_journal:
+        uploading_store(&[10], 10),
+        JournalAction::DetectRemoteUploadConflict {
+            journal_id: 10.into(),
+            issue: issue_with_journals(ISSUE_ID, vec![]),
+            children: vec![],
+        } => "fetched issue 1 does not contain journal 10";
     cancel_remote_upload_conflict_panics_when_the_journal_is_synced:
         store_with(&[10]),
         JournalAction::CancelRemoteUploadConflict {
@@ -1433,42 +1584,48 @@ remote_action_panics! {
     complete_remote_upload_panics_when_the_journal_is_synced:
         store_with(&[10]),
         JournalAction::CompleteRemoteUpload {
-            issue_id: ISSUE_ID.into(),
             journal_id: 10.into(),
-            notes: "notes".to_string(),
+            issue: issue_with_journals(ISSUE_ID, vec![journal(10)]),
+            children: vec![],
         } => "cannot complete remote journal 10 upload while it is synced";
     complete_remote_upload_panics_when_the_journal_is_edited:
         edited_store(&[10], 10),
         JournalAction::CompleteRemoteUpload {
-            issue_id: ISSUE_ID.into(),
             journal_id: 10.into(),
-            notes: "notes".to_string(),
+            issue: issue_with_journals(ISSUE_ID, vec![journal(10)]),
+            children: vec![],
         } => "cannot complete remote journal 10 upload while it is edited";
     complete_remote_upload_panics_when_the_journal_is_not_registered:
         store_with(&[10]),
         JournalAction::CompleteRemoteUpload {
-            issue_id: ISSUE_ID.into(),
             journal_id: 11.into(),
+            issue: issue_with_journals(ISSUE_ID, vec![journal(10)]),
+            children: vec![],
+        } => "remote journal 11 is not registered for issue 1";
+    evacuate_missing_remote_upload_panics_when_the_journal_is_synced:
+        store_with(&[10]),
+        JournalAction::EvacuateMissingRemoteUpload {
+            journal_id: 10.into(),
             notes: "notes".to_string(),
-        } => "remote journal 11 is not registered for issue 1";
-    remove_missing_remote_journal_panics_when_the_journal_is_synced:
-        store_with(&[10]),
-        JournalAction::RemoveMissingRemoteJournal {
-            issue_id: ISSUE_ID.into(),
-            journal_id: 10.into(),
-        } => "cannot remove remote journal 10 while it is synced";
-    remove_missing_remote_journal_panics_when_the_journal_is_edited:
+            issue: issue_with_journals(ISSUE_ID, vec![]),
+            children: vec![],
+        } => "cannot evacuate remote journal 10 upload while it is synced";
+    evacuate_missing_remote_upload_panics_when_the_journal_is_edited:
         edited_store(&[10], 10),
-        JournalAction::RemoveMissingRemoteJournal {
-            issue_id: ISSUE_ID.into(),
+        JournalAction::EvacuateMissingRemoteUpload {
             journal_id: 10.into(),
-        } => "cannot remove remote journal 10 while it is edited";
-    remove_missing_remote_journal_panics_when_the_journal_is_not_registered:
-        store_with(&[10]),
-        JournalAction::RemoveMissingRemoteJournal {
-            issue_id: ISSUE_ID.into(),
-            journal_id: 11.into(),
-        } => "remote journal 11 is not registered for issue 1";
+            notes: "notes".to_string(),
+            issue: issue_with_journals(ISSUE_ID, vec![]),
+            children: vec![],
+        } => "cannot evacuate remote journal 10 upload while it is edited";
+    evacuate_missing_remote_upload_panics_when_the_fetched_issue_has_the_journal:
+        uploading_store(&[10], 10),
+        JournalAction::EvacuateMissingRemoteUpload {
+            journal_id: 10.into(),
+            notes: "notes".to_string(),
+            issue: issue_with_journals(ISSUE_ID, vec![journal(10)]),
+            children: vec![],
+        } => "fetched issue 1 still contains journal 10";
 }
 
 fn child(id: u16, subject: &str) -> IssueChild {

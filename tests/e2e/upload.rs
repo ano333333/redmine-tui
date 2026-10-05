@@ -145,6 +145,40 @@ fn ctrl_s_posts_an_evacuated_journal_as_a_new_journal() {
     );
 }
 
+// Scenario: 保存しようとしたJournalがサーバーで削除されていると、送信せずに退避される
+#[test]
+fn saving_a_journal_deleted_on_the_server_evacuates_it_without_posting() {
+    // Given Issue 3のJournal 3のnotesを編集した後、Redmine上でJournal 3が削除されている
+    let editor = FakeEditor::new("evacuate_saved_journal");
+    reseed_redmine();
+    let mut session = editor.spawn_app("rescued notes");
+    open_issue_from_initial_popup(&mut session, 0);
+    press_j(&mut session, J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON);
+    press_keys(&mut session, &["k", "e"]);
+    editor.finish_editing(&mut session);
+    wait_for_text(&mut session, "rescued notes");
+    assert_eq!(
+        redmine_api(
+            reqwest::Method::PUT,
+            "/journals/3.json",
+            Some(serde_json::json!({ "journal": { "notes": "" } })),
+        ),
+        reqwest::StatusCode::NO_CONTENT
+    );
+
+    // When そのJournalでctrl+sを押す
+    // 見出しの状態表示を画面に入れるため、1つ上のJournalへ移ってから戻る。
+    press_keys(&mut session, &["k", "j", "ctrl+s"]);
+
+    // Then 編集したnotesが退避の項目として表示され、RedmineにはseedのJournal 1と2だけが残る
+    wait_for_text(&mut session, "(deleted #3)");
+    wait_for_redmine(
+        ISSUE_3_WITH_JOURNALS,
+        "keeping the deleted journal unposted",
+        |issue| issue["issue"]["journals"].as_array().map(Vec::len) == Some(2),
+    );
+}
+
 // Scenario: 編集中のJournalがサーバーで書き換えられていても、Issueの保存は続き、Journalの編集は送られずに残る
 #[test]
 fn issue_upload_continues_and_keeps_an_edited_journal_changed_on_the_server() {

@@ -961,6 +961,17 @@ flowchart TD
             <div class="diff-item">
               <div class="diff-bullet"></div>
               <div>
+                Remote Journal の保存も、保存前の取得・PUT・確認の取得を順に行う。各取得の結果は
+                Issue 本体・他の Journal・子一覧ごと取り込み、Issue 属性と他の Journal
+                の編集差分は残す。保存前の取得から対象が消えていれば、旧 ID へ PUT
+                せずに退避する。競合した場合は対象の本体を取得値で上書きせず、取得した notes
+                を競合情報として保持する。確認の取得だけが失敗した場合は PUT
+                を繰り返さず、保存前の取得値の対象 notes を送信した値にして完了する。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
                 冪等 no-op: 同じ <code>NoticeId</code> の再追加など、Action
                 自体が冪等であることを契約として持つ正常な no-op。
                 stale completion とマージ戦略は同じ no-op の見た目になりやすいため独立して扱う。

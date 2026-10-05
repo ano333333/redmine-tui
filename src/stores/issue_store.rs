@@ -547,6 +547,53 @@ impl IssueStore {
 
     pub(super) fn consume_journal_action(&mut self, action: JournalAction) {
         let issue_id = action.issue_id();
+        let action = match action {
+            JournalAction::CompleteRemoteUpload {
+                journal_id,
+                issue,
+                children,
+            } => {
+                return self.take_in_journal_upload_fetch(issue, children, |journal_states| {
+                    journal_states.complete_remote_upload(issue_id, journal_id)
+                });
+            }
+            JournalAction::DetectRemoteUploadConflict {
+                journal_id,
+                issue,
+                children,
+            } => {
+                let server_notes = issue
+                    .journals
+                    .iter()
+                    .find(|journal| journal.id == journal_id)
+                    .unwrap_or_else(|| {
+                        panic!("fetched issue {issue_id} does not contain journal {journal_id}")
+                    })
+                    .notes
+                    .clone();
+                return self.take_in_journal_upload_fetch(issue, children, |journal_states| {
+                    journal_states.detect_remote_upload_conflict(issue_id, journal_id, server_notes)
+                });
+            }
+            JournalAction::EvacuateMissingRemoteUpload {
+                journal_id,
+                notes,
+                issue,
+                children,
+            } => {
+                if issue
+                    .journals
+                    .iter()
+                    .any(|journal| journal.id == journal_id)
+                {
+                    panic!("fetched issue {issue_id} still contains journal {journal_id}");
+                }
+                return self.take_in_journal_upload_fetch(issue, children, |journal_states| {
+                    journal_states.return_missing_remote_upload(issue_id, journal_id, notes)
+                });
+            }
+            action => action,
+        };
         match &action {
             JournalAction::CompleteLocalUploadWithFetched { journals, .. }
             | JournalAction::CompleteDeletedUploadWithFetched { journals, .. } => {
@@ -580,6 +627,39 @@ impl IssueStore {
             panic!("cannot update journals of issue {issue_id} while it is {state_name}");
         };
         journal_states.consume_action(&mut issue.journals, action);
+    }
+
+    /// Journal保存の取得結果を取り込む。`transition`で対象Journalの状態を遷移させてから、
+    /// Issue本体・Journal・子一覧を取得値にする。
+    ///
+    /// Issue属性の差分は基準値と独立に保持するため、Editedのまま差分を残す。
+    fn take_in_journal_upload_fetch(
+        &mut self,
+        mut fetched: IssueAggregate,
+        children: Vec<IssueChild>,
+        transition: impl FnOnce(&mut IssueJournalStates),
+    ) {
+        let id = fetched.issue.id;
+        self.assert_fetched_journals_are_valid(id, &fetched.journals);
+        let state_name = Self::entry_state_name(self.entries.get(&id));
+        let (issue, journal_states) = match self.entries.get_mut(&id) {
+            Some(IssueEntry::Synced {
+                issue,
+                journal_states,
+            })
+            | Some(IssueEntry::Edited {
+                issue,
+                journal_states,
+                ..
+            }) => (issue, journal_states),
+            _ => panic!("cannot take in a journal upload result while issue {id} is {state_name}"),
+        };
+        transition(journal_states);
+        let current = std::mem::take(&mut issue.journals);
+        fetched.journals =
+            journal_states.merge_fetched(current, std::mem::take(&mut fetched.journals));
+        *issue = fetched;
+        self.children.insert(id, children);
     }
 
     // Storeへ到達した取得結果のIDと所有関係の不整合は、取得失敗ではなくAction生成側の制御破綻として拒否する。

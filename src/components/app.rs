@@ -1733,10 +1733,13 @@ mod tests {
                 journal_id: JournalId::new(1),
             }));
             dispatcher_ref.consume_action();
+            let mut server_issue = crate::test_support::sample_parent_issue();
+            server_issue.journals = crate::test_support::sample_parent_issue_journals();
+            server_issue.journals[0].notes = "server notes".to_string();
             dispatcher_ref.dispatch(Action::Journal(JournalAction::DetectRemoteUploadConflict {
-                issue_id: IssueId::new(3),
                 journal_id: JournalId::new(1),
-                server_notes: "server notes".to_string(),
+                issue: server_issue,
+                children: crate::test_support::sample_parent_issue_children(),
             }));
             dispatcher_ref.consume_action();
         }
