@@ -17,6 +17,7 @@
 - `src/clients/`
   - 外部プロセスとの通信を行う。
   - `redmine/base.rs` は `RedmineClient` trait を定義し、 Redmine との通信のインターフェースを定義する。`redmine/default.rs` は `DefaultRedmineClient`（実 HTTP 実装）を定義する。
+  - Issue 属性の保存は `IssueUpdate`（編集した属性だけを持つ更新要求）で渡す。送信しない属性は `None`、値の解除は `Some(None)` で表し、API が要求する項目の省略や空文字への変換は HTTP 実装が担う。
   - `redmine/demo/` は `DemoRedmineClient`（実 HTTP を行わず fixture を埋め込む memory mock）を定義する。
 - `src/components/`
   - TUI の画面部品を置く。

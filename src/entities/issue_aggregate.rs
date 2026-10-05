@@ -58,9 +58,6 @@ impl IssueAggregate {
     fn set_after(&mut self, diff: &IssuePropertyDiff) {
         match diff {
             IssuePropertyDiff::Subject(diff) => self.issue.subject = diff.after.clone(),
-            IssuePropertyDiff::AuthorId(diff) => self.author_id = diff.after,
-            IssuePropertyDiff::CreatedOn(diff) => self.created_on = diff.after,
-            IssuePropertyDiff::UpdatedOn(diff) => self.updated_on = diff.after,
             IssuePropertyDiff::ProjectId(diff) => self.issue.project_id = diff.after,
             IssuePropertyDiff::TrackerId(diff) => self.tracker_id = diff.after,
             IssuePropertyDiff::StatusId(diff) => self.issue.status_id = diff.after,
@@ -71,15 +68,8 @@ impl IssueAggregate {
             IssuePropertyDiff::DueDate(diff) => self.due_date = diff.after,
             IssuePropertyDiff::DoneRatio(diff) => self.done_ratio = diff.after,
             IssuePropertyDiff::EstimatedHours(diff) => self.estimated_hours = diff.after,
-            IssuePropertyDiff::TotalSpentHours(diff) => self.total_spent_hours = diff.after,
             IssuePropertyDiff::CategoryId(diff) => self.category_id = diff.after,
             IssuePropertyDiff::Description(diff) => self.issue.description = diff.after.clone(),
-            IssuePropertyDiff::FixedVersion(_) => {
-                panic!("cannot apply FixedVersion diff: Issue has no fixed_version property")
-            }
-            IssuePropertyDiff::ResolveWay(_) => {
-                panic!("cannot apply ResolveWay diff: Issue has no resolve_way property")
-            }
         }
     }
 
@@ -93,9 +83,6 @@ impl IssueAggregate {
 
         match diff {
             IssuePropertyDiff::Subject(diff) => conflict!(self.issue.subject, diff),
-            IssuePropertyDiff::AuthorId(diff) => conflict!(self.author_id, diff),
-            IssuePropertyDiff::CreatedOn(diff) => conflict!(self.created_on, diff),
-            IssuePropertyDiff::UpdatedOn(diff) => conflict!(self.updated_on, diff),
             IssuePropertyDiff::ProjectId(diff) => conflict!(self.issue.project_id, diff),
             IssuePropertyDiff::TrackerId(diff) => conflict!(self.tracker_id, diff),
             IssuePropertyDiff::StatusId(diff) => conflict!(self.issue.status_id, diff),
@@ -106,15 +93,8 @@ impl IssueAggregate {
             IssuePropertyDiff::DueDate(diff) => conflict!(self.due_date, diff),
             IssuePropertyDiff::DoneRatio(diff) => conflict!(self.done_ratio, diff),
             IssuePropertyDiff::EstimatedHours(diff) => conflict!(self.estimated_hours, diff),
-            IssuePropertyDiff::TotalSpentHours(diff) => conflict!(self.total_spent_hours, diff),
             IssuePropertyDiff::CategoryId(diff) => conflict!(self.category_id, diff),
             IssuePropertyDiff::Description(diff) => conflict!(self.issue.description, diff),
-            IssuePropertyDiff::FixedVersion(_) => {
-                panic!("cannot compare FixedVersion diff: Issue has no fixed_version property")
-            }
-            IssuePropertyDiff::ResolveWay(_) => {
-                panic!("cannot compare ResolveWay diff: Issue has no resolve_way property")
-            }
         }
     }
 
@@ -123,9 +103,6 @@ impl IssueAggregate {
         let mut resolved = diff.clone();
         match &mut resolved {
             IssuePropertyDiff::Subject(diff) => diff.before = self.issue.subject.clone(),
-            IssuePropertyDiff::AuthorId(diff) => diff.before = self.author_id,
-            IssuePropertyDiff::CreatedOn(diff) => diff.before = self.created_on,
-            IssuePropertyDiff::UpdatedOn(diff) => diff.before = self.updated_on,
             IssuePropertyDiff::ProjectId(diff) => diff.before = self.issue.project_id,
             IssuePropertyDiff::TrackerId(diff) => diff.before = self.tracker_id,
             IssuePropertyDiff::StatusId(diff) => diff.before = self.issue.status_id,
@@ -136,15 +113,8 @@ impl IssueAggregate {
             IssuePropertyDiff::DueDate(diff) => diff.before = self.due_date,
             IssuePropertyDiff::DoneRatio(diff) => diff.before = self.done_ratio,
             IssuePropertyDiff::EstimatedHours(diff) => diff.before = self.estimated_hours,
-            IssuePropertyDiff::TotalSpentHours(diff) => diff.before = self.total_spent_hours,
             IssuePropertyDiff::CategoryId(diff) => diff.before = self.category_id,
             IssuePropertyDiff::Description(diff) => diff.before = self.issue.description.clone(),
-            IssuePropertyDiff::FixedVersion(_) => {
-                panic!("サーバーIssueにfixed_version propertyがないため解決できません")
-            }
-            IssuePropertyDiff::ResolveWay(_) => {
-                panic!("サーバーIssueにresolve_way propertyがないため解決できません")
-            }
         }
         resolved
     }
@@ -154,9 +124,6 @@ impl IssueAggregate {
         let mut resolved = diff.clone();
         match &mut resolved {
             IssuePropertyDiff::Subject(diff) => diff.after = self.issue.subject.clone(),
-            IssuePropertyDiff::AuthorId(diff) => diff.after = self.author_id,
-            IssuePropertyDiff::CreatedOn(diff) => diff.after = self.created_on,
-            IssuePropertyDiff::UpdatedOn(diff) => diff.after = self.updated_on,
             IssuePropertyDiff::ProjectId(diff) => diff.after = self.issue.project_id,
             IssuePropertyDiff::TrackerId(diff) => diff.after = self.tracker_id,
             IssuePropertyDiff::StatusId(diff) => diff.after = self.issue.status_id,
@@ -167,15 +134,8 @@ impl IssueAggregate {
             IssuePropertyDiff::DueDate(diff) => diff.after = self.due_date,
             IssuePropertyDiff::DoneRatio(diff) => diff.after = self.done_ratio,
             IssuePropertyDiff::EstimatedHours(diff) => diff.after = self.estimated_hours,
-            IssuePropertyDiff::TotalSpentHours(diff) => diff.after = self.total_spent_hours,
             IssuePropertyDiff::CategoryId(diff) => diff.after = self.category_id,
             IssuePropertyDiff::Description(diff) => diff.after = self.issue.description.clone(),
-            IssuePropertyDiff::FixedVersion(_) => {
-                panic!("サーバーIssueにfixed_version propertyがないため解決できません")
-            }
-            IssuePropertyDiff::ResolveWay(_) => {
-                panic!("サーバーIssueにresolve_way propertyがないため解決できません")
-            }
         }
         resolved
     }

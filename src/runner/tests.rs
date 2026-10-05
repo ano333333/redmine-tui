@@ -24,7 +24,7 @@ use std::{
 };
 
 use crate::clients::redmine::base::FetchedIssue;
-use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
+use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
     Category, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
     TimeEntityActivity, Tracker, User,
@@ -33,6 +33,7 @@ use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId};
 use crate::test_support::sample_issue_aggregate;
 use crate::vos::issue_property_diff::IssueDescriptionDiff;
 use crate::vos::{self, IssueId, IssuePropertyDiff, IssueStatusId, JournalId};
+
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, widgets::Widget};
 
 fn recv_completion(spawner: &TokioBackgroundSpawner) -> BackgroundCompletion {
@@ -299,11 +300,16 @@ async fn issue_upload_uses_server_issue_as_merge_base() {
     assert_eq!(issue.issue.subject, "server subject");
     assert_eq!(issue.updated_on, server_issue.updated_on);
     assert_eq!(issue.issue.description, "local description");
-    let uploaded = client.uploaded.lock().unwrap();
-    assert_eq!(uploaded.len(), 1);
-    assert_eq!(uploaded[0].issue.subject, issue.issue.subject);
-    assert_eq!(uploaded[0].issue.description, issue.issue.description);
-    assert_eq!(uploaded[0].updated_on, issue.updated_on);
+    assert_eq!(
+        *client.uploaded.lock().unwrap(),
+        vec![(
+            IssueId::new(1),
+            IssueUpdate {
+                description: Some("local description".to_string()),
+                ..IssueUpdate::default()
+            }
+        )]
+    );
 }
 
 #[test]
@@ -461,7 +467,7 @@ struct IssueUploadClient {
     update_issue_notes_result: std::result::Result<(), RedmineClientError>,
     uploaded_journal_notes: Mutex<Vec<String>>,
     uploaded_issue_notes: Mutex<Vec<String>>,
-    uploaded: Mutex<Vec<IssueAggregate>>,
+    uploaded: Mutex<Vec<(IssueId, IssueUpdate)>>,
     // リトライを同じclientで検証できるよう、指定回数だけ通信失敗を返し、
     // カウンタが0になった後は通常のレスポンスへ戻す。
     get_failures_remaining: Mutex<usize>,
@@ -557,12 +563,16 @@ impl RedmineClient for IssueUploadClient {
 
     async fn update_issue(
         &self,
-        issue: &IssueAggregate,
+        issue_id: IssueId,
+        update: &IssueUpdate,
     ) -> std::result::Result<(), RedmineClientError> {
         if self.update_error {
             return Err(Self::network_error());
         }
-        self.uploaded.lock().unwrap().push(issue.clone());
+        self.uploaded
+            .lock()
+            .unwrap()
+            .push((issue_id, update.clone()));
         Ok(())
     }
 
@@ -1365,7 +1375,8 @@ impl RedmineClient for FailingClient {
 
     async fn update_issue(
         &self,
-        _: &IssueAggregate,
+        _: IssueId,
+        _: &IssueUpdate,
     ) -> std::result::Result<(), RedmineClientError> {
         Err(self.unauthorized())
     }

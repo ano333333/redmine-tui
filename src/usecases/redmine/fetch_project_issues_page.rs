@@ -62,8 +62,8 @@ mod tests {
     use crate::clients::redmine::base::FetchedIssue;
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::entities::{
-        Category, Issue, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage,
-        TargetVersion, TimeEntityActivity, Tracker, User,
+        Category, Issue, IssueStatus, Priority, Project, ProjectIssuesPage, TargetVersion,
+        TimeEntityActivity, Tracker, User,
     };
     use crate::stores::{Dispatcher, ProjectIssuesAction, ProjectIssuesRequestId};
     use crate::vos::{IssueId, IssueStatusId, ProjectId};
@@ -333,7 +333,11 @@ mod tests {
         async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
             unreachable!()
         }
-        async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {
+        async fn update_issue(
+            &self,
+            _: crate::vos::IssueId,
+            _: &crate::clients::redmine::IssueUpdate,
+        ) -> Result<(), RedmineClientError> {
             unreachable!()
         }
         async fn update_journal_notes(

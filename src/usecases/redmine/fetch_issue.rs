@@ -314,7 +314,11 @@ mod tests {
             })
         }
 
-        async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {
+        async fn update_issue(
+            &self,
+            _: crate::vos::IssueId,
+            _: &crate::clients::redmine::IssueUpdate,
+        ) -> Result<(), RedmineClientError> {
             unreachable!()
         }
 

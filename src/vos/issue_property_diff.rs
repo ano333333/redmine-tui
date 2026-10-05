@@ -11,24 +11,6 @@ pub struct IssueSubjectDiff {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct IssueAuthorIdDiff {
-    pub before: UserId,
-    pub after: UserId,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct IssueCreatedOnDiff {
-    pub before: DateTime<Local>,
-    pub after: DateTime<Local>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct IssueUpdatedOnDiff {
-    pub before: DateTime<Local>,
-    pub after: DateTime<Local>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct IssueProjectIdDiff {
     pub before: ProjectId,
     pub after: ProjectId,
@@ -56,12 +38,6 @@ pub struct IssuePriorityIdDiff {
 pub struct IssueAssignedToIdDiff {
     pub before: Option<UserId>,
     pub after: Option<UserId>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct IssueFixedVersionDiff {
-    pub before: Option<String>,
-    pub after: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -95,18 +71,6 @@ pub struct IssueEstimatedHoursDiff {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct IssueTotalSpentHoursDiff {
-    pub before: Option<f64>,
-    pub after: Option<f64>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct IssueResolveWayDiff {
-    pub before: Option<String>,
-    pub after: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct IssueCategoryIdDiff {
     pub before: Option<CategoryId>,
     pub after: Option<CategoryId>,
@@ -121,22 +85,16 @@ pub struct IssueDescriptionDiff {
 #[derive(Clone, Debug, PartialEq)]
 pub enum IssuePropertyDiff {
     Subject(IssueSubjectDiff),
-    AuthorId(IssueAuthorIdDiff),
-    CreatedOn(IssueCreatedOnDiff),
-    UpdatedOn(IssueUpdatedOnDiff),
     ProjectId(IssueProjectIdDiff),
     TrackerId(IssueTrackerIdDiff),
     StatusId(IssueStatusIdDiff),
     PriorityId(IssuePriorityIdDiff),
     AssignedToId(IssueAssignedToIdDiff),
     TargetVersionId(IssueTargetVersionIdDiff),
-    FixedVersion(IssueFixedVersionDiff),
     StartDate(IssueStartDateDiff),
     DueDate(IssueDueDateDiff),
     DoneRatio(IssueDoneRatioDiff),
     EstimatedHours(IssueEstimatedHoursDiff),
-    TotalSpentHours(IssueTotalSpentHoursDiff),
-    ResolveWay(IssueResolveWayDiff),
     CategoryId(IssueCategoryIdDiff),
     Description(IssueDescriptionDiff),
 }
@@ -144,22 +102,16 @@ pub enum IssuePropertyDiff {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum IssueProperty {
     Subject,
-    AuthorId,
-    CreatedOn,
-    UpdatedOn,
     ProjectId,
     TrackerId,
     StatusId,
     PriorityId,
     AssignedToId,
     TargetVersionId,
-    FixedVersion,
     StartDate,
     DueDate,
     DoneRatio,
     EstimatedHours,
-    TotalSpentHours,
-    ResolveWay,
     CategoryId,
     Description,
 }
@@ -186,22 +138,16 @@ pub fn fold_property_diffs(diffs: &[IssuePropertyDiff]) -> Vec<IssuePropertyDiff
 fn property_of(diff: &IssuePropertyDiff) -> IssueProperty {
     match diff {
         IssuePropertyDiff::Subject(_) => IssueProperty::Subject,
-        IssuePropertyDiff::AuthorId(_) => IssueProperty::AuthorId,
-        IssuePropertyDiff::CreatedOn(_) => IssueProperty::CreatedOn,
-        IssuePropertyDiff::UpdatedOn(_) => IssueProperty::UpdatedOn,
         IssuePropertyDiff::ProjectId(_) => IssueProperty::ProjectId,
         IssuePropertyDiff::TrackerId(_) => IssueProperty::TrackerId,
         IssuePropertyDiff::StatusId(_) => IssueProperty::StatusId,
         IssuePropertyDiff::PriorityId(_) => IssueProperty::PriorityId,
         IssuePropertyDiff::AssignedToId(_) => IssueProperty::AssignedToId,
         IssuePropertyDiff::TargetVersionId(_) => IssueProperty::TargetVersionId,
-        IssuePropertyDiff::FixedVersion(_) => IssueProperty::FixedVersion,
         IssuePropertyDiff::StartDate(_) => IssueProperty::StartDate,
         IssuePropertyDiff::DueDate(_) => IssueProperty::DueDate,
         IssuePropertyDiff::DoneRatio(_) => IssueProperty::DoneRatio,
         IssuePropertyDiff::EstimatedHours(_) => IssueProperty::EstimatedHours,
-        IssuePropertyDiff::TotalSpentHours(_) => IssueProperty::TotalSpentHours,
-        IssuePropertyDiff::ResolveWay(_) => IssueProperty::ResolveWay,
         IssuePropertyDiff::CategoryId(_) => IssueProperty::CategoryId,
         IssuePropertyDiff::Description(_) => IssueProperty::Description,
     }
@@ -216,9 +162,6 @@ macro_rules! match_same_diff {
     ($left:expr, $right:expr, |$a:ident, $b:ident| $body:expr) => {
         match ($left, $right) {
             (IssuePropertyDiff::Subject($a), IssuePropertyDiff::Subject($b)) => $body,
-            (IssuePropertyDiff::AuthorId($a), IssuePropertyDiff::AuthorId($b)) => $body,
-            (IssuePropertyDiff::CreatedOn($a), IssuePropertyDiff::CreatedOn($b)) => $body,
-            (IssuePropertyDiff::UpdatedOn($a), IssuePropertyDiff::UpdatedOn($b)) => $body,
             (IssuePropertyDiff::ProjectId($a), IssuePropertyDiff::ProjectId($b)) => $body,
             (IssuePropertyDiff::TrackerId($a), IssuePropertyDiff::TrackerId($b)) => $body,
             (IssuePropertyDiff::StatusId($a), IssuePropertyDiff::StatusId($b)) => $body,
@@ -227,15 +170,10 @@ macro_rules! match_same_diff {
             (IssuePropertyDiff::TargetVersionId($a), IssuePropertyDiff::TargetVersionId($b)) => {
                 $body
             }
-            (IssuePropertyDiff::FixedVersion($a), IssuePropertyDiff::FixedVersion($b)) => $body,
             (IssuePropertyDiff::StartDate($a), IssuePropertyDiff::StartDate($b)) => $body,
             (IssuePropertyDiff::DueDate($a), IssuePropertyDiff::DueDate($b)) => $body,
             (IssuePropertyDiff::DoneRatio($a), IssuePropertyDiff::DoneRatio($b)) => $body,
             (IssuePropertyDiff::EstimatedHours($a), IssuePropertyDiff::EstimatedHours($b)) => $body,
-            (IssuePropertyDiff::TotalSpentHours($a), IssuePropertyDiff::TotalSpentHours($b)) => {
-                $body
-            }
-            (IssuePropertyDiff::ResolveWay($a), IssuePropertyDiff::ResolveWay($b)) => $body,
             (IssuePropertyDiff::CategoryId($a), IssuePropertyDiff::CategoryId($b)) => $body,
             (IssuePropertyDiff::Description($a), IssuePropertyDiff::Description($b)) => $body,
             _ => unreachable!("property identity must match diff variants"),

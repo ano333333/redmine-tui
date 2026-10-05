@@ -135,8 +135,8 @@ mod tests {
     use crate::clients::redmine::RedmineClientError;
     use crate::clients::redmine::base::FetchedIssue;
     use crate::entities::{
-        Category, IssueAggregate, IssueStatus, Journal, Priority, Project, ProjectIssuesPage,
-        TargetVersion, TimeEntityActivity, Tracker, User,
+        Category, IssueStatus, Journal, Priority, Project, ProjectIssuesPage, TargetVersion,
+        TimeEntityActivity, Tracker, User,
     };
     use crate::stores::{IssueAction, JournalUploadFailure};
     use crate::test_support::{local_datetime, sample_issue_aggregate};
@@ -239,7 +239,11 @@ mod tests {
             })
         }
 
-        async fn update_issue(&self, _: &IssueAggregate) -> Result<(), RedmineClientError> {
+        async fn update_issue(
+            &self,
+            _: crate::vos::IssueId,
+            _: &crate::clients::redmine::IssueUpdate,
+        ) -> Result<(), RedmineClientError> {
             unreachable!()
         }
 

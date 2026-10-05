@@ -60,15 +60,15 @@ impl<'a> IssueView<'a> {
     }
 
     pub fn author_id(&self) -> UserId {
-        *last_after!(self, AuthorId, self.base.author_id)
+        self.base.author_id
     }
 
     pub fn created_on(&self) -> DateTime<Local> {
-        *last_after!(self, CreatedOn, self.base.created_on)
+        self.base.created_on
     }
 
     pub fn updated_on(&self) -> DateTime<Local> {
-        *last_after!(self, UpdatedOn, self.base.updated_on)
+        self.base.updated_on
     }
 
     pub fn tracker_id(&self) -> TrackerId {
@@ -104,7 +104,7 @@ impl<'a> IssueView<'a> {
     }
 
     pub fn total_spent_hours(&self) -> Option<f64> {
-        *last_after!(self, TotalSpentHours, self.base.total_spent_hours)
+        self.base.total_spent_hours
     }
 
     pub fn category_id(&self) -> Option<CategoryId> {

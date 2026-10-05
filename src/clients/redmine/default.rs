@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT};
-use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
+use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
     Category, Issue, IssueAggregate, IssueChild, IssueStatus, Priority, Project, ProjectIssuesPage,
     TargetVersion, TimeEntityActivity, Tracker, User,
@@ -158,10 +158,14 @@ impl RedmineClient for DefaultRedmineClient {
         })
     }
 
-    async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError> {
+    async fn update_issue(
+        &self,
+        issue_id: IssueId,
+        update: &IssueUpdate,
+    ) -> Result<(), RedmineClientError> {
         self.put_empty(
-            &format!("/issues/{}.json", issue.issue.id.get()),
-            &UpdateIssueRequest::from(issue),
+            &format!("/issues/{}.json", issue_id.get()),
+            &UpdateIssueRequest::from(update),
         )
         .await
     }
@@ -658,53 +662,96 @@ struct UpdateIssueRequest {
     issue: UpdateIssue,
 }
 
-impl From<&IssueAggregate> for UpdateIssueRequest {
-    fn from(issue: &IssueAggregate) -> Self {
+impl From<&IssueUpdate> for UpdateIssueRequest {
+    fn from(update: &IssueUpdate) -> Self {
         Self {
-            issue: UpdateIssue::from(issue),
+            issue: UpdateIssue::from(update),
         }
     }
 }
 
+/// `None`の属性は省略し、送信対象だけをPUTする。
 #[derive(Serialize)]
 struct UpdateIssue {
-    subject: String,
-    description: String,
-    project_id: u16,
-    tracker_id: u16,
-    status_id: u16,
-    priority_id: u16,
-    assigned_to_id: Option<u16>,
-    fixed_version_id: Option<u16>,
-    start_date: Option<String>,
-    due_date: Option<String>,
-    done_ratio: u16,
-    estimated_hours: Option<f64>,
-    category_id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subject: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project_id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tracker_id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status_id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority_id: Option<u16>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_clearable"
+    )]
+    assigned_to_id: Option<Option<u16>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_clearable"
+    )]
+    fixed_version_id: Option<Option<u16>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_clearable"
+    )]
+    start_date: Option<Option<String>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_clearable"
+    )]
+    due_date: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    done_ratio: Option<u16>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_clearable"
+    )]
+    estimated_hours: Option<Option<f64>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_clearable"
+    )]
+    category_id: Option<Option<u16>>,
 }
 
-impl From<&IssueAggregate> for UpdateIssue {
-    fn from(issue: &IssueAggregate) -> Self {
+impl From<&IssueUpdate> for UpdateIssue {
+    fn from(update: &IssueUpdate) -> Self {
+        let format_date =
+            |date: Option<DateTimeLocal>| date.map(|date| date.format("%Y-%m-%d").to_string());
         Self {
-            subject: issue.issue.subject.clone(),
-            description: issue.issue.description.clone(),
-            project_id: issue.issue.project_id.get(),
-            tracker_id: issue.tracker_id.get(),
-            status_id: issue.issue.status_id.get(),
-            priority_id: issue.priority_id.get(),
-            // FIXME: Redmineはassigned_to_idのnullを無視するため、担当者を外せない。空文字で送る必要がある。
-            assigned_to_id: issue.assigned_to_id.map(|id| id.get()),
-            fixed_version_id: issue.target_version_id.map(|id| id.get()),
-            start_date: issue
-                .start_date
-                .map(|date| date.format("%Y-%m-%d").to_string()),
-            due_date: issue
-                .due_date
-                .map(|date| date.format("%Y-%m-%d").to_string()),
-            done_ratio: issue.done_ratio,
-            estimated_hours: issue.estimated_hours,
-            category_id: issue.category_id.map(|id| id.get()),
+            subject: update.subject.clone(),
+            description: update.description.clone(),
+            project_id: update.project_id.map(|id| id.get()),
+            tracker_id: update.tracker_id.map(|id| id.get()),
+            status_id: update.status_id.map(|id| id.get()),
+            priority_id: update.priority_id.map(|id| id.get()),
+            assigned_to_id: update.assigned_to_id.map(|id| id.map(|id| id.get())),
+            fixed_version_id: update.target_version_id.map(|id| id.map(|id| id.get())),
+            start_date: update.start_date.map(format_date),
+            due_date: update.due_date.map(format_date),
+            done_ratio: update.done_ratio,
+            estimated_hours: update.estimated_hours,
+            category_id: update.category_id.map(|id| id.map(|id| id.get())),
         }
+    }
+}
+
+type DateTimeLocal = chrono::DateTime<chrono::Local>;
+
+// RedmineはJSONのnullを属性の解除として扱わず無視するため、解除は空文字で送る。
+fn serialize_clearable<T, S>(value: &Option<Option<T>>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: Serialize,
+    S: serde::Serializer,
+{
+    match value {
+        Some(Some(value)) => value.serialize(serializer),
+        Some(None) | None => serializer.serialize_str(""),
     }
 }
 

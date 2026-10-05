@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT, RedmineHttpError};
-use crate::clients::redmine::{RedmineClient, RedmineClientError};
+use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError};
 use crate::entities::{
     Category, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
     ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
@@ -26,6 +26,63 @@ impl DemoRedmineClient {
                 status_code: 404,
                 response_body: String::new(),
             },
+        }
+    }
+
+    fn apply_update(issue: &mut IssueAggregate, update: IssueUpdate) {
+        let IssueUpdate {
+            subject,
+            description,
+            project_id,
+            tracker_id,
+            status_id,
+            priority_id,
+            assigned_to_id,
+            target_version_id,
+            start_date,
+            due_date,
+            done_ratio,
+            estimated_hours,
+            category_id,
+        } = update;
+        if let Some(subject) = subject {
+            issue.issue.subject = subject;
+        }
+        if let Some(description) = description {
+            issue.issue.description = description;
+        }
+        if let Some(project_id) = project_id {
+            issue.issue.project_id = project_id;
+        }
+        if let Some(tracker_id) = tracker_id {
+            issue.tracker_id = tracker_id;
+        }
+        if let Some(status_id) = status_id {
+            issue.issue.status_id = status_id;
+        }
+        if let Some(priority_id) = priority_id {
+            issue.priority_id = priority_id;
+        }
+        if let Some(assigned_to_id) = assigned_to_id {
+            issue.assigned_to_id = assigned_to_id;
+        }
+        if let Some(target_version_id) = target_version_id {
+            issue.target_version_id = target_version_id;
+        }
+        if let Some(start_date) = start_date {
+            issue.start_date = start_date;
+        }
+        if let Some(due_date) = due_date {
+            issue.due_date = due_date;
+        }
+        if let Some(done_ratio) = done_ratio {
+            issue.done_ratio = done_ratio;
+        }
+        if let Some(estimated_hours) = estimated_hours {
+            issue.estimated_hours = estimated_hours;
+        }
+        if let Some(category_id) = category_id {
+            issue.category_id = category_id;
         }
     }
 
@@ -98,19 +155,20 @@ impl RedmineClient for DemoRedmineClient {
 
     fn update_issue(
         &self,
-        issue: &IssueAggregate,
+        issue_id: IssueId,
+        update: &IssueUpdate,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send {
-        // デモでは渡されたaggregateだけを保存し、実Redmineの更新時に付く履歴や更新日時は生成しない。
+        // デモでは送信された属性だけを反映し、実Redmineの更新時に付く履歴や更新日時は生成しない。
         let result = {
             let mut state = self.state.lock().expect("demo fixture state lock poisoned");
-            match state.issues.get_mut(&issue.issue.id) {
+            match state.issues.get_mut(&issue_id) {
                 Some(stored) => {
-                    *stored = issue.clone();
+                    Self::apply_update(stored, update.clone());
                     Ok(())
                 }
                 None => Err(Self::not_found(
                     "PUT",
-                    format!("/issues/{}.json", issue.issue.id.get()),
+                    format!("/issues/{}.json", issue_id.get()),
                 )),
             }
         };
@@ -278,6 +336,7 @@ mod tests {
     use std::rc::Rc;
     use std::sync::Arc;
 
+    use crate::clients::redmine::IssueUpdate;
     use crate::clients::redmine::demo::DemoRedmineClient;
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::stores::{Action, Dispatcher, IssueAction, JournalAction};
@@ -408,16 +467,22 @@ mod tests {
     fn updates_are_visible_to_subsequent_gets() {
         let client = DemoRedmineClient::new();
         let runtime = Builder::new_current_thread().build().unwrap();
-        let mut issue = runtime
-            .block_on(client.get_issue(IssueId::new(3)))
-            .unwrap()
-            .aggregate;
-        let updated_on = issue.updated_on;
-        issue.issue.subject = "changed subject".into();
-        runtime.block_on(client.update_issue(&issue)).unwrap();
+        let update = IssueUpdate {
+            subject: Some("changed subject".into()),
+            assigned_to_id: Some(None),
+            ..IssueUpdate::default()
+        };
+        runtime
+            .block_on(client.update_issue(IssueId::new(3), &update))
+            .unwrap();
         let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
         assert_eq!(fetched.aggregate.issue.subject, "changed subject");
-        assert_eq!(fetched.aggregate.updated_on, updated_on);
+        assert_eq!(fetched.aggregate.assigned_to_id, None);
+        assert_eq!(fetched.aggregate.tracker_id.get(), 3);
+        assert_eq!(
+            fetched.aggregate.updated_on,
+            crate::test_support::local_date(2026, 2, 16)
+        );
         assert_eq!(fetched.aggregate.journals.len(), 3);
 
         runtime
@@ -442,13 +507,12 @@ mod tests {
     fn updates_report_not_found() {
         let client = DemoRedmineClient::new();
         let runtime = Builder::new_current_thread().build().unwrap();
-        let mut issue = runtime
-            .block_on(client.get_issue(IssueId::new(3)))
-            .unwrap()
-            .aggregate;
-        issue.issue.id = IssueId::new(999);
+        let update = IssueUpdate {
+            subject: Some("missing".into()),
+            ..IssueUpdate::default()
+        };
         for result in [
-            runtime.block_on(client.update_issue(&issue)),
+            runtime.block_on(client.update_issue(IssueId::new(999), &update)),
             runtime.block_on(client.update_journal_notes(JournalId::new(999), "missing")),
             runtime.block_on(client.update_issue_notes(IssueId::new(999), "missing")),
         ] {
@@ -490,12 +554,13 @@ mod tests {
         );
 
         let client = DemoRedmineClient::new();
-        let mut server = runtime
-            .block_on(client.get_issue(IssueId::new(3)))
-            .unwrap()
-            .aggregate;
-        server.issue.subject = "server edit".into();
-        runtime.block_on(client.update_issue(&server)).unwrap();
+        let server_edit = IssueUpdate {
+            subject: Some("server edit".into()),
+            ..IssueUpdate::default()
+        };
+        runtime
+            .block_on(client.update_issue(IssueId::new(3), &server_edit))
+            .unwrap();
         let actions = runtime.block_on(upload_issue_action(&client, IssueId::new(3), &[diff]));
         assert!(matches!(
             actions.as_slice(),

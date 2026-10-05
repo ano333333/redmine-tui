@@ -4,7 +4,7 @@ use super::integration_support::{
     authenticated_client, expect_not_found, expect_unauthorized, run_contract, test_error,
     unauthorized_client,
 };
-use crate::clients::redmine::{RedmineClient, RedmineClientError};
+use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError};
 use crate::entities::IssueAggregate;
 use crate::test_support::local_date;
 use crate::vos::{EntityIdValue, IssueId, IssueStatusId, PriorityId, TrackerId, UserId};
@@ -12,6 +12,7 @@ use crate::vos::{EntityIdValue, IssueId, IssueStatusId, PriorityId, TrackerId, U
 #[test]
 fn update_issue_contract_against_redmine_container() {
     run_contract(|base_url| async move {
+        assert_update_issue_keeps_unsent_properties(&base_url).await?;
         assert_update_issue_applies_every_property(&base_url).await?;
         assert_update_issue_clears_optional_properties(&base_url).await?;
         assert_update_issue_422(&base_url).await?;
@@ -29,25 +30,63 @@ async fn fetch_issue_1(base_url: &str) -> Result<IssueAggregate, Box<dyn std::er
         .aggregate)
 }
 
+async fn update_issue_1(
+    base_url: &str,
+    update: IssueUpdate,
+) -> Result<(), Box<dyn std::error::Error>> {
+    authenticated_client(base_url)
+        .update_issue(IssueId::new(1), &update)
+        .await
+        .map_err(|error| test_error(format!("update_issue returned {error:?}")))
+}
+
+/// seedのIssue 1は、status 3、担当者1001、対象バージョン1、カテゴリー1、期日2025-12-19を持つ。
+async fn assert_update_issue_keeps_unsent_properties(
+    base_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    update_issue_1(
+        base_url,
+        IssueUpdate {
+            subject: Some("only subject".to_string()),
+            ..IssueUpdate::default()
+        },
+    )
+    .await?;
+
+    let updated = fetch_issue_1(base_url).await?;
+    assert_eq!(updated.issue.subject, "only subject");
+    assert_eq!(updated.issue.status_id.get(), 3);
+    assert_eq!(updated.assigned_to_id.map(|id| id.get()), Some(1001));
+    assert_eq!(updated.target_version_id.map(|id| id.get()), Some(1));
+    assert_eq!(updated.category_id.map(|id| id.get()), Some(1));
+    assert_eq!(
+        updated.due_date.map(|date| date.date_naive()),
+        NaiveDate::from_ymd_opt(2025, 12, 19)
+    );
+
+    Ok(())
+}
+
 async fn assert_update_issue_applies_every_property(
     base_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut issue = fetch_issue_1(base_url).await?;
-    issue.issue.subject = "updated subject".to_string();
-    issue.issue.description = "updated description".to_string();
-    issue.issue.status_id = IssueStatusId::new(4);
-    issue.tracker_id = TrackerId::new(2);
-    issue.priority_id = PriorityId::new(2);
-    issue.assigned_to_id = Some(UserId::new(1002));
-    issue.start_date = Some(local_date(2026, 3, 1));
-    issue.due_date = Some(local_date(2026, 3, 31));
-    issue.done_ratio = 50;
-    issue.estimated_hours = Some(2.5);
-
-    authenticated_client(base_url)
-        .update_issue(&issue)
-        .await
-        .map_err(|error| test_error(format!("update_issue returned {error:?}")))?;
+    update_issue_1(
+        base_url,
+        IssueUpdate {
+            subject: Some("updated subject".to_string()),
+            description: Some("updated description".to_string()),
+            status_id: Some(IssueStatusId::new(4)),
+            tracker_id: Some(TrackerId::new(2)),
+            priority_id: Some(PriorityId::new(2)),
+            assigned_to_id: Some(Some(UserId::new(1002))),
+            start_date: Some(Some(local_date(2026, 3, 1))),
+            due_date: Some(Some(local_date(2026, 3, 31))),
+            done_ratio: Some(50),
+            estimated_hours: Some(Some(2.5)),
+            ..IssueUpdate::default()
+        },
+    )
+    .await?;
 
     let updated = fetch_issue_1(base_url).await?;
     assert_eq!(updated.issue.subject, "updated subject");
@@ -73,19 +112,22 @@ async fn assert_update_issue_applies_every_property(
 async fn assert_update_issue_clears_optional_properties(
     base_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut issue = fetch_issue_1(base_url).await?;
-    issue.target_version_id = None;
-    issue.category_id = None;
-    issue.start_date = None;
-    issue.due_date = None;
-    issue.estimated_hours = None;
-
-    authenticated_client(base_url)
-        .update_issue(&issue)
-        .await
-        .map_err(|error| test_error(format!("update_issue returned {error:?}")))?;
+    update_issue_1(
+        base_url,
+        IssueUpdate {
+            assigned_to_id: Some(None),
+            target_version_id: Some(None),
+            category_id: Some(None),
+            start_date: Some(None),
+            due_date: Some(None),
+            estimated_hours: Some(None),
+            ..IssueUpdate::default()
+        },
+    )
+    .await?;
 
     let updated = fetch_issue_1(base_url).await?;
+    assert_eq!(updated.assigned_to_id, None);
     assert_eq!(updated.target_version_id, None);
     assert_eq!(updated.category_id, None);
     assert_eq!(updated.start_date, None);
@@ -96,10 +138,15 @@ async fn assert_update_issue_clears_optional_properties(
 }
 
 async fn assert_update_issue_422(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut issue = fetch_issue_1(base_url).await?;
-    issue.issue.subject = String::new();
+    let update = IssueUpdate {
+        subject: Some(String::new()),
+        ..IssueUpdate::default()
+    };
 
-    match authenticated_client(base_url).update_issue(&issue).await {
+    match authenticated_client(base_url)
+        .update_issue(IssueId::new(1), &update)
+        .await
+    {
         Err(RedmineClientError::UnprocessableEntity { context }) => {
             assert_eq!(context.status_code, 422);
             Ok(())
@@ -111,12 +158,27 @@ async fn assert_update_issue_422(base_url: &str) -> Result<(), Box<dyn std::erro
 }
 
 async fn assert_update_issue_401(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let issue = fetch_issue_1(base_url).await?;
-    expect_unauthorized(unauthorized_client(base_url).update_issue(&issue).await).await
+    let update = IssueUpdate {
+        subject: Some("unauthorized".to_string()),
+        ..IssueUpdate::default()
+    };
+    expect_unauthorized(
+        unauthorized_client(base_url)
+            .update_issue(IssueId::new(1), &update)
+            .await,
+    )
+    .await
 }
 
 async fn assert_update_issue_404(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut issue = fetch_issue_1(base_url).await?;
-    issue.issue.id = IssueId::new(9999);
-    expect_not_found(authenticated_client(base_url).update_issue(&issue).await).await
+    let update = IssueUpdate {
+        subject: Some("missing".to_string()),
+        ..IssueUpdate::default()
+    };
+    expect_not_found(
+        authenticated_client(base_url)
+            .update_issue(IssueId::new(9999), &update)
+            .await,
+    )
+    .await
 }

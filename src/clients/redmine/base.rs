@@ -6,7 +6,13 @@ use crate::entities::{
     Category, IssueAggregate, IssueChild, IssueStatus, Priority, Project, ProjectIssuesPage,
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
-use crate::vos::{IssueId, JournalId, ProjectId};
+use chrono::{DateTime, Local};
+
+use crate::vos::issue_property_diff::fold_property_diffs;
+use crate::vos::{
+    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, PriorityId, ProjectId,
+    TargetVersionId, TrackerId, UserId,
+};
 
 pub(crate) const PROJECT_ISSUES_PAGE_LIMIT: usize = 50;
 
@@ -84,9 +90,11 @@ pub trait RedmineClient {
         &self,
         id: IssueId,
     ) -> impl std::future::Future<Output = Result<FetchedIssue, RedmineClientError>> + Send;
+    /// `update`が持つIssue属性だけを送信し、送信しない属性のサーバー値は変えない。
     fn update_issue(
         &self,
-        issue: &IssueAggregate,
+        issue_id: IssueId,
+        update: &IssueUpdate,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
     /// Redmine上の既存Journalのnotes全体を指定値で置き換える。
     fn update_journal_notes(
@@ -128,4 +136,118 @@ pub trait RedmineClient {
     fn get_users(
         &self,
     ) -> impl std::future::Future<Output = Result<Vec<User>, RedmineClientError>> + Send;
+}
+
+/// Issue属性の更新要求。編集した属性だけを持つ。
+///
+/// 外側の`None`は送信しないことを表し、現在のサーバー値を変えない。値を持てる属性の
+/// `Some(None)`は、その属性の値を解除することを表す。APIでの解除の表現はClientが変換する。
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct IssueUpdate {
+    pub subject: Option<String>,
+    pub description: Option<String>,
+    pub project_id: Option<ProjectId>,
+    pub tracker_id: Option<TrackerId>,
+    pub status_id: Option<IssueStatusId>,
+    pub priority_id: Option<PriorityId>,
+    pub assigned_to_id: Option<Option<UserId>>,
+    pub target_version_id: Option<Option<TargetVersionId>>,
+    pub start_date: Option<Option<DateTime<Local>>>,
+    pub due_date: Option<Option<DateTime<Local>>>,
+    pub done_ratio: Option<u16>,
+    pub estimated_hours: Option<Option<f64>>,
+    pub category_id: Option<Option<CategoryId>>,
+}
+
+impl IssueUpdate {
+    /// 属性ごとに集約したdiffの`after`を送信する更新要求を作る。
+    ///
+    /// 元の値に戻して差分がなくなった属性は送信しない。
+    pub fn from_diffs(diffs: &[IssuePropertyDiff]) -> Self {
+        let mut update = Self::default();
+        for diff in fold_property_diffs(diffs) {
+            match diff {
+                IssuePropertyDiff::Subject(diff) => update.subject = Some(diff.after),
+                IssuePropertyDiff::Description(diff) => update.description = Some(diff.after),
+                IssuePropertyDiff::ProjectId(diff) => update.project_id = Some(diff.after),
+                IssuePropertyDiff::TrackerId(diff) => update.tracker_id = Some(diff.after),
+                IssuePropertyDiff::StatusId(diff) => update.status_id = Some(diff.after),
+                IssuePropertyDiff::PriorityId(diff) => update.priority_id = Some(diff.after),
+                IssuePropertyDiff::AssignedToId(diff) => update.assigned_to_id = Some(diff.after),
+                IssuePropertyDiff::TargetVersionId(diff) => {
+                    update.target_version_id = Some(diff.after)
+                }
+                IssuePropertyDiff::StartDate(diff) => update.start_date = Some(diff.after),
+                IssuePropertyDiff::DueDate(diff) => update.due_date = Some(diff.after),
+                IssuePropertyDiff::DoneRatio(diff) => update.done_ratio = Some(diff.after),
+                IssuePropertyDiff::EstimatedHours(diff) => {
+                    update.estimated_hours = Some(diff.after)
+                }
+                IssuePropertyDiff::CategoryId(diff) => update.category_id = Some(diff.after),
+            }
+        }
+        update
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IssueUpdate;
+    use crate::vos::issue_property_diff::{
+        IssueAssignedToIdDiff, IssueDescriptionDiff, IssueStatusIdDiff,
+    };
+    use crate::vos::{IssuePropertyDiff, IssueStatusId, UserId};
+
+    fn description_diff(before: &str, after: &str) -> IssuePropertyDiff {
+        IssuePropertyDiff::Description(IssueDescriptionDiff {
+            before: before.to_string(),
+            after: after.to_string(),
+        })
+    }
+
+    #[test]
+    fn sends_only_edited_properties_with_their_last_after() {
+        let diffs = vec![
+            description_diff("fetched", "first"),
+            description_diff("first", "second"),
+            IssuePropertyDiff::StatusId(IssueStatusIdDiff {
+                before: IssueStatusId::new(1),
+                after: IssueStatusId::new(2),
+            }),
+        ];
+
+        let update = IssueUpdate::from_diffs(&diffs);
+
+        assert_eq!(
+            update,
+            IssueUpdate {
+                description: Some("second".to_string()),
+                status_id: Some(IssueStatusId::new(2)),
+                ..IssueUpdate::default()
+            }
+        );
+    }
+
+    #[test]
+    fn distinguishes_clearing_a_value_from_not_sending_it() {
+        let diffs = vec![IssuePropertyDiff::AssignedToId(IssueAssignedToIdDiff {
+            before: Some(UserId::new(7)),
+            after: None,
+        })];
+
+        let update = IssueUpdate::from_diffs(&diffs);
+
+        assert_eq!(update.assigned_to_id, Some(None));
+        assert_eq!(update.category_id, None);
+    }
+
+    #[test]
+    fn does_not_send_a_property_edited_back_to_its_original_value() {
+        let diffs = vec![
+            description_diff("fetched", "edited"),
+            description_diff("edited", "fetched"),
+        ];
+
+        assert_eq!(IssueUpdate::from_diffs(&diffs), IssueUpdate::default());
+    }
 }
