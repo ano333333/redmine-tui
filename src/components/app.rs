@@ -1082,12 +1082,7 @@ mod tests {
         let id = IssueId::new(3);
         let context = PendingEditorContext::IssueBody { id };
         let mut store = Store::new();
-        store.consume_action(
-            IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            }
-            .into(),
-        );
+        crate::test_support::load_issue(&mut store, crate::test_support::sample_parent_issue());
 
         assert!(can_start_editing(
             &context,
@@ -1174,7 +1169,7 @@ mod tests {
         let mut store = Store::new();
         let mut issue = crate::test_support::sample_parent_issue();
         issue.journals = vec![crate::test_support::sample_parent_issue_journals().remove(0)];
-        store.consume_action(IssueAction::Sync { issue }.into());
+        crate::test_support::load_issue(&mut store, issue);
 
         assert!(can_start_editing(
             &context,
@@ -1217,12 +1212,7 @@ mod tests {
         let issue_id = IssueId::new(3);
         let context = PendingEditorContext::LocalJournal { issue_id };
         let mut store = Store::new();
-        store.consume_action(
-            IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            }
-            .into(),
-        );
+        crate::test_support::load_issue(&mut store, crate::test_support::sample_parent_issue());
 
         assert!(!can_start_editing(
             &context,
@@ -1252,9 +1242,11 @@ mod tests {
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
             crate::test_support::dispatch_sample_masters(&mut dispatcher_ref);
-            dispatcher_ref.dispatch(IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            });
+            for action in
+                crate::test_support::fetch_issue_actions(crate::test_support::sample_parent_issue())
+            {
+                dispatcher_ref.dispatch(action);
+            }
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }
@@ -1283,12 +1275,14 @@ mod tests {
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
             crate::test_support::dispatch_sample_masters(&mut dispatcher_ref);
-            dispatcher_ref.dispatch(IssueAction::Sync {
-                issue: crate::test_support::sample_open_child_issue(),
-            });
-            dispatcher_ref.dispatch(IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            });
+            for issue in [
+                crate::test_support::sample_open_child_issue(),
+                crate::test_support::sample_parent_issue(),
+            ] {
+                for action in crate::test_support::fetch_issue_actions(issue) {
+                    dispatcher_ref.dispatch(action);
+                }
+            }
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }
@@ -1636,12 +1630,11 @@ mod tests {
                 None,
                 0,
             );
-            dispatcher_ref.dispatch(IssueAction::Sync {
-                issue: lower_id_issue,
-            });
-            dispatcher_ref.dispatch(IssueAction::Sync {
-                issue: higher_id_issue,
-            });
+            for issue in [lower_id_issue, higher_id_issue] {
+                for action in crate::test_support::fetch_issue_actions(issue) {
+                    dispatcher_ref.dispatch(action);
+                }
+            }
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }

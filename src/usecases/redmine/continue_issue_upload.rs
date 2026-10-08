@@ -100,8 +100,7 @@ mod tests {
         let mut issue: IssueAggregate =
             sample_issue_aggregate(1, "subject", 1.into(), None, None, None, 0);
         issue.issue.description = "original body".to_string();
-        dispatcher.dispatch(IssueAction::Sync { issue });
-        dispatcher.consume_action();
+        crate::test_support::dispatch_loaded_issue(&mut dispatcher, issue);
         dispatcher.dispatch(IssueAction::UpdateDescription {
             id,
             body: "local body".to_string(),

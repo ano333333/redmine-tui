@@ -516,12 +516,7 @@ mod tests {
 
     fn store_with_journals(journals: Vec<Journal>) -> Store {
         let mut store = Store::new();
-        store.consume_action(
-            crate::stores::IssueAction::Sync {
-                issue: issue_with_journals(journals),
-            }
-            .into(),
-        );
+        crate::test_support::load_issue(&mut store, issue_with_journals(journals));
         store
     }
 

@@ -369,7 +369,7 @@ mod tests {
             sample_closed_child_issue(),
             sample_parent_issue(),
         ] {
-            store.consume_action(IssueAction::Sync { issue }.into());
+            crate::test_support::load_issue(&mut store, issue);
         }
         store
     }
@@ -479,12 +479,7 @@ mod tests {
         let mut loaded_issue =
             sample_issue_aggregate(1, "loaded subject", 1.into(), None, None, None, 0);
         loaded_issue.issue.description = "loaded body".to_string();
-        store.consume_action(
-            IssueAction::Sync {
-                issue: loaded_issue,
-            }
-            .into(),
-        );
+        crate::test_support::load_issue(&mut store, loaded_issue);
         store.consume_action(
             IssueAction::UpdateDescription {
                 id: 1.into(),

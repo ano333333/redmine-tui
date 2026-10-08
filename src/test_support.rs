@@ -372,17 +372,42 @@ pub fn sample_parent_issue_children() -> Vec<IssueChild> {
 pub fn fetch_sample_parent_issue_actions(journals: Vec<Journal>) -> [Action; 2] {
     let mut issue = sample_parent_issue();
     issue.journals = journals;
+    fetch_issue_actions_with_children(issue, sample_parent_issue_children())
+}
+
+/// `issue`を、子一覧なしで詳細取得した状態にするAction。
+pub fn fetch_issue_actions(issue: IssueAggregate) -> [Action; 2] {
+    fetch_issue_actions_with_children(issue, vec![])
+}
+
+fn fetch_issue_actions_with_children(
+    issue: IssueAggregate,
+    children: Vec<IssueChild>,
+) -> [Action; 2] {
+    let id = issue.issue.id;
     [
-        crate::stores::IssueAction::StartFetching {
-            id: IssueId::new(3),
-        }
-        .into(),
+        crate::stores::IssueAction::StartFetching { id }.into(),
         Action::IssueFetchSucceeded {
-            id: IssueId::new(3),
+            id,
             issue,
-            children: sample_parent_issue_children(),
+            children,
         },
     ]
+}
+
+/// `fetch_issue_actions`をStoreへ順に適用する。
+pub fn load_issue(store: &mut Store, issue: IssueAggregate) {
+    for action in fetch_issue_actions(issue) {
+        store.consume_action(action);
+    }
+}
+
+/// `fetch_issue_actions`をDispatcherで順に適用する。
+pub fn dispatch_loaded_issue(dispatcher: &mut Dispatcher, issue: IssueAggregate) {
+    for action in fetch_issue_actions(issue) {
+        dispatcher.dispatch(action);
+        dispatcher.consume_action();
+    }
 }
 
 pub fn sample_parent_issue_journals() -> Vec<Journal> {

@@ -229,11 +229,9 @@ mod tests {
     #[test]
     fn loaded_issue_builds_detail_without_fetch() {
         let d = dispatcher();
-        consume(
-            &d,
-            IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            },
+        crate::test_support::dispatch_loaded_issue(
+            &mut d.borrow_mut(),
+            crate::test_support::sample_parent_issue(),
         );
         let (component, result) = component(&d, 3);
         assert_eq!(result, None);
@@ -371,11 +369,9 @@ mod tests {
             Some(EventProcessResult::OpenIssueSelectPopup)
         );
 
-        consume(
-            &d,
-            IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            },
+        crate::test_support::dispatch_loaded_issue(
+            &mut d.borrow_mut(),
+            crate::test_support::sample_parent_issue(),
         );
         let (mut loaded, _) = component(&d, 3);
         assert_eq!(
@@ -387,11 +383,9 @@ mod tests {
     #[test]
     fn loaded_issue_delegates_detail_events() {
         let d = dispatcher();
-        consume(
-            &d,
-            IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            },
+        crate::test_support::dispatch_loaded_issue(
+            &mut d.borrow_mut(),
+            crate::test_support::sample_parent_issue(),
         );
         let (mut component, _) = component(&d, 3);
 
@@ -410,11 +404,9 @@ mod tests {
         while d.borrow().consume_actinos_len() > 0 {
             d.borrow_mut().consume_action();
         }
-        consume(
-            &d,
-            IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            },
+        crate::test_support::dispatch_loaded_issue(
+            &mut d.borrow_mut(),
+            crate::test_support::sample_parent_issue(),
         );
         let (component, _) = component(&d, 3);
         let borrow = d.borrow();

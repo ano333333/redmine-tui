@@ -302,8 +302,7 @@ mod tests {
         let mut issue =
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         issue.journals = journals;
-        dispatcher.dispatch(IssueAction::Sync { issue });
-        dispatcher.consume_action();
+        crate::test_support::dispatch_loaded_issue(&mut dispatcher, issue);
         dispatcher.dispatch(JournalAction::CreateLocal { issue_id: ISSUE_ID });
         dispatcher.consume_action();
         dispatcher.dispatch(JournalAction::EditLocalNotes {

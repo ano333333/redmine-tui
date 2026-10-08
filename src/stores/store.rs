@@ -463,10 +463,10 @@ mod tests {
         let id = IssueId::new(1);
         let mut dispatcher = Dispatcher::new();
 
-        dispatcher.dispatch(IssueAction::Sync {
-            issue: sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0),
-        });
-        dispatcher.consume_action();
+        crate::test_support::dispatch_loaded_issue(
+            &mut dispatcher,
+            sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0),
+        );
 
         assert!(dispatcher.store().try_get_issue_state(id).is_some());
     }
@@ -476,11 +476,9 @@ mod tests {
     fn issue_upload_start_panics_while_a_journal_of_the_issue_is_uploading() {
         let id = IssueId::new(1);
         let mut store = Store::new();
-        store.consume_action(
-            IssueAction::Sync {
-                issue: sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0),
-            }
-            .into(),
+        crate::test_support::load_issue(
+            &mut store,
+            sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0),
         );
         store.consume_action(JournalAction::CreateLocal { issue_id: id }.into());
         store.consume_action(JournalAction::StartLocalUpload { issue_id: id }.into());
@@ -499,11 +497,9 @@ mod tests {
     fn issue_upload_start_succeeds_while_the_issues_journals_are_idle() {
         let id = IssueId::new(1);
         let mut store = Store::new();
-        store.consume_action(
-            IssueAction::Sync {
-                issue: sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0),
-            }
-            .into(),
+        crate::test_support::load_issue(
+            &mut store,
+            sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0),
         );
         store.consume_action(JournalAction::CreateLocal { issue_id: id }.into());
         store.consume_action(

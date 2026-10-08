@@ -40,14 +40,9 @@ fn issue_with_journals(issue_id: u16, journals: Vec<Journal>) -> IssueAggregate 
 
 fn store_with(journal_ids: &[u16]) -> Store {
     let mut store = Store::new();
-    store.consume_action(
-        IssueAction::Sync {
-            issue: issue_with_journals(
-                ISSUE_ID,
-                journal_ids.iter().copied().map(journal).collect(),
-            ),
-        }
-        .into(),
+    crate::test_support::load_issue(
+        &mut store,
+        issue_with_journals(ISSUE_ID, journal_ids.iter().copied().map(journal).collect()),
     );
     store
 }
@@ -110,8 +105,15 @@ fn take_in_fetched_journals(store: &mut Store, journals: Vec<Journal>) {
         .into(),
     );
     store.consume_action(
-        IssueAction::Sync {
+        IssueAction::StartUpload {
+            id: ISSUE_ID.into(),
+        }
+        .into(),
+    );
+    store.consume_action(
+        IssueAction::UploadSucceeded {
             issue: issue_with_journals(ISSUE_ID, journals),
+            children: vec![],
         }
         .into(),
     );
@@ -301,24 +303,12 @@ fn issue_transitions_keep_journal_edits_and_the_local_draft() {
 }
 
 #[test]
-fn sync_of_a_saved_issue_takes_in_fetched_journals_and_evacuates_missing_edits() {
+fn a_saved_issue_takes_in_fetched_journals_and_evacuates_missing_edits() {
     let mut store = edited_store(&[10, 11], 10);
-    store.consume_action(
-        IssueAction::UpdateDescription {
-            id: ISSUE_ID.into(),
-            body: "edited body".to_string(),
-        }
-        .into(),
-    );
 
-    store.consume_action(
-        IssueAction::Sync {
-            issue: issue_with_journals(
-                ISSUE_ID,
-                vec![journal_with_notes(11, "updated notes"), journal(12)],
-            ),
-        }
-        .into(),
+    take_in_fetched_journals(
+        &mut store,
+        vec![journal_with_notes(11, "updated notes"), journal(12)],
     );
 
     assert_eq!(journal_ids(&store), vec![11, 12]);
@@ -440,20 +430,14 @@ fn store_with_deleted_10() -> Store {
 }
 
 #[test]
-fn fetched_journals_evacuate_missing_edited_journals_in_order_and_keep_missing_uploading_ones() {
+fn fetched_journals_evacuate_missing_edited_journals_in_order() {
     let mut store = store_with(&[10, 11, 12, 13, 14]);
     edit_remote(&mut store, 11, "edited 11");
-    edit_remote(&mut store, 12, "uploading notes");
-    start_remote(&mut store, 12);
     edit_remote(&mut store, 14, "edited 14");
 
     take_in_fetched_journals(&mut store, vec![journal(10), journal(15)]);
 
-    assert_eq!(journal_ids(&store), vec![10, 15, 12]);
-    assert_eq!(
-        state(&store, 12),
-        uploading_state("remote notes 12", "uploading notes")
-    );
+    assert_eq!(journal_ids(&store), vec![10, 15]);
     assert_eq!(
         deleted_journals(&store),
         vec![deleted(11, "edited 11"), deleted(14, "edited 14")]
@@ -736,14 +720,19 @@ fn fetched_journals_sync_an_edited_journal_whose_edit_is_already_on_the_server()
 fn fetched_journals_keeps_the_local_journal() {
     let mut store = store_with(&[]);
     create_local(&mut store);
-    start_local(&mut store);
+    apply(
+        &mut store,
+        JournalAction::EditLocalNotes {
+            issue_id: ISSUE_ID.into(),
+            notes: "draft".to_string(),
+        },
+    );
 
     take_in_fetched_journals(&mut store, vec![journal(10)]);
 
-    assert_eq!(
-        store.get_local_journal(ISSUE_ID).state,
-        LocalJournalState::Uploading
-    );
+    let local = store.get_local_journal(ISSUE_ID);
+    assert_eq!(local.journal.notes, "draft");
+    assert_eq!(local.state, LocalJournalState::LocalOnly { failure: None });
 }
 
 #[test]
@@ -766,11 +755,9 @@ fn fetched_journals_panics_when_a_fetched_journal_belongs_to_another_issue() {
 #[should_panic(expected = "remote journal 10 is already registered for issue 2")]
 fn fetched_journals_panics_when_a_fetched_journal_id_is_registered_for_another_issue() {
     let mut store = store_with(&[]);
-    store.consume_action(
-        IssueAction::Sync {
-            issue: issue_with_journals(OTHER_ISSUE_ID, vec![journal_of(OTHER_ISSUE_ID, 10)]),
-        }
-        .into(),
+    crate::test_support::load_issue(
+        &mut store,
+        issue_with_journals(OTHER_ISSUE_ID, vec![journal_of(OTHER_ISSUE_ID, 10)]),
     );
 
     take_in_fetched_journals(&mut store, vec![journal(10)]);

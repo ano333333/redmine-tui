@@ -123,7 +123,7 @@ fn create_property_widget<'a>(
 mod tests {
     use super::*;
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
-    use crate::stores::{Action, IssueAction};
+    use crate::stores::Action;
     use crate::test_support::{render_snapshot, sync_sample_masters};
     use crate::widgets::gutter::GUTTER_WIDTH;
     use ratatui::layout::Position;
@@ -154,12 +154,7 @@ mod tests {
     fn store_with_property_issue() -> Store {
         let mut store = Store::new();
         sync_sample_masters(&mut store);
-        store.consume_action(
-            IssueAction::Sync {
-                issue: crate::test_support::sample_open_child_issue(),
-            }
-            .into(),
-        );
+        crate::test_support::load_issue(&mut store, crate::test_support::sample_open_child_issue());
         store
     }
 

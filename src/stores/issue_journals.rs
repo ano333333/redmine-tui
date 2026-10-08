@@ -254,10 +254,17 @@ impl IssueJournalStates {
         fetched: Vec<Journal>,
     ) -> Vec<Journal> {
         let fetched_ids: HashSet<JournalId> = fetched.iter().map(|journal| journal.id).collect();
+        // 取り込みはupload中のJournalがない時か、保存対象の状態を取得結果に合わせて遷移させた
+        // 後に行うため、消えたupload中のJournalが届くのは制御の破綻である。状態を書き換える前に拒否する。
+        if let Some(journal) = current.iter().find(|journal| {
+            matches!(
+                self.remote.get(&journal.id),
+                Some(RemoteJournalState::Uploading { .. })
+            ) && !fetched_ids.contains(&journal.id)
+        }) {
+            panic!("fetched journals lack uploading journal {}", journal.id);
+        }
         let mut current_by_id: HashMap<JournalId, Journal> = HashMap::with_capacity(current.len());
-        // upload中のJournalは同じIssueで他の取得結果と同時に扱わないが、消えていた場合も
-        // 作業内容を失わないよう、以前の相対順で末尾に残す。
-        let mut kept_uploading = Vec::new();
         for journal in current {
             match self.remote.get(&journal.id) {
                 Some(RemoteJournalState::Edited { diff, .. })
@@ -270,18 +277,12 @@ impl IssueJournalStates {
                     });
                     self.remote.remove(&journal.id);
                 }
-                Some(RemoteJournalState::Uploading { .. })
-                    if !fetched_ids.contains(&journal.id) =>
-                {
-                    kept_uploading.push(journal.id);
-                    current_by_id.insert(journal.id, journal);
-                }
                 _ => {
                     current_by_id.insert(journal.id, journal);
                 }
             }
         }
-        let mut merged = Vec::with_capacity(fetched.len() + kept_uploading.len());
+        let mut merged = Vec::with_capacity(fetched.len());
         for journal in fetched {
             if let Some(index) = self
                 .deleted
@@ -326,11 +327,6 @@ impl IssueJournalStates {
                         .or_insert(RemoteJournalState::Synced);
                     merged.push(journal);
                 }
-            }
-        }
-        for journal_id in kept_uploading {
-            if let Some(kept) = current_by_id.remove(&journal_id) {
-                merged.push(kept);
             }
         }
         for removed_synced in current_by_id.keys() {

@@ -65,9 +65,6 @@ struct IssueUploadConflict {
 }
 
 pub enum IssueAction {
-    Sync {
-        issue: IssueAggregate,
-    },
     StartFetching {
         id: IssueId,
     },
@@ -172,45 +169,6 @@ impl IssueStore {
 
     pub(super) fn consume_action(&mut self, action: IssueAction) {
         match action {
-            IssueAction::Sync { mut issue } => {
-                let id = issue.issue.id;
-                match self.entries.get(&id) {
-                    None | Some(IssueEntry::Edited { .. } | IssueEntry::Uploading { .. }) => {}
-                    entry => panic!(
-                        "cannot sync issue {id} while it is {}",
-                        Self::entry_state_name(entry)
-                    ),
-                }
-                self.assert_fetched_journals_are_valid(id, &issue.journals);
-                // Issue属性の保存が完了しても、Journalの編集と下書きは引き継ぐ。
-                let journal_states = match self.entries.remove(&id) {
-                    None => IssueJournalStates::synced(&issue.journals),
-                    Some(
-                        IssueEntry::Edited {
-                            issue: current,
-                            mut journal_states,
-                            ..
-                        }
-                        | IssueEntry::Uploading {
-                            issue: current,
-                            mut journal_states,
-                            ..
-                        },
-                    ) => {
-                        let fetched = std::mem::take(&mut issue.journals);
-                        issue.journals = journal_states.merge_fetched(current.journals, fetched);
-                        journal_states
-                    }
-                    Some(_) => unreachable!("state check guarantees Edited or Uploading"),
-                };
-                self.entries.insert(
-                    id,
-                    IssueEntry::Synced {
-                        issue,
-                        journal_states,
-                    },
-                );
-            }
             IssueAction::StartFetching { id } => {
                 // UIとfetch usecaseは未登録またはFetchFailedの場合にだけこのActionを発行する。
                 // Fetchingや取得済み状態への着弾は呼び出し側の不変条件違反として拒否する。

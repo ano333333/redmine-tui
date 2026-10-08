@@ -114,10 +114,10 @@ mod tests {
 
     fn dispatcher_with_issue() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = dispatcher();
-        dispatcher.borrow_mut().dispatch(IssueAction::Sync {
-            issue: crate::test_support::sample_parent_issue(),
-        });
-        dispatcher.borrow_mut().consume_action();
+        crate::test_support::dispatch_loaded_issue(
+            &mut dispatcher.borrow_mut(),
+            crate::test_support::sample_parent_issue(),
+        );
         dispatcher
     }
 

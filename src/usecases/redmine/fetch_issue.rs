@@ -239,7 +239,7 @@ mod tests {
 
     fn dispatcher_in_loaded_state(state: IssueState) -> Rc<RefCell<Dispatcher>> {
         let dispatcher = dispatcher();
-        dispatch_and_consume(&dispatcher, IssueAction::Sync { issue: issue(42) });
+        crate::test_support::dispatch_loaded_issue(&mut dispatcher.borrow_mut(), issue(42));
         if matches!(state, IssueState::Edited | IssueState::Uploading) {
             dispatch_and_consume(
                 &dispatcher,

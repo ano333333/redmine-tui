@@ -575,10 +575,7 @@ mod tests {
     ) -> Rc<RefCell<Dispatcher>> {
         let fetched = runtime.block_on(client.get_issue(IssueId::new(3))).unwrap();
         let mut dispatcher = Dispatcher::new();
-        dispatcher.dispatch(IssueAction::Sync {
-            issue: fetched.aggregate,
-        });
-        dispatcher.consume_action();
+        crate::test_support::dispatch_loaded_issue(&mut dispatcher, fetched.aggregate);
         Rc::new(RefCell::new(dispatcher))
     }
 

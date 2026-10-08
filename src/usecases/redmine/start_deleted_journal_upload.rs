@@ -308,20 +308,24 @@ mod tests {
         issue.journals = vec![remote_journal(10, "remote")];
         let mut saved = issue.clone();
         saved.journals = vec![];
+        crate::test_support::dispatch_loaded_issue(&mut dispatcher, issue);
         for action in [
-            Action::from(IssueAction::Sync { issue }),
-            JournalAction::EditRemoteNotes {
+            Action::from(JournalAction::EditRemoteNotes {
                 issue_id: ISSUE_ID,
                 journal_id: ORIGINAL_ID,
                 notes: "deleted notes".to_string(),
-            }
-            .into(),
+            }),
             IssueAction::UpdateDescription {
                 id: ISSUE_ID,
                 body: "edited".to_string(),
             }
             .into(),
-            IssueAction::Sync { issue: saved }.into(),
+            IssueAction::StartUpload { id: ISSUE_ID }.into(),
+            IssueAction::UploadSucceeded {
+                issue: saved,
+                children: vec![],
+            }
+            .into(),
         ] {
             dispatcher.dispatch(action);
             dispatcher.consume_action();

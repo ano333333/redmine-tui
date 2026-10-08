@@ -299,7 +299,7 @@ assertの期待値はリテラルまたは`const`で書く。入力と実装が�
 
 ### テストデータ
 
-- 単体テストでは、Storeへ`test_support`の`sample_*`で組み立てたentityをSyncで渡す。テストが依存する値はテストの中か`sample_*`に書き、`datas/`のfixtureは読まない。`datas/`はDemo clientとRedmine seederの入力である。
+- 単体テストでは、`test_support`の`sample_*`で組み立てたentityを、`load_issue`などで詳細取得と同じActionからStoreへ渡す。テスト専用の登録Actionは作らない。テストが依存する値はテストの中か`sample_*`に書き、`datas/`のfixtureは読まない。`datas/`はDemo clientとRedmine seederの入力である。
 - Redmine clientテストとE2Eは、テストごとに`datas/`からseedを入れ直した状態で始まる。seedには全テストで共通の土台（マスターデータ、project、role、workflowなど）だけを入れる。
 - テスト固有のデータは、E2EではGivenの段階でRedmine APIを使って追加する。他のユーザーによる更新や競合も、APIによる更新として書く。seedの再投入はAUTO_INCREMENTもリセットするため、APIで作成したデータのIDは毎回同じになる。
 

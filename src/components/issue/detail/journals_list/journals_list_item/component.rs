@@ -316,7 +316,7 @@ mod tests {
         let mut issue =
             crate::test_support::sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0);
         issue.journals = journals;
-        store.consume_action(crate::stores::IssueAction::Sync { issue }.into());
+        crate::test_support::load_issue(&mut store, issue);
         store
     }
 

@@ -127,17 +127,10 @@ mod tests {
     fn store_with_parent_and_children() -> Store {
         let mut store = Store::new();
         sync_sample_masters(&mut store);
-        store.consume_action(
-            IssueAction::Sync {
-                issue: crate::test_support::sample_open_child_issue(),
-            }
-            .into(),
-        );
-        store.consume_action(
-            IssueAction::Sync {
-                issue: crate::test_support::sample_closed_child_issue(),
-            }
-            .into(),
+        crate::test_support::load_issue(&mut store, crate::test_support::sample_open_child_issue());
+        crate::test_support::load_issue(
+            &mut store,
+            crate::test_support::sample_closed_child_issue(),
         );
         for action in crate::test_support::fetch_sample_parent_issue_actions(vec![]) {
             store.consume_action(action);
@@ -172,11 +165,9 @@ mod tests {
     fn unloaded_children_are_listed_with_the_fetched_subject_and_counted_as_open() {
         let mut store = Store::new();
         sync_sample_masters(&mut store);
-        store.consume_action(
-            IssueAction::Sync {
-                issue: crate::test_support::sample_closed_child_issue(),
-            }
-            .into(),
+        crate::test_support::load_issue(
+            &mut store,
+            crate::test_support::sample_closed_child_issue(),
         );
         for action in crate::test_support::fetch_sample_parent_issue_actions(vec![]) {
             store.consume_action(action);

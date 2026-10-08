@@ -31,7 +31,7 @@ fn sync_issue(store: &mut Store, id: IssueId) {
     issue.target_version_id = Some(TargetVersionId::new(1));
     issue.category_id = Some(CategoryId::new(1));
     issue.estimated_hours = None;
-    store.consume_action(IssueAction::Sync { issue }.into());
+    crate::test_support::load_issue(store, issue);
 }
 
 #[test]
@@ -336,7 +336,7 @@ fn update_issue_description_updates_issue_and_records_diff() {
     let mut issue = sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0);
     issue.issue.description = "nested before".to_string();
     let mut store = Store::new();
-    store.consume_action(IssueAction::Sync { issue }.into());
+    crate::test_support::load_issue(&mut store, issue);
 
     store.consume_action(
         IssueAction::UpdateDescription {
@@ -363,7 +363,7 @@ fn update_issue_status_updates_issue_and_records_diff() {
     let mut issue = sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0);
     issue.issue.status_id = 2.into();
     let mut store = Store::new();
-    store.consume_action(IssueAction::Sync { issue }.into());
+    crate::test_support::load_issue(&mut store, issue);
 
     store.consume_action(
         IssueAction::UpdateStatus {
@@ -641,20 +641,6 @@ fn edited_issue_fail_upload_panics() {
 }
 
 #[test]
-#[should_panic(expected = "cannot sync issue 1 while it is Synced")]
-fn synced_issue_sync_issue_panics() {
-    let mut store = Store::new();
-    sync_issue(&mut store, 1.into());
-
-    store.consume_action(
-        IssueAction::Sync {
-            issue: sample_issue_aggregate(1, "server issue", 1.into(), None, None, None, 0),
-        }
-        .into(),
-    );
-}
-
-#[test]
 fn cancel_issue_upload_returns_issue_to_edited_and_retains_diffs() {
     let mut store = Store::new();
     sync_issue(&mut store, 1.into());
@@ -770,161 +756,6 @@ fn update_after_failed_upload_appends_diff_and_retains_failure() {
 }
 
 #[test]
-fn sync_issue_replaces_issue_clears_diffs_and_marks_synced() {
-    let mut store = Store::new();
-    store.consume_action(
-        IssueAction::Sync {
-            issue: sample_issue_aggregate(
-                9,
-                "server issue before edit",
-                1.into(),
-                None,
-                None,
-                None,
-                0,
-            ),
-        }
-        .into(),
-    );
-    store.consume_action(
-        IssueAction::UpdateDescription {
-            id: 9.into(),
-            body: "local edit".to_string(),
-        }
-        .into(),
-    );
-
-    store.consume_action(
-        IssueAction::Sync {
-            issue: sample_issue_aggregate(
-                9,
-                "server issue after upload",
-                1.into(),
-                None,
-                None,
-                None,
-                0,
-            ),
-        }
-        .into(),
-    );
-
-    let (issue, state) = store.get_issue(9);
-    assert_eq!(issue.subject(), "server issue after upload");
-    assert_eq!(issue.description(), "body");
-    assert_eq!(state, IssueState::Synced);
-    assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
-}
-
-#[test]
-fn sync_issue_after_failed_upload_replaces_issue_clears_diffs_and_failure_and_marks_synced() {
-    let mut store = Store::new();
-    store.consume_action(
-        IssueAction::Sync {
-            issue: sample_issue_aggregate(
-                9,
-                "server issue before edit",
-                1.into(),
-                None,
-                None,
-                None,
-                0,
-            ),
-        }
-        .into(),
-    );
-    store.consume_action(
-        IssueAction::UpdateDescription {
-            id: 9.into(),
-            body: "local edit".to_string(),
-        }
-        .into(),
-    );
-    store.consume_action(IssueAction::StartUpload { id: 9.into() }.into());
-    store.consume_action(
-        IssueAction::FailUpload {
-            id: 9.into(),
-            message: "temporary failure".to_string(),
-        }
-        .into(),
-    );
-    assert_eq!(
-        store.try_get_issue_upload_failure(9.into()),
-        Some("temporary failure")
-    );
-
-    store.consume_action(
-        IssueAction::Sync {
-            issue: sample_issue_aggregate(
-                9,
-                "server issue after upload",
-                1.into(),
-                None,
-                None,
-                None,
-                0,
-            ),
-        }
-        .into(),
-    );
-
-    let (issue, state) = store.get_issue(9);
-    assert_eq!(issue.subject(), "server issue after upload");
-    assert_eq!(issue.description(), "body");
-    assert_eq!(state, IssueState::Synced);
-    assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
-    assert_eq!(store.try_get_issue_upload_failure(9.into()), None);
-}
-
-#[test]
-fn uploading_issue_sync_replaces_issue_clears_diffs_and_marks_synced() {
-    let mut store = Store::new();
-    store.consume_action(
-        IssueAction::Sync {
-            issue: sample_issue_aggregate(
-                9,
-                "server issue before upload",
-                1.into(),
-                None,
-                None,
-                None,
-                0,
-            ),
-        }
-        .into(),
-    );
-    store.consume_action(
-        IssueAction::UpdateDescription {
-            id: 9.into(),
-            body: "local edit".to_string(),
-        }
-        .into(),
-    );
-    store.consume_action(IssueAction::StartUpload { id: 9.into() }.into());
-
-    store.consume_action(
-        IssueAction::Sync {
-            issue: sample_issue_aggregate(
-                9,
-                "server issue after upload",
-                1.into(),
-                None,
-                None,
-                None,
-                0,
-            ),
-        }
-        .into(),
-    );
-
-    let (issue, state) = store.get_issue(9);
-    assert_eq!(issue.subject(), "server issue after upload");
-    assert_eq!(issue.description(), "body");
-    assert_eq!(state, IssueState::Synced);
-    assert!(store.get_issue_property_diffs(IssueId::new(9)).is_empty());
-}
-
-#[test]
 fn unregistered_issue_can_start_fetching_without_an_issue_body() {
     let id = IssueId::new(99);
     let mut store = Store::new();
@@ -982,14 +813,14 @@ start_fetching_outside_startable_states_panics! {
             IssueAction::StartFetching { id: IssueId::new(99) },
         ],
     start_fetching_while_synced_panics:
-        "cannot start fetching issue 99 while it is Synced" => [IssueAction::Sync {
-            issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
-        }],
+        "cannot start fetching issue 99 while it is Synced" => [
+            IssueAction::StartFetching { id: IssueId::new(99) },
+            fetched_issue_99(),
+        ],
     start_fetching_while_edited_panics:
         "cannot start fetching issue 99 while it is Edited" => [
-            IssueAction::Sync {
-                issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
-            },
+            IssueAction::StartFetching { id: IssueId::new(99) },
+            fetched_issue_99(),
             IssueAction::UpdateDescription {
                 id: IssueId::new(99),
                 body: "local edit".to_string(),
@@ -997,9 +828,8 @@ start_fetching_outside_startable_states_panics! {
         ],
     start_fetching_while_uploading_panics:
         "cannot start fetching issue 99 while it is Uploading" => [
-            IssueAction::Sync {
-                issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
-            },
+            IssueAction::StartFetching { id: IssueId::new(99) },
+            fetched_issue_99(),
             IssueAction::UpdateDescription {
                 id: IssueId::new(99),
                 body: "local edit".to_string(),
@@ -1092,9 +922,10 @@ fetch_failure_outside_fetching_panics! {
     fetch_failure_without_state_panics:
         "fetch failed for issue 99 without an issue state" => [],
     fetch_failure_while_synced_panics:
-        "fetch failed while issue 99 is Synced" => [IssueAction::Sync {
-            issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
-        }],
+        "fetch failed while issue 99 is Synced" => [
+            IssueAction::StartFetching { id: IssueId::new(99) },
+            fetched_issue_99(),
+        ],
     fetch_failure_after_fetch_failure_panics:
         "fetch failed while issue 99 is FetchFailed" => [
             IssueAction::StartFetching { id: IssueId::new(99) },
@@ -1105,9 +936,8 @@ fetch_failure_outside_fetching_panics! {
         ],
     fetch_failure_while_edited_panics:
         "fetch failed while issue 99 is Edited" => [
-            IssueAction::Sync {
-                issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
-            },
+            IssueAction::StartFetching { id: IssueId::new(99) },
+            fetched_issue_99(),
             IssueAction::UpdateDescription {
                 id: IssueId::new(99),
                 body: "local edit".to_string(),
@@ -1115,9 +945,8 @@ fetch_failure_outside_fetching_panics! {
         ],
     fetch_failure_while_uploading_panics:
         "fetch failed while issue 99 is Uploading" => [
-            IssueAction::Sync {
-                issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
-            },
+            IssueAction::StartFetching { id: IssueId::new(99) },
+            fetched_issue_99(),
             IssueAction::UpdateDescription {
                 id: IssueId::new(99),
                 body: "local edit".to_string(),
@@ -1150,9 +979,10 @@ fetch_success_outside_fetching_panics! {
     fetch_success_without_state_panics:
         "fetch succeeded for issue 99 without an issue state" => [],
     fetch_success_while_synced_panics:
-        "fetch succeeded while issue 99 is Synced" => [IssueAction::Sync {
-            issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
-        }],
+        "fetch succeeded while issue 99 is Synced" => [
+            IssueAction::StartFetching { id: IssueId::new(99) },
+            fetched_issue_99(),
+        ],
     fetch_success_after_fetch_failure_panics:
         "fetch succeeded while issue 99 is FetchFailed" => [
             IssueAction::StartFetching { id: IssueId::new(99) },
@@ -1163,9 +993,8 @@ fetch_success_outside_fetching_panics! {
         ],
     fetch_success_while_edited_panics:
         "fetch succeeded while issue 99 is Edited" => [
-            IssueAction::Sync {
-                issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
-            },
+            IssueAction::StartFetching { id: IssueId::new(99) },
+            fetched_issue_99(),
             IssueAction::UpdateDescription {
                 id: IssueId::new(99),
                 body: "local edit".to_string(),
@@ -1173,9 +1002,8 @@ fetch_success_outside_fetching_panics! {
         ],
     fetch_success_while_uploading_panics:
         "fetch succeeded while issue 99 is Uploading" => [
-            IssueAction::Sync {
-                issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
-            },
+            IssueAction::StartFetching { id: IssueId::new(99) },
+            fetched_issue_99(),
             IssueAction::UpdateDescription {
                 id: IssueId::new(99),
                 body: "local edit".to_string(),
@@ -1185,68 +1013,24 @@ fetch_success_outside_fetching_panics! {
 }
 
 #[test]
-#[should_panic(expected = "cannot sync issue 99 while it is Fetching")]
-fn fetching_issue_sync_panics() {
-    let id = IssueId::new(99);
-    let mut store = Store::new();
-    store.consume_action(IssueAction::StartFetching { id }.into());
-
-    store.consume_action(
-        IssueAction::Sync {
-            issue: sample_issue_aggregate(99, "sync", 1.into(), None, None, None, 0),
-        }
-        .into(),
-    );
-}
-
-#[test]
-#[should_panic(expected = "cannot sync issue 99 while it is FetchFailed")]
-fn fetch_failed_issue_sync_panics() {
-    let id = IssueId::new(99);
-    let mut store = Store::new();
-    store.consume_action(IssueAction::StartFetching { id }.into());
-    store.consume_action(
-        IssueAction::FetchFailed {
-            id,
-            message: "failed".to_string(),
-        }
-        .into(),
-    );
-
-    store.consume_action(
-        IssueAction::Sync {
-            issue: sample_issue_aggregate(99, "sync", 1.into(), None, None, None, 0),
-        }
-        .into(),
-    );
-}
-
-#[test]
 fn state_getters_split_loaded_and_fetch_states() {
     let id = IssueId::new(99);
-    let issue = || sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0);
     let edit = || IssueAction::UpdateDescription {
         id,
         body: "local edit".to_string(),
     };
-    let cases: Vec<(
-        Vec<IssueAction>,
-        Option<IssueState>,
-        Option<IssueFetchState>,
-    )> = vec![
+    let start = || Action::from(IssueAction::StartFetching { id });
+    let cases: Vec<(Vec<Action>, Option<IssueState>, Option<IssueFetchState>)> = vec![
         (vec![], None, None),
-        (
-            vec![IssueAction::StartFetching { id }],
-            None,
-            Some(IssueFetchState::Fetching),
-        ),
+        (vec![start()], None, Some(IssueFetchState::Fetching)),
         (
             vec![
-                IssueAction::StartFetching { id },
+                start(),
                 IssueAction::FetchFailed {
                     id,
                     message: "failed".to_string(),
-                },
+                }
+                .into(),
             ],
             None,
             Some(IssueFetchState::FetchFailed {
@@ -1254,20 +1038,21 @@ fn state_getters_split_loaded_and_fetch_states() {
             }),
         ),
         (
-            vec![IssueAction::Sync { issue: issue() }],
+            vec![start(), fetched_issue_99()],
             Some(IssueState::Synced),
             None,
         ),
         (
-            vec![IssueAction::Sync { issue: issue() }, edit()],
+            vec![start(), fetched_issue_99(), edit().into()],
             Some(IssueState::Edited),
             None,
         ),
         (
             vec![
-                IssueAction::Sync { issue: issue() },
-                edit(),
-                IssueAction::StartUpload { id },
+                start(),
+                fetched_issue_99(),
+                edit().into(),
+                IssueAction::StartUpload { id }.into(),
             ],
             Some(IssueState::Uploading),
             None,
@@ -1277,7 +1062,7 @@ fn state_getters_split_loaded_and_fetch_states() {
     for (setup, expected_state, expected_fetch_state) in cases {
         let mut store = Store::new();
         for action in setup {
-            store.consume_action(action.into());
+            store.consume_action(action);
         }
 
         assert_eq!(store.try_get_issue_state(id), expected_state);
@@ -1321,12 +1106,7 @@ get_issue_without_a_loaded_body_panics! {
 #[test]
 fn editing_a_property_back_to_the_fetched_value_returns_to_synced() {
     let mut store = Store::new();
-    store.consume_action(
-        IssueAction::Sync {
-            issue: issue_with_description(1, "fetched"),
-        }
-        .into(),
-    );
+    crate::test_support::load_issue(&mut store, issue_with_description(1, "fetched"));
 
     for body in ["edited", "fetched"] {
         store.consume_action(
@@ -1347,12 +1127,7 @@ fn editing_a_property_back_to_the_fetched_value_returns_to_synced() {
 #[test]
 fn edits_keep_the_fetched_value_as_the_first_before_and_record_each_step() {
     let mut store = Store::new();
-    store.consume_action(
-        IssueAction::Sync {
-            issue: issue_with_description(1, "fetched"),
-        }
-        .into(),
-    );
+    crate::test_support::load_issue(&mut store, issue_with_description(1, "fetched"));
 
     for body in ["first", "second"] {
         store.consume_action(
@@ -1385,12 +1160,7 @@ fn edits_keep_the_fetched_value_as_the_first_before_and_record_each_step() {
 #[test]
 fn reverting_one_property_keeps_other_edits_and_the_edit_history() {
     let mut store = Store::new();
-    store.consume_action(
-        IssueAction::Sync {
-            issue: issue_with_description(1, "fetched"),
-        }
-        .into(),
-    );
+    crate::test_support::load_issue(&mut store, issue_with_description(1, "fetched"));
 
     store.consume_action(
         IssueAction::UpdateDescription {
@@ -1425,4 +1195,13 @@ fn issue_with_description(id: u16, description: &str) -> IssueAggregate {
     let mut issue = sample_issue_aggregate(id, "subject", 1.into(), None, None, None, 0);
     issue.issue.description = description.to_string();
     issue
+}
+
+/// Issue 99の詳細取得の完了。直前に`StartFetching`が必要。
+fn fetched_issue_99() -> Action {
+    Action::IssueFetchSucceeded {
+        id: IssueId::new(99),
+        issue: sample_issue_aggregate(99, "issue", 1.into(), None, None, None, 0),
+        children: vec![],
+    }
 }

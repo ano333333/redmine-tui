@@ -360,7 +360,9 @@ mod tests {
         dispatch_sample_masters(&mut dispatcher);
         let mut issue = sample_issue_aggregate(3, "issue", 3.into(), Some(1001), None, None, 0);
         issue.tracker_id = TrackerId::new(3);
-        dispatcher.dispatch(IssueAction::Sync { issue });
+        for action in crate::test_support::fetch_issue_actions(issue) {
+            dispatcher.dispatch(action);
+        }
         while dispatcher.consume_actinos_len() > 0 {
             dispatcher.consume_action();
         }

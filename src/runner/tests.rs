@@ -278,10 +278,7 @@ async fn issue_upload_puts_only_edited_properties_and_completes_with_the_confirm
     server_issue.issue.description = "original description".to_string();
     let client = Arc::new(IssueUploadClient::new(server_issue.clone()));
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    dispatcher.borrow_mut().dispatch(IssueAction::Sync {
-        issue: server_issue.clone(),
-    });
-    dispatcher.borrow_mut().consume_action();
+    crate::test_support::dispatch_loaded_issue(&mut dispatcher.borrow_mut(), server_issue.clone());
     dispatcher
         .borrow_mut()
         .dispatch(IssueAction::UpdateDescription {
@@ -319,10 +316,7 @@ fn starting_issue_upload_panics_when_issue_is_not_edited() {
     let issue = sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
     let client = Arc::new(IssueUploadClient::new(issue.clone()));
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    dispatcher
-        .borrow_mut()
-        .dispatch(IssueAction::Sync { issue });
-    dispatcher.borrow_mut().consume_action();
+    crate::test_support::dispatch_loaded_issue(&mut dispatcher.borrow_mut(), issue);
 
     std::mem::drop(start_issue_upload(dispatcher, client, 1.into()));
 }
@@ -691,8 +685,7 @@ fn start_edited_journal_upload(dispatcher: &mut Dispatcher, issue_id: u16, notes
     let mut journal = sample_journal(issue_id);
     journal.notes = notes.to_string();
     issue.journals = vec![journal];
-    dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-    dispatcher.consume_action();
+    crate::test_support::dispatch_loaded_issue(dispatcher, issue);
     dispatcher.dispatch(Action::Journal(JournalAction::EditRemoteNotes {
         issue_id: IssueId::new(issue_id),
         journal_id: JournalId::new(1),
@@ -883,8 +876,7 @@ fn start_local_journal(dispatcher: &mut Dispatcher, issue_id: u16, notes: &str) 
         None,
         0,
     );
-    dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-    dispatcher.consume_action();
+    crate::test_support::dispatch_loaded_issue(dispatcher, issue);
     dispatcher.dispatch(Action::Journal(JournalAction::CreateLocal {
         issue_id: IssueId::new(issue_id),
     }));

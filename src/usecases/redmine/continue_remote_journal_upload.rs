@@ -63,7 +63,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::stores::{
-        Action, DeletedJournalEntry, DeletedJournalState, Dispatcher, IssueAction, JournalAction,
+        Action, DeletedJournalEntry, DeletedJournalState, Dispatcher, JournalAction,
         RemoteJournalState, RemoteJournalUploadConflict,
     };
     use crate::test_support::sample_issue_aggregate;
@@ -85,8 +85,7 @@ mod tests {
         let mut issue =
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         issue.journals = vec![journal_with_notes("remote notes")];
-        dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-        dispatcher.consume_action();
+        crate::test_support::dispatch_loaded_issue(&mut dispatcher, issue);
         dispatcher
     }
 

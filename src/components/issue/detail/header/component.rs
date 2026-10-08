@@ -78,12 +78,7 @@ mod tests {
     #[test]
     fn uploading_issue_renders_uploading_decorator() {
         let mut store = Store::new();
-        store.consume_action(
-            IssueAction::Sync {
-                issue: crate::test_support::sample_open_child_issue(),
-            }
-            .into(),
-        );
+        crate::test_support::load_issue(&mut store, crate::test_support::sample_open_child_issue());
         store.consume_action(
             IssueAction::UpdateDescription {
                 id: 1.into(),
@@ -119,12 +114,7 @@ mod tests {
     #[test]
     fn cursor_position_points_to_synced_issue_title() {
         let mut store = Store::new();
-        store.consume_action(
-            IssueAction::Sync {
-                issue: crate::test_support::sample_open_child_issue(),
-            }
-            .into(),
-        );
+        crate::test_support::load_issue(&mut store, crate::test_support::sample_open_child_issue());
 
         let mut component = HeaderComponent::new(1);
         component.update(&store);
@@ -135,12 +125,7 @@ mod tests {
     #[test]
     fn cursor_position_accounts_for_uploading_decorator() {
         let mut store = Store::new();
-        store.consume_action(
-            IssueAction::Sync {
-                issue: crate::test_support::sample_open_child_issue(),
-            }
-            .into(),
-        );
+        crate::test_support::load_issue(&mut store, crate::test_support::sample_open_child_issue());
         store.consume_action(
             IssueAction::UpdateDescription {
                 id: 1.into(),

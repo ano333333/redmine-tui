@@ -301,8 +301,7 @@ pub(super) mod tests {
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         issue.issue.description = "issue body".to_string();
         issue.journals = journals;
-        dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-        dispatcher.consume_action();
+        crate::test_support::dispatch_loaded_issue(dispatcher, issue);
         dispatcher.dispatch(Action::Journal(JournalAction::EditRemoteNotes {
             issue_id: ISSUE_ID,
             journal_id: JOURNAL_ID,
@@ -472,8 +471,7 @@ pub(super) mod tests {
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
         issue.issue.description = "issue body".to_string();
         issue.journals = vec![journal()];
-        dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-        dispatcher.consume_action();
+        crate::test_support::dispatch_loaded_issue(&mut dispatcher, issue);
         let dispatcher = Rc::new(RefCell::new(dispatcher));
 
         assert_panics(&dispatcher);
