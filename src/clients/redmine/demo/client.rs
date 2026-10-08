@@ -360,7 +360,7 @@ mod tests {
                 .iter()
                 .map(|issue| issue.id.get())
                 .collect::<Vec<_>>(),
-            vec![3, 2, 1]
+            vec![4, 3, 2, 1]
         );
         assert!(
             first_page
@@ -368,7 +368,7 @@ mod tests {
                 .iter()
                 .all(|issue| issue.project_id == ProjectId::new(1))
         );
-        assert_eq!(first_page.total_count, 3);
+        assert_eq!(first_page.total_count, 4);
         assert_eq!(first_page.offset, 0);
         assert_eq!(first_page.limit, 50);
 
@@ -382,7 +382,7 @@ mod tests {
             .block_on(client.get_project_issues(ProjectId::new(1), NonZeroUsize::new(2).unwrap()))
             .unwrap();
         assert!(outside_range.issues.is_empty());
-        assert_eq!(outside_range.total_count, 3);
+        assert_eq!(outside_range.total_count, 4);
         assert_eq!(outside_range.offset, 50);
     }
 

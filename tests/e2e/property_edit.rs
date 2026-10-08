@@ -20,7 +20,7 @@ const NONE_CHOICE: &str = "(None)";
 fn open_property_popup_of_issue_3(line: usize) -> PtySession {
     reseed_redmine();
     let mut session = spawn_app();
-    open_issue_from_initial_popup(&mut session, 0);
+    open_issue_from_initial_popup(&mut session, 1);
     // 最初のjでheaderからpropertyへ移り、以降のjで1行ずつ下がる。
     let (row, move_right) = if line < RIGHT_COLUMN_FIRST_LINE {
         (line, false)

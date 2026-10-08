@@ -1,7 +1,7 @@
 use super::integration_support::{TEST_API_KEY, reseed_redmine, run_contract, test_error};
 
-/// seedのIssueはID 1〜3のため、AUTO_INCREMENTがリセットされていれば次に作成されるIDは4になる。
-const FIRST_CREATED_ISSUE_ID: u64 = 4;
+/// seedのIssueはID 1〜4のため、AUTO_INCREMENTがリセットされていれば次に作成されるIDは5になる。
+const FIRST_CREATED_ISSUE_ID: u64 = 5;
 
 #[test]
 fn reseed_resets_created_issue_id_against_redmine_container() {

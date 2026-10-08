@@ -1066,10 +1066,13 @@ mod tests {
         assert!(sql.contains("(1, 1, 1, 'issue1'"));
         assert!(sql.contains("(3, 3, 1, 'issue1(長"));
         assert!(sql.contains(
-            "UPDATE issues SET parent_id = 3, root_id = 3, lft = 2, rgt = 3 WHERE id = 1;"
+            "UPDATE issues SET parent_id = 3, root_id = 3, lft = 2, rgt = 5 WHERE id = 1;"
         ));
         assert!(sql.contains(
-            "UPDATE issues SET parent_id = 3, root_id = 3, lft = 4, rgt = 5 WHERE id = 2;"
+            "UPDATE issues SET parent_id = 1, root_id = 3, lft = 3, rgt = 4 WHERE id = 4;"
+        ));
+        assert!(sql.contains(
+            "UPDATE issues SET parent_id = 3, root_id = 3, lft = 6, rgt = 7 WHERE id = 2;"
         ));
     }
 

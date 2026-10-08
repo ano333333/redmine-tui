@@ -1,6 +1,6 @@
 use super::integration_support::{
-    TEST_API_KEY, authenticated_client, expect_not_found, expect_unauthorized, run_contract,
-    test_error, unauthorized_client,
+    authenticated_client, expect_not_found, expect_unauthorized, run_contract, test_error,
+    unauthorized_client,
 };
 use crate::clients::redmine::RedmineClient;
 use crate::test_support::{SAMPLE_MARKDOWN, local_date, local_datetime};
@@ -58,7 +58,7 @@ async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::
                 child.children.len()
             ))
             .collect::<Vec<_>>(),
-        vec![(1, 1, "issue1", 0), (2, 2, "issue2", 0)]
+        vec![(1, 1, "issue1", 1), (2, 2, "issue2", 0)]
     );
 
     assert_eq!(
@@ -112,31 +112,10 @@ async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-/// seedのIssue 1は親Issue 3を持つ。Issue 1の子をAPIで作成し、孫として取得できることも確かめる。
+/// seedのIssue 1は親Issue 3を持ち、その下に孫のIssue 4がある。
 async fn assert_get_issue_returns_parent_and_grandchildren(
     base_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let response = reqwest::Client::new()
-        .post(format!("{base_url}/issues.json"))
-        .header("X-Redmine-API-Key", TEST_API_KEY)
-        .json(&serde_json::json!({
-            "issue": {
-                "project_id": 1,
-                "tracker_id": 1,
-                "status_id": 1,
-                "priority_id": 1,
-                "subject": "grandchild",
-                "parent_issue_id": 1,
-            }
-        }))
-        .send()
-        .await?;
-    if !response.status().is_success() {
-        return Err(test_error(format!(
-            "create grandchild returned {}",
-            response.status()
-        )));
-    }
     let client = authenticated_client(base_url);
 
     let child = client
@@ -149,14 +128,13 @@ async fn assert_get_issue_returns_parent_and_grandchildren(
         .map_err(|error| test_error(format!("get_issue(3) returned {error:?}")))?;
 
     assert_eq!(child.aggregate.parent_id, Some(IssueId::new(3)));
-    // seedのIssueは3件で、再投入時にAUTO_INCREMENTを戻すため、作成したIssueのIDは4になる。
     assert_eq!(
         parent.children[0]
             .children
             .iter()
             .map(|grandchild| (grandchild.id.get(), grandchild.subject.as_str()))
             .collect::<Vec<_>>(),
-        vec![(4, "grandchild")]
+        vec![(4, "issue4")]
     );
     Ok(())
 }

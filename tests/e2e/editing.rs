@@ -19,7 +19,7 @@ fn open_issue_3_and_move_down(
 ) -> PtySession {
     reseed_redmine();
     let mut session = editor.spawn_app(edited_text);
-    open_issue_from_initial_popup(&mut session, 0);
+    open_issue_from_initial_popup(&mut session, 1);
     for _ in 0..presses {
         session.press_key("j").expect("failed to press j");
     }

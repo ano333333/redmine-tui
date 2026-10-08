@@ -37,7 +37,7 @@ fn ctrl_s_uploads_the_edited_issue() {
     // 子Issueを持つIssue 3の優先度は子から計算され、Redmineが更新を無視するため、Issue 2を使う。
     reseed_redmine();
     let mut session = spawn_app();
-    open_issue_from_initial_popup(&mut session, 1);
+    open_issue_from_initial_popup(&mut session, 2);
     press_j(&mut session, J_PRESSES_TO_PRIORITY);
     press_keys(&mut session, &["e", "j", "Enter"]);
     wait_until(&mut session, "changing the priority to minor", |frame| {
@@ -60,7 +60,7 @@ fn ctrl_s_uploads_the_edited_remote_journal_notes() {
     let editor = FakeEditor::new("upload_remote_journal");
     reseed_redmine();
     let mut session = editor.spawn_app("uploaded journal notes");
-    open_issue_from_initial_popup(&mut session, 0);
+    open_issue_from_initial_popup(&mut session, 1);
     press_j(&mut session, J_PRESSES_TO_FIRST_JOURNAL_NOTES);
     session.press_key("e").expect("failed to press e");
     editor.finish_editing(&mut session);
@@ -83,7 +83,7 @@ fn ctrl_s_uploads_the_local_journal_as_a_new_journal() {
     let editor = FakeEditor::new("upload_local_journal");
     reseed_redmine();
     let mut session = editor.spawn_app("uploaded local notes");
-    open_issue_from_initial_popup(&mut session, 0);
+    open_issue_from_initial_popup(&mut session, 1);
     press_j(&mut session, J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON);
     session.press_key("Enter").expect("failed to press Enter");
     editor.finish_editing(&mut session);
@@ -109,7 +109,7 @@ fn ctrl_s_posts_an_evacuated_journal_as_a_new_journal() {
     let editor = FakeEditor::new("post_evacuated_journal");
     reseed_redmine();
     let mut session = editor.spawn_app("rescued notes");
-    open_issue_from_initial_popup(&mut session, 0);
+    open_issue_from_initial_popup(&mut session, 1);
     // 作成ボタンの1つ上がJournal 3のnotesの最終行。
     press_j(&mut session, J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON);
     press_keys(&mut session, &["k", "e"]);
@@ -152,7 +152,7 @@ fn saving_a_journal_deleted_on_the_server_evacuates_it_without_posting() {
     let editor = FakeEditor::new("evacuate_saved_journal");
     reseed_redmine();
     let mut session = editor.spawn_app("rescued notes");
-    open_issue_from_initial_popup(&mut session, 0);
+    open_issue_from_initial_popup(&mut session, 1);
     press_j(&mut session, J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON);
     press_keys(&mut session, &["k", "e"]);
     editor.finish_editing(&mut session);
@@ -186,7 +186,7 @@ fn issue_upload_continues_and_keeps_an_edited_journal_changed_on_the_server() {
     let editor = FakeEditor::new("issue_upload_with_journal_conflict");
     reseed_redmine();
     let mut session = editor.spawn_app("local text");
-    open_issue_from_initial_popup(&mut session, 0);
+    open_issue_from_initial_popup(&mut session, 1);
     press_j(&mut session, J_PRESSES_TO_FIRST_JOURNAL_NOTES);
     session.press_key("e").expect("failed to press e");
     editor.finish_editing(&mut session);

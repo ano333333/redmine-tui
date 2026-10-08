@@ -16,8 +16,8 @@ fn issue_fetch_failure_shows_the_reason_and_r_retries() {
     );
 
     // When 一覧の2番目にあるIssue 2を開く
-    // 一覧はID降順（3, 2, 1）で並び、lでIssue一覧へ移ってjで2番目を選ぶ。
-    press_keys(&mut session, &["l", "j", "Enter"]);
+    // 一覧はID降順（4, 3, 2, 1）で並び、lでIssue一覧へ移ってjで3番目を選ぶ。
+    press_keys(&mut session, &["l", "j", "j", "Enter"]);
 
     // Then 404による取得失敗が表示される
     wait_for_text(&mut session, "404");

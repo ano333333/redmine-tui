@@ -22,29 +22,31 @@ fn update_issue_contract_against_redmine_container() {
     });
 }
 
-async fn fetch_issue_1(base_url: &str) -> Result<IssueAggregate, Box<dyn std::error::Error>> {
+async fn fetch_issue_4(base_url: &str) -> Result<IssueAggregate, Box<dyn std::error::Error>> {
     Ok(authenticated_client(base_url)
-        .get_issue(IssueId::new(1))
+        .get_issue(IssueId::new(4))
         .await
-        .map_err(|error| test_error(format!("get_issue(1) returned {error:?}")))?
+        .map_err(|error| test_error(format!("get_issue(4) returned {error:?}")))?
         .aggregate)
 }
 
-async fn update_issue_1(
+async fn update_issue_4(
     base_url: &str,
     update: IssueUpdate,
 ) -> Result<(), Box<dyn std::error::Error>> {
     authenticated_client(base_url)
-        .update_issue(IssueId::new(1), &update)
+        .update_issue(IssueId::new(4), &update)
         .await
         .map_err(|error| test_error(format!("update_issue returned {error:?}")))
 }
 
-/// seedのIssue 1は、status 3、担当者1001、対象バージョン1、カテゴリー1、期日2025-12-19を持つ。
+/// seedのIssue 4は、status 3、担当者1001、対象バージョン1、カテゴリー1、期日2025-12-19を持つ。
+///
+/// 子を持つIssueの優先度・日付・進捗率は子から計算され、Redmineが更新を無視するため、子のないIssue 4を使う。
 async fn assert_update_issue_keeps_unsent_properties(
     base_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    update_issue_1(
+    update_issue_4(
         base_url,
         IssueUpdate {
             subject: Some("only subject".to_string()),
@@ -53,7 +55,7 @@ async fn assert_update_issue_keeps_unsent_properties(
     )
     .await?;
 
-    let updated = fetch_issue_1(base_url).await?;
+    let updated = fetch_issue_4(base_url).await?;
     assert_eq!(updated.issue.subject, "only subject");
     assert_eq!(updated.issue.status_id.get(), 3);
     assert_eq!(updated.assigned_to_id.map(|id| id.get()), Some(1001));
@@ -70,7 +72,7 @@ async fn assert_update_issue_keeps_unsent_properties(
 async fn assert_update_issue_applies_every_property(
     base_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    update_issue_1(
+    update_issue_4(
         base_url,
         IssueUpdate {
             subject: Some("updated subject".to_string()),
@@ -88,7 +90,7 @@ async fn assert_update_issue_applies_every_property(
     )
     .await?;
 
-    let updated = fetch_issue_1(base_url).await?;
+    let updated = fetch_issue_4(base_url).await?;
     assert_eq!(updated.issue.subject, "updated subject");
     assert_eq!(updated.issue.description, "updated description");
     assert_eq!(updated.issue.status_id.get(), 4);
@@ -112,7 +114,7 @@ async fn assert_update_issue_applies_every_property(
 async fn assert_update_issue_clears_optional_properties(
     base_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    update_issue_1(
+    update_issue_4(
         base_url,
         IssueUpdate {
             assigned_to_id: Some(None),
@@ -126,7 +128,7 @@ async fn assert_update_issue_clears_optional_properties(
     )
     .await?;
 
-    let updated = fetch_issue_1(base_url).await?;
+    let updated = fetch_issue_4(base_url).await?;
     assert_eq!(updated.assigned_to_id, None);
     assert_eq!(updated.target_version_id, None);
     assert_eq!(updated.category_id, None);
@@ -144,7 +146,7 @@ async fn assert_update_issue_422(base_url: &str) -> Result<(), Box<dyn std::erro
     };
 
     match authenticated_client(base_url)
-        .update_issue(IssueId::new(1), &update)
+        .update_issue(IssueId::new(4), &update)
         .await
     {
         Err(RedmineClientError::UnprocessableEntity { context }) => {
@@ -164,7 +166,7 @@ async fn assert_update_issue_401(base_url: &str) -> Result<(), Box<dyn std::erro
     };
     expect_unauthorized(
         unauthorized_client(base_url)
-            .update_issue(IssueId::new(1), &update)
+            .update_issue(IssueId::new(4), &update)
             .await,
     )
     .await
