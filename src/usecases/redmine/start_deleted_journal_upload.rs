@@ -96,9 +96,9 @@ where
         Ok(fetched) if fetched.aggregate.issue.id == issue_id => {
             return vec![
                 JournalAction::CompleteDeletedUploadWithFetched {
-                    issue_id,
                     original_id,
-                    journals: fetched.aggregate.journals,
+                    issue: fetched.aggregate,
+                    children: fetched.children,
                 }
                 .into(),
             ];

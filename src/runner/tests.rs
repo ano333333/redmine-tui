@@ -916,14 +916,14 @@ fn start_local_journal_upload_action_routes_the_upload_completion_to_worker_chan
 
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
     let completion = recv_actions(&spawner, 1).remove(0);
-    let Action::Journal(JournalAction::CompleteLocalUploadWithFetched { issue_id, journals }) =
-        completion
+    let Action::Journal(JournalAction::CompleteLocalUploadWithFetched { issue, .. }) = completion
     else {
         panic!("expected complete local upload action");
     };
-    assert_eq!(issue_id, IssueId::new(3));
+    assert_eq!(issue.issue.id, IssueId::new(3));
     assert_eq!(
-        journals
+        issue
+            .journals
             .iter()
             .map(|journal| journal.id)
             .collect::<Vec<_>>(),

@@ -580,9 +580,12 @@ fn complete_deleted_upload_with_fetched_removes_only_the_target_and_takes_in_the
     apply(
         &mut store,
         JournalAction::CompleteDeletedUploadWithFetched {
-            issue_id: ISSUE_ID.into(),
             original_id: 10.into(),
-            journals: vec![journal(12), journal_with_notes(13, "edited notes")],
+            issue: issue_with_journals(
+                ISSUE_ID,
+                vec![journal(12), journal_with_notes(13, "edited notes")],
+            ),
+            children: vec![],
         },
     );
 
@@ -1371,8 +1374,8 @@ fn complete_local_upload_with_fetched_merges_the_remote_collection_and_clears_th
     apply(
         &mut store,
         JournalAction::CompleteLocalUploadWithFetched {
-            issue_id: ISSUE_ID.into(),
-            journals: vec![journal(10), journal(11)],
+            issue: issue_with_journals(ISSUE_ID, vec![journal(10), journal(11)]),
+            children: vec![],
         },
     );
 
@@ -1390,8 +1393,11 @@ fn complete_local_upload_with_fetched_keeps_the_diff_of_edited_remote_entries() 
     apply(
         &mut store,
         JournalAction::CompleteLocalUploadWithFetched {
-            issue_id: ISSUE_ID.into(),
-            journals: vec![journal_with_notes(10, "server notes"), journal(11)],
+            issue: issue_with_journals(
+                ISSUE_ID,
+                vec![journal_with_notes(10, "server notes"), journal(11)],
+            ),
+            children: vec![],
         },
     );
 
@@ -1410,8 +1416,8 @@ fn complete_local_upload_with_fetched_panics_when_the_local_entry_is_missing() {
     apply(
         &mut store,
         JournalAction::CompleteLocalUploadWithFetched {
-            issue_id: ISSUE_ID.into(),
-            journals: vec![],
+            issue: issue_with_journals(ISSUE_ID, vec![]),
+            children: vec![],
         },
     );
 }
@@ -1427,8 +1433,8 @@ fn complete_local_upload_with_fetched_panics_when_the_local_entry_is_local_only(
     apply(
         &mut store,
         JournalAction::CompleteLocalUploadWithFetched {
-            issue_id: ISSUE_ID.into(),
-            journals: vec![],
+            issue: issue_with_journals(ISSUE_ID, vec![]),
+            children: vec![],
         },
     );
 }
@@ -1735,4 +1741,50 @@ fn upload_succeeded_panics_unless_the_issue_is_uploading() {
         }
         .into(),
     );
+}
+
+fn edit_issue_description(store: &mut Store) {
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: ISSUE_ID.into(),
+            body: "local body".to_string(),
+        }
+        .into(),
+    );
+}
+
+#[test]
+fn complete_local_upload_with_fetched_takes_in_the_issue_and_children_and_keeps_issue_edits() {
+    let mut store = store_with(&[10]);
+    edit_issue_description(&mut store);
+    create_local(&mut store);
+    start_local(&mut store);
+
+    apply(
+        &mut store,
+        JournalAction::CompleteLocalUploadWithFetched {
+            issue: server_issue(vec![journal(10), journal(11)]),
+            children: vec![child(2, "fetched child")],
+        },
+    );
+
+    assert_issue_taken_in_with_local_edits(&store);
+}
+
+#[test]
+fn complete_deleted_upload_with_fetched_takes_in_the_issue_and_children_and_keeps_issue_edits() {
+    let mut store = store_with_deleted_10();
+    edit_issue_description(&mut store);
+    start_deleted(&mut store, 10);
+
+    apply(
+        &mut store,
+        JournalAction::CompleteDeletedUploadWithFetched {
+            original_id: 10.into(),
+            issue: server_issue(vec![journal(11), journal(12)]),
+            children: vec![child(2, "fetched child")],
+        },
+    );
+
+    assert_issue_taken_in_with_local_edits(&store);
 }

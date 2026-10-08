@@ -97,15 +97,16 @@ pub enum JournalAction {
         issue: IssueAggregate,
         children: Vec<IssueChild>,
     },
-    /// Local Journalのupload成功後、取得したJournal一覧の同期とLocal Journalの削除を一度に行う。
+    /// Local Journalのupload成功後、取得したIssueの取り込みとLocal Journalの削除を一度に行う。
     ///
     /// 作成されたJournalはRemote側にしか現れないため、取得結果を取り込みつつ、同じAction内で
-    /// Local Journalを削除して二重表示を避ける。編集中のRemote Journalは差分を残したまま
-    /// 本体だけを取得値にし、取得結果から消えていれば退避する。
-    /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
+    /// Local Journalを削除して二重表示を避ける。Issue本体・Journal・子一覧はRemote Journalの
+    /// 保存完了と同じく、Issue属性とJournalの編集差分を残して取得値にする。
+    /// Issueが取得済みでSyncedかEditedでない場合、対象が未登録の場合、またはUploading以外の
+    /// 状態の場合はpanicする。
     CompleteLocalUploadWithFetched {
-        issue_id: IssueId,
-        journals: Vec<Journal>,
+        issue: IssueAggregate,
+        children: Vec<IssueChild>,
     },
     /// 退避したJournalのnotesを置き換え、以前のupload失敗情報を破棄する。
     ///
@@ -131,13 +132,15 @@ pub enum JournalAction {
         original_id: JournalId,
         message: String,
     },
-    /// 投稿の成功後、取得したJournal一覧の取り込みと対象の退避データの削除を一度に行う。
+    /// 投稿の成功後、取得したIssueの取り込みと対象の退避データの削除を一度に行う。
     ///
-    /// 対象が未登録の場合、またはUploading以外の状態の場合はpanicする。
+    /// Issue本体・Journal・子一覧はRemote Journalの保存完了と同じく取得値にする。
+    /// Issueが取得済みでSyncedかEditedでない場合、対象が未登録の場合、またはUploading以外の
+    /// 状態の場合はpanicする。
     CompleteDeletedUploadWithFetched {
-        issue_id: IssueId,
         original_id: JournalId,
-        journals: Vec<Journal>,
+        issue: IssueAggregate,
+        children: Vec<IssueChild>,
     },
     /// 投稿のPUT成功後、確認の取得に失敗した場合に対象の退避データを削除する。
     ///
@@ -172,17 +175,17 @@ impl JournalAction {
             | JournalAction::StartRemoteUpload { issue_id, .. }
             | JournalAction::FailRemoteUpload { issue_id, .. }
             | JournalAction::CancelRemoteUploadConflict { issue_id, .. }
-            | JournalAction::CompleteLocalUploadWithFetched { issue_id, .. }
             | JournalAction::CompleteLocalUploadWithoutFetch { issue_id }
             | JournalAction::EditDeletedNotes { issue_id, .. }
             | JournalAction::StartDeletedUpload { issue_id, .. }
             | JournalAction::FailDeletedUpload { issue_id, .. }
-            | JournalAction::CompleteDeletedUploadWithFetched { issue_id, .. }
             | JournalAction::CompleteDeletedUploadWithoutFetch { issue_id, .. }
             | JournalAction::DiscardDeleted { issue_id, .. } => *issue_id,
             JournalAction::CompleteRemoteUpload { issue, .. }
             | JournalAction::DetectRemoteUploadConflict { issue, .. }
-            | JournalAction::EvacuateMissingRemoteUpload { issue, .. } => issue.issue.id,
+            | JournalAction::EvacuateMissingRemoteUpload { issue, .. }
+            | JournalAction::CompleteLocalUploadWithFetched { issue, .. }
+            | JournalAction::CompleteDeletedUploadWithFetched { issue, .. } => issue.issue.id,
         }
     }
 }
@@ -400,6 +403,27 @@ impl IssueJournalStates {
         }
     }
 
+    /// upload中のLocal Journalを削除する。続く取り込みで、作成されたJournalが一覧に現れる。
+    pub(super) fn complete_local_upload(&mut self, issue_id: IssueId) {
+        match self.local_mut(issue_id).state {
+            LocalJournalState::Uploading => {}
+            // Uploadingでないなら未uploadのLocalOnlyであり、対応するRemote Journalが
+            // 存在しないため、取得値にはLocal Journalの内容が含まれていない。
+            LocalJournalState::LocalOnly { .. } => panic!(
+                "cannot complete local journal upload for issue {issue_id} while it is local only"
+            ),
+        }
+        self.local = None;
+    }
+
+    /// 投稿中の退避データを削除する。取得結果に元IDが現れても、投稿済みの退避データを
+    /// 復帰させないよう、取り込みより先に削除する。
+    pub(super) fn complete_deleted_upload(&mut self, issue_id: IssueId, original_id: JournalId) {
+        self.uploading_deleted_mut(issue_id, original_id);
+        self.deleted
+            .retain(|entry| entry.original_id != original_id);
+    }
+
     /// JournalActionを適用する。`journals`は対象Issueが所有するJournal本体の一覧である。
     ///
     /// Issue属性のupload中かどうかと、Journalの所有関係は呼び出し側で検査済みとする。
@@ -558,36 +582,10 @@ impl IssueJournalStates {
             }
             JournalAction::CompleteRemoteUpload { .. }
             | JournalAction::DetectRemoteUploadConflict { .. }
-            | JournalAction::EvacuateMissingRemoteUpload { .. } => {
-                unreachable!(
-                    "IssueStore applies remote journal upload results with the fetched issue"
-                )
-            }
-            JournalAction::CompleteLocalUploadWithFetched {
-                issue_id,
-                journals: fetched,
-            } => {
-                // 取得値のmergeとLocal Journalの削除は不可分に扱うため、片方だけが適用された状態を
-                // 残さないよう、状態を変更する前に検証する。
-                match &self.local {
-                    Some(LocalJournalEntry {
-                        state: LocalJournalState::Uploading,
-                        ..
-                    }) => {}
-                    // Uploadingでないなら未uploadのLocalOnlyであり、対応するRemote Journalが
-                    // 存在しないため、取得値にはLocal Journalの内容が含まれていない。
-                    Some(_) => {
-                        panic!(
-                            "cannot complete local journal upload for issue {issue_id} while it is local only"
-                        );
-                    }
-                    None => {
-                        panic!("local journal is not registered for issue {issue_id}");
-                    }
-                }
-                let current = std::mem::take(journals);
-                *journals = self.merge_fetched(current, fetched);
-                self.local = None;
+            | JournalAction::EvacuateMissingRemoteUpload { .. }
+            | JournalAction::CompleteLocalUploadWithFetched { .. }
+            | JournalAction::CompleteDeletedUploadWithFetched { .. } => {
+                unreachable!("IssueStore applies journal upload results with the fetched issue")
             }
             JournalAction::EditDeletedNotes {
                 issue_id,
@@ -633,18 +631,6 @@ impl IssueJournalStates {
                 entry.state = DeletedJournalState::Pending {
                     failure: Some(JournalUploadFailure { message }),
                 };
-            }
-            JournalAction::CompleteDeletedUploadWithFetched {
-                issue_id,
-                original_id,
-                journals: fetched,
-            } => {
-                // 取得結果に元IDが現れても、投稿済みの退避データを復帰させないよう先に削除する。
-                self.uploading_deleted_mut(issue_id, original_id);
-                self.deleted
-                    .retain(|entry| entry.original_id != original_id);
-                let current = std::mem::take(journals);
-                *journals = self.merge_fetched(current, fetched);
             }
             JournalAction::CompleteDeletedUploadWithoutFetch {
                 issue_id,

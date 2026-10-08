@@ -115,8 +115,8 @@ where
     }
     vec![
         JournalAction::CompleteLocalUploadWithFetched {
-            issue_id,
-            journals: fetched.aggregate.journals,
+            issue: fetched.aggregate,
+            children: fetched.children,
         }
         .into(),
     ]
@@ -426,14 +426,15 @@ mod tests {
 
         assert_eq!(*client.get_requests.lock().unwrap(), vec![ISSUE_ID]);
         assert_eq!(actions.len(), 1);
-        let Action::Journal(JournalAction::CompleteLocalUploadWithFetched { issue_id, journals }) =
+        let Action::Journal(JournalAction::CompleteLocalUploadWithFetched { issue, .. }) =
             &actions[0]
         else {
             panic!("expected complete local upload action");
         };
-        assert_eq!(*issue_id, ISSUE_ID);
+        assert_eq!(issue.issue.id, ISSUE_ID);
         assert_eq!(
-            journals
+            issue
+                .journals
                 .iter()
                 .map(|journal| journal.id)
                 .collect::<Vec<_>>(),

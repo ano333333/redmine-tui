@@ -592,13 +592,23 @@ impl IssueStore {
                     journal_states.return_missing_remote_upload(issue_id, journal_id, notes)
                 });
             }
+            JournalAction::CompleteLocalUploadWithFetched { issue, children } => {
+                return self.take_in_journal_upload_fetch(issue, children, |journal_states| {
+                    journal_states.complete_local_upload(issue_id)
+                });
+            }
+            JournalAction::CompleteDeletedUploadWithFetched {
+                original_id,
+                issue,
+                children,
+            } => {
+                return self.take_in_journal_upload_fetch(issue, children, |journal_states| {
+                    journal_states.complete_deleted_upload(issue_id, original_id)
+                });
+            }
             action => action,
         };
         match &action {
-            JournalAction::CompleteLocalUploadWithFetched { journals, .. }
-            | JournalAction::CompleteDeletedUploadWithFetched { journals, .. } => {
-                self.assert_fetched_journals_are_valid(issue_id, journals);
-            }
             JournalAction::StartLocalUpload { .. } => assert!(
                 !matches!(
                     self.entries.get(&issue_id),

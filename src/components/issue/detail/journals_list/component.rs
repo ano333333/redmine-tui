@@ -507,12 +507,21 @@ mod tests {
     }
 
     /// 指定したJournalを持つIssue 1を取得済みにしたStore。
-    fn store_with_journals(journals: Vec<Journal>) -> Store {
+    fn issue_with_journals(journals: Vec<Journal>) -> crate::entities::IssueAggregate {
         let mut issue =
             crate::test_support::sample_issue_aggregate(1, "issue", 1.into(), None, None, None, 0);
         issue.journals = journals;
+        issue
+    }
+
+    fn store_with_journals(journals: Vec<Journal>) -> Store {
         let mut store = Store::new();
-        store.consume_action(crate::stores::IssueAction::Sync { issue }.into());
+        store.consume_action(
+            crate::stores::IssueAction::Sync {
+                issue: issue_with_journals(journals),
+            }
+            .into(),
+        );
         store
     }
 
@@ -914,8 +923,8 @@ mod tests {
     fn complete_local_upload(store: &mut Store, journals: Vec<Journal>) {
         store.consume_action(Action::Journal(
             JournalAction::CompleteLocalUploadWithFetched {
-                issue_id: IssueId::new(1),
-                journals,
+                issue: issue_with_journals(journals),
+                children: vec![],
             },
         ));
     }
