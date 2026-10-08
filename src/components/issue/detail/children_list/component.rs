@@ -77,9 +77,7 @@ fn child_status_counts(children: &[ChildIssueRow]) -> (u16, u16, u16) {
     (child_all_num, child_closed_num, child_opened_num)
 }
 
-// FIXME: 行の並びは取得した子一覧で決めるが、値は詳細を取得済みの子だけIssueViewで補っている。
-// 詳細が未取得の子はIDと題名しか表示できず、子一覧が持つトラッカーと孫の一覧も使っていない。
-// 子一覧の情報から子Issueとして表示する形へ見直す。
+/// 取得した子一覧の直下の子を行にする。詳細を取得済みの子は、編集を反映した値で表示する。
 fn create_child_rows<'a>(store: &'a Store, children: &'a [IssueChild]) -> Vec<ChildIssueRow<'a>> {
     children
         .iter()
@@ -88,6 +86,7 @@ fn create_child_rows<'a>(store: &'a Store, children: &'a [IssueChild]) -> Vec<Ch
                 return ChildIssueRow {
                     id: child.id,
                     subject: &child.subject,
+                    descendant_count: descendant_count(child),
                     detail: None,
                 };
             }
@@ -95,6 +94,7 @@ fn create_child_rows<'a>(store: &'a Store, children: &'a [IssueChild]) -> Vec<Ch
             ChildIssueRow {
                 id: child.id,
                 subject: issue.subject(),
+                descendant_count: descendant_count(child),
                 detail: Some(ChildIssueDetail {
                     issue_status: store.get_issue_status(issue.status_id()),
                     assigned_to_name: issue
@@ -108,6 +108,14 @@ fn create_child_rows<'a>(store: &'a Store, children: &'a [IssueChild]) -> Vec<Ch
             }
         })
         .collect()
+}
+
+fn descendant_count(child: &IssueChild) -> usize {
+    child
+        .children
+        .iter()
+        .map(|grandchild| 1 + descendant_count(grandchild))
+        .sum()
 }
 
 #[cfg(test)]
@@ -180,6 +188,27 @@ mod tests {
         assert!(rows[0].detail.is_none());
         assert!(rows[1].detail.is_some());
         assert_eq!(child_status_counts(&rows), (2, 1, 1));
+    }
+
+    #[test]
+    fn child_rows_count_all_descendants_of_each_child() {
+        let grandchild = |id: u16, children: Vec<IssueChild>| IssueChild {
+            id: id.into(),
+            tracker_id: 1.into(),
+            subject: format!("issue{id}"),
+            children,
+        };
+        let store = Store::new();
+        let mut children = crate::test_support::sample_parent_issue_children();
+        children[0].children = vec![
+            grandchild(10, vec![grandchild(11, vec![])]),
+            grandchild(12, vec![]),
+        ];
+
+        let rows = create_child_rows(&store, &children);
+
+        assert_eq!(rows[0].descendant_count, 3);
+        assert_eq!(rows[1].descendant_count, 0);
     }
 
     fn store_with_parent_and_unknown_status_child() -> Store {

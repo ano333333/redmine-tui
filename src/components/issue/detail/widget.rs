@@ -335,6 +335,7 @@ mod tests {
                 vec![ChildIssueRow {
                     id: self.child_issue.issue.id,
                     subject: &self.child_issue.issue.subject,
+                    descendant_count: 0,
                     detail: Some(ChildIssueDetail {
                         issue_status: Some(&self.child_status),
                         assigned_to_name: Some("alice"),

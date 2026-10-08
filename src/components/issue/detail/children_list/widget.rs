@@ -15,11 +15,11 @@ pub const HEADER_LINES: u16 = 2;
 /// 縦線を引かない末尾の余白行。次のブロックとの区切りになる。
 const GUTTER_TRAILING_LINES: u16 = 1;
 
-// FIXME: 詳細を取得済みの子と未取得の子で表示できる項目が異なる暫定の形である。
-// 子一覧が持つトラッカーと孫の一覧を表示する形へ見直すときに、この型も作り直す。
+/// 直下の子1件の行。孫以下は行にせず、件数だけを題名に添える。
 pub struct ChildIssueRow<'a> {
     pub id: IssueId,
     pub subject: &'a str,
+    pub descendant_count: usize,
     /// 子Issueの詳細を取得済みの場合だけ持つ。未取得の子は一覧の取得情報だけで表示する。
     pub detail: Option<ChildIssueDetail<'a>>,
 }
@@ -146,7 +146,7 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
         ])
         .split(row);
     create_id_widget(child.id, is_closed).render(cols[0], buffer);
-    create_title_widget(child.subject).render(cols[2], buffer);
+    create_title_widget(child.subject, child.descendant_count).render(cols[2], buffer);
     match &child.detail {
         Some(detail) => {
             let status_name = detail
@@ -179,8 +179,12 @@ fn create_id_widget(id: IssueId, is_closed: bool) -> Paragraph<'static> {
     Paragraph::new(Text::from(format!("#{}", id))).style(id_style)
 }
 
-fn create_title_widget(title: &str) -> Paragraph<'static> {
-    Paragraph::new(Text::from(title.to_string())).wrap(Wrap { trim: true })
+fn create_title_widget(title: &str, descendant_count: usize) -> Paragraph<'static> {
+    let mut spans = vec![Span::from(title.to_string())];
+    if descendant_count > 0 {
+        spans.push(Span::from(format!(" (+{descendant_count})")).fg(MUTED));
+    }
+    Paragraph::new(Line::from(spans)).wrap(Wrap { trim: true })
 }
 
 fn create_status_widget(status: &str) -> Paragraph<'static> {
@@ -320,6 +324,7 @@ mod tests {
         ChildIssueRow {
             id: issue.issue.id,
             subject: &issue.issue.subject,
+            descendant_count: 0,
             detail: Some(ChildIssueDetail {
                 issue_status,
                 assigned_to_name,
@@ -343,6 +348,28 @@ mod tests {
                 vec![ChildIssueRow {
                     id: 4.into(),
                     subject: "Unloaded child",
+                    descendant_count: 0,
+                    detail: None,
+                }],
+                None,
+            ),
+        );
+    }
+
+    #[test]
+    fn snapshot_child_with_descendants_shows_their_count_after_the_subject() {
+        render_snapshot(
+            "children_child_with_descendants_display",
+            80,
+            4,
+            ChildrenListWidget::new(
+                1,
+                0,
+                1,
+                vec![ChildIssueRow {
+                    id: 4.into(),
+                    subject: "Parent child",
+                    descendant_count: 3,
                     detail: None,
                 }],
                 None,
