@@ -58,7 +58,17 @@ pub async fn upload_issue_action(
     diffs: &[IssuePropertyDiff],
 ) -> Vec<Action> {
     let preflight = match client.get_issue(id).await {
-        Ok(fetched) => fetched,
+        Ok(fetched) if fetched.aggregate.issue.id == id => fetched,
+        Ok(fetched) => {
+            return issue_upload_failure_actions(
+                id,
+                format!(
+                    "requested issue {} but Redmine returned issue {}",
+                    id.get(),
+                    fetched.aggregate.issue.id.get()
+                ),
+            );
+        }
         Err(error) => {
             return issue_upload_failure_actions(id, error.to_string());
         }
@@ -304,6 +314,26 @@ mod tests {
                 ..IssueUpdate::default()
             }]
         );
+    }
+
+    #[tokio::test]
+    async fn a_preflight_fetch_of_another_issue_fails_without_putting() {
+        let mut other = fetched("server", "before put");
+        other.aggregate.issue.id = IssueId::new(99);
+        let client = StubClient::new(vec![Ok(other)], Ok(()));
+
+        let actions = upload_issue_action(&client, ISSUE_ID, &description_diff()).await;
+
+        let [
+            Action::Notice(NoticeAction::Push { .. }),
+            Action::Issue(IssueAction::FailUpload { id, message }),
+        ] = actions.as_slice()
+        else {
+            panic!("expected a notice and FailUpload");
+        };
+        assert_eq!(*id, ISSUE_ID);
+        assert_eq!(message, "requested issue 1 but Redmine returned issue 99");
+        assert!(client.updates.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
