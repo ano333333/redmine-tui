@@ -751,7 +751,9 @@ where
 {
     match value {
         Some(Some(value)) => value.serialize(serializer),
-        Some(None) | None => serializer.serialize_str(""),
+        Some(None) => serializer.serialize_str(""),
+        // 空文字で送ると解除になりサーバーの値が消えるため、送らない値は`skip_serializing_if`で省く。
+        None => unreachable!("unsent fields must be skipped before serialization"),
     }
 }
 
