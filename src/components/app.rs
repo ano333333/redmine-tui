@@ -759,6 +759,7 @@ impl<'a> AppComponent<'a> {
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store, area: Rect) {
         self.open_issue_property_conflict_popup_if_needed(store);
         self.open_remote_journal_conflict_popups_if_needed(store);
+        self.request_parent_issue_fetch_if_needed(store);
 
         if let Some(issue_component) = &mut self.issue_component {
             issue_component.update(dispatcher, store, (area.width, area.height));
@@ -779,6 +780,34 @@ impl<'a> AppComponent<'a> {
             {
                 component.update(area);
             }
+        }
+    }
+
+    /// 親Issueの題名を表示するため、開いているIssueの親が未取得なら取得を要求する。
+    ///
+    /// 親のIDは詳細の取得が終わるまで分からないため、キー入力ではなくupdateで要求する。
+    /// 取得に失敗した親は、再取得を繰り返さないよう要求しない。
+    /// 取得開始のActionがStoreに反映される前のupdateでは同じ要求を再び置くが、
+    /// `fetch_issue`が取得中のIssueを起動しないため、二重には取得しない。
+    fn request_parent_issue_fetch_if_needed(&mut self, store: &Store) {
+        // effectは1件しか置けないため、他のeffectが待っている間は見送り、次のupdateで改めて判定する。
+        if self.pending_effect.is_some() {
+            return;
+        }
+        let Some(issue_component) = &self.issue_component else {
+            return;
+        };
+        let issue_id = issue_component.issue_id();
+        if store.try_get_issue_state(issue_id).is_none() {
+            return;
+        }
+        let Some(parent_id) = store.get_issue(issue_id).0.parent_id() else {
+            return;
+        };
+        if store.try_get_issue_state(parent_id).is_none()
+            && store.try_get_issue_fetch_state(parent_id).is_none()
+        {
+            self.install_effect(AppEffect::FetchIssue(parent_id));
         }
     }
 
@@ -1461,6 +1490,54 @@ mod tests {
         let mut app = AppComponent::new(dispatcher, Some(42.into()), CursorRendering::Terminal);
 
         assert!(matches!(app.take_effect(), Some(AppEffect::FetchIssue(id)) if id == 42));
+        assert!(app.take_effect().is_none());
+    }
+
+    /// 子のIssue 1(親はIssue 3)だけを取得済みにする。
+    fn dispatcher_with_loaded_child_only() -> Rc<RefCell<Dispatcher>> {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        crate::test_support::dispatch_loaded_issue(
+            &mut dispatcher.borrow_mut(),
+            crate::test_support::sample_open_child_issue(),
+        );
+        dispatcher
+    }
+
+    #[test]
+    fn update_requests_fetch_of_unloaded_parent_issue() {
+        let dispatcher = dispatcher_with_loaded_child_only();
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(1.into()),
+            CursorRendering::Terminal,
+        );
+
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
+        assert!(matches!(app.take_effect(), Some(AppEffect::FetchIssue(id)) if id == 3));
+    }
+
+    #[test]
+    fn update_does_not_request_fetch_of_parent_issue_whose_fetch_failed() {
+        let dispatcher = dispatcher_with_loaded_child_only();
+        for action in [
+            IssueAction::StartFetching { id: 3.into() },
+            IssueAction::FetchFailed {
+                id: 3.into(),
+                message: "offline".to_string(),
+            },
+        ] {
+            dispatcher.borrow_mut().dispatch(action);
+            dispatcher.borrow_mut().consume_action();
+        }
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(1.into()),
+            CursorRendering::Terminal,
+        );
+
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+
         assert!(app.take_effect().is_none());
     }
 

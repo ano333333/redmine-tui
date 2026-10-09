@@ -298,7 +298,7 @@ mod tests {
         }
 
         fn header_widget(&self) -> HeaderWidget<'_> {
-            HeaderWidget::new(42, &self.title, false, None)
+            HeaderWidget::new(42, &self.title, None, None, None)
         }
 
         fn property_widget(&self) -> PropertyWidget<'_> {

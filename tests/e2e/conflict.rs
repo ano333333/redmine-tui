@@ -8,7 +8,8 @@ use crate::support::{
 };
 
 // headerから下へ移るjの回数。upload.rsと同じく、幅120の端末でseedのIssueを表示した状態で数えた。
-const J_PRESSES_TO_PRIORITY: usize = 6;
+// 優先度はIssue 2で数えた。Issue 2には親Issueがあるため、headerの親の行の分だけ1回多い。
+const J_PRESSES_TO_PRIORITY: usize = 7;
 const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 47;
 
 const ISSUE_3_WITH_JOURNALS: &str = "/issues/3.json?include=journals";

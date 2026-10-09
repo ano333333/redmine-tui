@@ -432,12 +432,18 @@ impl IssueDetailComponent {
         match self.focused_component {
             FocusedComponent::Header => {
                 let result = self.header.process_event(event.clone());
-                if let Some(HeaderEventProcessResult::CursorLeavedFromBelow) = result {
-                    self.header.focus_event(HeaderFocusEvent::Unfocused);
-                    self.focused_component = FocusedComponent::Property;
-                    self.property
-                        .focus_event(PropertyFocusTransitionEvent::CursorEnteredFromAbove);
-                    return Some(EventProcessResult::Handled);
+                match result {
+                    Some(HeaderEventProcessResult::CursorLeavedFromBelow) => {
+                        self.header.focus_event(HeaderFocusEvent::Unfocused);
+                        self.focused_component = FocusedComponent::Property;
+                        self.property
+                            .focus_event(PropertyFocusTransitionEvent::CursorEnteredFromAbove);
+                        return Some(EventProcessResult::Handled);
+                    }
+                    Some(HeaderEventProcessResult::Handled) => {
+                        return Some(EventProcessResult::Handled);
+                    }
+                    None => {}
                 }
             }
             FocusedComponent::Property => {
@@ -639,7 +645,7 @@ impl IssueDetailComponent {
     pub fn update(&mut self, _: Rc<RefCell<Dispatcher>>, store: &Store, frame_size: (u16, u16)) {
         (self.width, self.height) = frame_size;
         let (issue, _) = store.get_issue(self.id);
-        self.header.update(store);
+        self.header.update(store, self.width);
         self.property.update(self.width);
         self.body.update(issue.description(), self.width);
         self.children_list.update(store);

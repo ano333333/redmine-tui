@@ -1,11 +1,14 @@
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
+use super::focus_state::FocusedRow;
 use crate::vos::IssueId;
 use crate::widgets::theme::{ACCENT, BADGE_BG, FOCUS_BG, MUTED};
+
+const PARENT_LABEL: &str = "親チケット ";
 
 #[derive(Debug, Clone, Copy)]
 pub enum TitleDecorater {
@@ -13,10 +16,19 @@ pub enum TitleDecorater {
     Uploading,
 }
 
+/// 題名の下に出す親Issue。親の題名は、親Issueの詳細を取得できたときだけ分かる。
+#[derive(Debug, Clone, Copy)]
+pub enum ParentIssue<'a> {
+    Loaded { id: IssueId, subject: &'a str },
+    Fetching { id: IssueId },
+    FetchFailed { id: IssueId },
+}
+
 pub struct HeaderWidget<'a> {
     id: IssueId,
     title: &'a str,
-    focused_title: bool,
+    parent: Option<ParentIssue<'a>>,
+    focused_row: Option<FocusedRow>,
     title_decorator: Option<TitleDecorater>,
 }
 
@@ -30,10 +42,32 @@ impl<'a> Widget for HeaderWidget<'a> {
             self.title_paragraph().render(title_area, buf);
         }
 
-        render_line(Line::from(""), area, buf, title_line_count);
+        let parent_line_count = self.parent_line_count(area.width);
+        if let Some(parent_paragraph) = self.parent_paragraph()
+            && title_line_count < area.height
+        {
+            let parent_area = Rect::new(
+                area.x,
+                area.y + title_line_count,
+                area.width,
+                parent_line_count.min(area.height - title_line_count),
+            );
+            parent_paragraph.render(parent_area, buf);
+        }
 
-        if self.focused_title {
-            apply_background_to_rows(buf, area, 0, title_line_count);
+        render_line(
+            Line::from(""),
+            area,
+            buf,
+            title_line_count + parent_line_count,
+        );
+
+        match self.focused_row {
+            Some(FocusedRow::Title) => apply_background_to_rows(buf, area, 0, title_line_count),
+            Some(FocusedRow::Parent) => {
+                apply_background_to_rows(buf, area, title_line_count, parent_line_count)
+            }
+            None => {}
         }
     }
 }
@@ -42,13 +76,15 @@ impl<'a> HeaderWidget<'a> {
     pub fn new(
         id: impl Into<IssueId>,
         title: &'a str,
-        focused_title: bool,
+        parent: Option<ParentIssue<'a>>,
+        focused_row: Option<FocusedRow>,
         title_decorator: Option<TitleDecorater>,
     ) -> Self {
         Self {
             id: id.into(),
             title,
-            focused_title,
+            parent,
+            focused_row,
             title_decorator,
         }
     }
@@ -58,8 +94,22 @@ impl<'a> HeaderWidget<'a> {
             return 0;
         }
 
-        // タイトル行 + 下の空行1行のみ
-        self.title_line_count(width) as usize + 1
+        // タイトル行 + 親Issueの行 + 下の空行1行
+        (self.title_line_count(width) + self.parent_line_count(width)) as usize + 1
+    }
+
+    /// 親Issueの行で、親のIDが始まる位置。親Issueがなければ`None`。
+    pub fn parent_id_position(&self, width: u16) -> Option<Position> {
+        self.parent?;
+        Some(Position::new(
+            Line::from(PARENT_LABEL).width() as u16,
+            self.title_line_count(width),
+        ))
+    }
+
+    fn parent_line_count(&self, width: u16) -> u16 {
+        self.parent_paragraph()
+            .map_or(0, |paragraph| paragraph.line_count(width) as u16)
     }
 
     fn title_line_count(&self, width: u16) -> u16 {
@@ -108,6 +158,22 @@ impl<'a> HeaderWidget<'a> {
 
         Paragraph::new(Text::from(Line::from(spans))).wrap(Wrap { trim: true })
     }
+
+    fn parent_paragraph(&self) -> Option<Paragraph<'a>> {
+        let parent = self.parent?;
+        let (id, subject) = match parent {
+            ParentIssue::Loaded { id, subject } => (id, Span::from(subject)),
+            ParentIssue::Fetching { id } => (id, Span::from("取得中…").fg(MUTED)),
+            ParentIssue::FetchFailed { id } => (id, Span::from("取得失敗").fg(MUTED)),
+        };
+        let spans = vec![
+            Span::from(PARENT_LABEL).fg(MUTED),
+            Span::from(format!("#{id}")).blue(),
+            Span::from(" "),
+            subject,
+        ];
+        Some(Paragraph::new(Text::from(Line::from(spans))).wrap(Wrap { trim: true }))
+    }
 }
 
 fn render_line(line: Line<'_>, area: Rect, buf: &mut Buffer, row: u16) {
@@ -141,7 +207,7 @@ mod tests {
     fn snapshot_header_wide_short_title() {
         let title = "Widget snapshot baseline".to_string();
         let width = 40;
-        let widget = HeaderWidget::new(42, &title, true, None);
+        let widget = HeaderWidget::new(42, &title, None, Some(FocusedRow::Title), None);
         let line_count = widget.line_count(width);
         // タイトル1行 + 下の空行1行
         assert_eq!(line_count, 2);
@@ -152,7 +218,7 @@ mod tests {
     fn snapshot_header_narrow_long_title_wrap() {
         let title = "A very long title for observing current paragraph behavior".to_string();
         let width = 18;
-        let widget = HeaderWidget::new(42, &title, false, None);
+        let widget = HeaderWidget::new(42, &title, None, None, None);
         let line_count = widget.line_count(width);
         // 折り返し4行 + 下の空行1行
         assert_eq!(line_count, 5);
@@ -167,14 +233,14 @@ mod tests {
     #[test]
     fn line_count_header_grows_when_title_wraps() {
         let title = "A very long title for observing current paragraph behavior".to_string();
-        let widget = HeaderWidget::new(42, &title, false, None);
+        let widget = HeaderWidget::new(42, &title, None, None, None);
         assert_eq!(widget.line_count(40), 3);
         assert_eq!(widget.line_count(18), 5);
     }
 
     #[test]
     fn title_start_x_accounts_for_two_digit_issue_id() {
-        let widget = HeaderWidget::new(42, "title", true, None);
+        let widget = HeaderWidget::new(42, "title", None, Some(FocusedRow::Title), None);
 
         assert_eq!(widget.title_start_x(), 5);
     }
@@ -183,7 +249,13 @@ mod tests {
     fn snapshot_header_unsynced_title() {
         let title = "Widget snapshot baseline".to_string();
         let width = 40;
-        let widget = HeaderWidget::new(42, &title, true, Some(TitleDecorater::Edited));
+        let widget = HeaderWidget::new(
+            42,
+            &title,
+            None,
+            Some(FocusedRow::Title),
+            Some(TitleDecorater::Edited),
+        );
         let line_count = widget.line_count(width);
         // タイトル1行 + 下の空行1行
         assert_eq!(line_count, 2);
@@ -194,10 +266,58 @@ mod tests {
     fn snapshot_header_uploading_title() {
         let title = "Widget snapshot baseline".to_string();
         let width = 40;
-        let widget = HeaderWidget::new(42, &title, true, Some(TitleDecorater::Uploading));
+        let widget = HeaderWidget::new(
+            42,
+            &title,
+            None,
+            Some(FocusedRow::Title),
+            Some(TitleDecorater::Uploading),
+        );
         let line_count = widget.line_count(width);
         // タイトル1行 + 下の空行1行
         assert_eq!(line_count, 2);
         render_snapshot("header_uploading_title", width, line_count as u16, widget);
+    }
+
+    fn render_header_with_parent(name: &str, parent: ParentIssue<'_>) {
+        let width = 40;
+        let widget = HeaderWidget::new(
+            42,
+            "Child issue",
+            Some(parent),
+            Some(FocusedRow::Parent),
+            None,
+        );
+        let line_count = widget.line_count(width);
+        // タイトル1行 + 親Issue1行 + 下の空行1行
+        assert_eq!(line_count, 3);
+        render_snapshot(name, width, line_count as u16, widget);
+    }
+
+    #[test]
+    fn snapshot_header_loaded_parent() {
+        render_header_with_parent(
+            "header_loaded_parent",
+            ParentIssue::Loaded {
+                id: 3.into(),
+                subject: "Parent issue",
+            },
+        );
+    }
+
+    #[test]
+    fn snapshot_header_fetching_parent() {
+        render_header_with_parent(
+            "header_fetching_parent",
+            ParentIssue::Fetching { id: 3.into() },
+        );
+    }
+
+    #[test]
+    fn snapshot_header_fetch_failed_parent() {
+        render_header_with_parent(
+            "header_fetch_failed_parent",
+            ParentIssue::FetchFailed { id: 3.into() },
+        );
     }
 }

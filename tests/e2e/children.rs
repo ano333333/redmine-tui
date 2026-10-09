@@ -47,3 +47,19 @@ fn enter_on_a_child_opens_that_child_issue() {
         |frame| frame.contains("issue4"),
     );
 }
+
+// Scenario: 親Issueを読み込んでいなくても、題名の下に親Issueの題名を表示する
+#[test]
+fn the_header_shows_the_parent_issue_by_fetching_it() {
+    // Given seedでは、Issue 1の親がIssue 3である
+    reseed_redmine();
+    let mut session = spawn_app();
+
+    // When Issue 3を開かずに、Issue 1を開く
+    open_issue_from_initial_popup(&mut session, 3);
+
+    // Then 題名の下に、取得したIssue 3の題名が出る。seedのIssue 3の題名は「issue1(長…)」で始まる
+    wait_until(&mut session, "showing the parent issue", |frame| {
+        frame.contains("親チケット #3 issue1(長")
+    });
+}
