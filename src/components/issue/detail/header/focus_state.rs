@@ -1,6 +1,7 @@
 use ratatui::layout::Position;
 
 use crate::platform::input::{InputEvent, KeyCode};
+use crate::vos::IssueId;
 
 pub enum FocusEvent {
     Focused,
@@ -10,6 +11,7 @@ pub enum FocusEvent {
 
 pub enum EventProcessResult {
     CursorLeavedFromBelow,
+    OpenIssueRequested { id: IssueId },
     Handled,
 }
 
@@ -22,13 +24,14 @@ pub enum FocusedRow {
 enum Action {
     MoveDown,
     MoveUp,
+    Open,
 }
 
 pub struct FocusState {
     focused_row: Option<FocusedRow>,
     title_position: Position,
-    /// 親Issueがなければ`None`。親の行にはこのときフォーカスしない。
-    parent_position: Option<Position>,
+    /// 親IssueのIDと、親の行のカーソル位置。親Issueがなければ`None`で、親の行にはフォーカスしない。
+    parent: Option<(IssueId, Position)>,
 }
 
 impl FocusState {
@@ -36,14 +39,14 @@ impl FocusState {
         Self {
             focused_row: None,
             title_position: Position::default(),
-            parent_position: None,
+            parent: None,
         }
     }
 
-    pub fn update(&mut self, title_position: Position, parent_position: Option<Position>) {
+    pub fn update(&mut self, title_position: Position, parent: Option<(IssueId, Position)>) {
         self.title_position = title_position;
-        self.parent_position = parent_position;
-        if self.focused_row == Some(FocusedRow::Parent) && parent_position.is_none() {
+        self.parent = parent;
+        if self.focused_row == Some(FocusedRow::Parent) && parent.is_none() {
             self.focused_row = Some(FocusedRow::Title);
         }
     }
@@ -63,7 +66,9 @@ impl FocusState {
 
     pub fn get_cursor_position(&self) -> Position {
         match self.focused_row {
-            Some(FocusedRow::Parent) => self.parent_position.unwrap_or(self.title_position),
+            Some(FocusedRow::Parent) => self
+                .parent
+                .map_or(self.title_position, |(_, position)| position),
             Some(FocusedRow::Title) | None => self.title_position,
         }
     }
@@ -73,7 +78,7 @@ impl FocusState {
     }
 
     fn bottom_row(&self) -> FocusedRow {
-        if self.parent_position.is_some() {
+        if self.parent.is_some() {
             FocusedRow::Parent
         } else {
             FocusedRow::Title
@@ -87,6 +92,7 @@ impl FocusState {
         match key.code {
             KeyCode::Char('j') => Some(Action::MoveDown),
             KeyCode::Char('k') => Some(Action::MoveUp),
+            KeyCode::Enter => Some(Action::Open),
             _ => None,
         }
     }
@@ -107,6 +113,11 @@ impl FocusState {
             }
             // ヘッダーより上にはフォーカス先がない
             (Action::MoveUp, FocusedRow::Title) => None,
+            (Action::Open, FocusedRow::Parent) => {
+                let (id, _) = self.parent?;
+                Some(EventProcessResult::OpenIssueRequested { id })
+            }
+            (Action::Open, FocusedRow::Title) => None,
         }
     }
 }
@@ -118,6 +129,7 @@ mod tests {
 
     const TITLE: Position = Position { x: 4, y: 0 };
     const PARENT: Position = Position { x: 11, y: 1 };
+    const PARENT_ID: u16 = 3;
 
     fn key_event(code: KeyCode) -> InputEvent {
         InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
@@ -125,7 +137,7 @@ mod tests {
 
     fn state_with_parent() -> FocusState {
         let mut state = FocusState::new();
-        state.update(TITLE, Some(PARENT));
+        state.update(TITLE, Some((PARENT_ID.into(), PARENT)));
         state
     }
 
@@ -209,6 +221,28 @@ mod tests {
         without_parent.update(TITLE, None);
         without_parent.focus_event(FocusEvent::CursorEnteredFromBelow);
         assert_eq!(without_parent.focused_row(), Some(FocusedRow::Title));
+    }
+
+    #[test]
+    fn process_event_enter_on_parent_requests_opening_the_parent() {
+        let mut state = state_with_parent();
+        state.focus_event(FocusEvent::CursorEnteredFromBelow);
+
+        let result = state.process_event(key_event(KeyCode::Enter));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenIssueRequested { id }) if id == IssueId::from(PARENT_ID)
+        ));
+        assert_eq!(state.focused_row(), Some(FocusedRow::Parent));
+    }
+
+    #[test]
+    fn process_event_enter_on_title_is_not_handled() {
+        let mut state = state_with_parent();
+        state.focus_event(FocusEvent::Focused);
+
+        assert!(state.process_event(key_event(KeyCode::Enter)).is_none());
     }
 
     #[test]

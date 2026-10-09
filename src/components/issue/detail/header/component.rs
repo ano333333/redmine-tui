@@ -29,9 +29,10 @@ impl HeaderComponent {
 
     pub fn update(&mut self, store: &Store, width: u16) {
         let widget = self.create_widget(store);
+        let parent_id = store.get_issue(self.id).0.parent_id();
         self.focus_state.update(
             Position::new(widget.title_start_x(), 0),
-            widget.parent_id_position(width),
+            parent_id.zip(widget.parent_id_position(width)),
         );
     }
 
