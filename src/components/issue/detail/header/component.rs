@@ -1,9 +1,9 @@
 use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
-use super::widget::{HeaderWidget, TitleDecorater};
+use super::widget::{HeaderWidget, ParentIssue, TitleDecorater};
 use ratatui::layout::Position;
 
 use crate::platform::input::InputEvent;
-use crate::stores::{IssueState, Store};
+use crate::stores::{IssueFetchState, IssueState, Store};
 use crate::vos::IssueId;
 
 pub struct HeaderComponent {
@@ -27,21 +27,16 @@ impl HeaderComponent {
         self.focus_state.focus_event(event);
     }
 
-    pub fn update(&mut self, store: &Store) {
+    pub fn update(&mut self, store: &Store, width: u16) {
         let widget = self.create_widget(store);
-        self.focus_state
-            .update(Position::new(widget.title_start_x(), 0));
+        self.focus_state.update(
+            Position::new(widget.title_start_x(), 0),
+            widget.parent_id_position(width),
+        );
     }
 
     pub fn line_count(&self, store: &Store, width: u16) -> u16 {
-        let (issue, issue_state) = store.get_issue(self.id);
-        let widget = HeaderWidget::new(
-            self.id,
-            issue.subject(),
-            self.focus_state.is_focused(),
-            Self::title_decorator(&issue_state),
-        );
-        widget.line_count(width) as u16
+        self.create_widget(store).line_count(width) as u16
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> HeaderWidget<'a> {
@@ -49,7 +44,10 @@ impl HeaderComponent {
         HeaderWidget::new(
             self.id,
             issue.subject(),
-            self.focus_state.is_focused(),
+            issue
+                .parent_id()
+                .map(|parent_id| parent_issue(store, parent_id)),
+            self.focus_state.focused_row(),
             Self::title_decorator(&issue_status),
         )
     }
@@ -64,6 +62,21 @@ impl HeaderComponent {
             IssueState::Edited => Some(TitleDecorater::Edited),
             IssueState::Uploading => Some(TitleDecorater::Uploading),
         }
+    }
+}
+
+fn parent_issue(store: &Store, parent_id: IssueId) -> ParentIssue<'_> {
+    if store.try_get_issue_state(parent_id).is_some() {
+        let (parent, _) = store.get_issue(parent_id);
+        return ParentIssue::Loaded {
+            id: parent_id,
+            subject: parent.subject(),
+        };
+    }
+    match store.try_get_issue_fetch_state(parent_id) {
+        Some(IssueFetchState::FetchFailed { .. }) => ParentIssue::FetchFailed { id: parent_id },
+        // 取得を要求する前のupdateでも、AppComponentがすぐに取得を要求するため取得中として扱う。
+        None | Some(IssueFetchState::Fetching) => ParentIssue::Fetching { id: parent_id },
     }
 }
 
@@ -117,7 +130,7 @@ mod tests {
         crate::test_support::load_issue(&mut store, crate::test_support::sample_open_child_issue());
 
         let mut component = HeaderComponent::new(1);
-        component.update(&store);
+        component.update(&store, 40);
 
         assert_eq!(component.get_cursor_position(), Position::new(4, 0));
     }
@@ -136,7 +149,7 @@ mod tests {
         store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
 
         let mut component = HeaderComponent::new(1);
-        component.update(&store);
+        component.update(&store, 40);
 
         assert_eq!(component.get_cursor_position(), Position::new(12, 0));
     }

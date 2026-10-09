@@ -110,6 +110,10 @@ impl<'a> IssueView<'a> {
     pub fn category_id(&self) -> Option<CategoryId> {
         *last_after!(self, CategoryId, self.base.category_id)
     }
+
+    pub fn parent_id(&self) -> Option<IssueId> {
+        self.base.parent_id
+    }
 }
 
 #[cfg(test)]
