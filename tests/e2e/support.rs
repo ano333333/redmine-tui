@@ -215,7 +215,7 @@ pub fn wait_for_popup_to_close(session: &mut PtySession) -> String {
 
 /// 起動直後のIssue選択popupから、一覧の`position`番目（0始まり）のIssueを開く。
 ///
-/// seedの一覧はID降順（3, 2, 1）で並ぶ。
+/// seedの一覧はID降順（4, 3, 2, 1）で並ぶ。
 pub fn open_issue_from_initial_popup(session: &mut PtySession, position: usize) -> String {
     wait_for_text(session, "issue2");
     session.press_key("l").expect("failed to press l");

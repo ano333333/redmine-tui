@@ -5,9 +5,9 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT};
-use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
+use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueStatus, Priority, Project, ProjectIssuesPage,
+    Category, Issue, IssueAggregate, IssueChild, IssueStatus, Priority, Project, ProjectIssuesPage,
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
@@ -147,24 +147,25 @@ impl RedmineClient for DefaultRedmineClient {
             .get_json(&format!("/issues/{id}.json?include=children,journals"))
             .await?;
 
-        // Issue変換でresponse.issue全体を消費するため、部分moveを避けつつJournalを先に分離する。
-        let journals = std::mem::take(&mut response.issue.journals);
-        let aggregate = response.issue.try_into()?;
-        let journals = journals
+        // Issue変換でresponse.issue全体を消費するため、子一覧を先に分離する。
+        let children = std::mem::take(&mut response.issue.children)
             .into_iter()
-            .map(|journal| journal_conversion::convert_journal(id, journal))
-            .collect::<Result<Vec<_>, RedmineClientError>>()?;
-
+            .map(IssueChild::from)
+            .collect();
         Ok(FetchedIssue {
-            aggregate,
-            journals,
+            aggregate: response.issue.try_into()?,
+            children,
         })
     }
 
-    async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError> {
+    async fn update_issue(
+        &self,
+        issue_id: IssueId,
+        update: &IssueUpdate,
+    ) -> Result<(), RedmineClientError> {
         self.put_empty(
-            &format!("/issues/{}.json", issue.issue.id.get()),
-            &UpdateIssueRequest::from(issue),
+            &format!("/issues/{}.json", issue_id.get()),
+            &UpdateIssueRequest::from(update),
         )
         .await
     }
@@ -661,53 +662,98 @@ struct UpdateIssueRequest {
     issue: UpdateIssue,
 }
 
-impl From<&IssueAggregate> for UpdateIssueRequest {
-    fn from(issue: &IssueAggregate) -> Self {
+impl From<&IssueUpdate> for UpdateIssueRequest {
+    fn from(update: &IssueUpdate) -> Self {
         Self {
-            issue: UpdateIssue::from(issue),
+            issue: UpdateIssue::from(update),
         }
     }
 }
 
+/// `None`の属性は省略し、送信対象だけをPUTする。
 #[derive(Serialize)]
 struct UpdateIssue {
-    subject: String,
-    description: String,
-    project_id: u16,
-    tracker_id: u16,
-    status_id: u16,
-    priority_id: u16,
-    assigned_to_id: Option<u16>,
-    fixed_version_id: Option<u16>,
-    start_date: Option<String>,
-    due_date: Option<String>,
-    done_ratio: u16,
-    estimated_hours: Option<f64>,
-    category_id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subject: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project_id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tracker_id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status_id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority_id: Option<u16>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_clearable"
+    )]
+    assigned_to_id: Option<Option<u16>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_clearable"
+    )]
+    fixed_version_id: Option<Option<u16>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_clearable"
+    )]
+    start_date: Option<Option<String>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_clearable"
+    )]
+    due_date: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    done_ratio: Option<u16>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_clearable"
+    )]
+    estimated_hours: Option<Option<f64>>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_clearable"
+    )]
+    category_id: Option<Option<u16>>,
 }
 
-impl From<&IssueAggregate> for UpdateIssue {
-    fn from(issue: &IssueAggregate) -> Self {
+impl From<&IssueUpdate> for UpdateIssue {
+    fn from(update: &IssueUpdate) -> Self {
+        let format_date =
+            |date: Option<DateTimeLocal>| date.map(|date| date.format("%Y-%m-%d").to_string());
         Self {
-            subject: issue.issue.subject.clone(),
-            description: issue.issue.description.clone(),
-            project_id: issue.issue.project_id.get(),
-            tracker_id: issue.tracker_id.get(),
-            status_id: issue.issue.status_id.get(),
-            priority_id: issue.priority_id.get(),
-            // FIXME: Redmineはassigned_to_idのnullを無視するため、担当者を外せない。空文字で送る必要がある。
-            assigned_to_id: issue.assigned_to_id.map(|id| id.get()),
-            fixed_version_id: issue.target_version_id.map(|id| id.get()),
-            start_date: issue
-                .start_date
-                .map(|date| date.format("%Y-%m-%d").to_string()),
-            due_date: issue
-                .due_date
-                .map(|date| date.format("%Y-%m-%d").to_string()),
-            done_ratio: issue.done_ratio,
-            estimated_hours: issue.estimated_hours,
-            category_id: issue.category_id.map(|id| id.get()),
+            subject: update.subject.clone(),
+            description: update.description.clone(),
+            project_id: update.project_id.map(|id| id.get()),
+            tracker_id: update.tracker_id.map(|id| id.get()),
+            status_id: update.status_id.map(|id| id.get()),
+            priority_id: update.priority_id.map(|id| id.get()),
+            assigned_to_id: update.assigned_to_id.map(|id| id.map(|id| id.get())),
+            fixed_version_id: update.target_version_id.map(|id| id.map(|id| id.get())),
+            start_date: update.start_date.map(format_date),
+            due_date: update.due_date.map(format_date),
+            done_ratio: update.done_ratio,
+            estimated_hours: update.estimated_hours,
+            category_id: update.category_id.map(|id| id.map(|id| id.get())),
         }
+    }
+}
+
+type DateTimeLocal = chrono::DateTime<chrono::Local>;
+
+// RedmineはJSONのnullを属性の解除として扱わず無視するため、解除は空文字で送る。
+fn serialize_clearable<T, S>(value: &Option<Option<T>>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: Serialize,
+    S: serde::Serializer,
+{
+    match value {
+        Some(Some(value)) => value.serialize(serializer),
+        Some(None) => serializer.serialize_str(""),
+        // 空文字で送ると解除になりサーバーの値が消えるため、送らない値は`skip_serializing_if`で省く。
+        None => unreachable!("unsent fields must be skipped before serialization"),
     }
 }
 
@@ -740,7 +786,9 @@ struct RedmineIssue {
     #[serde(default)]
     description: Option<String>,
     #[serde(default)]
-    children: Vec<RedmineIdRef>,
+    parent: Option<RedmineIdRef>,
+    #[serde(default)]
+    children: Vec<RedmineChild>,
     #[serde(default)]
     journals: Vec<journal_conversion::RedmineJournal>,
 }
@@ -749,8 +797,14 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
     type Error = RedmineClientError;
 
     fn try_from(value: RedmineIssue) -> Result<Self, Self::Error> {
+        let issue_id = IssueId::new(value.id);
+        let journals = value
+            .journals
+            .into_iter()
+            .map(|journal| journal_conversion::convert_journal(issue_id, journal))
+            .collect::<Result<Vec<_>, RedmineClientError>>()?;
         let issue = Issue {
-            id: IssueId::new(value.id),
+            id: issue_id,
             project_id: ProjectId::new(value.project.id),
             subject: value.subject.clone(),
             description: value.description.clone().unwrap_or_default(),
@@ -775,11 +829,8 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
             estimated_hours: value.estimated_hours,
             total_spent_hours: value.total_spent_hours,
             category_id: value.category.map(|category| CategoryId::new(category.id)),
-            child_ids: value
-                .children
-                .into_iter()
-                .map(|child| IssueId::new(child.id))
-                .collect(),
+            parent_id: value.parent.map(|parent| IssueId::new(parent.id)),
+            journals,
             issue,
         })
     }
@@ -788,6 +839,26 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
 #[derive(Deserialize)]
 struct RedmineIdRef {
     id: u16,
+}
+
+#[derive(Deserialize)]
+struct RedmineChild {
+    id: u16,
+    tracker: RedmineIdRef,
+    subject: String,
+    #[serde(default)]
+    children: Vec<RedmineChild>,
+}
+
+impl From<RedmineChild> for IssueChild {
+    fn from(value: RedmineChild) -> Self {
+        Self {
+            id: IssueId::new(value.id),
+            tracker_id: TrackerId::new(value.tracker.id),
+            subject: value.subject,
+            children: value.children.into_iter().map(IssueChild::from).collect(),
+        }
+    }
 }
 
 #[cfg(test)]

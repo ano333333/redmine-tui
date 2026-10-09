@@ -12,6 +12,7 @@ mod get_project_issues;
 mod get_users;
 mod journal_conversion;
 mod journal_detail_conversion;
+mod update_issue_request;
 mod value_conversion;
 
 fn block_on<F: std::future::Future>(future: F) -> F::Output {

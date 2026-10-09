@@ -25,6 +25,7 @@ async fn fetch_issue_3_journal_notes(
         .get_issue(IssueId::new(3))
         .await
         .map_err(|error| test_error(format!("get_issue(3) returned {error:?}")))?
+        .aggregate
         .journals
         .into_iter()
         .map(|journal| (journal.id.get(), journal.notes))

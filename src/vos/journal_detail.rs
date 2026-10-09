@@ -4,7 +4,7 @@ use crate::vos::id::{
     CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum JournalDetailAttr {
     StatusId {
         old: IssueStatusId,
@@ -67,13 +67,18 @@ pub enum JournalDetailAttr {
         old: Option<IssueId>,
         new: Option<IssueId>,
     },
+    /// 子Issueの追加・解除。Redmineは子側の親変更に合わせて、親側のJournalにも記録する。
+    ChildId {
+        old: Option<IssueId>,
+        new: Option<IssueId>,
+    },
     IsPrivate {
         old: bool,
         new: bool,
     },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum JournalDetail {
     Attr(JournalDetailAttr),
     // FIXME:

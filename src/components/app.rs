@@ -24,8 +24,8 @@ use crate::platform::editor::{EditorOutcome, EditorRequest, InteractionMode};
 use crate::platform::host::CursorRendering;
 use crate::platform::input::{InputEvent, KeyCode};
 use crate::stores::{
-    Action, Dispatcher, IssueAction, IssueState, JournalAction, LocalJournalState,
-    RemoteJournalState, Store,
+    Action, DeletedJournalState, Dispatcher, IssueAction, IssueState, JournalAction,
+    LocalJournalState, RemoteJournalState, Store,
 };
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
@@ -79,6 +79,10 @@ pub enum AppEffect {
     StartLocalJournalUpload {
         issue_id: IssueId,
     },
+    StartDeletedJournalUpload {
+        issue_id: IssueId,
+        original_id: JournalId,
+    },
 }
 
 enum PendingEditorContext {
@@ -91,6 +95,10 @@ enum PendingEditorContext {
     },
     LocalJournal {
         issue_id: IssueId,
+    },
+    DeletedJournal {
+        issue_id: IssueId,
+        original_id: JournalId,
     },
 }
 
@@ -119,6 +127,13 @@ fn can_start_editing(
         PendingEditorContext::LocalJournal { issue_id } => matches!(
             store.try_get_local_journal(*issue_id),
             Some(entry) if matches!(entry.state, LocalJournalState::LocalOnly { .. })
+        ),
+        PendingEditorContext::DeletedJournal {
+            issue_id,
+            original_id,
+        } => matches!(
+            store.get_deleted_journal(*issue_id, *original_id).state,
+            DeletedJournalState::Pending { .. }
         ),
     }
 }
@@ -548,6 +563,50 @@ impl<'a> AppComponent<'a> {
                 self.pending_effect = Some(AppEffect::StartLocalJournalUpload { issue_id });
             }
             IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::SaveDeletedJournalRequested {
+                    issue_id,
+                    original_id,
+                },
+            ) => {
+                // 退避したJournal側が投稿可能な状態でだけ要求を返すため、ここでは状態を再検査しない。
+                self.pending_effect = Some(AppEffect::StartDeletedJournalUpload {
+                    issue_id,
+                    original_id,
+                });
+            }
+            IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::DiscardDeletedJournalRequested {
+                    issue_id,
+                    original_id,
+                },
+            ) => {
+                self.dispatcher.borrow_mut().dispatch(Action::Journal(
+                    JournalAction::DiscardDeleted {
+                        issue_id,
+                        original_id,
+                    },
+                ));
+            }
+            IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::EditDeletedJournalRequested {
+                    issue_id,
+                    original_id,
+                    notes,
+                },
+            ) => {
+                let context = PendingEditorContext::DeletedJournal {
+                    issue_id,
+                    original_id,
+                };
+                if can_start_editing(&context, self.interaction_mode, dispatcher.borrow().store()) {
+                    self.pending_editor_context = Some(context);
+                    self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                        initial_text: notes,
+                    }));
+                    self.interaction_mode = InteractionMode::Editing;
+                }
+            }
+            IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::EditJournalRequested {
                     issue_id,
                     id,
@@ -842,6 +901,18 @@ impl<'a> AppComponent<'a> {
                     },
                 ));
             }
+            Some(PendingEditorContext::DeletedJournal {
+                issue_id,
+                original_id,
+            }) => {
+                self.dispatcher.borrow_mut().dispatch(Action::Journal(
+                    JournalAction::EditDeletedNotes {
+                        issue_id,
+                        original_id,
+                        notes: edited_text,
+                    },
+                ));
+            }
             None => {}
         }
     }
@@ -1011,12 +1082,7 @@ mod tests {
         let id = IssueId::new(3);
         let context = PendingEditorContext::IssueBody { id };
         let mut store = Store::new();
-        store.consume_action(
-            IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            }
-            .into(),
-        );
+        crate::test_support::load_issue(&mut store, crate::test_support::sample_parent_issue());
 
         assert!(can_start_editing(
             &context,
@@ -1057,10 +1123,7 @@ mod tests {
         assert!(app.pending_editor_context.is_none());
         assert_eq!(app.interaction_mode(), InteractionMode::Application);
         dispatcher.borrow_mut().consume_action();
-        assert_eq!(
-            dispatcher.borrow().store().get_issue(3).0.issue.description,
-            ""
-        );
+        assert_eq!(dispatcher.borrow().store().get_issue(3).0.description(), "");
     }
 
     #[test]
@@ -1104,13 +1167,9 @@ mod tests {
             journal_id,
         };
         let mut store = Store::new();
-        store.consume_action(
-            JournalAction::SyncFetched {
-                issue_id,
-                journals: vec![crate::test_support::sample_parent_issue_journals().remove(0)],
-            }
-            .into(),
-        );
+        let mut issue = crate::test_support::sample_parent_issue();
+        issue.journals = vec![crate::test_support::sample_parent_issue_journals().remove(0)];
+        crate::test_support::load_issue(&mut store, issue);
 
         assert!(can_start_editing(
             &context,
@@ -1153,6 +1212,7 @@ mod tests {
         let issue_id = IssueId::new(3);
         let context = PendingEditorContext::LocalJournal { issue_id };
         let mut store = Store::new();
+        crate::test_support::load_issue(&mut store, crate::test_support::sample_parent_issue());
 
         assert!(!can_start_editing(
             &context,
@@ -1182,9 +1242,11 @@ mod tests {
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
             crate::test_support::dispatch_sample_masters(&mut dispatcher_ref);
-            dispatcher_ref.dispatch(IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            });
+            for action in
+                crate::test_support::fetch_issue_actions(crate::test_support::sample_parent_issue())
+            {
+                dispatcher_ref.dispatch(action);
+            }
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }
@@ -1213,12 +1275,14 @@ mod tests {
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
             crate::test_support::dispatch_sample_masters(&mut dispatcher_ref);
-            dispatcher_ref.dispatch(IssueAction::Sync {
-                issue: crate::test_support::sample_open_child_issue(),
-            });
-            dispatcher_ref.dispatch(IssueAction::Sync {
-                issue: crate::test_support::sample_parent_issue(),
-            });
+            for issue in [
+                crate::test_support::sample_open_child_issue(),
+                crate::test_support::sample_parent_issue(),
+            ] {
+                for action in crate::test_support::fetch_issue_actions(issue) {
+                    dispatcher_ref.dispatch(action);
+                }
+            }
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }
@@ -1289,13 +1353,15 @@ mod tests {
     }
 
     fn loaded_dispatcher_with_journals() -> Rc<RefCell<Dispatcher>> {
-        let dispatcher = loaded_dispatcher();
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
-            dispatcher_ref.dispatch(Action::Journal(JournalAction::SyncFetched {
-                issue_id: IssueId::new(3),
-                journals: crate::test_support::sample_parent_issue_journals(),
-            }));
+            crate::test_support::dispatch_sample_masters(&mut dispatcher_ref);
+            for action in crate::test_support::fetch_sample_parent_issue_actions(
+                crate::test_support::sample_parent_issue_journals(),
+            ) {
+                dispatcher_ref.dispatch(action);
+            }
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }
@@ -1445,13 +1511,14 @@ mod tests {
             .store()
             .get_issue_property_diffs(IssueId::new(3))
             .to_vec();
-        let server_issue = dispatcher.borrow().store().get_issue(3).0.clone();
+        let server_issue = crate::test_support::sample_parent_issue();
         {
             let mut dispatcher = dispatcher.borrow_mut();
             dispatcher.dispatch(IssueAction::StartUpload { id: 3.into() });
             dispatcher.dispatch(IssueAction::UploadConflictsDetected {
                 server_issue,
                 conflicts,
+                children: vec![],
             });
             dispatcher.consume_action();
             dispatcher.consume_action();
@@ -1563,12 +1630,11 @@ mod tests {
                 None,
                 0,
             );
-            dispatcher_ref.dispatch(IssueAction::Sync {
-                issue: lower_id_issue,
-            });
-            dispatcher_ref.dispatch(IssueAction::Sync {
-                issue: higher_id_issue,
-            });
+            for issue in [lower_id_issue, higher_id_issue] {
+                for action in crate::test_support::fetch_issue_actions(issue) {
+                    dispatcher_ref.dispatch(action);
+                }
+            }
             while dispatcher_ref.consume_actinos_len() > 0 {
                 dispatcher_ref.consume_action();
             }
@@ -1660,10 +1726,13 @@ mod tests {
                 journal_id: JournalId::new(1),
             }));
             dispatcher_ref.consume_action();
+            let mut server_issue = crate::test_support::sample_parent_issue();
+            server_issue.journals = crate::test_support::sample_parent_issue_journals();
+            server_issue.journals[0].notes = "server notes".to_string();
             dispatcher_ref.dispatch(Action::Journal(JournalAction::DetectRemoteUploadConflict {
-                issue_id: IssueId::new(3),
                 journal_id: JournalId::new(1),
-                server_notes: "server notes".to_string(),
+                issue: server_issue,
+                children: crate::test_support::sample_parent_issue_children(),
             }));
             dispatcher_ref.consume_action();
         }

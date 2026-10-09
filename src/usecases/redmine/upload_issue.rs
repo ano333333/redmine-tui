@@ -3,25 +3,14 @@ use std::future::Future;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::clients::redmine::{RedmineClient, RedmineClientError};
-use crate::entities::IssueAggregate;
+use crate::clients::redmine::{IssueUpdate, RedmineClient};
 use crate::stores::{Action, Dispatcher, IssueAction, IssueState, NoticeAction, NoticeId};
-use crate::vos::{IssueId, IssuePropertyDiff};
-
-use super::{apply_issue_property_diffs, fetch_issue_with_conflicts};
-
-/// 競合がないことを確認済みの Issue を Redmine サーバーへアップロードする。
-pub(crate) async fn upload_issue(
-    client: &impl RedmineClient,
-    issue: &IssueAggregate,
-) -> Result<(), RedmineClientError> {
-    client.update_issue(issue).await
-}
+use crate::vos::{EntityIdValue, IssueId, IssuePropertyDiff};
 
 /// 編集済みのIssueのuploadを開始する。
 ///
 /// 呼び出し時に状態を検証し、`StartUpload`を同期的にqueueへ追加してproperty diffをsnapshotする。
-/// 返却したFutureは競合確認GETとIssue PUTを行い、完了Actionを返す。
+/// 返却したFutureは保存前の取得、Issue PUT、確認の取得を行い、完了Actionを返す。
 ///
 /// # Panics
 ///
@@ -55,35 +44,81 @@ where
     async move { upload_issue_action(client.as_ref(), id, &diffs).await }
 }
 
+/// 保存前の取得、Issue属性のPUT、確認の取得を順に行い、結果のActionを返す。
+///
+/// 保存前の取得でIssue属性が競合した場合はPUTせず、取得したJournalと子一覧とともに競合を返す。
+/// PUT成功後に確認の取得だけが失敗した場合は、PUTを繰り返さないよう、保存前の取得値に
+/// 送信した差分を適用した値を新しい基準値として完了させる。
+// FIXME: 保存前の取得・PUT・確認の取得を1つのFutureで続けて実行し、結果を最後に1つのActionで
+// 反映している。PUT成功をStoreへ確定してから確認の取得を始められず、確認の取得だけを
+// 再試行する経路もない。リクエストごとに完了Actionを適用して次へ進む実行方式で分割する。
 pub async fn upload_issue_action(
     client: &impl RedmineClient,
     id: IssueId,
     diffs: &[IssuePropertyDiff],
 ) -> Vec<Action> {
-    let (mut server_issue, conflicts) = match fetch_issue_with_conflicts(client, id, diffs).await {
-        Ok(result) => result,
+    let preflight = match client.get_issue(id).await {
+        Ok(fetched) if fetched.aggregate.issue.id == id => fetched,
+        Ok(fetched) => {
+            return issue_upload_failure_actions(
+                id,
+                format!(
+                    "requested issue {} but Redmine returned issue {}",
+                    id.get(),
+                    fetched.aggregate.issue.id.get()
+                ),
+            );
+        }
         Err(error) => {
             return issue_upload_failure_actions(id, error.to_string());
         }
     };
-    if !conflicts.is_empty() {
-        return vec![
-            IssueAction::UploadConflictsDetected {
-                server_issue,
-                conflicts,
-            }
-            .into(),
-        ];
-    }
-
-    apply_issue_property_diffs(&mut server_issue, diffs);
-    if let Err(error) = upload_issue(client, &server_issue).await {
+    let applied = match preflight.aggregate.with_property_diffs(diffs) {
+        Ok(applied) => applied,
+        Err(conflicts) => {
+            return vec![
+                IssueAction::UploadConflictsDetected {
+                    server_issue: preflight.aggregate,
+                    conflicts,
+                    children: preflight.children,
+                }
+                .into(),
+            ];
+        }
+    };
+    if let Err(error) = client
+        .update_issue(id, &IssueUpdate::from_diffs(diffs))
+        .await
+    {
         return issue_upload_failure_actions(id, error.to_string());
     }
 
+    let reason = match client.get_issue(id).await {
+        Ok(confirmed) if confirmed.aggregate.issue.id == id => {
+            return vec![
+                IssueAction::UploadSucceeded {
+                    issue: confirmed.aggregate,
+                    children: confirmed.children,
+                }
+                .into(),
+            ];
+        }
+        Ok(confirmed) => format!(
+            "requested issue {} but Redmine returned issue {}",
+            id.get(),
+            confirmed.aggregate.issue.id.get()
+        ),
+        Err(error) => error.to_string(),
+    };
     vec![
-        IssueAction::Sync {
-            issue: server_issue,
+        NoticeAction::Push {
+            id: NoticeId::new(),
+            message: format!("Issue #{id}を保存しましたが、確認の取得に失敗しました: {reason}"),
+        }
+        .into(),
+        IssueAction::UploadSucceeded {
+            issue: applied,
+            children: preflight.children,
         }
         .into(),
     ]
@@ -105,101 +140,102 @@ fn issue_upload_failure_actions(id: IssueId, message: String) -> Vec<Action> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
     use std::sync::Mutex;
 
+    use crate::clients::redmine::RedmineClientError;
     use crate::clients::redmine::base::FetchedIssue;
-    use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::entities::{
-        Category, IssueAggregate, IssueStatus, Priority, Project, TargetVersion,
-        TimeEntityActivity, Tracker, User,
+        Category, IssueAggregate, IssueChild, IssueStatus, Priority, Project, ProjectIssuesPage,
+        TargetVersion, TimeEntityActivity, Tracker, User,
     };
     use crate::test_support::sample_issue_aggregate;
-    use crate::vos::{IssueId, IssueStatusId};
+    use crate::vos::issue_property_diff::IssueDescriptionDiff;
+    use crate::vos::{IssueStatusId, JournalId, ProjectId, TrackerId};
 
-    use super::upload_issue;
+    use super::*;
 
-    #[tokio::test]
-    async fn uploads_the_supplied_issue() {
-        let client = StubClient::succeeds();
-        let issue = sample_issue_aggregate(
-            7,
-            "merged subject",
-            IssueStatusId::new(2),
-            None,
-            None,
-            None,
-            0,
-        );
+    const ISSUE_ID: IssueId = IssueId::new(1);
 
-        upload_issue(&client, &issue).await.unwrap();
-
-        let uploaded = client.uploaded.lock().unwrap();
-        assert_eq!(uploaded.len(), 1);
-        assert_eq!(uploaded[0].issue.id, issue.issue.id);
-        assert_eq!(uploaded[0].issue.subject, issue.issue.subject);
+    fn issue(description: &str) -> IssueAggregate {
+        let mut issue =
+            sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
+        issue.issue.description = description.to_string();
+        issue
     }
 
-    #[tokio::test]
-    async fn propagates_client_error() {
-        let expected = RedmineClientError::Network {
+    fn fetched(description: &str, child_subject: &str) -> FetchedIssue {
+        FetchedIssue {
+            aggregate: issue(description),
+            children: vec![IssueChild {
+                id: IssueId::new(2),
+                tracker_id: TrackerId::new(1),
+                subject: child_subject.to_string(),
+                children: vec![],
+            }],
+        }
+    }
+
+    fn description_diff() -> Vec<IssuePropertyDiff> {
+        vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
+            before: "server".to_string(),
+            after: "local".to_string(),
+        })]
+    }
+
+    fn offline() -> RedmineClientError {
+        RedmineClientError::Network {
             reason: "offline".to_string(),
-        };
-        let client = StubClient::fails(expected.clone());
-        let issue =
-            sample_issue_aggregate(7, "subject", IssueStatusId::new(1), None, None, None, 0);
-
-        let actual = upload_issue(&client, &issue).await.unwrap_err();
-
-        assert_eq!(actual, expected);
+        }
     }
 
+    /// GETの結果を呼び出し順に返し、PUTした更新要求を記録する。
     struct StubClient {
-        uploaded: Mutex<Vec<IssueAggregate>>,
-        error: Option<RedmineClientError>,
+        get_results: Mutex<VecDeque<Result<FetchedIssue, RedmineClientError>>>,
+        put_result: Result<(), RedmineClientError>,
+        updates: Mutex<Vec<IssueUpdate>>,
     }
 
     impl StubClient {
-        fn succeeds() -> Self {
+        fn new(
+            get_results: Vec<Result<FetchedIssue, RedmineClientError>>,
+            put_result: Result<(), RedmineClientError>,
+        ) -> Self {
             Self {
-                uploaded: Mutex::new(Vec::new()),
-                error: None,
-            }
-        }
-
-        fn fails(error: RedmineClientError) -> Self {
-            Self {
-                uploaded: Mutex::new(Vec::new()),
-                error: Some(error),
+                get_results: Mutex::new(get_results.into()),
+                put_result,
+                updates: Mutex::new(Vec::new()),
             }
         }
     }
 
     impl RedmineClient for StubClient {
-        async fn update_issue(&self, issue: &IssueAggregate) -> Result<(), RedmineClientError> {
-            if let Some(error) = &self.error {
-                return Err(error.clone());
-            }
-            self.uploaded.lock().unwrap().push(issue.clone());
-            Ok(())
+        async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
+            self.get_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("unexpected GET")
+        }
+
+        async fn update_issue(
+            &self,
+            _: IssueId,
+            update: &IssueUpdate,
+        ) -> Result<(), RedmineClientError> {
+            self.updates.lock().unwrap().push(update.clone());
+            self.put_result.clone()
+        }
+
+        async fn update_issue_notes(&self, _: IssueId, _: &str) -> Result<(), RedmineClientError> {
+            unreachable!()
         }
 
         async fn update_journal_notes(
             &self,
-            _: crate::vos::JournalId,
+            _: JournalId,
             _: &str,
         ) -> Result<(), RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn update_issue_notes(
-            &self,
-            _: crate::vos::IssueId,
-            _: &str,
-        ) -> Result<(), RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
             unreachable!()
         }
 
@@ -221,9 +257,9 @@ mod tests {
 
         async fn get_project_issues(
             &self,
-            _: crate::vos::ProjectId,
+            _: ProjectId,
             _: std::num::NonZeroUsize,
-        ) -> Result<crate::entities::ProjectIssuesPage, RedmineClientError> {
+        ) -> Result<ProjectIssuesPage, RedmineClientError> {
             unreachable!()
         }
 
@@ -244,5 +280,122 @@ mod tests {
         async fn get_users(&self) -> Result<Vec<User>, RedmineClientError> {
             unreachable!()
         }
+    }
+
+    fn subjects(children: &[IssueChild]) -> Vec<&str> {
+        children
+            .iter()
+            .map(|child| child.subject.as_str())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn completes_with_the_confirmed_issue_and_children_after_putting_only_the_edits() {
+        let client = StubClient::new(
+            vec![
+                Ok(fetched("server", "before put")),
+                Ok(fetched("confirmed", "after put")),
+            ],
+            Ok(()),
+        );
+
+        let actions = upload_issue_action(&client, ISSUE_ID, &description_diff()).await;
+
+        let [Action::Issue(IssueAction::UploadSucceeded { issue, children })] = actions.as_slice()
+        else {
+            panic!("expected UploadSucceeded");
+        };
+        assert_eq!(issue.issue.description, "confirmed");
+        assert_eq!(subjects(children), vec!["after put"]);
+        assert_eq!(
+            *client.updates.lock().unwrap(),
+            vec![IssueUpdate {
+                description: Some("local".to_string()),
+                ..IssueUpdate::default()
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_preflight_fetch_of_another_issue_fails_without_putting() {
+        let mut other = fetched("server", "before put");
+        other.aggregate.issue.id = IssueId::new(99);
+        let client = StubClient::new(vec![Ok(other)], Ok(()));
+
+        let actions = upload_issue_action(&client, ISSUE_ID, &description_diff()).await;
+
+        let [
+            Action::Notice(NoticeAction::Push { .. }),
+            Action::Issue(IssueAction::FailUpload { id, message }),
+        ] = actions.as_slice()
+        else {
+            panic!("expected a notice and FailUpload");
+        };
+        assert_eq!(*id, ISSUE_ID);
+        assert_eq!(message, "requested issue 1 but Redmine returned issue 99");
+        assert!(client.updates.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_confirmation_failure_completes_with_the_sent_edits_without_putting_again() {
+        let client = StubClient::new(
+            vec![Ok(fetched("server", "before put")), Err(offline())],
+            Ok(()),
+        );
+
+        let actions = upload_issue_action(&client, ISSUE_ID, &description_diff()).await;
+
+        let [
+            Action::Notice(NoticeAction::Push { message, .. }),
+            Action::Issue(IssueAction::UploadSucceeded { issue, children }),
+        ] = actions.as_slice()
+        else {
+            panic!("expected a notice and UploadSucceeded");
+        };
+        assert_eq!(
+            message,
+            "Issue #1を保存しましたが、確認の取得に失敗しました: network error: offline"
+        );
+        assert_eq!(issue.issue.description, "local");
+        assert_eq!(subjects(children), vec!["before put"]);
+        assert_eq!(client.updates.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_property_conflict_returns_the_fetched_issue_and_children_without_putting() {
+        let client = StubClient::new(vec![Ok(fetched("changed on server", "fetched"))], Ok(()));
+
+        let actions = upload_issue_action(&client, ISSUE_ID, &description_diff()).await;
+
+        let [
+            Action::Issue(IssueAction::UploadConflictsDetected {
+                server_issue,
+                conflicts,
+                children,
+            }),
+        ] = actions.as_slice()
+        else {
+            panic!("expected UploadConflictsDetected");
+        };
+        assert_eq!(server_issue.issue.description, "changed on server");
+        assert_eq!(conflicts, &description_diff());
+        assert_eq!(subjects(children), vec!["fetched"]);
+        assert!(client.updates.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_put_failure_keeps_the_edits_without_confirming() {
+        let client = StubClient::new(vec![Ok(fetched("server", "before put"))], Err(offline()));
+
+        let actions = upload_issue_action(&client, ISSUE_ID, &description_diff()).await;
+
+        assert!(matches!(
+            actions.as_slice(),
+            [
+                Action::Notice(NoticeAction::Push { .. }),
+                Action::Issue(IssueAction::FailUpload { .. })
+            ]
+        ));
+        assert!(client.get_results.lock().unwrap().is_empty());
     }
 }

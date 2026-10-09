@@ -43,7 +43,7 @@ pub fn build_issue_status_options(store: &Store) -> (Vec<(u16, String)>, usize) 
 // FIXME: projectで有効なtrackerに絞っていない。Redmineは使えないtracker_idをエラーなしで
 // 無視するため、ローカルでは変更済みに見えてしまう。
 pub fn build_tracker_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
-    let current_tracker_id = store.get_issue(issue_id).0.tracker_id;
+    let current_tracker_id = store.get_issue(issue_id).0.tracker_id();
     let trackers = store
         .get_trackers()
         .iter()
@@ -56,7 +56,7 @@ pub fn build_tracker_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, Str
 // FIXME: add_issues権限のあるprojectに絞っていない。Redmineは移動できないproject_idを
 // エラーなしで無視するため、ローカルでは変更済みに見えてしまう。
 pub fn build_project_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
-    let current_project_id = store.get_issue(issue_id).0.issue.project_id;
+    let current_project_id = store.get_issue(issue_id).0.project_id();
     let projects = store
         .get_projects()
         .iter()
@@ -67,7 +67,7 @@ pub fn build_project_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, Str
 
 /// PriorityPopup用のitems/focused_indexを組み立てる。
 pub fn build_priority_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
-    let current_priority_id = store.get_issue(issue_id).0.priority_id;
+    let current_priority_id = store.get_issue(issue_id).0.priority_id();
     let priorities = store
         .get_priorities()
         .iter()
@@ -80,7 +80,7 @@ pub fn build_priority_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, St
 // FIXME: projectのassignableなmemberに絞っていない。Redmineはmember以外のassigned_to_idを
 // 422で拒否する。
 pub fn build_assigned_to_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
-    let current_assigned_to_id = store.get_issue(issue_id).0.assigned_to_id;
+    let current_assigned_to_id = store.get_issue(issue_id).0.assigned_to_id();
     let users = store
         .get_users()
         .iter()
@@ -95,9 +95,9 @@ pub fn build_target_version_options(
     issue_id: IssueId,
 ) -> (Vec<(u16, String)>, usize) {
     let (issue, _) = store.get_issue(issue_id);
-    let current_target_version_id = issue.target_version_id;
+    let current_target_version_id = issue.target_version_id();
     let target_versions = store
-        .get_target_versions(issue.issue.project_id)
+        .get_target_versions(issue.project_id())
         .into_iter()
         .map(|target_version| (target_version.id.get(), target_version.name.clone()))
         .collect::<Vec<_>>();
@@ -112,7 +112,7 @@ pub fn build_target_version_options(
 ///
 /// 選択肢は0,10,...,100の固定11件。
 pub fn build_done_ratio_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
-    let current_done_ratio = store.get_issue(issue_id).0.done_ratio;
+    let current_done_ratio = store.get_issue(issue_id).0.done_ratio();
     let done_ratios = (0..=100)
         .step_by(10)
         .map(|ratio| (ratio, ratio.to_string()))
@@ -123,9 +123,9 @@ pub fn build_done_ratio_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, 
 /// CategoryPopup用のitems/focused_indexを組み立てる。
 pub fn build_category_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
     let (issue, _) = store.get_issue(issue_id);
-    let current_category_id = issue.category_id;
+    let current_category_id = issue.category_id();
     let categories = store
-        .get_categories(issue.issue.project_id)
+        .get_categories(issue.project_id())
         .into_iter()
         .map(|category| (category.id.get(), category.name.clone()))
         .collect::<Vec<_>>();
@@ -190,8 +190,7 @@ pub fn project_popup_observer(
             .store()
             .get_issue(issue_id)
             .0
-            .issue
-            .project_id;
+            .project_id();
         if project_id == current_project_id {
             return;
         }
@@ -291,7 +290,7 @@ pub fn category_popup_observer(
 
 /// EstimatedHoursPopup用の現在値を取得する。
 pub fn current_estimated_hours(store: &Store, issue_id: IssueId) -> Option<f64> {
-    store.get_issue(issue_id).0.estimated_hours
+    store.get_issue(issue_id).0.estimated_hours()
 }
 
 /// EstimatedHoursPopupの入力結果からUpdateEstimatedHoursをdispatchするobserverを組み立てる。
@@ -311,12 +310,12 @@ pub fn estimated_hours_popup_observer(
 
 /// StartDatePopup用の現在値(選択済み開始日)を取得する。
 pub fn current_start_date(store: &Store, issue_id: IssueId) -> Option<DateTime<Local>> {
-    store.get_issue(issue_id).0.start_date
+    store.get_issue(issue_id).0.start_date()
 }
 
 /// DueDatePopup用の現在値(選択済み期日)を取得する。
 pub fn current_due_date(store: &Store, issue_id: IssueId) -> Option<DateTime<Local>> {
-    store.get_issue(issue_id).0.due_date
+    store.get_issue(issue_id).0.due_date()
 }
 
 /// StartDatePopupの選択結果からUpdateStartDateをdispatchするobserverを組み立てる。
@@ -361,7 +360,9 @@ mod tests {
         dispatch_sample_masters(&mut dispatcher);
         let mut issue = sample_issue_aggregate(3, "issue", 3.into(), Some(1001), None, None, 0);
         issue.tracker_id = TrackerId::new(3);
-        dispatcher.dispatch(IssueAction::Sync { issue });
+        for action in crate::test_support::fetch_issue_actions(issue) {
+            dispatcher.dispatch(action);
+        }
         while dispatcher.consume_actinos_len() > 0 {
             dispatcher.consume_action();
         }
@@ -599,7 +600,7 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
         assert_eq!(
-            dispatcher.borrow().store().get_issue(3).0.issue.status_id,
+            dispatcher.borrow().store().get_issue(3).0.status_id(),
             IssueStatusId::new(2)
         );
     }
@@ -624,7 +625,7 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
         assert_eq!(
-            dispatcher.borrow().store().get_issue(3).0.tracker_id,
+            dispatcher.borrow().store().get_issue(3).0.tracker_id(),
             TrackerId::new(1)
         );
     }
@@ -649,7 +650,7 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
         assert_eq!(
-            dispatcher.borrow().store().get_issue(3).0.issue.project_id,
+            dispatcher.borrow().store().get_issue(3).0.project_id(),
             ProjectId::new(2)
         );
     }
@@ -675,7 +676,7 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
         assert_eq!(
-            dispatcher.borrow().store().get_issue(3).0.priority_id,
+            dispatcher.borrow().store().get_issue(3).0.priority_id(),
             PriorityId::new(2)
         );
     }
@@ -700,7 +701,7 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
         assert_eq!(
-            dispatcher.borrow().store().get_issue(3).0.assigned_to_id,
+            dispatcher.borrow().store().get_issue(3).0.assigned_to_id(),
             None
         );
     }
@@ -715,7 +716,12 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
         assert_eq!(
-            dispatcher.borrow().store().get_issue(3).0.target_version_id,
+            dispatcher
+                .borrow()
+                .store()
+                .get_issue(3)
+                .0
+                .target_version_id(),
             None
         );
     }
@@ -739,7 +745,7 @@ mod tests {
 
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
-        assert_eq!(dispatcher.borrow().store().get_issue(3).0.done_ratio, 40);
+        assert_eq!(dispatcher.borrow().store().get_issue(3).0.done_ratio(), 40);
     }
 
     #[test]
@@ -751,7 +757,10 @@ mod tests {
 
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
-        assert_eq!(dispatcher.borrow().store().get_issue(3).0.category_id, None);
+        assert_eq!(
+            dispatcher.borrow().store().get_issue(3).0.category_id(),
+            None
+        );
     }
 
     #[test]
@@ -824,7 +833,7 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
         assert_eq!(
-            dispatcher.borrow().store().get_issue(3).0.start_date,
+            dispatcher.borrow().store().get_issue(3).0.start_date(),
             Some(sample_date())
         );
     }
@@ -839,7 +848,7 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
         dispatcher.borrow_mut().consume_action();
         assert_eq!(
-            dispatcher.borrow().store().get_issue(3).0.due_date,
+            dispatcher.borrow().store().get_issue(3).0.due_date(),
             Some(sample_date())
         );
     }

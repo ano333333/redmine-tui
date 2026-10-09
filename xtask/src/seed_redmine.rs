@@ -168,7 +168,7 @@ struct IssueRecord {
     estimated_hours: Option<f64>,
     category_id: Option<u16>,
     description: String,
-    child_ids: Vec<u16>,
+    parent_id: Option<u16>,
 }
 
 #[derive(Debug)]
@@ -736,7 +736,7 @@ fn load_issues(dir: &Path) -> Result<Vec<IssueRecord>, String> {
                 estimated_hours: as_f64_option(&yaml, "estimated_hours")?,
                 category_id: as_u16_option(&yaml, "category_id")?,
                 description: as_string(&yaml, "description")?,
-                child_ids: as_u16_array(&yaml, "child_ids")?,
+                parent_id: as_u16_option(&yaml, "parent_id")?,
             })
         })
         .collect()
@@ -859,48 +859,23 @@ fn as_bool(yaml: &Yaml, key: &str) -> Result<bool, String> {
         .ok_or_else(|| format!("missing boolean field: {key}"))
 }
 
-fn as_u16_array(yaml: &Yaml, key: &str) -> Result<Vec<u16>, String> {
-    if yaml[key].is_badvalue() {
-        return Ok(Vec::new());
-    }
-    let Some(values) = yaml[key].as_vec() else {
-        return Ok(Vec::new());
-    };
-    values
-        .iter()
-        .map(|value| {
-            value
-                .as_i64()
-                .ok_or_else(|| format!("{key} contains a non-integer value"))?
-                .try_into()
-                .map_err(|_| format!("{key} contains a value out of range for u16"))
-        })
-        .collect()
-}
-
 fn issue_tree_updates(issues: &[IssueRecord]) -> Vec<String> {
-    let child_to_parent = issues
+    let mut children_by_parent = BTreeMap::<u16, Vec<u16>>::new();
+    for issue in issues {
+        if let Some(parent_id) = issue.parent_id {
+            children_by_parent
+                .entry(parent_id)
+                .or_default()
+                .push(issue.id);
+        }
+    }
+    for children in children_by_parent.values_mut() {
+        children.sort();
+    }
+    let mut roots = issues
         .iter()
-        .flat_map(|issue| {
-            issue
-                .child_ids
-                .iter()
-                .map(move |child_id| (*child_id, issue.id))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let children_by_parent = issues
-        .iter()
-        .map(|issue| {
-            let mut children = issue.child_ids.clone();
-            children.sort();
-            (issue.id, children)
-        })
-        .collect::<BTreeMap<_, _>>();
-    let ids = issues.iter().map(|issue| issue.id).collect::<BTreeSet<_>>();
-    let mut roots = ids
-        .iter()
-        .copied()
-        .filter(|id| !child_to_parent.contains_key(id))
+        .filter(|issue| issue.parent_id.is_none())
+        .map(|issue| issue.id)
         .collect::<Vec<_>>();
     roots.sort();
 
@@ -1091,10 +1066,13 @@ mod tests {
         assert!(sql.contains("(1, 1, 1, 'issue1'"));
         assert!(sql.contains("(3, 3, 1, 'issue1(長"));
         assert!(sql.contains(
-            "UPDATE issues SET parent_id = 3, root_id = 3, lft = 2, rgt = 3 WHERE id = 1;"
+            "UPDATE issues SET parent_id = 3, root_id = 3, lft = 2, rgt = 5 WHERE id = 1;"
         ));
         assert!(sql.contains(
-            "UPDATE issues SET parent_id = 3, root_id = 3, lft = 4, rgt = 5 WHERE id = 2;"
+            "UPDATE issues SET parent_id = 1, root_id = 3, lft = 3, rgt = 4 WHERE id = 4;"
+        ));
+        assert!(sql.contains(
+            "UPDATE issues SET parent_id = 3, root_id = 3, lft = 6, rgt = 7 WHERE id = 2;"
         ));
     }
 

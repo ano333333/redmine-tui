@@ -38,7 +38,7 @@ pub struct RemoteJournalItemView<'a> {
 /// Redmineへ未登録のJournalを、作成者や更新日のない専用headerで描画するための参照。
 pub struct LocalJournalItemView<'a> {
     pub notes: &'a str,
-    pub state_marker: &'static str,
+    pub state_marker: &'a str,
 }
 
 /// Remote固有のmetadataをLocalの表示モデルへ持ち込まず、共通Widgetへ渡す表示種別。

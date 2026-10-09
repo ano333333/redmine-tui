@@ -1,9 +1,7 @@
 use crate::stores::{Dispatcher, IssueAction};
 use crate::vos::{IssueId, IssuePropertyDiff};
 
-use super::fetch_issue_with_conflicts::{
-    same_issue_property, with_server_value_as_after, with_server_value_as_before,
-};
+use crate::vos::issue_property_diff::same_issue_property;
 
 /// popupの競合解決結果から、最新Issueで再試行するための一時的なdiffを作成する。
 ///
@@ -36,8 +34,8 @@ pub fn continue_issue_upload(
         selected_local_diffs
             .iter()
             .find(|selected| same_issue_property(conflict, selected))
-            .map(|selected| with_server_value_as_before(&server_issue, selected))
-            .unwrap_or_else(|| with_server_value_as_after(&server_issue, conflict))
+            .map(|selected| server_issue.with_value_as_before(selected))
+            .unwrap_or_else(|| server_issue.with_value_as_after(conflict))
     }));
 
     dispatcher.dispatch(IssueAction::ClearUploadConflicts { id });
@@ -61,12 +59,12 @@ mod tests {
         let original_diffs = dispatcher.store().get_issue_property_diffs(id).to_vec();
         let local_description = original_diffs[0].clone();
         let conflicts = original_diffs[..2].to_vec();
-        let mut server_issue = dispatcher.store().get_issue(id).0.clone();
+        let mut server_issue = sample_issue_aggregate(1, "subject", 9.into(), None, None, None, 0);
         server_issue.issue.description = "server body".to_string();
-        server_issue.issue.status_id = 9.into();
         dispatcher.dispatch(IssueAction::UploadConflictsDetected {
             server_issue,
             conflicts,
+            children: vec![],
         });
         dispatcher.consume_action();
 
@@ -102,8 +100,7 @@ mod tests {
         let mut issue: IssueAggregate =
             sample_issue_aggregate(1, "subject", 1.into(), None, None, None, 0);
         issue.issue.description = "original body".to_string();
-        dispatcher.dispatch(IssueAction::Sync { issue });
-        dispatcher.consume_action();
+        crate::test_support::dispatch_loaded_issue(&mut dispatcher, issue);
         dispatcher.dispatch(IssueAction::UpdateDescription {
             id,
             body: "local body".to_string(),

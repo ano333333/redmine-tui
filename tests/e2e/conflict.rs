@@ -39,7 +39,7 @@ fn open_issue_priority_conflict() -> PtySession {
     // Given Issue 2（priority: major）の優先度をローカルでminorに変えている
     reseed_redmine();
     let mut session = spawn_app();
-    open_issue_from_initial_popup(&mut session, 1);
+    open_issue_from_initial_popup(&mut session, 2);
     press_j(&mut session, J_PRESSES_TO_PRIORITY);
     press_keys(&mut session, &["e", "j", "Enter"]);
     wait_until(&mut session, "changing the priority to minor", |frame| {
@@ -131,7 +131,7 @@ fn open_journal_conflict(editor: &FakeEditor) -> PtySession {
     // Given Issue 3のJournal 1のnotesをローカルで編集している
     reseed_redmine();
     let mut session = editor.spawn_app("local notes");
-    open_issue_from_initial_popup(&mut session, 0);
+    open_issue_from_initial_popup(&mut session, 1);
     press_j(&mut session, J_PRESSES_TO_FIRST_JOURNAL_NOTES);
     session.press_key("e").expect("failed to press e");
     editor.finish_editing(&mut session);

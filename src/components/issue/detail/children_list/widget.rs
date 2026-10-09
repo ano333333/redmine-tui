@@ -5,7 +5,7 @@ use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
-use crate::entities::{IssueAggregate, IssueStatus, IssueStatusExt};
+use crate::entities::{IssueStatus, IssueStatusExt};
 use crate::vos::IssueId;
 use crate::widgets::gutter::{Gutter, indented_area};
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED, SECTION_BAR};
@@ -15,10 +15,21 @@ pub const HEADER_LINES: u16 = 2;
 /// 縦線を引かない末尾の余白行。次のブロックとの区切りになる。
 const GUTTER_TRAILING_LINES: u16 = 1;
 
+/// 直下の子1件の行。孫以下は行にせず、件数だけを題名に添える。
 pub struct ChildIssueRow<'a> {
-    pub issue: &'a IssueAggregate,
+    pub id: IssueId,
+    pub subject: &'a str,
+    pub descendant_count: usize,
+    /// 子Issueの詳細を取得済みの場合だけ持つ。未取得の子は一覧の取得情報だけで表示する。
+    pub detail: Option<ChildIssueDetail<'a>>,
+}
+
+pub struct ChildIssueDetail<'a> {
     pub issue_status: Option<&'a IssueStatus>,
     pub assigned_to_name: Option<&'a str>,
+    pub start_date: Option<DateTime<Local>>,
+    pub due_date: Option<DateTime<Local>>,
+    pub done_ratio: u16,
 }
 
 pub struct ChildrenListWidget<'a> {
@@ -108,11 +119,10 @@ fn create_header_text(
 }
 
 fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer, focused: bool) {
-    let issue = child.issue;
-    let status_name = child
-        .issue_status
-        .map_or("(不明)", |issue_status| issue_status.name.as_str());
-    let is_closed = child.issue_status.is_closed_status();
+    let is_closed = child
+        .detail
+        .as_ref()
+        .is_some_and(|detail| detail.issue_status.is_closed_status());
     let row = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Max(1)])
@@ -135,13 +145,21 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
             Constraint::Length(4), // progress
         ])
         .split(row);
-    create_id_widget(issue.issue.id, is_closed).render(cols[0], buffer);
-    create_title_widget(&issue.issue.subject).render(cols[2], buffer);
-    create_status_widget(status_name).render(cols[4], buffer);
-    create_person_in_charge_widget(child.assigned_to_name).render(cols[6], buffer);
-    create_start_date_widget(&issue.start_date).render(cols[8], buffer);
-    create_due_widget(&issue.due_date).render(cols[10], buffer);
-    create_progress_widget(issue.done_ratio).render(cols[12], buffer);
+    create_id_widget(child.id, is_closed).render(cols[0], buffer);
+    create_title_widget(child.subject, child.descendant_count).render(cols[2], buffer);
+    match &child.detail {
+        Some(detail) => {
+            let status_name = detail
+                .issue_status
+                .map_or("(不明)", |issue_status| issue_status.name.as_str());
+            create_status_widget(status_name).render(cols[4], buffer);
+            create_person_in_charge_widget(detail.assigned_to_name).render(cols[6], buffer);
+            create_start_date_widget(&detail.start_date).render(cols[8], buffer);
+            create_due_widget(&detail.due_date).render(cols[10], buffer);
+            create_progress_widget(detail.done_ratio).render(cols[12], buffer);
+        }
+        None => create_unloaded_status_widget().render(cols[4], buffer),
+    }
 
     if focused {
         for x in 0..row.width {
@@ -161,12 +179,20 @@ fn create_id_widget(id: IssueId, is_closed: bool) -> Paragraph<'static> {
     Paragraph::new(Text::from(format!("#{}", id))).style(id_style)
 }
 
-fn create_title_widget(title: &str) -> Paragraph<'static> {
-    Paragraph::new(Text::from(title.to_string())).wrap(Wrap { trim: true })
+fn create_title_widget(title: &str, descendant_count: usize) -> Paragraph<'static> {
+    let mut spans = vec![Span::from(title.to_string())];
+    if descendant_count > 0 {
+        spans.push(Span::from(format!(" (+{descendant_count})")).fg(MUTED));
+    }
+    Paragraph::new(Line::from(spans)).wrap(Wrap { trim: true })
 }
 
 fn create_status_widget(status: &str) -> Paragraph<'static> {
     Paragraph::new(Text::from(status.to_string())).wrap(Wrap { trim: true })
+}
+
+fn create_unloaded_status_widget() -> Paragraph<'static> {
+    Paragraph::new(Text::from("未取得")).style(Style::default().fg(Color::Gray))
 }
 
 fn create_person_in_charge_widget(person_in_charge: Option<&str>) -> Paragraph<'static> {
@@ -201,6 +227,7 @@ fn create_progress_widget(progress: u16) -> Paragraph<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::IssueAggregate;
     use crate::test_support::{render_snapshot, sample_issue_aggregate};
 
     #[test]
@@ -251,21 +278,9 @@ mod tests {
                 1,
                 2,
                 vec![
-                    ChildIssueRow {
-                        issue: &done,
-                        issue_status: Some(&done_status),
-                        assigned_to_name: Some("alice"),
-                    },
-                    ChildIssueRow {
-                        issue: &open,
-                        issue_status: Some(&open_status),
-                        assigned_to_name: None,
-                    },
-                    ChildIssueRow {
-                        issue: &unknown,
-                        issue_status: None,
-                        assigned_to_name: None,
-                    },
+                    loaded_row(&done, Some(&done_status), Some("alice")),
+                    loaded_row(&open, Some(&open_status), None),
+                    loaded_row(&unknown, None, None),
                 ],
                 Some(1),
             ),
@@ -292,24 +307,73 @@ mod tests {
             1,
             2,
             vec![
-                ChildIssueRow {
-                    issue: &child_a,
-                    issue_status: Some(&child_a_status),
-                    assigned_to_name: Some("alice"),
-                },
-                ChildIssueRow {
-                    issue: &child_b,
-                    issue_status: Some(&child_b_status),
-                    assigned_to_name: None,
-                },
-                ChildIssueRow {
-                    issue: &child_c,
-                    issue_status: None,
-                    assigned_to_name: None,
-                },
+                loaded_row(&child_a, Some(&child_a_status), Some("alice")),
+                loaded_row(&child_b, Some(&child_b_status), None),
+                loaded_row(&child_c, None, None),
             ],
             None,
         );
         assert_eq!(widget.line_count(), 6);
+    }
+
+    fn loaded_row<'a>(
+        issue: &'a IssueAggregate,
+        issue_status: Option<&'a IssueStatus>,
+        assigned_to_name: Option<&'a str>,
+    ) -> ChildIssueRow<'a> {
+        ChildIssueRow {
+            id: issue.issue.id,
+            subject: &issue.issue.subject,
+            descendant_count: 0,
+            detail: Some(ChildIssueDetail {
+                issue_status,
+                assigned_to_name,
+                start_date: issue.start_date,
+                due_date: issue.due_date,
+                done_ratio: issue.done_ratio,
+            }),
+        }
+    }
+
+    #[test]
+    fn snapshot_unloaded_child_shows_only_fetched_id_and_subject() {
+        render_snapshot(
+            "children_unloaded_child_display",
+            80,
+            4,
+            ChildrenListWidget::new(
+                1,
+                0,
+                1,
+                vec![ChildIssueRow {
+                    id: 4.into(),
+                    subject: "Unloaded child",
+                    descendant_count: 0,
+                    detail: None,
+                }],
+                None,
+            ),
+        );
+    }
+
+    #[test]
+    fn snapshot_child_with_descendants_shows_their_count_after_the_subject() {
+        render_snapshot(
+            "children_child_with_descendants_display",
+            80,
+            4,
+            ChildrenListWidget::new(
+                1,
+                0,
+                1,
+                vec![ChildIssueRow {
+                    id: 4.into(),
+                    subject: "Parent child",
+                    descendant_count: 3,
+                    detail: None,
+                }],
+                None,
+            ),
+        );
     }
 }

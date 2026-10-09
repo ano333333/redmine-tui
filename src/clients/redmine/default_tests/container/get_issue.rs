@@ -10,13 +10,14 @@ use crate::vos::{EntityIdValue, IssueId, JournalDetail, JournalDetailAttr};
 fn get_issue_contract_against_redmine_container() {
     run_contract(|base_url| async move {
         assert_get_issue_200(&base_url).await?;
+        assert_get_issue_returns_parent_and_grandchildren(&base_url).await?;
         assert_get_issue_401(&base_url).await?;
         assert_get_issue_404(&base_url).await?;
         Ok(())
     });
 }
 
-/// seedのIssue 3は子Issue 1・2と、status変更・期日変更・notesのJournal 1〜3を持つ。
+/// seedのIssue 3は親を持たず、子Issue 1・2と、status変更・期日変更・notesのJournal 1〜3を持つ。
 async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     let fetched = authenticated_client(base_url)
         .get_issue(IssueId::new(3))
@@ -45,17 +46,23 @@ async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::
     assert_eq!(issue.estimated_hours, None);
     assert_eq!(issue.total_spent_hours, Some(0.0));
     assert_eq!(issue.category_id.map(|id| id.get()), Some(1));
+    assert_eq!(issue.parent_id, None);
     assert_eq!(
-        issue
-            .child_ids
+        fetched
+            .children
             .iter()
-            .map(|id| id.get())
+            .map(|child| (
+                child.id.get(),
+                child.tracker_id.get(),
+                child.subject.as_str(),
+                child.children.len()
+            ))
             .collect::<Vec<_>>(),
-        vec![1, 2]
+        vec![(1, 1, "issue1", 1), (2, 2, "issue2", 0)]
     );
 
     assert_eq!(
-        fetched
+        issue
             .journals
             .iter()
             .map(|journal| (
@@ -91,17 +98,44 @@ async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::
         ]
     );
     assert!(matches!(
-        fetched.journals[0].details.as_slice(),
+        issue.journals[0].details.as_slice(),
         [JournalDetail::Attr(JournalDetailAttr::StatusId { old, new })]
             if old.get() == 1 && new.get() == 2
     ));
     assert!(matches!(
-        fetched.journals[1].details.as_slice(),
+        issue.journals[1].details.as_slice(),
         [JournalDetail::Attr(JournalDetailAttr::DueDate { old, new })]
             if *old == Some(local_date(2026, 2, 16)) && *new == Some(local_date(2026, 2, 17))
     ));
-    assert!(fetched.journals[2].details.is_empty());
+    assert!(issue.journals[2].details.is_empty());
 
+    Ok(())
+}
+
+/// seedのIssue 1は親Issue 3を持ち、その下に孫のIssue 4がある。
+async fn assert_get_issue_returns_parent_and_grandchildren(
+    base_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let client = authenticated_client(base_url);
+
+    let child = client
+        .get_issue(IssueId::new(1))
+        .await
+        .map_err(|error| test_error(format!("get_issue(1) returned {error:?}")))?;
+    let parent = client
+        .get_issue(IssueId::new(3))
+        .await
+        .map_err(|error| test_error(format!("get_issue(3) returned {error:?}")))?;
+
+    assert_eq!(child.aggregate.parent_id, Some(IssueId::new(3)));
+    assert_eq!(
+        parent.children[0]
+            .children
+            .iter()
+            .map(|grandchild| (grandchild.id.get(), grandchild.subject.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(4, "issue4")]
+    );
     Ok(())
 }
 

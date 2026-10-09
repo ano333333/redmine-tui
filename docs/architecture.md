@@ -17,6 +17,7 @@
 - `src/clients/`
   - 外部プロセスとの通信を行う。
   - `redmine/base.rs` は `RedmineClient` trait を定義し、 Redmine との通信のインターフェースを定義する。`redmine/default.rs` は `DefaultRedmineClient`（実 HTTP 実装）を定義する。
+  - Issue 属性の保存は `IssueUpdate`（編集した属性だけを持つ更新要求）で渡す。送信しない属性は `None`、値の解除は `Some(None)` で表し、API が要求する項目の省略や空文字への変換は HTTP 実装が担う。
   - `redmine/demo/` は `DemoRedmineClient`（実 HTTP を行わず fixture を埋め込む memory mock）を定義する。
 - `src/components/`
   - TUI の画面部品を置く。
@@ -30,8 +31,10 @@
   - native/Web で共有する application lifecycle を置く。
 - `src/entities/`
   - Redmine 由来の永続的な domain entity を置く。
+  - `IssueAggregate::with_property_diffs` は、Issue 属性の差分を適用した値か、競合した差分を返す。差分の `before`/`after` を現在値へ置き換える処理とあわせて、Store と usecase から共用する。
 - `src/vos/`
   - ID、差分、journal detail などの value object を置く。
+  - `issue_property_diff.rs` は同じ属性への複数の差分の集約を持つ。
 - `src/widgets/`
   - 複数 component から使う汎用 widget を置く。
 - `src/libs/`
@@ -104,7 +107,10 @@ Store の更新は原則として Dispatcher を介して行う。
 
 - Store 更新通知は pub/sub ではなく、上位層が `consume_action -> update` を明示的に呼ぶ。
 - `Dispatcher` は action queue と `Store` を内部に持つ。
-- 親 `Store` は Issue の状態と更新処理を非公開の `IssueStore` に委譲する。
+- 親 `Store` は Issue と Journal の状態と更新処理を非公開の `IssueStore` に委譲する。Journal 本体は `IssueAggregate::journals` が所有し、`IssueStore` は取得済み Issue ごとに全 Journal の `RemoteJournalState`、0 件または 1 件の Local Journal、取得結果から消えた編集中 Journal の退避データ（DeletedJournal）を持つ。Journal の操作は Issue が取得済みの場合だけ受理する。
+- Issue 詳細の取得結果は `Action::IssueFetchSucceeded` 1件で Issue、Journal、子一覧を反映する。`IssueStore` は Journal の所有関係と重複を検査してから登録し、一部だけを反映した状態を作らない。
+- `IssueAggregate` は親 Issue の ID だけを持ち、子 Issue の ID 一覧は持たない。子一覧は詳細取得で得た `IssueChild`（ID・トラッカー・題名・再帰的な子一覧）として `IssueStore` が Issue ごとに保持する。子の詳細を取得済みなら、表示には `IssueView` の値を使う。
+- Issue 属性の状態（Synced / Edited / Uploading）は Journal の編集と下書きを含まない。Issue 属性の状態が変わっても Journal の作業は引き継ぐ。同じ Issue の upload は Issue 属性と Journal を合わせて1件に限り、`IssueStore` が検査する。
 - Component と usecase は `IssueStore` を直接参照せず、親 `Store` の Issue getter を通して entity、同期状態、diff、競合情報を取得する。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。
@@ -116,13 +122,15 @@ Store は、失敗または Action の不受理に見える分岐を以下に区
 - 異常系: 自プロセスの制御破綻を示す状態機械違反。`panic!` で即座に停止する。異常系を `Result` で呼び出し元へ返すのは、Flux を参考にした一方向データフローでは dispatch 時点と consume 時点が分離しておりエラーを返す先がないため採用しない。
 - 準異常系: 外部プロセスや外部データ起因の復帰可能な失敗。message を Action に載せ、状態復帰と notice によるユーザー通知を行う。失敗後の再試行に必要な状態がある場合は、失敗 Action によって対象の状態機械を再試行可能な状態へ戻し、message を状態の一部として保持する。
 - stale completion: 重複を許した非同期要求の追い越し。request ID の一致判定で破棄し、暗黙の状態判定では破棄しない。現時点でこれに該当するのは `ProjectIssuesStore` のみ。`IssueAction` と `JournalAction` は重複を事前条件で排除するため、想定した状態以外へ着弾した完了は stale completion として捨てず異常系として拒否する。
-- マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。`JournalStore::merge_sync_fetched` の dirty entry 保護がこれにあたる。
+- マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。取得した Journal を取り込む際に、未送信の編集差分を取得値で置き換えないことがこれにあたる。編集中の Journal は本体だけを取得値に更新して `diff.before` を残し、サーバーの notes が `after` と同じなら Synced にする。notes の競合はその Journal を保存するときの取得で判定する。upload 中の Journal は取得値で上書きしない。取得結果から消えた編集中の Journal は元の ID と編集後の notes で退避し、同じ ID が再び現れたらサーバーの notes からの編集として戻す。退避した Journal は利用者が個別に新規投稿するか破棄する。
 - 冪等 no-op: 同じ `NoticeId` の再追加など、Action 自体が冪等であることを契約として持つ正常な no-op。stale completion とマージ戦略は同じ no-op の見た目になりやすいため独立して扱う。
+
+Redmine への保存の完了では、取得した Issue を `IssueStore` の共通処理で Issue 本体・Journal・子一覧ごと取り込み、未送信の編集差分は残す。PUT が成功した後に確認の取得だけが失敗した場合は、PUT を繰り返さずに保存済みとして完了する。
 
 getter 契約は、API が表す状態と cardinality で決める。不在が示す意味が異なるため、entity の種類だけで一律には決めない。
 
 - strict 単体取得: 存在が呼び出し元の事前条件である getter は `get_xxx` とし、参照を直接返し、不在は異常系として `panic!` する。
-- 状態・cardinality を表す `Option`: 読み込み状態、ページの未要求、0 件・1 件など、不在そのものが状態や cardinality を表す取得は `Option` を返す。`IssueStore` と `JournalStore` の単体 getter では、`Option` を返すものを `try_get_xxx` と命名する。呼び出し側が取得値の存在を特定の経路で前提する場合は、無言の `unwrap()` ではなく `expect(...)` で不変条件を説明する。
+- 状態・cardinality を表す `Option`: 読み込み状態、ページの未要求、0 件・1 件など、不在そのものが状態や cardinality を表す取得は `Option` を返す。`IssueStore` の単体 getter では、`Option` を返すものを `try_get_xxx` と命名する。呼び出し側が取得値の存在を特定の経路で前提する場合は、無言の `unwrap()` ではなく `expect(...)` で不変条件を説明する。
 - master snapshot の `Option`: 起動時に一度だけ同期するマスターデータ（`IssueStatus` など）は、起動後に取得した Issue や Journal がスナップショットに存在しない ID を参照し得るため陳腐化で欠損し得る。単体のマスターデータ getter は `Option` を返し、呼び出し元は表示上の fallback で処理する。
 
 Issue の getter は、取得済みの本体と読み込み状態を分けて扱う。
@@ -131,7 +139,7 @@ Issue の getter は、取得済みの本体と読み込み状態を分けて扱
 enum IssueState { Synced, Edited, Uploading }
 enum IssueFetchState { Fetching, FetchFailed { message: String } }
 
-fn get_issue(&self, id: IssueId) -> (&IssueAggregate, IssueState);
+fn get_issue(&self, id: IssueId) -> (IssueView<'_>, IssueState);
 fn try_get_issue_state(&self, id: IssueId) -> Option<IssueState>;
 fn try_get_issue_fetch_state(&self, id: IssueId) -> Option<IssueFetchState>;
 ```
@@ -141,11 +149,15 @@ fn try_get_issue_fetch_state(&self, id: IssueId) -> Option<IssueFetchState>;
 | 未登録                      | `None`                | `None`                      | panic       |
 | Fetching                    | `None`                | `Some(Fetching)`            | panic       |
 | FetchFailed                 | `None`                | `Some(FetchFailed)`         | panic       |
-| Synced / Edited / Uploading | `Some(..)`            | `None`                      | 本体と状態  |
+| Synced / Edited / Uploading | `Some(..)`            | `None`                      | 表示値と状態 |
 
 - 本体の存在が不変条件である経路は `get_issue` を直接使い、不在を事前検査して処理をスキップしない。
 - 子 Issue や親 Issue の表示など不在が正常な経路では、`try_get_issue_state(id).is_some()` を確認してから `get_issue` を使う。
 - 未登録は両方の状態 getter が `None` の場合であり、`try_get_issue_fetch_state` の `None` だけで判定しない。
+
+`IssueStore` が保持する `IssueAggregate` はサーバーから取得した基準値であり、Issue 属性の編集 Action では変更しない。編集は、その時点の表示値を `before` にした `IssuePropertyDiff` を編集した順に追加して表す。差し引きで変更がなくなった場合は Synced へ戻す。
+
+`get_issue` が返す `IssueView` は、属性ごとに最後の diff の `after`、diff がなければ基準値を Store の寿命で参照する。保存時に送る値は `IssueAggregate::with_property_diffs` で同じ規則により求める。
 
 ## Component lifecycle
 
@@ -282,12 +294,12 @@ assertの期待値はリテラルまたは`const`で書く。入力と実装が�
 
 - 入力と期待値で同じ`const`を使ってよい。どちらも定数のため、片方だけがずれることはない。
 - 入力のコレクションの長さ、パースしたentityのフィールド、Storeから取り出した値など、定数でない値から期待値を取らない。
-- 期待値が`const`同士の計算で決まる場合（seedのIssueが3件なので次に作成されるIDは4、など）も、コード上はリテラルで書き、計算方法をコメントに残す。
+- 期待値が`const`同士の計算で決まる場合（seedのIssueが4件なので次に作成されるIDは5、など）も、コード上はリテラルで書き、計算方法をコメントに残す。
 - 型で保証されている性質（`Send`であることなど）はテストしない。
 
 ### テストデータ
 
-- 単体テストでは、Storeへ`test_support`の`sample_*`で組み立てたentityをSyncで渡す。テストが依存する値はテストの中か`sample_*`に書き、`datas/`のfixtureは読まない。`datas/`はDemo clientとRedmine seederの入力である。
+- 単体テストでは、`test_support`の`sample_*`で組み立てたentityを、`load_issue`などで詳細取得と同じActionからStoreへ渡す。テスト専用の登録Actionは作らない。テストが依存する値はテストの中か`sample_*`に書き、`datas/`のfixtureは読まない。`datas/`はDemo clientとRedmine seederの入力である。
 - Redmine clientテストとE2Eは、テストごとに`datas/`からseedを入れ直した状態で始まる。seedには全テストで共通の土台（マスターデータ、project、role、workflowなど）だけを入れる。
 - テスト固有のデータは、E2EではGivenの段階でRedmine APIを使って追加する。他のユーザーによる更新や競合も、APIによる更新として書く。seedの再投入はAUTO_INCREMENTもリセットするため、APIで作成したデータのIDは毎回同じになる。
 

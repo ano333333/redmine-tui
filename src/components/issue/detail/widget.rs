@@ -196,7 +196,9 @@ mod tests {
 
     use super::*;
     use crate::components::issue::detail::body::widget::BodyWidgetState;
-    use crate::components::issue::detail::children_list::widget::ChildIssueRow;
+    use crate::components::issue::detail::children_list::widget::{
+        ChildIssueDetail, ChildIssueRow,
+    };
     use crate::components::issue::detail::journals_list::journals_list_item::widget::{
         RemoteJournalItemView, ResolvedJournalDetail,
     };
@@ -331,9 +333,16 @@ mod tests {
                 0,
                 1,
                 vec![ChildIssueRow {
-                    issue: &self.child_issue,
-                    issue_status: Some(&self.child_status),
-                    assigned_to_name: Some("alice"),
+                    id: self.child_issue.issue.id,
+                    subject: &self.child_issue.issue.subject,
+                    descendant_count: 0,
+                    detail: Some(ChildIssueDetail {
+                        issue_status: Some(&self.child_status),
+                        assigned_to_name: Some("alice"),
+                        start_date: self.child_issue.start_date,
+                        due_date: self.child_issue.due_date,
+                        done_ratio: self.child_issue.done_ratio,
+                    }),
                 }],
                 Some(0),
             )

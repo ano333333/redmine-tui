@@ -24,7 +24,7 @@ use std::{
 };
 
 use crate::clients::redmine::base::FetchedIssue;
-use crate::clients::redmine::{RedmineClient, RedmineClientError, RedmineHttpError};
+use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
     Category, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
     TimeEntityActivity, Tracker, User,
@@ -33,6 +33,7 @@ use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId};
 use crate::test_support::sample_issue_aggregate;
 use crate::vos::issue_property_diff::IssueDescriptionDiff;
 use crate::vos::{self, IssueId, IssuePropertyDiff, IssueStatusId, JournalId};
+
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, widgets::Widget};
 
 fn recv_completion(spawner: &TokioBackgroundSpawner) -> BackgroundCompletion {
@@ -154,27 +155,19 @@ fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion
         dispatcher.borrow().store().try_get_issue_fetch_state(42),
         None
     );
-    let mut actions = recv_actions(&spawner, 2).into_iter();
-    let first_completion = actions.next().expect("first completion");
-    assert!(matches!(
-        &first_completion,
-        Action::Journal(JournalAction::SyncFetched { issue_id, journals })
-            if *issue_id == IssueId::new(42) && journals.is_empty()
-    ));
-    let completion = actions.next().expect("second completion");
+    let mut actions = recv_actions(&spawner, 1).into_iter();
+    let completion = actions.next().expect("completion");
     assert!(matches!(
         &completion,
-        Action::Issue(IssueAction::FetchSucceeded { id, issue })
-            if *id == IssueId::new(42) && issue.issue.id == IssueId::new(42)
+        Action::IssueFetchSucceeded { id, issue, .. }
+            if *id == IssueId::new(42) && issue.issue.id == IssueId::new(42) && issue.journals.is_empty()
     ));
     assert_eq!(
         dispatcher.borrow().consume_actinos_len(),
         1,
         "the spawned future must not dispatch or consume actions itself"
     );
-    for action in [first_completion, completion] {
-        dispatcher.borrow_mut().dispatch(action);
-    }
+    dispatcher.borrow_mut().dispatch(completion);
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
@@ -185,27 +178,19 @@ fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion
 }
 
 #[test]
-fn issue_detail_shows_journals_from_the_first_frame_after_ordered_fetch_actions() {
+fn issue_detail_shows_journals_from_the_first_frame_after_fetch_completion() {
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
     {
         let mut d = dispatcher.borrow_mut();
         crate::test_support::dispatch_sample_masters(&mut d);
         d.dispatch(IssueAction::StartFetching { id: 42.into() });
-        d.dispatch(Action::Journal(JournalAction::SyncFetched {
-            issue_id: 42.into(),
-            journals: vec![sample_journal(42)],
-        }));
-        d.dispatch(IssueAction::FetchSucceeded {
+        let mut issue =
+            sample_issue_aggregate(42, "subject", IssueStatusId::new(1), None, None, None, 0);
+        issue.journals = vec![sample_journal(42)];
+        d.dispatch(Action::IssueFetchSucceeded {
             id: 42.into(),
-            issue: sample_issue_aggregate(
-                42,
-                "subject",
-                IssueStatusId::new(1),
-                None,
-                None,
-                None,
-                0,
-            ),
+            issue,
+            children: vec![],
         });
         while d.consume_actinos_len() > 0 {
             d.consume_action();
@@ -279,7 +264,7 @@ fn project_page_effect_queues_start_loading_and_routes_only_completion_to_worker
 }
 
 #[tokio::test]
-async fn issue_upload_uses_server_issue_as_merge_base() {
+async fn issue_upload_puts_only_edited_properties_and_completes_with_the_confirmed_issue() {
     let mut server_issue = sample_issue_aggregate(
         1,
         "server subject",
@@ -293,10 +278,7 @@ async fn issue_upload_uses_server_issue_as_merge_base() {
     server_issue.issue.description = "original description".to_string();
     let client = Arc::new(IssueUploadClient::new(server_issue.clone()));
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    dispatcher.borrow_mut().dispatch(IssueAction::Sync {
-        issue: server_issue.clone(),
-    });
-    dispatcher.borrow_mut().consume_action();
+    crate::test_support::dispatch_loaded_issue(&mut dispatcher.borrow_mut(), server_issue.clone());
     dispatcher
         .borrow_mut()
         .dispatch(IssueAction::UpdateDescription {
@@ -309,17 +291,23 @@ async fn issue_upload_uses_server_issue_as_merge_base() {
 
     assert_eq!(actions.len(), 1);
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-    let [Action::Issue(IssueAction::Sync { issue })] = actions.as_slice() else {
-        panic!("expected Sync");
+    // stubは保存後も同じIssueを返すため、確認の取得値はサーバー側の値のままになる。
+    let [Action::Issue(IssueAction::UploadSucceeded { issue, .. })] = actions.as_slice() else {
+        panic!("expected UploadSucceeded");
     };
     assert_eq!(issue.issue.subject, "server subject");
-    assert_eq!(issue.updated_on, server_issue.updated_on);
-    assert_eq!(issue.issue.description, "local description");
-    let uploaded = client.uploaded.lock().unwrap();
-    assert_eq!(uploaded.len(), 1);
-    assert_eq!(uploaded[0].issue.subject, issue.issue.subject);
-    assert_eq!(uploaded[0].issue.description, issue.issue.description);
-    assert_eq!(uploaded[0].updated_on, issue.updated_on);
+    assert_eq!(issue.issue.description, "original description");
+    assert_eq!(*client.get_requests.lock().unwrap(), 2);
+    assert_eq!(
+        *client.uploaded.lock().unwrap(),
+        vec![(
+            IssueId::new(1),
+            IssueUpdate {
+                description: Some("local description".to_string()),
+                ..IssueUpdate::default()
+            }
+        )]
+    );
 }
 
 #[test]
@@ -328,10 +316,7 @@ fn starting_issue_upload_panics_when_issue_is_not_edited() {
     let issue = sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
     let client = Arc::new(IssueUploadClient::new(issue.clone()));
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    dispatcher
-        .borrow_mut()
-        .dispatch(IssueAction::Sync { issue });
-    dispatcher.borrow_mut().consume_action();
+    crate::test_support::dispatch_loaded_issue(&mut dispatcher.borrow_mut(), issue);
 
     std::mem::drop(start_issue_upload(dispatcher, client, 1.into()));
 }
@@ -399,6 +384,7 @@ async fn issue_upload_returns_conflict_action_when_property_conflicts() {
         Action::Issue(IssueAction::UploadConflictsDetected {
             server_issue,
             conflicts,
+            ..
         }),
     ] = actions.as_slice()
     else {
@@ -477,7 +463,7 @@ struct IssueUploadClient {
     update_issue_notes_result: std::result::Result<(), RedmineClientError>,
     uploaded_journal_notes: Mutex<Vec<String>>,
     uploaded_issue_notes: Mutex<Vec<String>>,
-    uploaded: Mutex<Vec<IssueAggregate>>,
+    uploaded: Mutex<Vec<(IssueId, IssueUpdate)>>,
     // リトライを同じclientで検証できるよう、指定回数だけ通信失敗を返し、
     // カウンタが0になった後は通常のレスポンスへ戻す。
     get_failures_remaining: Mutex<usize>,
@@ -563,20 +549,26 @@ impl RedmineClient for IssueUploadClient {
         if self.get_error {
             return Err(Self::network_error());
         }
+        let mut aggregate = self.issue.clone().expect("test issue must exist");
+        aggregate.journals = self.journals.clone();
         Ok(FetchedIssue {
-            aggregate: self.issue.clone().expect("test issue must exist"),
-            journals: self.journals.clone(),
+            aggregate,
+            children: vec![],
         })
     }
 
     async fn update_issue(
         &self,
-        issue: &IssueAggregate,
+        issue_id: IssueId,
+        update: &IssueUpdate,
     ) -> std::result::Result<(), RedmineClientError> {
         if self.update_error {
             return Err(Self::network_error());
         }
-        self.uploaded.lock().unwrap().push(issue.clone());
+        self.uploaded
+            .lock()
+            .unwrap()
+            .push((issue_id, update.clone()));
         Ok(())
     }
 
@@ -690,21 +682,33 @@ fn start_edited_journal_upload(dispatcher: &mut Dispatcher, issue_id: u16, notes
         0,
     );
     issue.issue.description = "issue body".to_string();
-    dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-    dispatcher.consume_action();
     let mut journal = sample_journal(issue_id);
     journal.notes = notes.to_string();
-    dispatcher.dispatch(Action::Journal(JournalAction::SyncFetched {
-        issue_id: IssueId::new(issue_id),
-        journals: vec![journal],
-    }));
-    dispatcher.consume_action();
+    issue.journals = vec![journal];
+    crate::test_support::dispatch_loaded_issue(dispatcher, issue);
     dispatcher.dispatch(Action::Journal(JournalAction::EditRemoteNotes {
         issue_id: IssueId::new(issue_id),
         journal_id: JournalId::new(1),
         notes: "edited notes".to_string(),
     }));
     dispatcher.consume_action();
+}
+
+/// `start_edited_journal_upload`の編集を保存した後に取得するIssue。
+fn saved_journal_issue(issue_id: u16) -> IssueAggregate {
+    let mut issue = sample_issue_aggregate(
+        issue_id,
+        "subject",
+        IssueStatusId::new(1),
+        None,
+        None,
+        None,
+        0,
+    );
+    let mut journal = sample_journal(issue_id);
+    journal.notes = "edited notes".to_string();
+    issue.journals = vec![journal];
+    issue
 }
 
 #[test]
@@ -758,9 +762,9 @@ fn move_worker_action_dispatches_no_notice_for_complete_remote_upload() {
     let dispatcher = Rc::new(RefCell::new(dispatcher));
     let spawner =
         CompletionSpawner::new(vec![Action::Journal(JournalAction::CompleteRemoteUpload {
-            issue_id: IssueId::new(3),
             journal_id: JournalId::new(1),
-            notes: "edited notes".to_string(),
+            issue: saved_journal_issue(3),
+            children: vec![],
         })]);
 
     let panic_message = move_worker_action(&spawner, dispatcher.clone());
@@ -821,8 +825,8 @@ fn start_remote_journal_upload_action_routes_the_upload_completion_to_worker_cha
     let completion = recv_actions(&spawner, 1).remove(0);
     assert!(matches!(
         completion,
-        Action::Journal(JournalAction::CompleteRemoteUpload { issue_id, journal_id, .. })
-            if issue_id == IssueId::new(3) && journal_id == JournalId::new(1)
+        Action::Journal(JournalAction::CompleteRemoteUpload { ref issue, journal_id, .. })
+            if issue.issue.id == IssueId::new(3) && journal_id == JournalId::new(1)
     ));
     assert_eq!(
         *client.uploaded_journal_notes.lock().unwrap(),
@@ -872,8 +876,7 @@ fn start_local_journal(dispatcher: &mut Dispatcher, issue_id: u16, notes: &str) 
         None,
         0,
     );
-    dispatcher.dispatch(Action::Issue(IssueAction::Sync { issue }));
-    dispatcher.consume_action();
+    crate::test_support::dispatch_loaded_issue(dispatcher, issue);
     dispatcher.dispatch(Action::Journal(JournalAction::CreateLocal {
         issue_id: IssueId::new(issue_id),
     }));
@@ -905,14 +908,14 @@ fn start_local_journal_upload_action_routes_the_upload_completion_to_worker_chan
 
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
     let completion = recv_actions(&spawner, 1).remove(0);
-    let Action::Journal(JournalAction::CompleteLocalUploadWithFetched { issue_id, journals }) =
-        completion
+    let Action::Journal(JournalAction::CompleteLocalUploadWithFetched { issue, .. }) = completion
     else {
         panic!("expected complete local upload action");
     };
-    assert_eq!(issue_id, IssueId::new(3));
+    assert_eq!(issue.issue.id, IssueId::new(3));
     assert_eq!(
-        journals
+        issue
+            .journals
             .iter()
             .map(|journal| journal.id)
             .collect::<Vec<_>>(),
@@ -972,9 +975,9 @@ fn journal_upload_app(dispatcher: Rc<RefCell<Dispatcher>>) -> AppComponent<'stat
 fn loaded_journal_upload_dispatcher() -> Dispatcher {
     let mut dispatcher = Dispatcher::new();
     crate::test_support::dispatch_sample_masters(&mut dispatcher);
-    dispatcher.dispatch(IssueAction::Sync {
-        issue: crate::test_support::sample_parent_issue(),
-    });
+    for action in crate::test_support::fetch_sample_parent_issue_actions(vec![]) {
+        dispatcher.dispatch(action);
+    }
     while dispatcher.consume_actinos_len() > 0 {
         dispatcher.consume_action();
     }
@@ -982,12 +985,16 @@ fn loaded_journal_upload_dispatcher() -> Dispatcher {
 }
 
 fn edited_remote_journal_dispatcher() -> Dispatcher {
-    let mut dispatcher = loaded_journal_upload_dispatcher();
-    dispatcher.dispatch(JournalAction::SyncFetched {
-        issue_id: IssueId::new(3),
-        journals: crate::test_support::sample_parent_issue_journals(),
-    });
-    dispatcher.consume_action();
+    let mut dispatcher = Dispatcher::new();
+    crate::test_support::dispatch_sample_masters(&mut dispatcher);
+    for action in crate::test_support::fetch_sample_parent_issue_actions(
+        crate::test_support::sample_parent_issue_journals(),
+    ) {
+        dispatcher.dispatch(action);
+    }
+    while dispatcher.consume_actinos_len() > 0 {
+        dispatcher.consume_action();
+    }
     dispatcher.dispatch(JournalAction::EditRemoteNotes {
         issue_id: IssueId::new(3),
         journal_id: JournalId::new(1),
@@ -999,7 +1006,7 @@ fn edited_remote_journal_dispatcher() -> Dispatcher {
 
 fn edited_issue_dispatcher() -> (Dispatcher, IssueAggregate) {
     let mut dispatcher = loaded_journal_upload_dispatcher();
-    let server_issue = dispatcher.store().get_issue(IssueId::new(3)).0.clone();
+    let server_issue = crate::test_support::sample_parent_issue();
     dispatcher.dispatch(IssueAction::UpdateDescription {
         id: IssueId::new(3),
         body: "locally edited description".to_string(),
@@ -1220,7 +1227,7 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
             .state,
         crate::stores::RemoteJournalState::Synced
     ));
-    assert_eq!(*client.get_requests.lock().unwrap(), 2);
+    assert_eq!(*client.get_requests.lock().unwrap(), 3);
     assert_eq!(client.uploaded_journal_notes.lock().unwrap().len(), 1);
 }
 
@@ -1265,7 +1272,7 @@ fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
         }
     }
 
-    assert_eq!(*client.get_requests.lock().unwrap(), 2);
+    assert_eq!(*client.get_requests.lock().unwrap(), 3);
     assert_eq!(client.uploaded_journal_notes.lock().unwrap().len(), 2);
     assert!(matches!(
         dispatcher.borrow().store().get_remote_journal(3, 1).state,
@@ -1315,9 +1322,9 @@ fn local_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     assert_eq!(*client.get_requests.lock().unwrap(), 1);
 }
 
-// Local PUT成功後の確認GET失敗を部分成功として通知し、同じ入力位置から再保存できることを検証する。
+// Local PUT成功後の確認GET失敗では保存済みと通知し、下書きを消して再投稿させないことを検証する。
 #[test]
-fn local_confirmation_get_failure_warns_about_possible_success_and_retry_succeeds() {
+fn local_confirmation_get_failure_tells_that_the_notes_were_saved_and_removes_the_draft() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let initial_dispatcher = local_journal_dispatcher();
     let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
@@ -1329,19 +1336,19 @@ fn local_confirmation_get_failure_warns_about_possible_success_and_retry_succeed
     ));
     *client.get_failures_remaining.lock().unwrap() = 1;
 
-    for expected_actions in [2, 1] {
-        press_ctrl_s(&mut app, dispatcher.clone());
-        let Some(AppEffect::StartLocalJournalUpload { issue_id }) = app.take_effect() else {
-            panic!("toast must not take focus from local journal notes");
-        };
-        start_local_journal_upload_action(dispatcher.clone(), &spawner, client.clone(), issue_id);
-        update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-        route_worker_actions(&spawner, expected_actions, dispatcher.clone(), &mut app);
-        if expected_actions == 2 {
-            assert_toast_contains(&app, dispatcher.clone(), "保存は完了した可能性がありますが");
-        }
-    }
+    press_ctrl_s(&mut app, dispatcher.clone());
+    let Some(AppEffect::StartLocalJournalUpload { issue_id }) = app.take_effect() else {
+        panic!("ctrl+s on local journal notes must start the upload");
+    };
+    start_local_journal_upload_action(dispatcher.clone(), &spawner, client.clone(), issue_id);
+    update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
+    route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
 
+    assert_toast_contains(
+        &app,
+        dispatcher.clone(),
+        "保存しましたが、確認の取得に失敗しました",
+    );
     assert!(
         dispatcher
             .borrow()
@@ -1349,8 +1356,8 @@ fn local_confirmation_get_failure_warns_about_possible_success_and_retry_succeed
             .try_get_local_journal(3)
             .is_none()
     );
-    assert_eq!(client.uploaded_issue_notes.lock().unwrap().len(), 2);
-    assert_eq!(*client.get_requests.lock().unwrap(), 2);
+    assert_eq!(client.uploaded_issue_notes.lock().unwrap().len(), 1);
+    assert_eq!(*client.get_requests.lock().unwrap(), 1);
 }
 
 struct FailingClient;
@@ -1379,7 +1386,8 @@ impl RedmineClient for FailingClient {
 
     async fn update_issue(
         &self,
-        _: &IssueAggregate,
+        _: IssueId,
+        _: &IssueUpdate,
     ) -> std::result::Result<(), RedmineClientError> {
         Err(self.unauthorized())
     }

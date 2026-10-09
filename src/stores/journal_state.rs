@@ -1,7 +1,7 @@
 //! Remote JournalとLocal Journalそれぞれのentityと保存状態を結び付ける型。
 
 use crate::entities::{Journal, LocalJournal};
-use crate::vos::JournalNotesDiff;
+use crate::vos::{JournalId, JournalNotesDiff};
 
 /// Journalの保存処理で発生した、ユーザーへ通知する復帰可能な失敗。
 ///
@@ -31,19 +31,19 @@ pub enum RemoteJournalState {
     },
 }
 
-/// Remote Journal本体と、そのJournalに固有の編集・保存状態。
-#[derive(Clone)]
-pub struct RemoteJournalEntry {
-    pub journal: Journal,
-    pub state: RemoteJournalState,
+/// Issueが保持するRemote Journal本体と、そのJournalに固有の編集・保存状態への参照。
+#[derive(Clone, Copy)]
+pub struct RemoteJournalView<'a> {
+    pub journal: &'a Journal,
+    pub state: &'a RemoteJournalState,
 }
 
 /// Redmine由来のIDをまだ確認できていないJournalの保存状態。
 #[derive(Clone, Debug, PartialEq)]
 pub enum LocalJournalState {
-    /// 対応するRemote JournalをStoreでまだ確認できていない状態。
+    /// 投稿していない、または投稿のPUTが失敗した状態。
     ///
-    /// PUT後の再取得だけが失敗した場合もこの状態へ戻るため、未送信とは限らない。
+    /// 通信切断などでPUTの応答を受け取れずに失敗した場合は、サーバーに保存済みのことがある。
     LocalOnly {
         failure: Option<JournalUploadFailure>,
     },
@@ -51,8 +51,29 @@ pub enum LocalJournalState {
 }
 
 /// Local Journal本体と、そのJournalに固有の保存状態。
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct LocalJournalEntry {
     pub journal: LocalJournal,
     pub state: LocalJournalState,
+}
+
+/// 取得結果から消えた編集中のJournalを、新規Journalとして投稿するまでの保存状態。
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeletedJournalState {
+    /// 投稿していない、または投稿のPUTが失敗した状態。
+    Pending {
+        failure: Option<JournalUploadFailure>,
+    },
+    Uploading,
+}
+
+/// 取得結果から消えた編集中のJournalを、元のIDと編集後のnotesで退避したもの。
+///
+/// 元のIDは退避の識別と、同じIDが取得結果に再び現れたときの復帰にだけ使う。
+/// 投稿すると新しいIDのJournalとして作られる。
+#[derive(Clone, Debug, PartialEq)]
+pub struct DeletedJournalEntry {
+    pub original_id: JournalId,
+    pub notes: String,
+    pub state: DeletedJournalState,
 }

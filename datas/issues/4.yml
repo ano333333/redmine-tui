@@ -1,8 +1,8 @@
-id: 1
-subject: issue1
+id: 4
+subject: issue4
 author_id: 1001
-created_on: 2026-01-01
-updated_on: 2026-01-04
+created_on: 2026-02-05
+updated_on: 2026-02-05
 project_id: 1
 tracker_id: 1
 status_id: 3
@@ -11,7 +11,7 @@ assigned_to_id: 1001
 target_version_id: 1
 start_date: 2025-12-09
 due_date: 2025-12-19
-done_ratio: 100
+done_ratio: 0
 category_id: 1
-parent_id: 3
+parent_id: 1
 description: ""

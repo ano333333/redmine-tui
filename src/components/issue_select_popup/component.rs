@@ -50,7 +50,7 @@ impl IssueSelectPopupComponent {
             |project_id: &ProjectId| projects.iter().any(|project| project.id == *project_id);
         let focused_issues_project_id = focused_issue_id
             .filter(|issue_id| store.try_get_issue_state(*issue_id).is_some())
-            .map(|issue_id| store.get_issue(issue_id).0.issue.project_id)
+            .map(|issue_id| store.get_issue(issue_id).0.project_id())
             .filter(focused_issues_project);
         let focused_project_id =
             focused_issues_project_id.or_else(|| projects.first().map(|project| project.id));
@@ -222,8 +222,8 @@ impl IssueSelectPopupComponent {
                     IssueSelectPopupIssue::new(
                         issue.project_id,
                         issue.id,
-                        loaded.issue.subject.clone(),
-                        loaded.issue.description.clone(),
+                        loaded.subject().to_string(),
+                        loaded.description().to_string(),
                     )
                 } else {
                     IssueSelectPopupIssue::new(
@@ -369,7 +369,7 @@ mod tests {
             sample_closed_child_issue(),
             sample_parent_issue(),
         ] {
-            store.consume_action(IssueAction::Sync { issue }.into());
+            crate::test_support::load_issue(&mut store, issue);
         }
         store
     }
@@ -473,15 +473,17 @@ mod tests {
     }
 
     #[test]
-    fn loaded_projects_issues_are_displayed_and_loaded_issue_values_take_precedence() {
+    fn loaded_projects_issues_are_displayed_and_edited_loaded_issue_values_take_precedence() {
         let mut store = Store::new();
         sync_sample_masters(&mut store);
         let mut loaded_issue =
             sample_issue_aggregate(1, "loaded subject", 1.into(), None, None, None, 0);
         loaded_issue.issue.description = "loaded body".to_string();
+        crate::test_support::load_issue(&mut store, loaded_issue);
         store.consume_action(
-            IssueAction::Sync {
-                issue: loaded_issue,
+            IssueAction::UpdateDescription {
+                id: 1.into(),
+                body: "edited body".to_string(),
             }
             .into(),
         );
@@ -503,10 +505,7 @@ mod tests {
         let widget = component.create_widget(&store);
         assert_eq!(widget.issues.len(), 2);
         assert_eq!(widget.issues[0].subject, "loaded subject");
-        assert_eq!(
-            widget.issues[0].description,
-            store.get_issue(1).0.issue.description
-        );
+        assert_eq!(widget.issues[0].description, "edited body");
         assert_eq!(widget.issues[1].subject, "unloaded subject");
         assert_eq!(widget.issues[1].description, "unloaded body");
     }

@@ -449,6 +449,23 @@ fn parent_id_attr_with_missing_or_empty_values_is_converted_to_none() {
 }
 
 #[test]
+fn child_id_attr_for_an_added_child_is_converted() {
+    let actual =
+        try_into_domain(detail("child_id", None, Some("4"))).expect("child_id conversion failed");
+    let Some(attr) = actual else {
+        panic!("child_id attr was skipped");
+    };
+
+    match attr {
+        JournalDetailAttr::ChildId { old, new } => {
+            assert_eq!(old, None);
+            assert_eq!(new, Some(IssueId::new(4)));
+        }
+        _ => panic!("unexpected attr variant"),
+    }
+}
+
+#[test]
 fn is_private_attr_is_converted() {
     let actual = try_into_domain(detail("is_private", Some("0"), Some("1")))
         .expect("is_private conversion failed");

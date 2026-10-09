@@ -34,9 +34,9 @@ async fn assert_get_project_issues_first_page(
             .iter()
             .map(|issue| (issue.id.get(), issue.status_id.get()))
             .collect::<Vec<_>>(),
-        vec![(3, 3), (2, 5), (1, 3)]
+        vec![(4, 3), (3, 3), (2, 5), (1, 3)]
     );
-    assert_eq!(page.total_count, 3);
+    assert_eq!(page.total_count, 4);
     assert_eq!(page.offset, 0);
     assert_eq!(page.limit, 50);
 
@@ -52,7 +52,7 @@ async fn assert_get_project_issues_page_past_the_end(
         .map_err(|error| test_error(format!("get_project_issues page 2 returned {error:?}")))?;
 
     assert!(page.issues.is_empty());
-    assert_eq!(page.total_count, 3);
+    assert_eq!(page.total_count, 4);
     assert_eq!(page.offset, 50);
 
     Ok(())

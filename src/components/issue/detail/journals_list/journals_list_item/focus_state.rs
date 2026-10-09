@@ -13,11 +13,17 @@ pub enum FocusEvent {
 }
 
 pub enum EventProcessResult {
-    CursorLeavedFromBelow { x: u16 },
-    CursorLeavedFromAbove { x: u16 },
+    CursorLeavedFromBelow {
+        x: u16,
+    },
+    CursorLeavedFromAbove {
+        x: u16,
+    },
     Edit,
     SaveRequested,
     Handled,
+    /// 退避したJournalだけが扱う破棄キー。他の項目は未処理として無視する。
+    DiscardRequested,
 }
 
 enum FocusedPosition {
@@ -32,6 +38,7 @@ enum Action {
     MoveRight,
     Edit,
     Save,
+    Discard,
 }
 
 pub struct FocusState {
@@ -104,6 +111,7 @@ impl FocusState {
                 Some(Action::Edit)
             }
             KeyCode::Char('s') if key.modifiers.is_control() => Some(Action::Save),
+            KeyCode::Char('d') => Some(Action::Discard),
             _ => None,
         }
     }
@@ -169,6 +177,7 @@ impl FocusState {
                 }
                 return Some(EventProcessResult::SaveRequested);
             }
+            Action::Discard => return Some(EventProcessResult::DiscardRequested),
         }
         Some(EventProcessResult::Handled)
     }

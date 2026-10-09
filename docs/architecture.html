@@ -617,6 +617,9 @@
                 を定義し、Redmine との通信のインターフェースを定義する。
                 <code>redmine/default.rs</code> は
                 DefaultRedmineClient（実 HTTP 実装）を定義する。<br />
+                Issue 属性の保存は <code>IssueUpdate</code>（編集した属性だけを持つ更新要求）で渡す。送信しない属性は
+                <code>None</code>、値の解除は <code>Some(None)</code>
+                で表し、API が要求する項目の省略や空文字への変換は HTTP 実装が担う。<br />
                 <code>redmine/demo/</code> は <code>DemoRedmineClient</code
                 >（実 HTTP を行わず fixture を埋め込む memory
                 mock）を定義する。</span
@@ -652,13 +655,17 @@
             <div class="dir-item">
               <span class="dir-path">src/entities/</span>
               <span class="dir-desc"
-                >Redmine 由来の永続的な domain entity を置く。</span
+                >Redmine 由来の永続的な domain entity を置く。<code>IssueAggregate::with_property_diffs</code>
+                は、Issue 属性の差分を適用した値か、競合した差分を返す。差分の
+                <code>before</code>/<code>after</code>
+                を現在値へ置き換える処理とあわせて、Store と usecase から共用する。</span
               >
             </div>
             <div class="dir-item">
               <span class="dir-path">src/vos/</span>
               <span class="dir-desc"
-                >ID、差分、journal detail などの value object を置く。</span
+                >ID、差分、journal detail などの value object を置く。<code>issue_property_diff.rs</code>
+                は同じ属性への複数の差分の集約を持つ。</span
               >
             </div>
             <div class="dir-item">
@@ -821,8 +828,39 @@ flowchart TD
             <div class="diff-item">
               <div class="diff-bullet"></div>
               <div>
-                親 <code>Store</code> は Issue の状態と更新処理を非公開の
-                <code>IssueStore</code> に委譲する。
+                親 <code>Store</code> は Issue と Journal の状態と更新処理を非公開の
+                <code>IssueStore</code> に委譲する。Journal 本体は
+                <code>IssueAggregate::journals</code> が所有し、<code>IssueStore</code>
+                は取得済み Issue ごとに全 Journal の <code>RemoteJournalState</code>、0
+                件または 1 件の Local Journal、取得結果から消えた編集中 Journal
+                の退避データ（DeletedJournal）を持つ。Journal の操作は Issue
+                が取得済みの場合だけ受理する。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                Issue 詳細の取得結果は <code>Action::IssueFetchSucceeded</code>
+                1件で Issue、Journal、子一覧を反映する。<code>IssueStore</code> は Journal
+                の所有関係と重複を検査してから登録し、一部だけを反映した状態を作らない。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                <code>IssueAggregate</code> は親 Issue の ID だけを持ち、子 Issue の ID
+                一覧は持たない。子一覧は詳細取得で得た <code>IssueChild</code>（ID・トラッカー・題名・再帰的な子一覧）として
+                <code>IssueStore</code> が Issue ごとに保持する。子の詳細を取得済みなら、表示には
+                <code>IssueView</code> の値を使う。
+              </div>
+            </div>
+            <div class="diff-item">
+              <div class="diff-bullet"></div>
+              <div>
+                Issue 属性の状態（Synced / Edited / Uploading）は Journal
+                の編集と下書きを含まない。Issue 属性の状態が変わっても Journal
+                の作業は引き継ぐ。同じ Issue の upload は Issue 属性と Journal
+                を合わせて1件に限り、<code>IssueStore</code> が検査する。
               </div>
             </div>
             <div class="diff-item">
@@ -903,7 +941,13 @@ flowchart TD
               <div class="diff-bullet"></div>
               <div>
                 マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。
-                <code>JournalStore::merge_sync_fetched</code> の dirty entry 保護がこれにあたる。
+                取得した Journal を取り込む際に、未送信の編集差分を取得値で置き換えないことがこれにあたる。編集中の
+                Journal は本体だけを取得値に更新して <code>diff.before</code>
+                を残し、サーバーの notes が <code>after</code> と同じなら Synced にする。notes
+                の競合はその Journal を保存するときの取得で判定する。upload 中の Journal
+                は取得値で上書きしない。取得結果から消えた編集中の Journal は元の ID と編集後の
+                notes で退避し、同じ ID が再び現れたらサーバーの notes
+                からの編集として戻す。退避した Journal は利用者が個別に新規投稿するか破棄する。
               </div>
             </div>
             <div class="diff-item">
@@ -915,6 +959,11 @@ flowchart TD
               </div>
             </div>
           </div>
+          <p>
+            Redmine への保存の完了では、取得した Issue を <code>IssueStore</code>
+            の共通処理で Issue 本体・Journal・子一覧ごと取り込み、未送信の編集差分は残す。PUT
+            が成功した後に確認の取得だけが失敗した場合は、PUT を繰り返さずに保存済みとして完了する。
+          </p>
           <p>
             getter 契約は、API が表す状態と cardinality で決める。不在が示す意味が異なるため、
             entity の種類だけで一律には決めない。

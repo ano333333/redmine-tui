@@ -161,15 +161,6 @@ fn diff_value_text(server_issue: &IssueAggregate, diff: &IssuePropertyDiff) -> D
         IssuePropertyDiff::Subject(diff) => {
             diff_text(&diff.before, &diff.after, &server_issue.issue.subject)
         }
-        IssuePropertyDiff::AuthorId(diff) => {
-            id_diff_text(diff.before, diff.after, server_issue.author_id)
-        }
-        IssuePropertyDiff::CreatedOn(diff) => {
-            diff_text(&diff.before, &diff.after, &server_issue.created_on)
-        }
-        IssuePropertyDiff::UpdatedOn(diff) => {
-            diff_text(&diff.before, &diff.after, &server_issue.updated_on)
-        }
         IssuePropertyDiff::ProjectId(diff) => {
             id_diff_text(diff.before, diff.after, server_issue.issue.project_id)
         }
@@ -188,9 +179,6 @@ fn diff_value_text(server_issue: &IssueAggregate, diff: &IssuePropertyDiff) -> D
         IssuePropertyDiff::TargetVersionId(diff) => {
             option_id_diff_text(diff.before, diff.after, server_issue.target_version_id)
         }
-        IssuePropertyDiff::FixedVersion(_) => {
-            panic!("サーバーIssueにfixed_version propertyがないため表示できません")
-        }
         IssuePropertyDiff::StartDate(diff) => {
             option_diff_text(&diff.before, &diff.after, &server_issue.start_date)
         }
@@ -203,38 +191,12 @@ fn diff_value_text(server_issue: &IssueAggregate, diff: &IssuePropertyDiff) -> D
         IssuePropertyDiff::EstimatedHours(diff) => {
             option_diff_text(&diff.before, &diff.after, &server_issue.estimated_hours)
         }
-        IssuePropertyDiff::TotalSpentHours(diff) => {
-            option_diff_text(&diff.before, &diff.after, &server_issue.total_spent_hours)
-        }
-        IssuePropertyDiff::ResolveWay(_) => {
-            panic!("サーバーIssueにresolve_way propertyがないため表示できません")
-        }
         IssuePropertyDiff::CategoryId(diff) => {
             option_id_diff_text(diff.before, diff.after, server_issue.category_id)
         }
         IssuePropertyDiff::Description(diff) => {
             diff_text(&diff.before, &diff.after, &server_issue.issue.description)
         }
-        IssuePropertyDiff::ChildIds(diff) => diff_text(
-            &diff
-                .before
-                .iter()
-                .map(|id| id.get().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-            &diff
-                .after
-                .iter()
-                .map(|id| id.get().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-            &server_issue
-                .child_ids
-                .iter()
-                .map(|id| id.get().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-        ),
     }
 }
 
@@ -299,25 +261,18 @@ fn option_text<T: ToString>(value: &Option<T>) -> String {
 fn property_name(diff: &IssuePropertyDiff) -> &'static str {
     match diff {
         IssuePropertyDiff::Subject(_) => "題名",
-        IssuePropertyDiff::AuthorId(_) => "作成者",
-        IssuePropertyDiff::CreatedOn(_) => "作成日時",
-        IssuePropertyDiff::UpdatedOn(_) => "更新日時",
         IssuePropertyDiff::ProjectId(_) => "プロジェクト",
         IssuePropertyDiff::TrackerId(_) => "トラッカー",
         IssuePropertyDiff::StatusId(_) => "ステータス",
         IssuePropertyDiff::PriorityId(_) => "優先度",
         IssuePropertyDiff::AssignedToId(_) => "担当者",
         IssuePropertyDiff::TargetVersionId(_) => "対象バージョン",
-        IssuePropertyDiff::FixedVersion(_) => "修正バージョン",
         IssuePropertyDiff::StartDate(_) => "開始日",
         IssuePropertyDiff::DueDate(_) => "期日",
         IssuePropertyDiff::DoneRatio(_) => "進捗率",
         IssuePropertyDiff::EstimatedHours(_) => "予定工数",
-        IssuePropertyDiff::TotalSpentHours(_) => "作業時間",
-        IssuePropertyDiff::ResolveWay(_) => "解決方法",
         IssuePropertyDiff::CategoryId(_) => "カテゴリ",
         IssuePropertyDiff::Description(_) => "説明",
-        IssuePropertyDiff::ChildIds(_) => "子チケット",
     }
 }
 

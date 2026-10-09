@@ -1,4 +1,5 @@
 pub mod component;
+mod deleted_journal_item;
 pub mod journals_list_item;
 mod local_journal_item;
 pub mod widget;

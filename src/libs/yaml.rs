@@ -63,16 +63,6 @@ fn as_local_datetime_option(yaml: &Yaml, key: &str) -> Option<DateTime<Local>> {
     })
 }
 
-fn as_u16_array(yaml: &Yaml, key: &str) -> Vec<u16> {
-    let mut res = Vec::<u16>::new();
-    if let Some(v) = yaml[key].as_vec() {
-        for s in v {
-            res.push(s.as_i64().unwrap().try_into().unwrap());
-        }
-    }
-    res
-}
-
 /// fixture内のIDまたは所属Issueが要求と異なる場合は、fixtureの不整合としてpanicする。
 pub fn parse_journal(id: JournalId, issue_id: IssueId, yaml: &str) -> Journal {
     let yaml = parse_yaml(yaml);
@@ -221,10 +211,7 @@ pub fn parse_issue(id: IssueId, yaml: &str) -> IssueAggregate {
     let total_spent_hours = as_f64_option(&yaml, "total_spent_hours");
     let category_id = as_u16_option(&yaml, "category_id").map(CategoryId::new);
     let description = as_string(&yaml, "description");
-    let child_ids = as_u16_array(&yaml, "child_ids")
-        .into_iter()
-        .map(IssueId::new)
-        .collect();
+    let parent_id = as_u16_option(&yaml, "parent_id").map(IssueId::new);
     IssueAggregate {
         issue: Issue {
             id,
@@ -246,7 +233,9 @@ pub fn parse_issue(id: IssueId, yaml: &str) -> IssueAggregate {
         estimated_hours,
         total_spent_hours,
         category_id,
-        child_ids,
+        parent_id,
+        // Journalは別のfixtureファイルで管理しており、Issueのfixtureには含めない。
+        journals: vec![],
     }
 }
 
@@ -387,7 +376,7 @@ mod tests {
         assert_eq!(aggregate.issue.project_id, crate::vos::ProjectId::new(1));
         assert_eq!(aggregate.issue.status_id, IssueStatusId::new(3));
         assert_eq!(aggregate.done_ratio, 100);
-        assert_eq!(aggregate.child_ids.len(), 0);
+        assert_eq!(aggregate.parent_id, Some(IssueId::new(3)));
     }
 
     #[test]
