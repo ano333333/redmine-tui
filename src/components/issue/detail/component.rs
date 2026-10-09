@@ -440,6 +440,9 @@ impl IssueDetailComponent {
                             .focus_event(PropertyFocusTransitionEvent::CursorEnteredFromAbove);
                         return Some(EventProcessResult::Handled);
                     }
+                    Some(HeaderEventProcessResult::OpenIssueRequested { id }) => {
+                        return Some(EventProcessResult::OpenIssueRequested { id });
+                    }
                     Some(HeaderEventProcessResult::Handled) => {
                         return Some(EventProcessResult::Handled);
                     }
