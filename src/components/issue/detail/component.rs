@@ -60,6 +60,9 @@ pub enum EventProcessResult {
         issue_id: IssueId,
         original_id: JournalId,
     },
+    OpenIssueRequested {
+        id: IssueId,
+    },
     OpenIssueStatusPopup,
     OpenTrackerPopup,
     OpenPriorityPopup,
@@ -543,6 +546,9 @@ impl IssueDetailComponent {
                         self.journals_list
                             .focus_event(JournalsListFocusEvent::CursorEnteredFromAbove { x: 0 });
                         return Some(EventProcessResult::Handled);
+                    }
+                    Some(ChildrenListEventProcessResult::OpenRequested { id }) => {
+                        return Some(EventProcessResult::OpenIssueRequested { id });
                     }
                     Some(ChildrenListEventProcessResult::Handled) => {
                         return Some(EventProcessResult::Handled);

@@ -15,6 +15,7 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromAbove,
     CursorLeavedFromBelow,
+    OpenRequested { id: IssueId },
     Handled,
 }
 
@@ -88,6 +89,7 @@ impl FocusState {
                 self.focused_id = self.ids.get(focused_index - 1).copied();
                 Some(EventProcessResult::Handled)
             }
+            KeyCode::Enter => Some(EventProcessResult::OpenRequested { id: focused_id }),
             _ => None,
         }
     }
@@ -237,6 +239,29 @@ mod tests {
             Some(EventProcessResult::CursorLeavedFromAbove)
         ));
         assert_eq!(state.focused_index(), Some(0));
+    }
+
+    #[test]
+    fn process_event_enter_requests_opening_the_focused_id() {
+        let mut state = FocusState::new();
+        state.update(&ids(&[1, 2, 3]));
+        state.focus_event(FocusEvent::CursorEnteredFromAbove);
+        state.process_event(&key_event(KeyCode::Char('j')));
+
+        let result = state.process_event(&key_event(KeyCode::Enter));
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenRequested { id }) if id == IssueId::from(2)
+        ));
+    }
+
+    #[test]
+    fn process_event_enter_is_ignored_when_unfocused() {
+        let mut state = FocusState::new();
+        state.update(&ids(&[1, 2, 3]));
+
+        assert!(state.process_event(&key_event(KeyCode::Enter)).is_none());
     }
 
     #[test]
