@@ -652,6 +652,11 @@ impl<'a> AppComponent<'a> {
                     self.interaction_mode = InteractionMode::Editing;
                 }
             }
+            IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::OpenIssueRequested { id },
+            ) => {
+                self.open_issue(id);
+            }
             // 子Componentがキーを解釈済みで、App側に要求はない。
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::Handled) => {}
         }
@@ -659,12 +664,16 @@ impl<'a> AppComponent<'a> {
     }
 
     fn select_issue(&mut self, issue_id: IssueId) {
+        self.popup_components.pop_back();
+        self.open_issue(issue_id);
+    }
+
+    fn open_issue(&mut self, issue_id: IssueId) {
         assert!(
             self.pending_effect.is_none(),
-            "AppComponent already has a pending effect when selecting an issue"
+            "AppComponent already has a pending effect when opening an issue"
         );
 
-        self.popup_components.pop_back();
         let (issue_component, result) = {
             let dispatcher = self.dispatcher.borrow();
             IssueComponent::new(dispatcher.store(), issue_id)
