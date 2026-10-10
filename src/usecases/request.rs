@@ -9,8 +9,8 @@ use crate::usecases::UsecaseTask;
 use crate::usecases::redmine::{
     cancel_issue_upload, cancel_remote_journal_upload, confirm_issue_upload, continue_issue_upload,
     continue_remote_journal_upload, fetch_issue, fetch_project_issues_page, put_issue_upload,
-    start_deleted_journal_upload, start_issue_upload, start_local_journal_upload,
-    start_remote_journal_upload,
+    retry_issue_upload_confirmation, start_deleted_journal_upload, start_issue_upload,
+    start_local_journal_upload, start_remote_journal_upload,
 };
 use crate::vos::{IssueId, IssuePropertyDiff, JournalId, ProjectId};
 
@@ -42,6 +42,9 @@ pub enum UsecaseRequest {
         diffs: Vec<IssuePropertyDiff>,
     },
     ConfirmIssueUpload {
+        id: IssueId,
+    },
+    RetryIssueUploadConfirmation {
         id: IssueId,
     },
     StartRemoteJournalUpload {
@@ -97,6 +100,9 @@ where
             put_issue_upload(dispatcher, client, id, diffs)
         }
         UsecaseRequest::ConfirmIssueUpload { id } => confirm_issue_upload(dispatcher, client, id),
+        UsecaseRequest::RetryIssueUploadConfirmation { id } => {
+            retry_issue_upload_confirmation(dispatcher, client, id)
+        }
         UsecaseRequest::StartRemoteJournalUpload {
             issue_id,
             journal_id,
@@ -470,6 +476,38 @@ mod tests {
                 description: Some("local description".to_string()),
                 ..IssueUpdate::default()
             }]
+        );
+    }
+
+    #[test]
+    fn retry_issue_upload_confirmation_returns_the_issue_to_uploading() {
+        let dispatcher = uploading_dispatcher();
+        for action in [
+            Action::from(IssueAction::UploadPutSucceeded {
+                id: ISSUE_ID,
+                diffs: vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
+                    before: "body".to_string(),
+                    after: "local description".to_string(),
+                })],
+            }),
+            IssueAction::UploadConfirmFailed {
+                id: ISSUE_ID,
+                message: "offline".to_string(),
+            }
+            .into(),
+        ] {
+            dispatcher.borrow_mut().dispatch(action);
+            dispatcher.borrow_mut().consume_action();
+        }
+
+        assert!(start(
+            UsecaseRequest::RetryIssueUploadConfirmation { id: ISSUE_ID },
+            &dispatcher
+        ));
+
+        assert_eq!(
+            dispatcher.borrow().store().try_get_issue_state(ISSUE_ID),
+            Some(IssueState::Uploading)
         );
     }
 

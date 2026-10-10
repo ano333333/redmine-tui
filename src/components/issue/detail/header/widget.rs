@@ -14,6 +14,8 @@ const PARENT_LABEL: &str = "親チケット ";
 pub enum TitleDecorater {
     Edited,
     Uploading,
+    /// PUTは成功したが、確認の取得に失敗した。
+    Unconfirmed,
 }
 
 /// 題名の下に出す親Issue。親の題名は、親Issueの詳細を取得できたときだけ分かる。
@@ -125,6 +127,7 @@ impl<'a> HeaderWidget<'a> {
             // FIXME: Nerd font対応
             Some(TitleDecorater::Edited) => "＊未保存",
             Some(TitleDecorater::Uploading) => "↑送信中",
+            Some(TitleDecorater::Unconfirmed) => "？未確認",
             None => "",
         }
     }
@@ -277,6 +280,23 @@ mod tests {
         // タイトル1行 + 下の空行1行
         assert_eq!(line_count, 2);
         render_snapshot("header_uploading_title", width, line_count as u16, widget);
+    }
+
+    #[test]
+    fn snapshot_header_unconfirmed_title() {
+        let title = "Widget snapshot baseline".to_string();
+        let width = 40;
+        let widget = HeaderWidget::new(
+            42,
+            &title,
+            None,
+            Some(FocusedRow::Title),
+            Some(TitleDecorater::Unconfirmed),
+        );
+        let line_count = widget.line_count(width);
+        // タイトル1行 + 下の空行1行
+        assert_eq!(line_count, 2);
+        render_snapshot("header_unconfirmed_title", width, line_count as u16, widget);
     }
 
     fn render_header_with_parent(name: &str, parent: ParentIssue<'_>) {

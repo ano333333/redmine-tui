@@ -20,6 +20,7 @@ use super::{
 #[derive(Debug, PartialEq, Eq)]
 pub enum EventProcessResult {
     FetchRequested { id: IssueId },
+    UploadConfirmationRetryRequested { id: IssueId },
     OpenIssueSelectPopup,
     Detail(detail::EventProcessResult),
 }
@@ -78,14 +79,19 @@ impl IssueComponent {
             return Some(EventProcessResult::OpenIssueSelectPopup);
         }
         if key.code == KeyCode::Char('r') {
-            let failed = matches!(
-                dispatcher
-                    .borrow()
-                    .store()
-                    .try_get_issue_fetch_state(self.issue_id),
+            let dispatcher = dispatcher.borrow();
+            let store = dispatcher.store();
+            if matches!(
+                store.try_get_issue_fetch_state(self.issue_id),
                 Some(IssueFetchState::FetchFailed { .. })
-            );
-            return failed.then_some(EventProcessResult::FetchRequested { id: self.issue_id });
+            ) {
+                return Some(EventProcessResult::FetchRequested { id: self.issue_id });
+            }
+            return store
+                .try_get_issue_confirmation_failure(self.issue_id)
+                .map(|_| EventProcessResult::UploadConfirmationRetryRequested {
+                    id: self.issue_id,
+                });
         }
 
         None
@@ -241,6 +247,50 @@ mod tests {
         assert_eq!(
             component.process_event(key(KeyCode::Char('r')), d.clone()),
             None
+        );
+    }
+
+    #[test]
+    fn r_requests_only_the_confirmation_retry_of_an_unconfirmed_issue() {
+        let d = dispatcher();
+        crate::test_support::dispatch_loaded_issue(
+            &mut d.borrow_mut(),
+            crate::test_support::sample_parent_issue(),
+        );
+        let mut component = component(&d, 3);
+        assert_eq!(
+            component.process_event(key(KeyCode::Char('r')), d.clone()),
+            None
+        );
+
+        for action in [
+            Action::from(IssueAction::UpdateDescription {
+                id: 3.into(),
+                body: "local".to_string(),
+            }),
+            IssueAction::StartUpload { id: 3.into() }.into(),
+        ] {
+            consume(&d, action);
+        }
+        let diffs = d.borrow().store().get_issue_property_diffs(3).to_vec();
+        consume(
+            &d,
+            IssueAction::UploadPutSucceeded {
+                id: 3.into(),
+                diffs,
+            },
+        );
+        consume(
+            &d,
+            IssueAction::UploadConfirmFailed {
+                id: 3.into(),
+                message: "offline".to_string(),
+            },
+        );
+
+        assert_eq!(
+            component.process_event(key(KeyCode::Char('r')), d.clone()),
+            Some(EventProcessResult::UploadConfirmationRetryRequested { id: 3.into() })
         );
     }
 

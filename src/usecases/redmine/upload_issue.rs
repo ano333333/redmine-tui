@@ -121,6 +121,7 @@ where
 /// PUTを終えたIssueを取得し直し、更新日時やRedmineが追加したJournalを取り込む。
 ///
 /// 取得に失敗しても、PUTの成功は取り消さず、PUTで確定した基準値のまま保存を終える。
+/// 失敗の理由はIssueに残り、確認の取得だけを`retry_issue_upload_confirmation`でやり直せる。
 ///
 /// # Panics
 ///
@@ -134,7 +135,33 @@ where
     C: RedmineClient + Send + Sync + 'static,
 {
     assert_uploading_without_conflict(&dispatcher.borrow(), id);
-    Some(Box::pin(async move {
+    Some(confirmation_task(client, id))
+}
+
+/// 確認の取得に失敗したIssueについて、PUTを繰り返さずに確認の取得だけをやり直す。
+///
+/// # Panics
+///
+/// Issueが確認の取得に失敗したSyncedでない場合にpanicする。
+pub fn retry_issue_upload_confirmation<C>(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    client: Arc<C>,
+    id: IssueId,
+) -> Option<UsecaseTask>
+where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    dispatcher
+        .borrow_mut()
+        .dispatch(IssueAction::RetryUploadConfirmation { id });
+    Some(confirmation_task(client, id))
+}
+
+fn confirmation_task<C>(client: Arc<C>, id: IssueId) -> UsecaseTask
+where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    Box::pin(async move {
         let actions = match fetch_issue_for_upload(client.as_ref(), id).await {
             Ok(confirmed) => vec![
                 IssueAction::UploadSucceeded {
@@ -151,11 +178,15 @@ where
                     ),
                 }
                 .into(),
-                IssueAction::UploadConfirmFailed { id }.into(),
+                IssueAction::UploadConfirmFailed {
+                    id,
+                    message: reason,
+                }
+                .into(),
             ],
         };
         actions.into()
-    }))
+    })
 }
 
 fn assert_uploading_without_conflict(dispatcher: &Dispatcher, id: IssueId) {
@@ -541,7 +572,10 @@ mod tests {
 
         let [
             Action::Notice(NoticeAction::Push { message, .. }),
-            Action::Issue(IssueAction::UploadConfirmFailed { id }),
+            Action::Issue(IssueAction::UploadConfirmFailed {
+                id,
+                message: reason,
+            }),
         ] = output.actions.as_slice()
         else {
             panic!("expected a notice and UploadConfirmFailed");
@@ -551,8 +585,53 @@ mod tests {
             "Issue #1を保存しましたが、確認の取得に失敗しました: network error: offline"
         );
         assert_eq!(*id, ISSUE_ID);
+        assert_eq!(reason, "network error: offline");
         assert!(output.requests.is_empty());
         assert!(client.updates.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_confirmation_retry_fetches_again_without_putting() {
+        let dispatcher = uploading_dispatcher();
+        for action in [
+            IssueAction::UploadPutSucceeded {
+                id: ISSUE_ID,
+                diffs: description_diff_from("server"),
+            },
+            IssueAction::UploadConfirmFailed {
+                id: ISSUE_ID,
+                message: "offline".to_string(),
+            },
+        ] {
+            dispatcher.borrow_mut().dispatch(action);
+            dispatcher.borrow_mut().consume_action();
+        }
+        let client = Arc::new(StubClient::new(
+            vec![Ok(fetched("confirmed", "after put"))],
+            Ok(()),
+        ));
+
+        let task = retry_issue_upload_confirmation(dispatcher.clone(), client.clone(), ISSUE_ID);
+        dispatcher.borrow_mut().consume_action();
+
+        assert_eq!(
+            dispatcher.borrow().store().try_get_issue_state(ISSUE_ID),
+            Some(IssueState::Uploading)
+        );
+        let output = complete(task).await;
+        assert!(matches!(
+            output.actions.as_slice(),
+            [Action::Issue(IssueAction::UploadSucceeded { issue, .. })]
+                if issue.issue.description == "confirmed"
+        ));
+        assert!(client.updates.lock().unwrap().is_empty());
+    }
+
+    fn description_diff_from(before: &str) -> Vec<IssuePropertyDiff> {
+        vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
+            before: before.to_string(),
+            after: "local".to_string(),
+        })]
     }
 
     async fn complete(task: Option<UsecaseTask>) -> UsecaseOutput {

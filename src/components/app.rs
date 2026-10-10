@@ -347,6 +347,9 @@ impl<'a> AppComponent<'a> {
                     with_parent: true,
                 });
             }
+            IssueEventProcessResult::UploadConfirmationRetryRequested { id } => {
+                sink.request_usecase(UsecaseRequest::RetryIssueUploadConfirmation { id });
+            }
             IssueEventProcessResult::OpenIssueSelectPopup => {
                 self.open_issue_select_popup(Some(issue_id), sink);
             }

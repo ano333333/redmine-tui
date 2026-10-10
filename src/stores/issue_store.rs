@@ -43,6 +43,9 @@ enum IssueEntry {
     Synced {
         issue: IssueAggregate,
         journal_states: IssueJournalStates,
+        /// PUT後の確認の取得に失敗した理由。PUTで確定した基準値は、サーバーで付いた更新日時や
+        /// Journalを含まない。
+        confirmation_failure: Option<String>,
     },
     Edited {
         issue: IssueAggregate,
@@ -112,10 +115,17 @@ pub enum IssueAction {
         id: IssueId,
         diffs: Vec<IssuePropertyDiff>,
     },
-    /// PUT後の確認の取得に失敗した結果として、PUTで確定した基準値のままSyncedへ戻す。
+    /// PUT後の確認の取得に失敗した結果として、PUTで確定した基準値のままSyncedへ戻し、`message`を残す。
     ///
     /// Uploading以外の状態、またはPUTしていないdiffが残っている場合はpanicする。
     UploadConfirmFailed {
+        id: IssueId,
+        message: String,
+    },
+    /// 確認の取得だけをやり直すため、確認の取得に失敗したSyncedを、diffのないUploadingへ戻す。
+    ///
+    /// 確認の取得に失敗したSynced以外の状態の場合はpanicする。
+    RetryUploadConfirmation {
         id: IssueId,
     },
     /// Issue属性の保存が成功した後、取得したIssueを新しい基準値としてSyncedへ戻す。
@@ -395,7 +405,7 @@ impl IssueStore {
                     .unwrap_or_else(|_| panic!("sent diffs conflict with issue {id}"));
                 current_diffs.clear();
             }
-            IssueAction::UploadConfirmFailed { id } => {
+            IssueAction::UploadConfirmFailed { id, message } => {
                 if !matches!(
                     self.entries.get(&id),
                     Some(IssueEntry::Uploading { diffs, conflict: None, .. }) if diffs.is_empty()
@@ -417,6 +427,38 @@ impl IssueStore {
                     id,
                     IssueEntry::Synced {
                         issue,
+                        journal_states,
+                        confirmation_failure: Some(message),
+                    },
+                );
+            }
+            IssueAction::RetryUploadConfirmation { id } => {
+                if !matches!(
+                    self.entries.get(&id),
+                    Some(IssueEntry::Synced {
+                        confirmation_failure: Some(_),
+                        ..
+                    })
+                ) {
+                    panic!(
+                        "cannot retry issue upload confirmation while issue {id} is {} or has no confirmation failure",
+                        Self::entry_state_name(self.entries.get(&id))
+                    );
+                }
+                let Some(IssueEntry::Synced {
+                    issue,
+                    journal_states,
+                    ..
+                }) = self.entries.remove(&id)
+                else {
+                    unreachable!("state check guarantees Synced");
+                };
+                self.entries.insert(
+                    id,
+                    IssueEntry::Uploading {
+                        issue,
+                        diffs: Vec::new(),
+                        conflict: None,
                         journal_states,
                     },
                 );
@@ -448,6 +490,7 @@ impl IssueStore {
                     IssueEntry::Synced {
                         issue,
                         journal_states,
+                        confirmation_failure: None,
                     },
                 );
                 self.children.insert(id, children);
@@ -591,6 +634,7 @@ impl IssueStore {
             IssueEntry::Synced {
                 issue,
                 journal_states,
+                confirmation_failure: None,
             },
         );
         self.children.insert(id, children);
@@ -715,8 +759,13 @@ impl IssueStore {
             Some(IssueEntry::Synced {
                 issue,
                 journal_states,
-            })
-            | Some(IssueEntry::Edited {
+                confirmation_failure,
+            }) => {
+                // 取得したIssueはPUT後のサーバーの値を含むため、確認の取得の代わりになる。
+                *confirmation_failure = None;
+                (issue, journal_states)
+            }
+            Some(IssueEntry::Edited {
                 issue,
                 journal_states,
                 ..
@@ -773,6 +822,7 @@ impl IssueStore {
             IssueEntry::Synced {
                 issue,
                 journal_states,
+                ..
             }
             | IssueEntry::Edited {
                 issue,
@@ -796,6 +846,7 @@ impl IssueStore {
             IssueEntry::Synced {
                 issue,
                 journal_states,
+                ..
             }
             | IssueEntry::Edited {
                 issue,
@@ -873,6 +924,16 @@ impl IssueStore {
         match self.entries.get(&id) {
             Some(IssueEntry::Edited {
                 failure: Some(failure),
+                ..
+            }) => Some(failure.as_str()),
+            _ => None,
+        }
+    }
+
+    pub(super) fn try_get_issue_confirmation_failure(&self, id: IssueId) -> Option<&str> {
+        match self.entries.get(&id) {
+            Some(IssueEntry::Synced {
+                confirmation_failure: Some(failure),
                 ..
             }) => Some(failure.as_str()),
             _ => None,
@@ -1018,6 +1079,7 @@ impl IssueStore {
             IssueEntry::Synced {
                 issue,
                 journal_states,
+                ..
             } => (issue, Vec::new(), None, journal_states),
             IssueEntry::Edited {
                 issue,
@@ -1036,6 +1098,7 @@ impl IssueStore {
             IssueEntry::Synced {
                 issue,
                 journal_states,
+                confirmation_failure: None,
             }
         } else {
             IssueEntry::Edited {
