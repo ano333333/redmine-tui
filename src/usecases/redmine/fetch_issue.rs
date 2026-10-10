@@ -1,15 +1,11 @@
 use std::cell::RefCell;
-use std::future::Future;
-use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{Action, Dispatcher, IssueAction, IssueFetchState};
+use crate::usecases::UsecaseTask;
 use crate::vos::{EntityIdValue, IssueId};
-
-/// Issue詳細の取得完了Actionを1件返すFuture。
-pub type FetchIssueFuture = Pin<Box<dyn Future<Output = Vec<Action>> + Send + 'static>>;
 
 /// 未取得、または取得失敗状態のIssueについて詳細取得を開始する。
 ///
@@ -18,7 +14,7 @@ pub fn fetch_issue<C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     client: Arc<C>,
     id: IssueId,
-) -> Option<FetchIssueFuture>
+) -> Option<UsecaseTask>
 where
     C: RedmineClient + Send + Sync + 'static,
 {
@@ -40,7 +36,7 @@ where
         .dispatch(IssueAction::StartFetching { id });
 
     Some(Box::pin(async move {
-        match client.get_issue(id).await {
+        let actions = match client.get_issue(id).await {
             Ok(fetched) if fetched.aggregate.issue.id == id => vec![Action::IssueFetchSucceeded {
                 id,
                 issue: fetched.aggregate,
@@ -65,7 +61,8 @@ where
                 }
                 .into(),
             ],
-        }
+        };
+        actions.into()
     }))
 }
 
@@ -114,7 +111,8 @@ mod tests {
 
         let actions = fetch_issue(dispatcher, client.clone(), IssueId::new(42))
             .expect("unregistered issue should start fetching")
-            .await;
+            .await
+            .actions;
 
         assert_eq!(actions.len(), 1);
         match &actions[0] {
@@ -138,7 +136,8 @@ mod tests {
 
         let actions = fetch_issue(dispatcher, client, IssueId::new(42))
             .expect("unregistered issue should start fetching")
-            .await;
+            .await
+            .actions;
 
         assert_eq!(actions.len(), 1);
         match &actions[0] {
@@ -157,7 +156,8 @@ mod tests {
 
         let actions = fetch_issue(dispatcher, client, IssueId::new(42))
             .expect("unregistered issue should start fetching")
-            .await;
+            .await
+            .actions;
 
         assert_eq!(actions.len(), 1);
         match &actions[0] {

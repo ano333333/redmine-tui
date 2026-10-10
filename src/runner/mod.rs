@@ -6,8 +6,9 @@ use crate::{
     clients::redmine::RedmineClient,
     components::AppComponent,
     platform::{editor::TextEditor, host::PlatformHost, runtime::BackgroundSpawner},
-    stores::{Action, Dispatcher},
+    stores::Dispatcher,
     trace_dbg,
+    usecases::UsecaseOutput,
 };
 
 pub(crate) mod effect;
@@ -40,7 +41,7 @@ pub(crate) async fn run<H, E, S, C>(
 where
     H: PlatformHost,
     E: TextEditor,
-    S: BackgroundSpawner<Output = Vec<Action>>,
+    S: BackgroundSpawner<Output = UsecaseOutput>,
     C: RedmineClient + Send + Sync + 'static,
 {
     let mut app_component = AppComponent::new(dispatcher.clone(), None, host.cursor_rendering());

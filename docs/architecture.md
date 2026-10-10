@@ -13,7 +13,7 @@
   - `store.rs` は、子 Store ・子 Action の統合を行う。外部からはこのファイルからエクスポートされる Store と Action を公開インターフェースとして用いる。
 - `src/usecases/`
   - アプリ固有の操作を置く。Store・Client の情報統合、および同期的な Dispatch や非同期タスクによる Action の形成を担う。
-  - 非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期で形成する Action は `Future` として返却する形が基本形である。`Store` を直接書き換えず、`Dispatcher::dispatch` を介して Action を積む。`runner` が Future を platform の runtime port（native は Tokio、Web は `spawn_local`）で起動し、完了 Action を Dispatcher へ戻す。
+  - 非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期の処理は `Option<UsecaseTask>` として返却する形が基本形である。`UsecaseTask` は完了 Action を `UsecaseOutput` に入れて返す Future で、非同期の処理がない場合は `None` を返す。`Store` を直接書き換えず、`Dispatcher::dispatch` を介して Action を積む。`runner` が `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で起動し、完了 Action を Dispatcher へ戻す。
 - `src/clients/`
   - 外部プロセスとの通信を行う。
   - `redmine/base.rs` は `RedmineClient` trait を定義し、 Redmine との通信のインターフェースを定義する。`redmine/default.rs` は `DefaultRedmineClient`（実 HTTP 実装）を定義する。

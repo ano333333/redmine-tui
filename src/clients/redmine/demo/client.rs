@@ -340,6 +340,7 @@ mod tests {
     use crate::clients::redmine::demo::DemoRedmineClient;
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::stores::{Action, Dispatcher, IssueAction, JournalAction};
+    use crate::test_support::complete_usecase;
     use crate::usecases::redmine::{
         start_local_journal_upload, start_remote_journal_upload, upload_issue_action,
     };
@@ -597,11 +598,11 @@ mod tests {
                 notes: "uploaded local".into(),
             });
         dispatcher.borrow_mut().consume_action();
-        let actions = runtime.block_on(start_local_journal_upload(
+        let actions = runtime.block_on(complete_usecase(start_local_journal_upload(
             dispatcher.clone(),
             client.clone(),
             IssueId::new(3),
-        ));
+        )));
         assert!(matches!(
             actions.as_slice(),
             [Action::Journal(
@@ -628,12 +629,12 @@ mod tests {
                 notes: "uploaded remote".into(),
             });
         dispatcher.borrow_mut().consume_action();
-        let actions = runtime.block_on(start_remote_journal_upload(
+        let actions = runtime.block_on(complete_usecase(start_remote_journal_upload(
             dispatcher,
             client.clone(),
             IssueId::new(3),
             JournalId::new(2),
-        ));
+        )));
         assert!(matches!(
             actions.as_slice(),
             [Action::Journal(JournalAction::CompleteRemoteUpload { .. })]
@@ -654,12 +655,12 @@ mod tests {
         runtime
             .block_on(client.update_journal_notes(JournalId::new(2), "server edit"))
             .unwrap();
-        let actions = runtime.block_on(start_remote_journal_upload(
+        let actions = runtime.block_on(complete_usecase(start_remote_journal_upload(
             dispatcher,
             client,
             IssueId::new(3),
             JournalId::new(2),
-        ));
+        )));
         assert!(matches!(
             actions.as_slice(),
             [Action::Journal(

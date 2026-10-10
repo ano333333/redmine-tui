@@ -9,6 +9,7 @@ use crate::{
     platform::host::HostEvent,
     platform::runtime::{BackgroundCompletion, BackgroundSpawner},
     stores::{Action, Dispatcher},
+    usecases::UsecaseOutput,
 };
 
 /// `now`が`last`より前、または`chrono::Duration`の範囲外ならゼロを返す。
@@ -32,16 +33,16 @@ pub(crate) fn handle_host_event(
     should_continue
 }
 
-pub(crate) fn move_worker_action<S: BackgroundSpawner<Output = Vec<Action>>>(
+pub(crate) fn move_worker_action<S: BackgroundSpawner<Output = UsecaseOutput>>(
     spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
 ) -> Option<String> {
     let mut worker_panic_message = None;
     while let Some(completion) = spawner.try_recv_completion() {
         match completion {
-            BackgroundCompletion::Succeeded(actions) => {
+            BackgroundCompletion::Succeeded(output) => {
                 // completionの受理順とtaskが生成したActionの順序を保ってmain thread上でdispatchする。
-                for action in actions {
+                for action in output.actions {
                     dispatcher.borrow_mut().dispatch(action);
                 }
             }
@@ -54,7 +55,7 @@ pub(crate) fn move_worker_action<S: BackgroundSpawner<Output = Vec<Action>>>(
     worker_panic_message
 }
 
-pub(crate) fn consume_editor_worker_actions<S: BackgroundSpawner<Output = Vec<Action>>>(
+pub(crate) fn consume_editor_worker_actions<S: BackgroundSpawner<Output = UsecaseOutput>>(
     spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
 ) -> Option<String> {

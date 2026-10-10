@@ -13,6 +13,7 @@ use crate::runner::lifecycle::{
     consume_editor_worker_actions, move_worker_action, tick_since, update,
 };
 use crate::stores::{self, Action, Dispatcher};
+use crate::usecases::UsecaseOutput;
 use crate::usecases::redmine::{start_issue_upload, upload_issue_action};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 use std::{
@@ -30,6 +31,7 @@ use crate::entities::{
     TimeEntityActivity, Tracker, User,
 };
 use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId};
+use crate::test_support::complete_usecase;
 use crate::test_support::sample_issue_aggregate;
 use crate::vos::issue_property_diff::IssueDescriptionDiff;
 use crate::vos::{self, IssueId, IssuePropertyDiff, IssueStatusId, JournalId};
@@ -37,8 +39,8 @@ use crate::vos::{self, IssueId, IssuePropertyDiff, IssueStatusId, JournalId};
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, widgets::Widget};
 
 fn recv_completion(
-    spawner: &TokioBackgroundSpawner<Vec<Action>>,
-) -> BackgroundCompletion<Vec<Action>> {
+    spawner: &TokioBackgroundSpawner<UsecaseOutput>,
+) -> BackgroundCompletion<UsecaseOutput> {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
         if let Some(completion) = spawner.try_recv_completion() {
@@ -52,11 +54,13 @@ fn recv_completion(
     }
 }
 
-fn recv_actions(spawner: &TokioBackgroundSpawner<Vec<Action>>, expected: usize) -> Vec<Action> {
+fn recv_actions(spawner: &TokioBackgroundSpawner<UsecaseOutput>, expected: usize) -> Vec<Action> {
     let mut actions = Vec::new();
     while actions.len() < expected {
         match recv_completion(spawner) {
-            BackgroundCompletion::Succeeded(mut completed) => actions.append(&mut completed),
+            BackgroundCompletion::Succeeded(mut completed) => {
+                actions.append(&mut completed.actions)
+            }
             BackgroundCompletion::Panicked { message } => {
                 panic!("worker task panicked: {message}")
             }
@@ -66,21 +70,21 @@ fn recv_actions(spawner: &TokioBackgroundSpawner<Vec<Action>>, expected: usize) 
 }
 
 struct CompletionSpawner {
-    completions: RefCell<VecDeque<BackgroundCompletion<Vec<Action>>>>,
+    completions: RefCell<VecDeque<BackgroundCompletion<UsecaseOutput>>>,
 }
 
 impl CompletionSpawner {
     fn new(actions: Vec<Action>) -> Self {
-        Self::from_completions(vec![BackgroundCompletion::Succeeded(actions)])
+        Self::from_completions(vec![BackgroundCompletion::Succeeded(actions.into())])
     }
 
-    fn from_completions(completions: Vec<BackgroundCompletion<Vec<Action>>>) -> Self {
+    fn from_completions(completions: Vec<BackgroundCompletion<UsecaseOutput>>) -> Self {
         Self {
             completions: RefCell::new(completions.into_iter().collect()),
         }
     }
 
-    fn panicked(message: &str) -> BackgroundCompletion<Vec<Action>> {
+    fn panicked(message: &str) -> BackgroundCompletion<UsecaseOutput> {
         BackgroundCompletion::Panicked {
             message: message.to_string(),
         }
@@ -88,15 +92,15 @@ impl CompletionSpawner {
 }
 
 impl BackgroundSpawner for CompletionSpawner {
-    type Output = Vec<Action>;
+    type Output = UsecaseOutput;
 
     fn spawn<F>(&self, _: F)
     where
-        F: Future<Output = Vec<Action>> + Send + 'static,
+        F: Future<Output = UsecaseOutput> + Send + 'static,
     {
     }
 
-    fn try_recv_completion(&self) -> Option<BackgroundCompletion<Vec<Action>>> {
+    fn try_recv_completion(&self) -> Option<BackgroundCompletion<UsecaseOutput>> {
         self.completions.borrow_mut().pop_front()
     }
 }
@@ -291,7 +295,12 @@ async fn issue_upload_puts_only_edited_properties_and_completes_with_the_confirm
         });
     dispatcher.borrow_mut().consume_action();
 
-    let actions = start_issue_upload(dispatcher.clone(), client.clone(), 1.into()).await;
+    let actions = complete_usecase(start_issue_upload(
+        dispatcher.clone(),
+        client.clone(),
+        1.into(),
+    ))
+    .await;
 
     assert_eq!(actions.len(), 1);
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
@@ -402,13 +411,16 @@ async fn issue_upload_returns_conflict_action_when_property_conflicts() {
 #[test]
 fn background_completion_panic_is_reported_by_the_main_loop_acceptor() {
     let spawner = CompletionSpawner::from_completions(vec![
-        BackgroundCompletion::Succeeded(vec![
-            NoticeAction::Push {
-                id: NoticeId::new(),
-                message: "completed before panic".to_string(),
-            }
+        BackgroundCompletion::Succeeded(
+            vec![
+                NoticeAction::Push {
+                    id: NoticeId::new(),
+                    message: "completed before panic".to_string(),
+                }
+                .into(),
+            ]
             .into(),
-        ]),
+        ),
         CompletionSpawner::panicked("worker panic marker"),
     ]);
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
@@ -1072,7 +1084,7 @@ fn press_ctrl_s(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>)
 }
 
 fn route_worker_actions(
-    spawner: &TokioBackgroundSpawner<Vec<Action>>,
+    spawner: &TokioBackgroundSpawner<UsecaseOutput>,
     expected: usize,
     dispatcher: Rc<RefCell<Dispatcher>>,
     app: &mut AppComponent<'_>,
@@ -1124,8 +1136,9 @@ fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clear
     let Some(AppEffect::StartIssueUpload(id)) = app.take_effect() else {
         panic!("expected issue upload effect");
     };
-    let future = start_issue_upload(dispatcher.clone(), client.clone(), id);
-    spawner.spawn(future);
+    let task = start_issue_upload(dispatcher.clone(), client.clone(), id)
+        .expect("edited issue starts upload");
+    spawner.spawn(task);
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
     route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
 
@@ -1147,8 +1160,9 @@ fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clear
     let Some(AppEffect::StartIssueUpload(id)) = app.take_effect() else {
         panic!("expected retry issue upload effect");
     };
-    let future = start_issue_upload(dispatcher.clone(), client, id);
-    spawner.spawn(future);
+    let task =
+        start_issue_upload(dispatcher.clone(), client, id).expect("edited issue starts upload");
+    spawner.spawn(task);
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
     assert_eq!(
         dispatcher.borrow().store().try_get_issue_upload_failure(id),
@@ -1576,8 +1590,10 @@ async fn run_accepts_completion_actions_then_ticks_updates_draws_and_reads_input
     dispatcher.borrow_mut().dispatch(runner_notice("expired"));
     dispatcher.borrow_mut().consume_action();
     let spawner = CompletionSpawner::from_completions(vec![
-        BackgroundCompletion::Succeeded(vec![runner_notice("first"), runner_notice("second")]),
-        BackgroundCompletion::Succeeded(vec![runner_notice("third")]),
+        BackgroundCompletion::Succeeded(
+            vec![runner_notice("first"), runner_notice("second")].into(),
+        ),
+        BackgroundCompletion::Succeeded(vec![runner_notice("third")].into()),
     ]);
     let mut host = RunnerHost::new(dispatcher.clone());
     // 同じ周のcompletionはtick適用後にconsumeされるため、既存Noticeだけが期限切れになることを確かめる。

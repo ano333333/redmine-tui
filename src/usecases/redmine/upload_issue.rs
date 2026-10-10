@@ -1,10 +1,10 @@
 use std::cell::RefCell;
-use std::future::Future;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::clients::redmine::{IssueUpdate, RedmineClient};
 use crate::stores::{Action, Dispatcher, IssueAction, IssueState, NoticeAction, NoticeId};
+use crate::usecases::UsecaseTask;
 use crate::vos::{EntityIdValue, IssueId, IssuePropertyDiff};
 
 /// 編集済みのIssueのuploadを開始する。
@@ -21,7 +21,7 @@ pub fn start_issue_upload<C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     client: Arc<C>,
     id: IssueId,
-) -> impl Future<Output = Vec<Action>> + 'static
+) -> Option<UsecaseTask>
 where
     C: RedmineClient + Send + Sync + 'static,
 {
@@ -41,7 +41,11 @@ where
         .get_issue_property_diffs(id)
         .to_vec();
 
-    async move { upload_issue_action(client.as_ref(), id, &diffs).await }
+    Some(Box::pin(async move {
+        upload_issue_action(client.as_ref(), id, &diffs)
+            .await
+            .into()
+    }))
 }
 
 /// 保存前の取得、Issue属性のPUT、確認の取得を順に行い、結果のActionを返す。

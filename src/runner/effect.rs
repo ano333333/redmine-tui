@@ -10,11 +10,14 @@ use crate::{
         host::PlatformHost,
         runtime::{BackgroundSpawner, LocalTask},
     },
-    stores::{Action, Dispatcher, NoticeAction, NoticeId},
-    usecases::redmine::{
-        continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
-        start_deleted_journal_upload, start_issue_upload, start_local_journal_upload,
-        start_remote_journal_upload, upload_issue_action,
+    stores::{Dispatcher, NoticeAction, NoticeId},
+    usecases::{
+        UsecaseOutput, UsecaseTask,
+        redmine::{
+            continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
+            start_deleted_journal_upload, start_issue_upload, start_local_journal_upload,
+            start_remote_journal_upload, upload_issue_action,
+        },
     },
     vos::{IssueId, JournalId, ProjectId},
 };
@@ -31,7 +34,7 @@ pub(crate) fn handle_app_effect<'a, S, C, E, H>(
     editor_session: &mut Option<EditorSession<'a>>,
     host: &mut H,
 ) where
-    S: BackgroundSpawner<Output = Vec<Action>>,
+    S: BackgroundSpawner<Output = UsecaseOutput>,
     C: RedmineClient + Send + Sync + 'static,
     E: TextEditor,
     H: PlatformHost,
@@ -59,11 +62,14 @@ pub(crate) fn handle_app_effect<'a, S, C, E, H>(
             }
         }
         AppEffect::StartIssueUpload(id) => {
-            let future = start_issue_upload(dispatcher, client, id);
-            spawner.spawn(future);
+            spawn_usecase(spawner, start_issue_upload(dispatcher, client, id));
         }
         AppEffect::ContinueIssueUpload { id, diffs } => {
-            spawner.spawn(async move { upload_issue_action(client.as_ref(), id, &diffs).await });
+            spawner.spawn(async move {
+                upload_issue_action(client.as_ref(), id, &diffs)
+                    .await
+                    .into()
+            });
         }
         AppEffect::StartRemoteJournalUpload {
             issue_id,
@@ -78,12 +84,10 @@ pub(crate) fn handle_app_effect<'a, S, C, E, H>(
             issue_id,
             original_id,
         } => {
-            spawner.spawn(start_deleted_journal_upload(
-                dispatcher,
-                client,
-                issue_id,
-                original_id,
-            ));
+            spawn_usecase(
+                spawner,
+                start_deleted_journal_upload(dispatcher, client, issue_id, original_id),
+            );
         }
         AppEffect::ContinueRemoteJournalUpload {
             issue_id,
@@ -122,7 +126,7 @@ pub(crate) fn editor_failure_notice_action(error: &dyn std::fmt::Display) -> Not
     }
 }
 
-pub(crate) fn start_remote_journal_upload_action<S: BackgroundSpawner<Output = Vec<Action>>, C>(
+pub(crate) fn start_remote_journal_upload_action<S: BackgroundSpawner<Output = UsecaseOutput>, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
     client: Arc<C>,
@@ -131,11 +135,13 @@ pub(crate) fn start_remote_journal_upload_action<S: BackgroundSpawner<Output = V
 ) where
     C: RedmineClient + Send + Sync + 'static,
 {
-    let future = start_remote_journal_upload(dispatcher, client, issue_id, journal_id);
-    spawner.spawn(future);
+    spawn_usecase(
+        spawner,
+        start_remote_journal_upload(dispatcher, client, issue_id, journal_id),
+    );
 }
 
-pub(crate) fn start_local_journal_upload_action<S: BackgroundSpawner<Output = Vec<Action>>, C>(
+pub(crate) fn start_local_journal_upload_action<S: BackgroundSpawner<Output = UsecaseOutput>, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
     client: Arc<C>,
@@ -143,11 +149,16 @@ pub(crate) fn start_local_journal_upload_action<S: BackgroundSpawner<Output = Ve
 ) where
     C: RedmineClient + Send + Sync + 'static,
 {
-    let future = start_local_journal_upload(dispatcher, client, issue_id);
-    spawner.spawn(future);
+    spawn_usecase(
+        spawner,
+        start_local_journal_upload(dispatcher, client, issue_id),
+    );
 }
 
-pub(crate) fn continue_remote_journal_upload_action<S: BackgroundSpawner<Output = Vec<Action>>, C>(
+pub(crate) fn continue_remote_journal_upload_action<
+    S: BackgroundSpawner<Output = UsecaseOutput>,
+    C,
+>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
     client: Arc<C>,
@@ -157,12 +168,13 @@ pub(crate) fn continue_remote_journal_upload_action<S: BackgroundSpawner<Output 
 ) where
     C: RedmineClient + Send + Sync + 'static,
 {
-    let future =
-        continue_remote_journal_upload(dispatcher, client, issue_id, journal_id, resolved_notes);
-    spawner.spawn(future);
+    spawn_usecase(
+        spawner,
+        continue_remote_journal_upload(dispatcher, client, issue_id, journal_id, resolved_notes),
+    );
 }
 
-pub(crate) fn start_project_issues_page_fetch<S: BackgroundSpawner<Output = Vec<Action>>, C>(
+pub(crate) fn start_project_issues_page_fetch<S: BackgroundSpawner<Output = UsecaseOutput>, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
     client: Arc<C>,
@@ -171,11 +183,13 @@ pub(crate) fn start_project_issues_page_fetch<S: BackgroundSpawner<Output = Vec<
 ) where
     C: RedmineClient + Send + Sync + 'static,
 {
-    let future = fetch_project_issues_page(dispatcher, client, project_id, page);
-    spawner.spawn(async move { vec![future.await.into()] });
+    spawn_usecase(
+        spawner,
+        fetch_project_issues_page(dispatcher, client, project_id, page),
+    );
 }
 
-pub(crate) fn start_issue_fetch<S: BackgroundSpawner<Output = Vec<Action>>, C>(
+pub(crate) fn start_issue_fetch<S: BackgroundSpawner<Output = UsecaseOutput>, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
     client: Arc<C>,
@@ -183,9 +197,14 @@ pub(crate) fn start_issue_fetch<S: BackgroundSpawner<Output = Vec<Action>>, C>(
 ) where
     C: RedmineClient + Send + Sync + 'static,
 {
-    let Some(future) = fetch_issue(dispatcher, client, id) else {
-        return;
-    };
+    spawn_usecase(spawner, fetch_issue(dispatcher, client, id));
+}
 
-    spawner.spawn(future);
+fn spawn_usecase<S>(spawner: &S, task: Option<UsecaseTask>)
+where
+    S: BackgroundSpawner<Output = UsecaseOutput>,
+{
+    if let Some(task) = task {
+        spawner.spawn(task);
+    }
 }

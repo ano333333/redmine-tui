@@ -7,10 +7,16 @@ use crate::entities::{
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::stores::{Action, Dispatcher, Store};
+use crate::usecases::UsecaseTask;
 use crate::vos::{
     CategoryId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, PriorityId,
     ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
+
+/// 起動したUsecaseを完了まで進め、完了Actionを返す。起動しなかった場合はpanicする。
+pub async fn complete_usecase(task: Option<UsecaseTask>) -> Vec<Action> {
+    task.expect("usecase should start").await.actions
+}
 
 pub fn local_datetime(input: &str) -> DateTime<Local> {
     DateTime::parse_from_rfc3339(input)
