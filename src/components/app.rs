@@ -1,12 +1,12 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::num::NonZeroUsize;
 use std::rc::Rc;
 
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::Modifier;
 
+use crate::components::RequestSink;
 use crate::components::issue::{
     EventProcessResult as IssueEventProcessResult, IssueComponent, IssueDetailEventProcessResult,
 };
@@ -14,9 +14,7 @@ use crate::components::issue_property_conflict_popup::{
     EventProcessResult as IssuePropertyConflictEventProcessResult, IssuePropertyConflictComponent,
 };
 use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
-use crate::components::issue_select_popup::component::{
-    Effect as IssueSelectPopupEffect, IssueSelectPopupComponent,
-};
+use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
 use crate::components::remote_journal_conflict_popup::{
     EventProcessResult as RemoteJournalConflictEventProcessResult, RemoteJournalConflictComponent,
 };
@@ -27,6 +25,7 @@ use crate::stores::{
     Action, DeletedJournalState, Dispatcher, IssueAction, IssueState, JournalAction,
     LocalJournalState, RemoteJournalState, Store,
 };
+use crate::usecases::UsecaseRequest;
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
     build_done_ratio_options, build_issue_status_options, build_priority_options,
@@ -36,10 +35,7 @@ use crate::usecases::issue_popup_options::{
     issue_status_popup_observer, priority_popup_observer, project_popup_observer,
     start_date_popup_observer, target_version_popup_observer, tracker_popup_observer,
 };
-use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
-use crate::vos::{
-    EntityIdValue, IssueId, IssuePropertyDiff, JournalId, ProjectId, TimeEntityActivityId,
-};
+use crate::vos::{EntityIdValue, IssueId, JournalId, TimeEntityActivityId};
 use crate::widgets::ToastWidget;
 
 use super::date_picker_popup::component::{
@@ -54,36 +50,6 @@ use super::select_box_popup::{
 use super::spent_time_input_popup::{
     EventProcessResult as SpentTimeInputPopupEventProcessResult, SpentTimeInputPopupComponent,
 };
-
-pub enum AppEffect {
-    FetchIssue(IssueId),
-    FetchProjectIssuesPage {
-        project_id: ProjectId,
-        page: NonZeroUsize,
-    },
-    OpenEditor(EditorRequest),
-    StartIssueUpload(IssueId),
-    ContinueIssueUpload {
-        id: IssueId,
-        diffs: Vec<IssuePropertyDiff>,
-    },
-    StartRemoteJournalUpload {
-        issue_id: IssueId,
-        journal_id: JournalId,
-    },
-    ContinueRemoteJournalUpload {
-        issue_id: IssueId,
-        journal_id: JournalId,
-        resolved_notes: String,
-    },
-    StartLocalJournalUpload {
-        issue_id: IssueId,
-    },
-    StartDeletedJournalUpload {
-        issue_id: IssueId,
-        original_id: JournalId,
-    },
-}
 
 enum PendingEditorContext {
     IssueBody {
@@ -102,7 +68,7 @@ enum PendingEditorContext {
     },
 }
 
-/// Storeの状態遷移違反とeditor sessionの二重起動を防ぐため、editor effectを生成できる状態かを最終確認する。
+/// Storeの状態遷移違反とeditor sessionの二重起動を防ぐため、editorの起動を要求できる状態かを最終確認する。
 ///
 /// 各Componentの操作可否判定はUIイベントを抑制する責務として残し、この境界でも検査する。
 fn can_start_editing(
@@ -160,7 +126,6 @@ pub struct AppComponent<'a> {
     // popup追加の際は末尾に追加する、先頭要素が最奥に表示される
     popup_components: VecDeque<Rc<RefCell<PopupComponent<'a>>>>,
     dispatcher: Rc<RefCell<Dispatcher>>,
-    pending_effect: Option<AppEffect>,
     pending_editor_context: Option<PendingEditorContext>,
     interaction_mode: InteractionMode,
     cursor_rendering: CursorRendering,
@@ -171,29 +136,19 @@ impl<'a> AppComponent<'a> {
         dispatcher: Rc<RefCell<Dispatcher>>,
         issue_id: Option<IssueId>,
         cursor_rendering: CursorRendering,
+        sink: &mut RequestSink,
     ) -> Self {
-        let (issue_component, issue_result) = match issue_id {
-            Some(issue_id) => {
-                let dispatcher_ref = dispatcher.borrow();
-                let (component, result) = IssueComponent::new(dispatcher_ref.store(), issue_id);
-                (Some(component), result)
-            }
-            None => (None, None),
-        };
         let mut app = AppComponent {
-            issue_component,
+            issue_component: None,
             popup_components: VecDeque::new(),
             dispatcher,
-            pending_effect: None,
             pending_editor_context: None,
             interaction_mode: InteractionMode::Application,
             cursor_rendering,
         };
-        if let Some(result) = issue_result {
-            app.handle_issue_component_result(result);
-        }
-        if issue_id.is_none() {
-            app.open_issue_select_popup(None);
+        match issue_id {
+            Some(issue_id) => app.open_issue(issue_id, sink),
+            None => app.open_issue_select_popup(None, sink),
         }
         app
     }
@@ -204,16 +159,17 @@ impl<'a> AppComponent<'a> {
         &mut self,
         event: InputEvent,
         dispatcher: Rc<RefCell<Dispatcher>>,
+        sink: &mut RequestSink,
     ) -> bool {
         // editor session中の入力はeditorが占有するため、Componentの状態を変更しない。
         if self.interaction_mode == InteractionMode::Editing {
             return false;
         }
         if self.popup_components.back().is_some() {
-            return self.process_popup_event(event, dispatcher);
+            return self.process_popup_event(event, dispatcher, sink);
         }
         if self.issue_component.is_some() {
-            return self.process_issue_event(event, dispatcher);
+            return self.process_issue_event(event, dispatcher, sink);
         }
         false
     }
@@ -224,6 +180,7 @@ impl<'a> AppComponent<'a> {
         &mut self,
         event: InputEvent,
         dispatcher: Rc<RefCell<Dispatcher>>,
+        sink: &mut RequestSink,
     ) -> bool {
         let popup_component_rc = self
             .popup_components
@@ -292,17 +249,14 @@ impl<'a> AppComponent<'a> {
             PopupComponent::IssueSelect(popup_component) => {
                 let result = {
                     let dispatcher = dispatcher.borrow();
-                    popup_component.process_event(event, dispatcher.store())
+                    popup_component.process_event(event, dispatcher.store(), sink)
                 };
-                if let Some(effect) = popup_component.take_effect() {
-                    self.install_issue_select_popup_effect(effect);
-                }
                 let Some(result) = result else {
                     return false;
                 };
                 match result {
                     IssueSelectPopupEventProcessResult::Selected { issue_id } => {
-                        self.select_issue(issue_id);
+                        self.select_issue(issue_id, sink);
                     }
                     IssueSelectPopupEventProcessResult::Quited => {
                         self.close_issue_select_popup();
@@ -319,15 +273,13 @@ impl<'a> AppComponent<'a> {
                 };
                 match result {
                     IssuePropertyConflictEventProcessResult::Canceled => {
-                        cancel_issue_upload(&mut dispatcher.borrow_mut(), *issue_id);
+                        sink.request_usecase(UsecaseRequest::CancelIssueUpload { id: *issue_id });
                         self.popup_components.pop_back();
                     }
                     IssuePropertyConflictEventProcessResult::Continued { diffs } => {
-                        let retry_diffs =
-                            continue_issue_upload(&mut dispatcher.borrow_mut(), *issue_id, diffs);
-                        self.pending_effect = Some(AppEffect::ContinueIssueUpload {
+                        sink.request_usecase(UsecaseRequest::ContinueIssueUpload {
                             id: *issue_id,
-                            diffs: retry_diffs,
+                            selected_local_diffs: diffs,
                         });
                         self.popup_components.pop_back();
                     }
@@ -344,18 +296,16 @@ impl<'a> AppComponent<'a> {
                 };
                 match result {
                     RemoteJournalConflictEventProcessResult::Canceled => {
-                        dispatcher.borrow_mut().dispatch(
-                            JournalAction::CancelRemoteUploadConflict {
-                                issue_id: *issue_id,
-                                journal_id: *journal_id,
-                            },
-                        );
+                        sink.request_usecase(UsecaseRequest::CancelRemoteJournalUpload {
+                            issue_id: *issue_id,
+                            journal_id: *journal_id,
+                        });
                         self.popup_components.pop_back();
                     }
                     RemoteJournalConflictEventProcessResult::Continued { resolved_notes } => {
                         // FIXME: 競合情報を同期的に消さないため、直後のupdateで古いサーバーnotesのままpopupが
                         // 開き直し、続行中に届いた新しい競合でも更新されない。
-                        self.pending_effect = Some(AppEffect::ContinueRemoteJournalUpload {
+                        sink.request_usecase(UsecaseRequest::ContinueRemoteJournalUpload {
                             issue_id: *issue_id,
                             journal_id: *journal_id,
                             resolved_notes,
@@ -369,12 +319,13 @@ impl<'a> AppComponent<'a> {
         true
     }
 
-    /// IssueComponentへイベントを渡し、結果に応じてpopupの開閉やeffectの設置を行う。
+    /// IssueComponentへイベントを渡し、結果に応じてpopupの開閉や要求の発行を行う。
     /// IssueComponentがイベントを使った場合にtrueを返す。
     fn process_issue_event(
         &mut self,
         event: InputEvent,
         dispatcher: Rc<RefCell<Dispatcher>>,
+        sink: &mut RequestSink,
     ) -> bool {
         let (result, issue_id) = {
             let issue_component = self
@@ -391,10 +342,16 @@ impl<'a> AppComponent<'a> {
         };
         match result {
             IssueEventProcessResult::FetchRequested { id } => {
-                self.install_effect(AppEffect::FetchIssue(id));
+                sink.request_usecase(UsecaseRequest::FetchIssue {
+                    id,
+                    with_parent: true,
+                });
+            }
+            IssueEventProcessResult::UploadConfirmationRetryRequested { id } => {
+                sink.request_usecase(UsecaseRequest::RetryIssueUploadConfirmation { id });
             }
             IssueEventProcessResult::OpenIssueSelectPopup => {
-                self.open_issue_select_popup(Some(issue_id));
+                self.open_issue_select_popup(Some(issue_id), sink);
             }
             IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::EditIssueBodyRequested { id, body },
@@ -402,8 +359,7 @@ impl<'a> AppComponent<'a> {
                 let context = PendingEditorContext::IssueBody { id };
                 if can_start_editing(&context, self.interaction_mode, dispatcher.borrow().store()) {
                     self.pending_editor_context = Some(context);
-                    self.pending_effect =
-                        Some(AppEffect::OpenEditor(EditorRequest { initial_text: body }));
+                    sink.request_editor(EditorRequest { initial_text: body });
                     self.interaction_mode = InteractionMode::Editing;
                 }
             }
@@ -536,7 +492,7 @@ impl<'a> AppComponent<'a> {
                 )));
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::StartIssueUpload) => {
-                self.pending_effect = Some(AppEffect::StartIssueUpload(issue_id));
+                sink.request_usecase(UsecaseRequest::StartIssueUpload { id: issue_id });
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::SaveRequested {
                 issue_id,
@@ -550,7 +506,7 @@ impl<'a> AppComponent<'a> {
                     )
                 };
                 if is_edited {
-                    self.pending_effect = Some(AppEffect::StartRemoteJournalUpload {
+                    sink.request_usecase(UsecaseRequest::StartRemoteJournalUpload {
                         issue_id,
                         journal_id: id,
                     });
@@ -560,7 +516,7 @@ impl<'a> AppComponent<'a> {
                 IssueDetailEventProcessResult::SaveLocalJournalRequested { issue_id },
             ) => {
                 // Local Journal側が保存可能な状態でだけ要求を返すため、ここでは状態を再検査しない。
-                self.pending_effect = Some(AppEffect::StartLocalJournalUpload { issue_id });
+                sink.request_usecase(UsecaseRequest::StartLocalJournalUpload { issue_id });
             }
             IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::SaveDeletedJournalRequested {
@@ -569,7 +525,7 @@ impl<'a> AppComponent<'a> {
                 },
             ) => {
                 // 退避したJournal側が投稿可能な状態でだけ要求を返すため、ここでは状態を再検査しない。
-                self.pending_effect = Some(AppEffect::StartDeletedJournalUpload {
+                sink.request_usecase(UsecaseRequest::StartDeletedJournalUpload {
                     issue_id,
                     original_id,
                 });
@@ -600,9 +556,9 @@ impl<'a> AppComponent<'a> {
                 };
                 if can_start_editing(&context, self.interaction_mode, dispatcher.borrow().store()) {
                     self.pending_editor_context = Some(context);
-                    self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                    sink.request_editor(EditorRequest {
                         initial_text: notes,
-                    }));
+                    });
                     self.interaction_mode = InteractionMode::Editing;
                 }
             }
@@ -619,9 +575,9 @@ impl<'a> AppComponent<'a> {
                 };
                 if can_start_editing(&context, self.interaction_mode, dispatcher.borrow().store()) {
                     self.pending_editor_context = Some(context);
-                    self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                    sink.request_editor(EditorRequest {
                         initial_text: notes,
-                    }));
+                    });
                     self.interaction_mode = InteractionMode::Editing;
                 }
             }
@@ -631,9 +587,9 @@ impl<'a> AppComponent<'a> {
                 let context = PendingEditorContext::LocalJournal { issue_id };
                 if can_start_editing(&context, self.interaction_mode, dispatcher.borrow().store()) {
                     self.pending_editor_context = Some(context);
-                    self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                    sink.request_editor(EditorRequest {
                         initial_text: notes,
-                    }));
+                    });
                     self.interaction_mode = InteractionMode::Editing;
                 }
             }
@@ -646,16 +602,16 @@ impl<'a> AppComponent<'a> {
                         .dispatch(Action::Journal(JournalAction::CreateLocal { issue_id }));
                     self.pending_editor_context =
                         Some(PendingEditorContext::LocalJournal { issue_id });
-                    self.pending_effect = Some(AppEffect::OpenEditor(EditorRequest {
+                    sink.request_editor(EditorRequest {
                         initial_text: String::new(),
-                    }));
+                    });
                     self.interaction_mode = InteractionMode::Editing;
                 }
             }
             IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::OpenIssueRequested { id },
             ) => {
-                self.open_issue(id);
+                self.open_issue(id, sink);
             }
             // 子Componentがキーを解釈済みで、App側に要求はない。
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::Handled) => {}
@@ -663,62 +619,48 @@ impl<'a> AppComponent<'a> {
         true
     }
 
-    fn select_issue(&mut self, issue_id: IssueId) {
+    fn select_issue(&mut self, issue_id: IssueId, sink: &mut RequestSink) {
         self.popup_components.pop_back();
-        self.open_issue(issue_id);
+        self.open_issue(issue_id, sink);
     }
 
-    fn open_issue(&mut self, issue_id: IssueId) {
-        assert!(
-            self.pending_effect.is_none(),
-            "AppComponent already has a pending effect when opening an issue"
-        );
-
-        let (issue_component, result) = {
+    /// Issueを開き、Issue自身と、分かっていれば親の取得を要求する。起動するかは`fetch_issue`が判定する。
+    ///
+    /// 取得済みのIssueは取得の完了が起きず、完了の後続要求で親を取得できないため、
+    /// Storeにある親IDで要求する。
+    // FIXME: 親の取得(`with_parent: false`)が終わる前にその親を開くと、取得中なので
+    // `FetchIssue { with_parent: true }`は起動されず、Storeに親IDもないため、さらに上の親を取得しない。
+    // 起動済みの取得に「親も取得する」希望を後から伝える手段がない。
+    fn open_issue(&mut self, issue_id: IssueId, sink: &mut RequestSink) {
+        let parent_id = {
             let dispatcher = self.dispatcher.borrow();
-            IssueComponent::new(dispatcher.store(), issue_id)
+            let store = dispatcher.store();
+            self.issue_component = Some(IssueComponent::new(store, issue_id));
+            store
+                .try_get_issue_state(issue_id)
+                .and_then(|_| store.get_issue(issue_id).0.parent_id())
         };
-        self.issue_component = Some(issue_component);
-        if let Some(result) = result {
-            self.handle_issue_component_result(result);
+        sink.request_usecase(UsecaseRequest::FetchIssue {
+            id: issue_id,
+            with_parent: true,
+        });
+        if let Some(parent_id) = parent_id {
+            sink.request_usecase(UsecaseRequest::FetchIssue {
+                id: parent_id,
+                with_parent: false,
+            });
         }
     }
 
-    fn handle_issue_component_result(&mut self, result: IssueEventProcessResult) {
-        match result {
-            IssueEventProcessResult::FetchRequested { id } => {
-                self.install_effect(AppEffect::FetchIssue(id));
-            }
-            IssueEventProcessResult::OpenIssueSelectPopup | IssueEventProcessResult::Detail(_) => {
-                panic!("IssueComponent::new returned an event-only result")
-            }
-        }
-    }
-
-    fn install_effect(&mut self, effect: AppEffect) {
-        assert!(
-            self.pending_effect.is_none(),
-            "AppComponent already has a pending effect"
-        );
-        self.pending_effect = Some(effect);
-    }
-
-    fn install_issue_select_popup_effect(&mut self, effect: IssueSelectPopupEffect) {
-        match effect {
-            IssueSelectPopupEffect::FetchProjectIssuesPage { project_id, page } => {
-                self.install_effect(AppEffect::FetchProjectIssuesPage { project_id, page });
-            }
-        }
-    }
-
-    fn open_issue_select_popup(&mut self, focused_issue_id: Option<IssueId>) {
-        let mut popup = {
+    fn open_issue_select_popup(
+        &mut self,
+        focused_issue_id: Option<IssueId>,
+        sink: &mut RequestSink,
+    ) {
+        let popup = {
             let dispatcher = self.dispatcher.borrow();
-            IssueSelectPopupComponent::new(dispatcher.store(), focused_issue_id)
+            IssueSelectPopupComponent::new(dispatcher.store(), focused_issue_id, sink)
         };
-        if let Some(effect) = popup.take_effect() {
-            self.install_issue_select_popup_effect(effect);
-        }
         self.popup_components
             .push_back(Rc::new(RefCell::new(PopupComponent::IssueSelect(popup))));
     }
@@ -746,12 +688,13 @@ impl<'a> AppComponent<'a> {
         &mut self,
         event: InputEvent,
         dispatcher: Rc<RefCell<Dispatcher>>,
+        sink: &mut RequestSink,
     ) -> bool {
         let is_q = matches!(
             event,
             InputEvent::Key(key) if key.code == KeyCode::Char('q')
         );
-        let handled = self.process_event(event, dispatcher);
+        let handled = self.process_event(event, dispatcher, sink);
         !is_q || handled
     }
 
@@ -759,7 +702,6 @@ impl<'a> AppComponent<'a> {
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store, area: Rect) {
         self.open_issue_property_conflict_popup_if_needed(store);
         self.open_remote_journal_conflict_popups_if_needed(store);
-        self.request_parent_issue_fetch_if_needed(store);
 
         if let Some(issue_component) = &mut self.issue_component {
             issue_component.update(dispatcher, store, (area.width, area.height));
@@ -780,34 +722,6 @@ impl<'a> AppComponent<'a> {
             {
                 component.update(area);
             }
-        }
-    }
-
-    /// 親Issueの題名を表示するため、開いているIssueの親が未取得なら取得を要求する。
-    ///
-    /// 親のIDは詳細の取得が終わるまで分からないため、キー入力ではなくupdateで要求する。
-    /// 取得に失敗した親は、再取得を繰り返さないよう要求しない。
-    /// 取得開始のActionがStoreに反映される前のupdateでは同じ要求を再び置くが、
-    /// `fetch_issue`が取得中のIssueを起動しないため、二重には取得しない。
-    fn request_parent_issue_fetch_if_needed(&mut self, store: &Store) {
-        // effectは1件しか置けないため、他のeffectが待っている間は見送り、次のupdateで改めて判定する。
-        if self.pending_effect.is_some() {
-            return;
-        }
-        let Some(issue_component) = &self.issue_component else {
-            return;
-        };
-        let issue_id = issue_component.issue_id();
-        if store.try_get_issue_state(issue_id).is_none() {
-            return;
-        }
-        let Some(parent_id) = store.get_issue(issue_id).0.parent_id() else {
-            return;
-        };
-        if store.try_get_issue_state(parent_id).is_none()
-            && store.try_get_issue_fetch_state(parent_id).is_none()
-        {
-            self.install_effect(AppEffect::FetchIssue(parent_id));
         }
     }
 
@@ -893,10 +807,6 @@ impl<'a> AppComponent<'a> {
                 }
             }
         }
-    }
-
-    pub fn take_effect(&mut self) -> Option<AppEffect> {
-        self.pending_effect.take()
     }
 
     pub fn interaction_mode(&self) -> InteractionMode {
@@ -1069,6 +979,7 @@ fn create_toast_widget(store: &Store) -> ToastWidget {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::num::NonZeroUsize;
 
     use crate::entities::{Issue, ProjectIssuesPage};
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
@@ -1105,6 +1016,11 @@ mod tests {
         let widget = create_toast_widget(&store);
 
         assert!(widget.messages.is_empty());
+    }
+
+    fn assert_no_requests(sink: &mut RequestSink) {
+        assert_eq!(sink.take_usecases(), []);
+        assert!(sink.take_editor().is_none());
     }
 
     fn key_event(code: KeyCode) -> InputEvent {
@@ -1146,11 +1062,13 @@ mod tests {
 
     #[test]
     fn submitted_empty_issue_body_is_applied_and_releases_editor_context() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         app.pending_editor_context = Some(PendingEditorContext::IssueBody { id: 3.into() });
 
@@ -1166,11 +1084,13 @@ mod tests {
 
     #[test]
     fn cancelled_or_failed_editor_releases_context_without_dispatching_for_each_context() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         for failed in [false, true] {
             for context in [
@@ -1363,9 +1283,12 @@ mod tests {
     fn complete_initial_popup_page_fetch(
         app: &mut AppComponent<'_>,
         dispatcher: Rc<RefCell<Dispatcher>>,
+        sink: &mut RequestSink,
     ) {
-        let Some(AppEffect::FetchProjectIssuesPage { project_id, page }) = app.take_effect() else {
-            panic!("expected the popup's initial project page effect")
+        let [UsecaseRequest::FetchProjectIssuesPage { project_id, page }] =
+            sink.take_usecases()[..]
+        else {
+            panic!("expected the popup's initial project page request")
         };
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
         let request_id = crate::stores::ProjectIssuesRequestId::new();
@@ -1410,87 +1333,95 @@ mod tests {
     /// Property(2カラム時の左カラム8行) -> Body -> ChildrenList -> JournalsList(先頭Journalのdetail)
     /// の順にフォーカスを送り、JournalsList内の1件目JournalのNotes位置に到達させる
     fn focus_first_journal_notes(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) {
+        let mut sink = RequestSink::default();
         for _ in 0..47 {
-            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone(), &mut sink);
             app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
         }
     }
 
     #[test]
-    fn new_with_loaded_initial_issue_creates_issue_component_without_fetch_effect() {
+    fn new_with_loaded_initial_issue_creates_issue_component() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher, Some(3.into()), CursorRendering::Terminal);
+        let app = AppComponent::new(
+            dispatcher,
+            Some(3.into()),
+            CursorRendering::Terminal,
+            &mut sink,
+        );
 
         assert_eq!(
             app.issue_component.as_ref().unwrap().issue_id(),
             IssueId::new(3)
         );
         assert_eq!(app.interaction_mode(), InteractionMode::Application);
-        assert!(app.take_effect().is_none());
+        assert_eq!(
+            sink.take_usecases(),
+            [UsecaseRequest::FetchIssue {
+                id: IssueId::new(3),
+                with_parent: true,
+            }]
+        );
     }
 
     #[test]
     fn process_event_returns_true_when_issue_detail_moves_focus() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
-        assert!(app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone()));
+        assert!(app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone(), &mut sink));
     }
 
     #[test]
-    fn editing_mode_ignores_input_without_opening_popup_or_effect() {
+    fn editing_mode_ignores_input_without_opening_popup_or_requesting() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         app.interaction_mode = InteractionMode::Editing;
+        sink.take_usecases();
 
-        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone(), &mut sink);
 
         assert!(app.popup_components.is_empty());
-        assert!(app.take_effect().is_none());
+        assert_no_requests(&mut sink);
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
     }
 
     #[test]
-    fn new_with_unknown_initial_issue_requests_exactly_one_fetch() {
+    fn new_with_unknown_initial_issue_requests_it_with_its_parent() {
+        let mut sink = RequestSink::default();
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-        let mut app = AppComponent::new(dispatcher, Some(42.into()), CursorRendering::Terminal);
+        let app = AppComponent::new(
+            dispatcher,
+            Some(42.into()),
+            CursorRendering::Terminal,
+            &mut sink,
+        );
 
         assert_eq!(
             app.issue_component.as_ref().unwrap().issue_id(),
             IssueId::new(42)
         );
-        assert!(matches!(
-            app.take_effect(),
-            Some(AppEffect::FetchIssue(id)) if id == IssueId::new(42)
-        ));
-        assert!(app.take_effect().is_none());
-    }
-
-    #[test]
-    fn new_with_failed_initial_issue_requests_exactly_one_fetch() {
-        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-        dispatcher
-            .borrow_mut()
-            .dispatch(IssueAction::StartFetching { id: 42.into() });
-        dispatcher.borrow_mut().consume_action();
-        dispatcher.borrow_mut().dispatch(IssueAction::FetchFailed {
-            id: 42.into(),
-            message: "offline".to_string(),
-        });
-        dispatcher.borrow_mut().consume_action();
-        let mut app = AppComponent::new(dispatcher, Some(42.into()), CursorRendering::Terminal);
-
-        assert!(matches!(app.take_effect(), Some(AppEffect::FetchIssue(id)) if id == 42));
-        assert!(app.take_effect().is_none());
+        assert_eq!(
+            sink.take_usecases(),
+            [UsecaseRequest::FetchIssue {
+                id: IssueId::new(42),
+                with_parent: true,
+            }]
+        );
     }
 
     /// 子のIssue 1(親はIssue 3)だけを取得済みにする。
@@ -1504,71 +1435,43 @@ mod tests {
     }
 
     #[test]
-    fn update_requests_fetch_of_unloaded_parent_issue() {
+    fn opening_a_fetched_issue_also_requests_its_parent() {
+        let mut sink = RequestSink::default();
         let dispatcher = dispatcher_with_loaded_child_only();
-        let mut app = AppComponent::new(
+        let _app = AppComponent::new(
             dispatcher.clone(),
             Some(1.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
 
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        assert!(matches!(app.take_effect(), Some(AppEffect::FetchIssue(id)) if id == 3));
-    }
-
-    #[test]
-    fn update_does_not_request_fetch_of_parent_issue_whose_fetch_failed() {
-        let dispatcher = dispatcher_with_loaded_child_only();
-        for action in [
-            IssueAction::StartFetching { id: 3.into() },
-            IssueAction::FetchFailed {
-                id: 3.into(),
-                message: "offline".to_string(),
-            },
-        ] {
-            dispatcher.borrow_mut().dispatch(action);
-            dispatcher.borrow_mut().consume_action();
-        }
-        let mut app = AppComponent::new(
-            dispatcher.clone(),
-            Some(1.into()),
-            CursorRendering::Terminal,
+        assert_eq!(
+            sink.take_usecases(),
+            [
+                UsecaseRequest::FetchIssue {
+                    id: IssueId::new(1),
+                    with_parent: true,
+                },
+                UsecaseRequest::FetchIssue {
+                    id: IssueId::new(3),
+                    with_parent: false,
+                },
+            ]
         );
-
-        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
-
-        assert!(app.take_effect().is_none());
-    }
-
-    #[test]
-    #[should_panic(expected = "AppComponent already has a pending effect")]
-    fn a_second_fetch_request_cannot_replace_a_pending_effect() {
-        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-        dispatcher
-            .borrow_mut()
-            .dispatch(IssueAction::StartFetching { id: 42.into() });
-        dispatcher.borrow_mut().consume_action();
-        dispatcher.borrow_mut().dispatch(IssueAction::FetchFailed {
-            id: 42.into(),
-            message: "offline".to_string(),
-        });
-        dispatcher.borrow_mut().consume_action();
-        let mut app = AppComponent::new(
-            dispatcher.clone(),
-            Some(42.into()),
-            CursorRendering::Terminal,
-        );
-
-        app.process_event(key_event(KeyCode::Char('r')), dispatcher);
     }
 
     #[test]
     fn process_event_without_initial_issue_ignores_issue_detail_keys() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), None, CursorRendering::Terminal);
-        let _ = app.take_effect();
-        app.process_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            None,
+            CursorRendering::Terminal,
+            &mut sink,
+        );
+        app.process_event(key_event(KeyCode::Char('q')), dispatcher.clone(), &mut sink);
+        sink.take_usecases();
 
         for code in [
             KeyCode::Char('j'),
@@ -1576,21 +1479,23 @@ mod tests {
             KeyCode::Char('e'),
             KeyCode::Char('u'),
         ] {
-            app.process_event(key_event(code), dispatcher.clone());
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
         }
 
         assert!(app.issue_component.is_none());
         assert!(app.popup_components.is_empty());
-        assert!(app.take_effect().is_none());
+        assert_no_requests(&mut sink);
     }
 
     #[test]
     fn update_opens_issue_property_conflict_popup_only_once() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher_with_edited_issue();
         let mut app = AppComponent::new(
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         let conflicts = dispatcher
             .borrow()
@@ -1622,7 +1527,8 @@ mod tests {
     }
 
     #[test]
-    fn e_and_ctrl_s_on_uploading_local_journal_notes_install_no_effect() {
+    fn e_and_ctrl_s_on_uploading_local_journal_notes_request_nothing() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
         for action in [
             JournalAction::CreateLocal {
@@ -1644,55 +1550,63 @@ mod tests {
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        sink.take_usecases();
         for _ in 0..100 {
-            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone(), &mut sink);
         }
-        app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
-        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
+        app.process_event(key_event(KeyCode::Char('k')), dispatcher.clone(), &mut sink);
+        app.process_event(key_event(KeyCode::Char('e')), dispatcher.clone(), &mut sink);
 
-        assert!(app.take_effect().is_none());
+        assert_no_requests(&mut sink);
 
-        app.process_event(ctrl_s_event(), dispatcher.clone());
+        app.process_event(ctrl_s_event(), dispatcher.clone(), &mut sink);
 
-        assert!(app.take_effect().is_none());
+        assert_no_requests(&mut sink);
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
     }
 
     #[test]
-    fn ctrl_s_on_synced_journal_notes_installs_no_effect() {
+    fn ctrl_s_on_synced_journal_notes_requests_nothing() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher_with_journals();
         let mut app = AppComponent::new(
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        sink.take_usecases();
 
         focus_first_journal_notes(&mut app, dispatcher.clone());
-        app.process_event(ctrl_s_event(), dispatcher.clone());
+        app.process_event(ctrl_s_event(), dispatcher.clone(), &mut sink);
 
-        assert!(app.take_effect().is_none());
+        assert_no_requests(&mut sink);
     }
 
     /// updateでキャッシュしたプレビューがrenderで実際に描画されることを確認する
     #[test]
-    fn startup_issue_select_popup_exposes_its_initial_page_fetch_effect_once() {
+    fn startup_issue_select_popup_requests_its_initial_page_once() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher, None, CursorRendering::Terminal);
+        let _app = AppComponent::new(dispatcher, None, CursorRendering::Terminal, &mut sink);
 
-        assert!(matches!(
-            app.take_effect(),
-            Some(AppEffect::FetchProjectIssuesPage { project_id, page, .. })
-                if project_id == 1 && page == std::num::NonZeroUsize::MIN
-        ));
-        assert!(app.take_effect().is_none());
+        assert_eq!(
+            sink.take_usecases(),
+            [UsecaseRequest::FetchProjectIssuesPage {
+                project_id: ProjectId::new(1),
+                page: NonZeroUsize::MIN,
+            }]
+        );
     }
 
     #[test]
     fn startup_without_initial_issue_selects_first_project_even_when_issue_store_has_other_projects()
      {
+        let mut sink = RequestSink::default();
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         {
             let mut dispatcher_ref = dispatcher.borrow_mut();
@@ -1726,38 +1640,53 @@ mod tests {
             }
         }
 
-        let mut app = AppComponent::new(dispatcher, None, CursorRendering::Terminal);
+        let _app = AppComponent::new(dispatcher, None, CursorRendering::Terminal, &mut sink);
 
-        assert!(matches!(
-            app.take_effect(),
-            Some(AppEffect::FetchProjectIssuesPage { project_id, page, .. })
-                if project_id == ProjectId::new(1) && page == NonZeroUsize::MIN
-        ));
+        assert_eq!(
+            sink.take_usecases(),
+            [UsecaseRequest::FetchProjectIssuesPage {
+                project_id: ProjectId::new(1),
+                page: NonZeroUsize::MIN,
+            }]
+        );
     }
 
     #[test]
     fn startup_issue_select_popup_exposes_fetch_without_dispatching_project_issues_action() {
+        let mut sink = RequestSink::default();
         let dispatcher = dispatcher_with_selectable_issues();
-        let mut app = AppComponent::new(dispatcher.clone(), None, CursorRendering::Terminal);
+        let _app = AppComponent::new(
+            dispatcher.clone(),
+            None,
+            CursorRendering::Terminal,
+            &mut sink,
+        );
 
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
-        assert!(matches!(
-            app.take_effect(),
-            Some(AppEffect::FetchProjectIssuesPage { project_id, page })
-                if project_id == ProjectId::new(1)
-                    && page == NonZeroUsize::MIN
-        ));
+        assert_eq!(
+            sink.take_usecases(),
+            [UsecaseRequest::FetchProjectIssuesPage {
+                project_id: ProjectId::new(1),
+                page: NonZeroUsize::MIN,
+            }]
+        );
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
     }
 
     #[test]
     fn q_closes_issue_select_popup_without_dispatching_project_issues_action() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), None, CursorRendering::Terminal);
-        complete_initial_popup_page_fetch(&mut app, dispatcher.clone());
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            None,
+            CursorRendering::Terminal,
+            &mut sink,
+        );
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), &mut sink);
 
         let should_continue =
-            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone(), &mut sink);
 
         assert!(should_continue);
         assert!(app.popup_components.is_empty());
@@ -1766,22 +1695,24 @@ mod tests {
 
     #[test]
     fn q_on_open_calendar_closes_only_calendar_without_quitting() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         app.popup_components
             .push_back(Rc::new(RefCell::new(PopupComponent::DatePicker(
                 DatePickerPopupComponent::new(None, Box::new(|_| {})),
             ))));
         for code in [KeyCode::Tab, KeyCode::Tab, KeyCode::Tab, KeyCode::Enter] {
-            app.handle_key_event(key_event(code), dispatcher.clone());
+            app.handle_key_event(key_event(code), dispatcher.clone(), &mut sink);
         }
 
         let should_continue =
-            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone(), &mut sink);
 
         assert!(should_continue);
         assert!(matches!(
@@ -1792,11 +1723,13 @@ mod tests {
 
     fn app_with_remote_journal_conflict_popup() -> (Rc<RefCell<Dispatcher>>, AppComponent<'static>)
     {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher_with_journals();
         let mut app = AppComponent::new(
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
         {
@@ -1843,8 +1776,14 @@ mod tests {
     fn render_loaded_issue(
         cursor_rendering: CursorRendering,
     ) -> ratatui::Terminal<ratatui::backend::TestBackend> {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
-        let mut app = AppComponent::new(dispatcher.clone(), Some(3.into()), cursor_rendering);
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            cursor_rendering,
+            &mut sink,
+        );
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(AREA.width, AREA.height))
@@ -1897,16 +1836,18 @@ mod tests {
 
     #[test]
     fn q_on_date_picker_year_field_is_input_without_quitting() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         push_date_picker(&mut app);
 
         let should_continue =
-            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone(), &mut sink);
 
         assert!(should_continue);
         assert!(matches!(
@@ -1917,6 +1858,7 @@ mod tests {
 
     #[test]
     fn q_on_date_picker_buttons_closes_popup_without_quitting() {
+        let mut sink = RequestSink::default();
         // Tab3回でカレンダーボタン、4回でキャンセルボタン
         for tab_count in [3, 4] {
             let dispatcher = loaded_dispatcher();
@@ -1924,14 +1866,15 @@ mod tests {
                 dispatcher.clone(),
                 Some(3.into()),
                 CursorRendering::Terminal,
+                &mut sink,
             );
             push_date_picker(&mut app);
             for _ in 0..tab_count {
-                app.handle_key_event(key_event(KeyCode::Tab), dispatcher.clone());
+                app.handle_key_event(key_event(KeyCode::Tab), dispatcher.clone(), &mut sink);
             }
 
             let should_continue =
-                app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+                app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone(), &mut sink);
 
             assert!(should_continue, "tab_count={tab_count}");
             assert!(app.popup_components.is_empty(), "tab_count={tab_count}");
@@ -1940,16 +1883,18 @@ mod tests {
 
     #[test]
     fn q_on_navigating_spent_time_input_closes_popup_without_quitting() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         push_spent_time_input(&mut app, &dispatcher);
 
         let should_continue =
-            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone(), &mut sink);
 
         assert!(should_continue);
         assert!(app.popup_components.is_empty());
@@ -1957,20 +1902,22 @@ mod tests {
 
     #[test]
     fn q_while_editing_spent_time_memo_is_input_without_quitting() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         push_spent_time_input(&mut app, &dispatcher);
         // Activity -> Memo、Enterで編集モードに入る
         for code in [KeyCode::Char('j'), KeyCode::Enter] {
-            app.handle_key_event(key_event(code), dispatcher.clone());
+            app.handle_key_event(key_event(code), dispatcher.clone(), &mut sink);
         }
 
         let should_continue =
-            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone(), &mut sink);
 
         assert!(should_continue);
         assert!(matches!(
@@ -1981,16 +1928,18 @@ mod tests {
 
     #[test]
     fn q_without_popup_quits() {
+        let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
         let mut app = AppComponent::new(
             dispatcher.clone(),
             Some(3.into()),
             CursorRendering::Terminal,
+            &mut sink,
         );
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
         let should_continue =
-            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone());
+            app.handle_key_event(key_event(KeyCode::Char('q')), dispatcher.clone(), &mut sink);
 
         assert!(!should_continue);
     }

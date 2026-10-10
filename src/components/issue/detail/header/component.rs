@@ -49,7 +49,10 @@ impl HeaderComponent {
                 .parent_id()
                 .map(|parent_id| parent_issue(store, parent_id)),
             self.focus_state.focused_row(),
-            Self::title_decorator(&issue_status),
+            Self::title_decorator(
+                &issue_status,
+                store.try_get_issue_confirmation_failure(self.id).is_some(),
+            ),
         )
     }
 
@@ -57,8 +60,9 @@ impl HeaderComponent {
         self.focus_state.get_cursor_position()
     }
 
-    fn title_decorator(issue_state: &IssueState) -> Option<TitleDecorater> {
+    fn title_decorator(issue_state: &IssueState, unconfirmed: bool) -> Option<TitleDecorater> {
         match issue_state {
+            IssueState::Synced if unconfirmed => Some(TitleDecorater::Unconfirmed),
             IssueState::Synced => None,
             IssueState::Edited => Some(TitleDecorater::Edited),
             IssueState::Uploading => Some(TitleDecorater::Uploading),

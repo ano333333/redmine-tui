@@ -13,7 +13,7 @@
   - `store.rs` は、子 Store ・子 Action の統合を行う。外部からはこのファイルからエクスポートされる Store と Action を公開インターフェースとして用いる。
 - `src/usecases/`
   - アプリ固有の操作を置く。Store・Client の情報統合、および同期的な Dispatch や非同期タスクによる Action の形成を担う。
-  - 非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期で形成する Action は `Future` として返却する形が基本形である。`Store` を直接書き換えず、`Dispatcher::dispatch` を介して Action を積む。`runner` が Future を platform の runtime port（native は Tokio、Web は `spawn_local`）で起動し、完了 Action を Dispatcher へ戻す。
+  - 非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期の処理は `Option<UsecaseTask>` として返却する形が基本形である。`UsecaseTask` は完了 Action を `UsecaseOutput` に入れて返す Future で、非同期の処理がない場合は `None` を返す。完了後に別の Usecase を起動するときは、Future の中で起動せず、`UsecaseOutput::requests` に後続の `UsecaseRequest` を入れて返す。`Store` を直接書き換えず、`Dispatcher::dispatch` を介して Action を積む。`runner` が `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で起動し、完了 Action を Dispatcher へ戻す。
 - `src/clients/`
   - 外部プロセスとの通信を行う。
   - `redmine/base.rs` は `RedmineClient` trait を定義し、 Redmine との通信のインターフェースを定義する。`redmine/default.rs` は `DefaultRedmineClient`（実 HTTP 実装）を定義する。
@@ -54,7 +54,7 @@
 上の層は下の層に依存してよく（層を飛ばしてもよい）、下の層から上の層への依存はない。
 層内の依存は個別の矢印で表す。
 `src/clients/` のうち `usecases` が使うのは `redmine/base.rs` の `RedmineClient` trait などのインターフェース定義だけで、これを application に置く。実装（`default.rs` の `DefaultRedmineClient`、`demo/` の `DemoRedmineClient`）と外部表現の変換（`src/libs/`）は `adapter` に置き、実装は起動処理が組み立てて渡す。
-例として、`runner` は `components`・`usecases`・`stores`・`clients`・`vos` に、`platform` は completion を `Action` として dispatch するため `stores` に依存する。
+例として、`runner` は `components`・`usecases`・`stores`・`clients`・`vos` に依存する。`platform` の runtime port は完了値の型を利用側（`runner`）に指定させ、`stores` には依存しない。
 
 ```mermaid
 flowchart TD
@@ -91,7 +91,7 @@ flowchart TD
 ```
 
 `usecases` は `components` に依存しない。
-Component から usecase の関数を呼ぶことはあるが（例: `app.rs` が `issue_popup_options` や `redmine::{cancel_issue_upload, continue_issue_upload}` を呼ぶ）、逆方向の依存は発生させない。
+Component は usecase の関数を呼んだり（例: `app.rs` が `issue_popup_options` を呼ぶ）、`UsecaseRequest` を作ったりするが、逆方向の依存は発生させない。Redmine の usecase は Component から呼ばず、`UsecaseRequest` で `runner` に起動を要求する。
 同様に `clients` は `stores` にも `usecases` にも依存せず、`RedmineClient` trait と HTTP 実装（`DefaultRedmineClient`）、`DemoRedmineClient` を提供する。`DemoRedmineClient` の fixture は `src/libs/yaml.rs` の parser を使うため `clients` から `libs` への依存がある。
 
 ## Flux を参考にした構成
@@ -114,7 +114,7 @@ Store の更新は原則として Dispatcher を介して行う。
 - Component と usecase は `IssueStore` を直接参照せず、親 `Store` の Issue getter を通して entity、同期状態、diff、競合情報を取得する。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。
-- editor 起動、Redmine への非同期取得・保存などの外部副作用は `AppEffect` として Component から取り出し、`runner` 側で実行する。Redmine 関連の `AppEffect` は `usecases::redmine` の関数を platform の runtime port（native は Tokio、Web は `spawn_local`）で spawn し、完了 Action を Dispatcher に戻す。
+- editor 起動、Redmine への非同期取得・保存などの外部副作用は、Component が `RequestSink` に要求を書き、`runner` 側で実行する。`RequestSink` は `runner` が `&mut` で貸すもので、受け取るのは `AppComponent` の `new`・`process_event`・`handle_key_event` と、`IssueSelectPopupComponent` の `new`・`process_event` だけである。`update` と `render` は受け取らないため、update からは要求を発行できない。要求を Component のフィールドに溜めて後で書くことも禁止する。Redmine の Usecase は `UsecaseRequest` で要求する。`runner` は `start_usecase` で Usecase を起動し、返された `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で spawn して、完了 Action を Dispatcher に戻す。`runner` は要求を queue に積み、1件起動するたびに update する。Component 生成と入力に由来する要求は、その処理の直後、update の前に起動し、その後に editor を起動する。completion の後続要求は、その completion の Action を消費した update の後に起動する。そのため Usecase の起動条件は、それまでの要求と completion を反映した Store で判定できる。
 - `create_widget(&Store)` で Store を参照して表示用 entity を取得してよい。
 
 Store は、失敗または Action の不受理に見える分岐を以下に区別して扱う。
@@ -125,7 +125,7 @@ Store は、失敗または Action の不受理に見える分岐を以下に区
 - マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。取得した Journal を取り込む際に、未送信の編集差分を取得値で置き換えないことがこれにあたる。編集中の Journal は本体だけを取得値に更新して `diff.before` を残し、サーバーの notes が `after` と同じなら Synced にする。notes の競合はその Journal を保存するときの取得で判定する。upload 中の Journal は取得値で上書きしない。取得結果から消えた編集中の Journal は元の ID と編集後の notes で退避し、同じ ID が再び現れたらサーバーの notes からの編集として戻す。退避した Journal は利用者が個別に新規投稿するか破棄する。
 - 冪等 no-op: 同じ `NoticeId` の再追加など、Action 自体が冪等であることを契約として持つ正常な no-op。stale completion とマージ戦略は同じ no-op の見た目になりやすいため独立して扱う。
 
-Redmine への保存の完了では、取得した Issue を `IssueStore` の共通処理で Issue 本体・Journal・子一覧ごと取り込み、未送信の編集差分は残す。PUT が成功した後に確認の取得だけが失敗した場合は、PUT を繰り返さずに保存済みとして完了する。
+Redmine への保存の完了では、取得した Issue を `IssueStore` の共通処理で Issue 本体・Journal・子一覧ごと取り込み、未送信の編集差分は残す。PUT が成功した後に確認の取得だけが失敗した場合は、PUT を繰り返さずに保存済みとして完了し、失敗の理由を残して確認の取得だけをやり直せるようにする。
 
 getter 契約は、API が表す状態と cardinality で決める。不在が示す意味が異なるため、entity の種類だけで一律には決めない。
 
@@ -171,7 +171,7 @@ Component は以下の lifecycle を前提に実装する。
    - `Widget::render`
 2. 同期的なキーイベント処理時
    - `Component::process_event`
-   - 必要に応じて action dispatch、popup open/close、effect request
+   - 必要に応じて action dispatch、popup open/close、`RequestSink` への要求
    - `Component::update`
    - `Component::create_widget`
    - `Widget::render`
@@ -367,7 +367,7 @@ GitHub Pages向けWebデモをRatzilla `DomBackend`で配信するため、Store
 ```mermaid
 flowchart TD
     input["InputEvent"] --> component["Component"]
-    component -->|effect| runner["App runner"]
+    component -->|RequestSink| runner["App runner"]
     runner --> ports["platform ports<br/>Redmine・Editor・Runtime・Logging"]
     ports -->|completion| store["Dispatcher/Store"]
     component --> action["Action"]
@@ -387,7 +387,7 @@ flowchart TD
 
 - Componentはcrosstermではなく`src/platform/input/`の`InputEvent`を受け取る。
 - 共通層（components・widgets・stores・usecases・entities・vos）はcrossterm、Ratzilla、DOM、Tokio、filesystem、process、HTTP実装へ直接依存しない。
-- 外部副作用は`AppEffect`としてrunnerに渡し、runnerがplatformのportで実行する（runtime handle や executor 固有型を Component、Store、Client に渡さない）。
+- 外部副作用は`RequestSink`への要求としてrunnerに渡し、runnerがplatformのportで実行する（runtime handle や executor 固有型を Component、Store、Client に渡さない）。
 - `InteractionMode::Editing`中はComponentへの入力配送を止める。
 
 Webは`web-demo` featureとwasm32 targetでbuildする。ローカルでの確認手順は[README.ja.md](../README.ja.md)を参照する。GitHub Pagesへの配信は`.github/workflows/pages.yml`が`cargo xtask build-pages`でbuildして行う。

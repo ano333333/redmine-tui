@@ -20,6 +20,7 @@ use super::{
 #[derive(Debug, PartialEq, Eq)]
 pub enum EventProcessResult {
     FetchRequested { id: IssueId },
+    UploadConfirmationRetryRequested { id: IssueId },
     OpenIssueSelectPopup,
     Detail(detail::EventProcessResult),
 }
@@ -34,29 +35,20 @@ fn detail_first<T>(detail_result: Option<T>, fallback: impl FnOnce() -> Option<T
 }
 
 impl IssueComponent {
-    pub fn new(store: &Store, issue_id: impl Into<IssueId>) -> (Self, Option<EventProcessResult>) {
+    pub fn new(store: &Store, issue_id: impl Into<IssueId>) -> Self {
         let issue_id = issue_id.into();
-        let (detail, result) = Self::build_for_state(store, issue_id);
-        (Self { issue_id, detail }, result)
+        let detail = Self::build_detail(store, issue_id);
+        Self { issue_id, detail }
     }
 
     pub fn issue_id(&self) -> IssueId {
         self.issue_id
     }
 
-    fn build_for_state(
-        store: &Store,
-        id: IssueId,
-    ) -> (Option<IssueDetailComponent>, Option<EventProcessResult>) {
-        if store.try_get_issue_state(id).is_some() {
-            return (Some(IssueDetailComponent::new(id)), None);
-        }
-        match store.try_get_issue_fetch_state(id) {
-            Some(IssueFetchState::Fetching) => (None, None),
-            None | Some(IssueFetchState::FetchFailed { .. }) => {
-                (None, Some(EventProcessResult::FetchRequested { id }))
-            }
-        }
+    fn build_detail(store: &Store, id: IssueId) -> Option<IssueDetailComponent> {
+        store
+            .try_get_issue_state(id)
+            .map(|_| IssueDetailComponent::new(id))
     }
 
     pub fn process_event(
@@ -87,14 +79,19 @@ impl IssueComponent {
             return Some(EventProcessResult::OpenIssueSelectPopup);
         }
         if key.code == KeyCode::Char('r') {
-            let failed = matches!(
-                dispatcher
-                    .borrow()
-                    .store()
-                    .try_get_issue_fetch_state(self.issue_id),
+            let dispatcher = dispatcher.borrow();
+            let store = dispatcher.store();
+            if matches!(
+                store.try_get_issue_fetch_state(self.issue_id),
                 Some(IssueFetchState::FetchFailed { .. })
-            );
-            return failed.then_some(EventProcessResult::FetchRequested { id: self.issue_id });
+            ) {
+                return Some(EventProcessResult::FetchRequested { id: self.issue_id });
+            }
+            return store
+                .try_get_issue_confirmation_failure(self.issue_id)
+                .map(|_| EventProcessResult::UploadConfirmationRetryRequested {
+                    id: self.issue_id,
+                });
         }
 
         None
@@ -167,10 +164,7 @@ mod tests {
         d.borrow_mut().consume_action();
     }
 
-    fn component(
-        d: &Rc<RefCell<Dispatcher>>,
-        id: u16,
-    ) -> (IssueComponent, Option<EventProcessResult>) {
+    fn component(d: &Rc<RefCell<Dispatcher>>, id: u16) -> IssueComponent {
         let borrow = d.borrow();
         IssueComponent::new(borrow.store(), id)
     }
@@ -210,13 +204,9 @@ mod tests {
     }
 
     #[test]
-    fn unknown_issue_requests_fetch_without_detail() {
+    fn unknown_issue_has_no_detail() {
         let d = dispatcher();
-        let (component, result) = component(&d, 42);
-        assert_eq!(
-            result,
-            Some(EventProcessResult::FetchRequested { id: 42.into() })
-        );
+        let component = component(&d, 42);
         assert_eq!(component.issue_id(), 42);
         assert!(!component.has_detail_component());
         let borrow = d.borrow();
@@ -227,28 +217,18 @@ mod tests {
     }
 
     #[test]
-    fn loaded_issue_builds_detail_without_fetch() {
+    fn loaded_issue_builds_detail() {
         let d = dispatcher();
         crate::test_support::dispatch_loaded_issue(
             &mut d.borrow_mut(),
             crate::test_support::sample_parent_issue(),
         );
-        let (component, result) = component(&d, 3);
-        assert_eq!(result, None);
+        let component = component(&d, 3);
         assert!(component.has_detail_component());
     }
 
     #[test]
-    fn fetching_does_not_request_again() {
-        let d = dispatcher();
-        consume(&d, IssueAction::StartFetching { id: 42.into() });
-        let (component, result) = component(&d, 42);
-        assert_eq!(result, None);
-        assert!(!component.has_detail_component());
-    }
-
-    #[test]
-    fn failed_issue_requests_fetch_and_r_retries() {
+    fn r_retries_only_a_failed_fetch() {
         let d = dispatcher();
         consume(&d, IssueAction::StartFetching { id: 42.into() });
         consume(
@@ -258,14 +238,10 @@ mod tests {
                 message: "offline".into(),
             },
         );
-        let (mut component, result) = component(&d, 42);
-        assert_eq!(
-            result,
-            Some(EventProcessResult::FetchRequested { id: 42.into() })
-        );
+        let mut component = component(&d, 42);
         assert_eq!(
             component.process_event(key(KeyCode::Char('r')), d.clone()),
-            result
+            Some(EventProcessResult::FetchRequested { id: 42.into() })
         );
         consume(&d, IssueAction::StartFetching { id: 42.into() });
         assert_eq!(
@@ -275,10 +251,54 @@ mod tests {
     }
 
     #[test]
+    fn r_requests_only_the_confirmation_retry_of_an_unconfirmed_issue() {
+        let d = dispatcher();
+        crate::test_support::dispatch_loaded_issue(
+            &mut d.borrow_mut(),
+            crate::test_support::sample_parent_issue(),
+        );
+        let mut component = component(&d, 3);
+        assert_eq!(
+            component.process_event(key(KeyCode::Char('r')), d.clone()),
+            None
+        );
+
+        for action in [
+            Action::from(IssueAction::UpdateDescription {
+                id: 3.into(),
+                body: "local".to_string(),
+            }),
+            IssueAction::StartUpload { id: 3.into() }.into(),
+        ] {
+            consume(&d, action);
+        }
+        let diffs = d.borrow().store().get_issue_property_diffs(3).to_vec();
+        consume(
+            &d,
+            IssueAction::UploadPutSucceeded {
+                id: 3.into(),
+                diffs,
+            },
+        );
+        consume(
+            &d,
+            IssueAction::UploadConfirmFailed {
+                id: 3.into(),
+                message: "offline".to_string(),
+            },
+        );
+
+        assert_eq!(
+            component.process_event(key(KeyCode::Char('r')), d.clone()),
+            Some(EventProcessResult::UploadConfirmationRetryRequested { id: 3.into() })
+        );
+    }
+
+    #[test]
     fn update_builds_detail_after_fetch_success() {
         let d = dispatcher();
         consume(&d, IssueAction::StartFetching { id: 3.into() });
-        let (mut component, _) = component(&d, 3);
+        let mut component = component(&d, 3);
         consume(
             &d,
             Action::IssueFetchSucceeded {
@@ -305,7 +325,7 @@ mod tests {
                 message: "timeout".into(),
             },
         );
-        let (component, _) = component(&d, 42);
+        let component = component(&d, 42);
         let borrow = d.borrow();
 
         assert!(matches!(
@@ -318,7 +338,7 @@ mod tests {
     fn another_issue_completion_does_not_change_target() {
         let d = dispatcher();
         consume(&d, IssueAction::StartFetching { id: 42.into() });
-        let (mut component, _) = component(&d, 42);
+        let mut component = component(&d, 42);
         consume(&d, IssueAction::StartFetching { id: 3.into() });
         consume(
             &d,
@@ -339,7 +359,7 @@ mod tests {
     #[test]
     fn y_opens_selector_even_without_loaded_issue() {
         let d = dispatcher();
-        let (mut component, _) = component(&d, 42);
+        let mut component = component(&d, 42);
         assert_eq!(
             component.process_event(key(KeyCode::Char('y')), d),
             Some(EventProcessResult::OpenIssueSelectPopup)
@@ -350,7 +370,7 @@ mod tests {
     fn y_opens_selector_while_fetching_failed_and_loaded() {
         let d = dispatcher();
         consume(&d, IssueAction::StartFetching { id: 42.into() });
-        let (mut fetching, _) = component(&d, 42);
+        let mut fetching = component(&d, 42);
         assert_eq!(
             fetching.process_event(key(KeyCode::Char('y')), d.clone()),
             Some(EventProcessResult::OpenIssueSelectPopup)
@@ -363,7 +383,7 @@ mod tests {
                 message: "offline".into(),
             },
         );
-        let (mut failed, _) = component(&d, 42);
+        let mut failed = component(&d, 42);
         assert_eq!(
             failed.process_event(key(KeyCode::Char('y')), d.clone()),
             Some(EventProcessResult::OpenIssueSelectPopup)
@@ -373,7 +393,7 @@ mod tests {
             &mut d.borrow_mut(),
             crate::test_support::sample_parent_issue(),
         );
-        let (mut loaded, _) = component(&d, 3);
+        let mut loaded = component(&d, 3);
         assert_eq!(
             loaded.process_event(key(KeyCode::Char('y')), d),
             Some(EventProcessResult::OpenIssueSelectPopup)
@@ -387,7 +407,7 @@ mod tests {
             &mut d.borrow_mut(),
             crate::test_support::sample_parent_issue(),
         );
-        let (mut component, _) = component(&d, 3);
+        let mut component = component(&d, 3);
 
         assert_eq!(
             component.process_event(modified_key(KeyCode::Char('s'), KeyModifiers::control()), d,),
@@ -408,7 +428,7 @@ mod tests {
             &mut d.borrow_mut(),
             crate::test_support::sample_parent_issue(),
         );
-        let (component, _) = component(&d, 3);
+        let component = component(&d, 3);
         let borrow = d.borrow();
 
         assert!(matches!(

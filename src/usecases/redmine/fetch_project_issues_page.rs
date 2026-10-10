@@ -1,16 +1,12 @@
 use std::cell::RefCell;
-use std::future::Future;
 use std::num::NonZeroUsize;
-use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{Dispatcher, ProjectIssuesAction, ProjectIssuesRequestId};
+use crate::usecases::UsecaseTask;
 use crate::vos::ProjectId;
-
-pub type FetchProjectIssuesPageFuture =
-    Pin<Box<dyn Future<Output = ProjectIssuesAction> + Send + 'static>>;
 
 /// プロジェクト別Issueページの取得を、新しいrequest IDで開始する。
 ///
@@ -21,7 +17,7 @@ pub fn fetch_project_issues_page<C>(
     client: Arc<C>,
     project_id: ProjectId,
     page: NonZeroUsize,
-) -> FetchProjectIssuesPageFuture
+) -> Option<UsecaseTask>
 where
     C: RedmineClient + Send + Sync + 'static,
 {
@@ -34,8 +30,8 @@ where
             page,
         });
 
-    Box::pin(async move {
-        match client.get_project_issues(project_id, page).await {
+    Some(Box::pin(async move {
+        let action = match client.get_project_issues(project_id, page).await {
             Ok(result) => ProjectIssuesAction::LoadSucceeded {
                 request_id,
                 project_id,
@@ -48,8 +44,9 @@ where
                 page,
                 message: error.to_string(),
             },
-        }
-    })
+        };
+        vec![action.into()].into()
+    }))
 }
 
 #[cfg(test)]
@@ -65,7 +62,9 @@ mod tests {
         Category, Issue, IssueStatus, Priority, Project, ProjectIssuesPage, TargetVersion,
         TimeEntityActivity, Tracker, User,
     };
-    use crate::stores::{Dispatcher, ProjectIssuesAction, ProjectIssuesRequestId};
+    use crate::stores::{Action, Dispatcher, ProjectIssuesAction, ProjectIssuesRequestId};
+    use crate::test_support::complete_usecase;
+    use crate::usecases::UsecaseTask;
     use crate::vos::{IssueId, IssueStatusId, ProjectId};
 
     use super::fetch_project_issues_page;
@@ -103,8 +102,8 @@ mod tests {
         let second_start_id = consume_start_id(&dispatcher);
 
         assert_ne!(first_start_id, second_start_id);
-        assert_eq!(completion_id(first.await), first_start_id);
-        assert_eq!(completion_id(second.await), second_start_id);
+        assert_eq!(completion_id(completion(first).await), first_start_id);
+        assert_eq!(completion_id(completion(second).await), second_start_id);
     }
 
     #[tokio::test]
@@ -139,7 +138,7 @@ mod tests {
         let first =
             fetch_project_issues_page(dispatcher.clone(), client.clone(), PROJECT_ID, page(1));
         let first_request_id = consume_start_id(&dispatcher);
-        dispatcher.borrow_mut().dispatch(first.await);
+        dispatcher.borrow_mut().dispatch(completion(first).await);
         dispatcher.borrow_mut().consume_action();
 
         let _second = fetch_project_issues_page(dispatcher.clone(), client, PROJECT_ID, page(1));
@@ -167,7 +166,7 @@ mod tests {
         let first =
             fetch_project_issues_page(dispatcher.clone(), failing_client, PROJECT_ID, page(1));
         let first_request_id = consume_start_id(&dispatcher);
-        dispatcher.borrow_mut().dispatch(first.await);
+        dispatcher.borrow_mut().dispatch(completion(first).await);
         dispatcher.borrow_mut().consume_action();
 
         let _second = fetch_project_issues_page(
@@ -196,9 +195,13 @@ mod tests {
         let dispatcher = dispatcher();
         let client = Arc::new(StubClient::succeeds(page_result(1, 0)));
 
-        let action =
-            fetch_project_issues_page(dispatcher.clone(), client.clone(), PROJECT_ID, page(1))
-                .await;
+        let action = completion(fetch_project_issues_page(
+            dispatcher.clone(),
+            client.clone(),
+            PROJECT_ID,
+            page(1),
+        ))
+        .await;
         let start_id = consume_start_id(&dispatcher);
 
         let ProjectIssuesAction::LoadSucceeded {
@@ -224,8 +227,13 @@ mod tests {
             reason: "offline".to_string(),
         }));
 
-        let action =
-            fetch_project_issues_page(dispatcher.clone(), client, PROJECT_ID, page(1)).await;
+        let action = completion(fetch_project_issues_page(
+            dispatcher.clone(),
+            client,
+            PROJECT_ID,
+            page(1),
+        ))
+        .await;
         let start_id = consume_start_id(&dispatcher);
 
         let ProjectIssuesAction::LoadFailed {
@@ -253,6 +261,15 @@ mod tests {
             panic!("StartLoading must install Loading");
         };
         *request_id
+    }
+
+    async fn completion(task: Option<UsecaseTask>) -> ProjectIssuesAction {
+        let mut actions = complete_usecase(task).await;
+        assert_eq!(actions.len(), 1);
+        let Action::ProjectIssues(action) = actions.remove(0) else {
+            panic!("page fetch must complete with ProjectIssuesAction");
+        };
+        action
     }
 
     fn completion_id(action: ProjectIssuesAction) -> ProjectIssuesRequestId {

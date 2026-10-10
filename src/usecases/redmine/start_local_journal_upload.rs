@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -7,11 +6,8 @@ use crate::clients::redmine::RedmineClient;
 use crate::stores::{
     Action, Dispatcher, IssueState, JournalAction, LocalJournalState, NoticeAction, NoticeId,
 };
+use crate::usecases::UsecaseTask;
 use crate::vos::{EntityIdValue, IssueId};
-
-/// Local JournalのPUT結果に応じたActionを生成するFuture。
-pub type StartLocalJournalUploadFuture =
-    Pin<Box<dyn Future<Output = Vec<Action>> + Send + 'static>>;
 
 fn local_journal_put_failure_actions(issue_id: IssueId, message: String) -> Vec<Action> {
     vec![
@@ -51,7 +47,7 @@ pub fn start_local_journal_upload<C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     client: Arc<C>,
     issue_id: IssueId,
-) -> StartLocalJournalUploadFuture
+) -> Option<UsecaseTask>
 where
     C: RedmineClient + Send + Sync + 'static,
 {
@@ -82,7 +78,11 @@ where
         .borrow_mut()
         .dispatch(JournalAction::StartLocalUpload { issue_id });
 
-    Box::pin(async move { upload_local_journal(client.as_ref(), issue_id, notes).await })
+    Some(Box::pin(async move {
+        upload_local_journal(client.as_ref(), issue_id, notes)
+            .await
+            .into()
+    }))
 }
 
 // FIXME: PUTと確認GETを1つのFutureで続けて実行し、結果を最後に1つのActionで反映している。
@@ -133,6 +133,7 @@ mod tests {
         TimeEntityActivity, Tracker, User,
     };
     use crate::stores::{IssueAction, JournalUploadFailure};
+    use crate::test_support::complete_usecase;
     use crate::test_support::{local_datetime, sample_issue_aggregate};
     use crate::vos::{IssueStatusId, JournalId, ProjectId};
 
@@ -404,7 +405,12 @@ mod tests {
         let dispatcher = local_only_dispatcher();
         let client = Arc::new(StubClient::succeeds());
 
-        let actions = start_local_journal_upload(dispatcher, client.clone(), ISSUE_ID).await;
+        let actions = complete_usecase(start_local_journal_upload(
+            dispatcher,
+            client.clone(),
+            ISSUE_ID,
+        ))
+        .await;
 
         assert_eq!(actions.len(), 1);
         assert_eq!(
@@ -421,7 +427,12 @@ mod tests {
             remote_journal(11, "local notes"),
         ]));
 
-        let actions = start_local_journal_upload(dispatcher, client.clone(), ISSUE_ID).await;
+        let actions = complete_usecase(start_local_journal_upload(
+            dispatcher,
+            client.clone(),
+            ISSUE_ID,
+        ))
+        .await;
 
         assert_eq!(*client.get_requests.lock().unwrap(), vec![ISSUE_ID]);
         assert_eq!(actions.len(), 1);
@@ -449,8 +460,12 @@ mod tests {
             remote_journal(11, "local notes"),
         ]));
 
-        let actions =
-            start_local_journal_upload(dispatcher.clone(), client.clone(), ISSUE_ID).await;
+        let actions = complete_usecase(start_local_journal_upload(
+            dispatcher.clone(),
+            client.clone(),
+            ISSUE_ID,
+        ))
+        .await;
         dispatcher.borrow_mut().consume_action();
         for action in actions {
             dispatcher.borrow_mut().dispatch(action);
@@ -475,7 +490,12 @@ mod tests {
         let dispatcher = local_only_dispatcher();
         let client = Arc::new(StubClient::fails());
 
-        start_local_journal_upload(dispatcher, client.clone(), ISSUE_ID).await;
+        complete_usecase(start_local_journal_upload(
+            dispatcher,
+            client.clone(),
+            ISSUE_ID,
+        ))
+        .await;
 
         assert!(client.get_requests.lock().unwrap().is_empty());
     }
@@ -485,8 +505,12 @@ mod tests {
         let dispatcher = local_only_dispatcher();
         let client = Arc::new(StubClient::fails_to_get());
 
-        let actions =
-            start_local_journal_upload(dispatcher.clone(), client.clone(), ISSUE_ID).await;
+        let actions = complete_usecase(start_local_journal_upload(
+            dispatcher.clone(),
+            client.clone(),
+            ISSUE_ID,
+        ))
+        .await;
         dispatcher.borrow_mut().consume_action();
 
         assert_eq!(*client.get_requests.lock().unwrap(), vec![ISSUE_ID]);
@@ -527,7 +551,12 @@ mod tests {
             ..StubClient::fails_to_get()
         });
 
-        let actions = start_local_journal_upload(dispatcher.clone(), client, ISSUE_ID).await;
+        let actions = complete_usecase(start_local_journal_upload(
+            dispatcher.clone(),
+            client,
+            ISSUE_ID,
+        ))
+        .await;
         dispatcher.borrow_mut().consume_action();
         for action in actions {
             dispatcher.borrow_mut().dispatch(action);
@@ -550,7 +579,12 @@ mod tests {
             vec![remote_journal(11, "local notes")],
         ));
 
-        let actions = start_local_journal_upload(dispatcher.clone(), client, ISSUE_ID).await;
+        let actions = complete_usecase(start_local_journal_upload(
+            dispatcher.clone(),
+            client,
+            ISSUE_ID,
+        ))
+        .await;
         dispatcher.borrow_mut().consume_action();
 
         assert_eq!(actions.len(), 2);
@@ -576,9 +610,12 @@ mod tests {
     #[tokio::test]
     async fn put_failure_returns_failure_actions_that_restore_notes() {
         let dispatcher = local_only_dispatcher();
-        let actions =
-            start_local_journal_upload(dispatcher.clone(), Arc::new(StubClient::fails()), ISSUE_ID)
-                .await;
+        let actions = complete_usecase(start_local_journal_upload(
+            dispatcher.clone(),
+            Arc::new(StubClient::fails()),
+            ISSUE_ID,
+        ))
+        .await;
         dispatcher.borrow_mut().consume_action();
 
         assert_eq!(actions.len(), 2);

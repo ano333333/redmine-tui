@@ -1,26 +1,53 @@
-use crate::stores::{Dispatcher, IssueAction};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
+
+use crate::clients::redmine::RedmineClient;
+use crate::stores::{Dispatcher, IssueAction, Store};
+use crate::usecases::UsecaseTask;
+use crate::vos::issue_property_diff::same_issue_property;
 use crate::vos::{IssueId, IssuePropertyDiff};
 
-use crate::vos::issue_property_diff::same_issue_property;
+use super::upload_issue::preflight_issue_upload;
+
+/// 競合popupで選んだ値で、Issueの保存を再開する。
+///
+/// 競合情報を破棄するActionを同期的にdispatchし、再試行用のdiffで保存前の取得からやり直すtaskを返す。
+/// Storeのdiffは、保存前の取得で競合がなかった時点で再試行用のdiffに置き換わる。
+///
+/// # Panics
+///
+/// Issueに保存の競合情報がない場合にpanicする。
+pub fn continue_issue_upload<C>(
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    client: Arc<C>,
+    id: IssueId,
+    selected_local_diffs: Vec<IssuePropertyDiff>,
+) -> Option<UsecaseTask>
+where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    let retry_diffs = retry_diffs(dispatcher.borrow().store(), id, &selected_local_diffs);
+    dispatcher
+        .borrow_mut()
+        .dispatch(IssueAction::ClearUploadConflicts { id });
+    Some(Box::pin(preflight_issue_upload(client, id, retry_diffs)))
+}
 
 /// popupの競合解決結果から、最新Issueで再試行するための一時的なdiffを作成する。
 ///
 /// ローカル値を選択したpropertyはpopup表示時点のサーバー値を`before`にする。サーバー値を
 /// 選択したpropertyは同じ値を`after`にし、再取得時に値が変化した場合だけ再び競合させる。
-/// Storeが保持する元のdiffは変更せず、競合情報を破棄するActionだけをdispatchする。
-pub fn continue_issue_upload(
-    dispatcher: &mut Dispatcher,
+fn retry_diffs(
+    store: &Store,
     id: IssueId,
-    selected_local_diffs: Vec<IssuePropertyDiff>,
+    selected_local_diffs: &[IssuePropertyDiff],
 ) -> Vec<IssuePropertyDiff> {
-    let (server_issue, conflicts) = dispatcher
-        .store()
+    let (server_issue, conflicts) = store
         .try_get_issue_upload_conflict(id)
-        .map(|(issue, conflicts)| (issue.clone(), conflicts.to_vec()))
         .expect("Issueのアップロード続行には競合情報が必要です");
 
-    let mut retry_diffs = dispatcher
-        .store()
+    let mut retry_diffs = store
         .get_issue_property_diffs(id)
         .iter()
         .filter(|diff| {
@@ -37,8 +64,6 @@ pub fn continue_issue_upload(
             .map(|selected| server_issue.with_value_as_before(selected))
             .unwrap_or_else(|| server_issue.with_value_as_after(conflict))
     }));
-
-    dispatcher.dispatch(IssueAction::ClearUploadConflicts { id });
     retry_diffs
 }
 
@@ -50,7 +75,7 @@ mod tests {
     use crate::vos::issue_property_diff::{IssueDescriptionDiff, IssueDueDateDiff};
     use crate::vos::{IssueId, IssuePropertyDiff};
 
-    use super::continue_issue_upload;
+    use super::retry_diffs;
 
     #[test]
     fn popupの選択結果からstoreを変更せず再試行用diffを作成する() {
@@ -68,10 +93,8 @@ mod tests {
         });
         dispatcher.consume_action();
 
-        let retry_diffs =
-            continue_issue_upload(&mut dispatcher, id, vec![local_description.clone()]);
+        let retry_diffs = retry_diffs(dispatcher.store(), id, &[local_description.clone()]);
 
-        assert_eq!(dispatcher.consume_actinos_len(), 1);
         assert_eq!(
             dispatcher.store().get_issue_property_diffs(id),
             original_diffs

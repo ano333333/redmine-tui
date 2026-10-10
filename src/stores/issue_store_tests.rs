@@ -1,4 +1,4 @@
-use super::{Action, IssueAction, IssueFetchState, IssueState, Store};
+use super::{Action, IssueAction, IssueFetchState, IssueState, JournalAction, Store};
 use crate::entities::IssueAggregate;
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::IssuePropertyDiff;
@@ -462,6 +462,228 @@ fn issue_upload_conflicts_are_retained_while_uploading() {
     assert_eq!(actual_issue.issue.subject, server_issue.issue.subject);
     assert_eq!(actual_conflicts, conflicts);
     assert_eq!(store.get_issue(1).1, IssueState::Uploading);
+}
+
+/// Issue 1の説明を"local body"へ編集して保存を始めた状態にする。
+fn start_description_upload(store: &mut Store) {
+    sync_issue(store, 1.into());
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: 1.into(),
+            body: "local body".to_string(),
+        }
+        .into(),
+    );
+    store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
+}
+
+fn description_diff(before: &str, after: &str) -> IssuePropertyDiff {
+    IssuePropertyDiff::Description(IssueDescriptionDiff {
+        before: before.to_string(),
+        after: after.to_string(),
+    })
+}
+
+#[test]
+fn upload_preflight_replaces_the_base_and_the_diffs_while_uploading() {
+    let mut store = Store::new();
+    start_description_upload(&mut store);
+    let mut server_issue =
+        sample_issue_aggregate(1, "server subject", 1.into(), None, None, None, 0);
+    server_issue.issue.description = "server body".to_string();
+
+    store.consume_action(
+        IssueAction::UploadPreflightSucceeded {
+            server_issue,
+            children: vec![crate::entities::IssueChild {
+                id: IssueId::new(2),
+                tracker_id: TrackerId::new(1),
+                subject: "child".to_string(),
+                children: vec![],
+            }],
+            diffs: vec![description_diff("server body", "resolved body")],
+        }
+        .into(),
+    );
+
+    let (issue, state) = store.get_issue(1);
+    assert_eq!(state, IssueState::Uploading);
+    assert_eq!(issue.subject(), "server subject");
+    assert_eq!(issue.description(), "resolved body");
+    assert_eq!(
+        store.get_issue_property_diffs(IssueId::new(1)),
+        [description_diff("server body", "resolved body")]
+    );
+    assert_eq!(store.get_issue_children(1).len(), 1);
+}
+
+#[test]
+fn upload_put_applies_the_sent_diffs_to_the_base_and_keeps_uploading() {
+    let mut store = Store::new();
+    start_description_upload(&mut store);
+    let diffs = store.get_issue_property_diffs(IssueId::new(1)).to_vec();
+
+    store.consume_action(
+        IssueAction::UploadPutSucceeded {
+            id: 1.into(),
+            diffs,
+        }
+        .into(),
+    );
+
+    let (issue, state) = store.get_issue(1);
+    assert_eq!(state, IssueState::Uploading);
+    assert_eq!(issue.description(), "local body");
+    assert!(store.get_issue_property_diffs(IssueId::new(1)).is_empty());
+}
+
+/// Issue 1の説明"local body"をPUTし終え、確認の取得を待っている状態にする。
+fn put_description_upload(store: &mut Store) {
+    start_description_upload(store);
+    let diffs = store.get_issue_property_diffs(IssueId::new(1)).to_vec();
+    store.consume_action(
+        IssueAction::UploadPutSucceeded {
+            id: 1.into(),
+            diffs,
+        }
+        .into(),
+    );
+}
+
+fn confirm_failed(store: &mut Store) {
+    store.consume_action(
+        IssueAction::UploadConfirmFailed {
+            id: 1.into(),
+            message: "offline".to_string(),
+        }
+        .into(),
+    );
+}
+
+#[test]
+fn upload_confirm_failure_keeps_the_put_result_and_the_local_journal_as_synced() {
+    let mut store = Store::new();
+    sync_issue(&mut store, 1.into());
+    for action in [
+        JournalAction::CreateLocal { issue_id: 1.into() },
+        JournalAction::EditLocalNotes {
+            issue_id: 1.into(),
+            notes: "draft".to_string(),
+        },
+    ] {
+        store.consume_action(action.into());
+    }
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: 1.into(),
+            body: "local body".to_string(),
+        }
+        .into(),
+    );
+    store.consume_action(IssueAction::StartUpload { id: 1.into() }.into());
+    let diffs = store.get_issue_property_diffs(IssueId::new(1)).to_vec();
+    store.consume_action(
+        IssueAction::UploadPutSucceeded {
+            id: 1.into(),
+            diffs,
+        }
+        .into(),
+    );
+
+    confirm_failed(&mut store);
+
+    let (issue, state) = store.get_issue(1);
+    assert_eq!(state, IssueState::Synced);
+    assert_eq!(issue.description(), "local body");
+    assert_eq!(
+        store.try_get_issue_confirmation_failure(1.into()),
+        Some("offline")
+    );
+    assert_eq!(store.get_local_journal(1).journal.notes, "draft");
+}
+
+#[test]
+fn editing_an_unconfirmed_issue_drops_the_confirmation_failure() {
+    let mut store = Store::new();
+    put_description_upload(&mut store);
+    confirm_failed(&mut store);
+
+    store.consume_action(
+        IssueAction::UpdateDescription {
+            id: 1.into(),
+            body: "next body".to_string(),
+        }
+        .into(),
+    );
+
+    assert_eq!(store.get_issue(1).1, IssueState::Edited);
+    assert_eq!(store.try_get_issue_confirmation_failure(1.into()), None);
+}
+
+#[test]
+fn taking_in_a_journal_upload_fetch_drops_the_confirmation_failure() {
+    let mut store = Store::new();
+    put_description_upload(&mut store);
+    confirm_failed(&mut store);
+    for action in [
+        JournalAction::CreateLocal { issue_id: 1.into() },
+        JournalAction::EditLocalNotes {
+            issue_id: 1.into(),
+            notes: "draft".to_string(),
+        },
+        JournalAction::StartLocalUpload { issue_id: 1.into() },
+    ] {
+        store.consume_action(action.into());
+    }
+    let mut fetched = sample_issue_aggregate(1, "issue", 3.into(), None, None, None, 0);
+    fetched.issue.description = "local body".to_string();
+
+    store.consume_action(
+        JournalAction::CompleteLocalUploadWithFetched {
+            issue: fetched,
+            children: vec![],
+        }
+        .into(),
+    );
+
+    assert_eq!(store.try_get_issue_confirmation_failure(1.into()), None);
+}
+
+#[test]
+fn retrying_the_confirmation_returns_to_uploading_without_diffs() {
+    let mut store = Store::new();
+    put_description_upload(&mut store);
+    confirm_failed(&mut store);
+
+    store.consume_action(IssueAction::RetryUploadConfirmation { id: 1.into() }.into());
+
+    let (issue, state) = store.get_issue(1);
+    assert_eq!(state, IssueState::Uploading);
+    assert_eq!(issue.description(), "local body");
+    assert!(store.get_issue_property_diffs(IssueId::new(1)).is_empty());
+    assert_eq!(store.try_get_issue_confirmation_failure(1.into()), None);
+}
+
+#[test]
+#[should_panic(
+    expected = "cannot retry issue upload confirmation while issue 1 is Synced or has no confirmation failure"
+)]
+fn retrying_the_confirmation_of_a_confirmed_issue_panics() {
+    let mut store = Store::new();
+    sync_issue(&mut store, 1.into());
+
+    store.consume_action(IssueAction::RetryUploadConfirmation { id: 1.into() }.into());
+}
+
+#[test]
+#[should_panic(
+    expected = "cannot finish issue upload without confirmation while issue 1 is Uploading or has unsent diffs"
+)]
+fn upload_confirm_failure_before_the_put_panics() {
+    let mut store = Store::new();
+    start_description_upload(&mut store);
+
+    confirm_failed(&mut store);
 }
 
 #[test]

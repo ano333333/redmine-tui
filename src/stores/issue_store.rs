@@ -43,6 +43,9 @@ enum IssueEntry {
     Synced {
         issue: IssueAggregate,
         journal_states: IssueJournalStates,
+        /// PUT後の確認の取得に失敗した理由。PUTで確定した基準値は、サーバーで付いた更新日時や
+        /// Journalを含まない。
+        confirmation_failure: Option<String>,
     },
     Edited {
         issue: IssueAggregate,
@@ -93,6 +96,37 @@ pub enum IssueAction {
         server_issue: IssueAggregate,
         conflicts: Vec<IssuePropertyDiff>,
         children: Vec<IssueChild>,
+    },
+    /// 保存前の取得で競合がなかった結果として、取得したIssueを基準値にし、diffを送信するdiffに置き換える。
+    ///
+    /// 競合の続行では送信するdiffがStoreのdiffと異なるため、置き換えて表示を送信内容に合わせる。
+    /// 取得したJournalと子一覧もこの時点で取り込む。Uploading以外の状態、または競合情報が
+    /// 残っている場合はpanicする。
+    UploadPreflightSucceeded {
+        server_issue: IssueAggregate,
+        children: Vec<IssueChild>,
+        diffs: Vec<IssuePropertyDiff>,
+    },
+    /// Issue属性のPUTが成功した結果として、送信した`diffs`を基準値へ適用し、diffを空にする。
+    ///
+    /// 確認の取得が終わるまでUploadingのまま残す。Uploading以外の状態、または`diffs`が基準値と
+    /// 競合する場合はpanicする。
+    UploadPutSucceeded {
+        id: IssueId,
+        diffs: Vec<IssuePropertyDiff>,
+    },
+    /// PUT後の確認の取得に失敗した結果として、PUTで確定した基準値のままSyncedへ戻し、`message`を残す。
+    ///
+    /// Uploading以外の状態、またはPUTしていないdiffが残っている場合はpanicする。
+    UploadConfirmFailed {
+        id: IssueId,
+        message: String,
+    },
+    /// 確認の取得だけをやり直すため、確認の取得に失敗したSyncedを、diffのないUploadingへ戻す。
+    ///
+    /// 確認の取得に失敗したSynced以外の状態の場合はpanicする。
+    RetryUploadConfirmation {
+        id: IssueId,
     },
     /// Issue属性の保存が成功した後、取得したIssueを新しい基準値としてSyncedへ戻す。
     ///
@@ -320,6 +354,115 @@ impl IssueStore {
                 });
                 self.children.insert(id, children);
             }
+            IssueAction::UploadPreflightSucceeded {
+                server_issue,
+                children,
+                diffs,
+            } => {
+                let id = server_issue.issue.id;
+                if !matches!(
+                    self.entries.get(&id),
+                    Some(IssueEntry::Uploading { conflict: None, .. })
+                ) {
+                    panic!(
+                        "cannot apply issue upload preflight while issue {id} is {} or has conflicts",
+                        Self::entry_state_name(self.entries.get(&id))
+                    );
+                }
+                self.assert_fetched_journals_are_valid(id, &server_issue.journals);
+                let Some(IssueEntry::Uploading {
+                    issue,
+                    diffs: current_diffs,
+                    journal_states,
+                    ..
+                }) = self.entries.get_mut(&id)
+                else {
+                    unreachable!("state check guarantees Uploading");
+                };
+                let mut server_issue = server_issue;
+                let fetched = std::mem::take(&mut server_issue.journals);
+                let current = std::mem::take(&mut issue.journals);
+                server_issue.journals = journal_states.merge_fetched(current, fetched);
+                *issue = server_issue;
+                *current_diffs = diffs;
+                self.children.insert(id, children);
+            }
+            IssueAction::UploadPutSucceeded { id, diffs } => {
+                let Some(IssueEntry::Uploading {
+                    issue,
+                    diffs: current_diffs,
+                    conflict: None,
+                    ..
+                }) = self.entries.get_mut(&id)
+                else {
+                    panic!(
+                        "cannot apply issue upload put while issue {id} is {} or has conflicts",
+                        Self::entry_state_name(self.entries.get(&id))
+                    );
+                };
+                *issue = issue
+                    .with_property_diffs(&diffs)
+                    .unwrap_or_else(|_| panic!("sent diffs conflict with issue {id}"));
+                current_diffs.clear();
+            }
+            IssueAction::UploadConfirmFailed { id, message } => {
+                if !matches!(
+                    self.entries.get(&id),
+                    Some(IssueEntry::Uploading { diffs, conflict: None, .. }) if diffs.is_empty()
+                ) {
+                    panic!(
+                        "cannot finish issue upload without confirmation while issue {id} is {} or has unsent diffs",
+                        Self::entry_state_name(self.entries.get(&id))
+                    );
+                }
+                let Some(IssueEntry::Uploading {
+                    issue,
+                    journal_states,
+                    ..
+                }) = self.entries.remove(&id)
+                else {
+                    unreachable!("state check guarantees Uploading");
+                };
+                self.entries.insert(
+                    id,
+                    IssueEntry::Synced {
+                        issue,
+                        journal_states,
+                        confirmation_failure: Some(message),
+                    },
+                );
+            }
+            IssueAction::RetryUploadConfirmation { id } => {
+                if !matches!(
+                    self.entries.get(&id),
+                    Some(IssueEntry::Synced {
+                        confirmation_failure: Some(_),
+                        ..
+                    })
+                ) {
+                    panic!(
+                        "cannot retry issue upload confirmation while issue {id} is {} or has no confirmation failure",
+                        Self::entry_state_name(self.entries.get(&id))
+                    );
+                }
+                let Some(IssueEntry::Synced {
+                    issue,
+                    journal_states,
+                    ..
+                }) = self.entries.remove(&id)
+                else {
+                    unreachable!("state check guarantees Synced");
+                };
+                self.entries.insert(
+                    id,
+                    IssueEntry::Uploading {
+                        issue,
+                        diffs: Vec::new(),
+                        conflict: None,
+                        journal_states,
+                    },
+                );
+            }
             IssueAction::UploadSucceeded {
                 mut issue,
                 children,
@@ -347,6 +490,7 @@ impl IssueStore {
                     IssueEntry::Synced {
                         issue,
                         journal_states,
+                        confirmation_failure: None,
                     },
                 );
                 self.children.insert(id, children);
@@ -490,6 +634,7 @@ impl IssueStore {
             IssueEntry::Synced {
                 issue,
                 journal_states,
+                confirmation_failure: None,
             },
         );
         self.children.insert(id, children);
@@ -614,8 +759,13 @@ impl IssueStore {
             Some(IssueEntry::Synced {
                 issue,
                 journal_states,
-            })
-            | Some(IssueEntry::Edited {
+                confirmation_failure,
+            }) => {
+                // 取得したIssueはPUT後のサーバーの値を含むため、確認の取得の代わりになる。
+                *confirmation_failure = None;
+                (issue, journal_states)
+            }
+            Some(IssueEntry::Edited {
                 issue,
                 journal_states,
                 ..
@@ -672,6 +822,7 @@ impl IssueStore {
             IssueEntry::Synced {
                 issue,
                 journal_states,
+                ..
             }
             | IssueEntry::Edited {
                 issue,
@@ -695,6 +846,7 @@ impl IssueStore {
             IssueEntry::Synced {
                 issue,
                 journal_states,
+                ..
             }
             | IssueEntry::Edited {
                 issue,
@@ -772,6 +924,16 @@ impl IssueStore {
         match self.entries.get(&id) {
             Some(IssueEntry::Edited {
                 failure: Some(failure),
+                ..
+            }) => Some(failure.as_str()),
+            _ => None,
+        }
+    }
+
+    pub(super) fn try_get_issue_confirmation_failure(&self, id: IssueId) -> Option<&str> {
+        match self.entries.get(&id) {
+            Some(IssueEntry::Synced {
+                confirmation_failure: Some(failure),
                 ..
             }) => Some(failure.as_str()),
             _ => None,
@@ -917,6 +1079,7 @@ impl IssueStore {
             IssueEntry::Synced {
                 issue,
                 journal_states,
+                ..
             } => (issue, Vec::new(), None, journal_states),
             IssueEntry::Edited {
                 issue,
@@ -935,6 +1098,7 @@ impl IssueStore {
             IssueEntry::Synced {
                 issue,
                 journal_states,
+                confirmation_failure: None,
             }
         } else {
             IssueEntry::Edited {

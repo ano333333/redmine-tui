@@ -1,28 +1,30 @@
-//! `AppEffect`が要求する外部副作用をnative/Web共通runnerから起動する。
+//! Componentが要求した外部副作用をnative/Web共通runnerから起動する。
 
-use std::{cell::RefCell, io, num::NonZeroUsize, rc::Rc, sync::Arc};
+use std::{cell::RefCell, collections::VecDeque, io, rc::Rc, sync::Arc};
+
+use ratatui::layout::Rect;
 
 use crate::{
     clients::redmine::RedmineClient,
-    components::{AppComponent, app::AppEffect},
+    components::{AppComponent, RequestSink},
     platform::{
-        editor::{EditorOutcome, TextEditor},
-        host::PlatformHost,
+        editor::{EditorOutcome, EditorRequest, TextEditor},
+        host::{HostEvent, PlatformHost},
         runtime::{BackgroundSpawner, LocalTask},
     },
     stores::{Dispatcher, NoticeAction, NoticeId},
-    usecases::redmine::{
-        continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
-        start_deleted_journal_upload, start_issue_upload, start_local_journal_upload,
-        start_remote_journal_upload, upload_issue_action,
-    },
-    vos::{IssueId, JournalId, ProjectId},
+    usecases::{UsecaseOutput, UsecaseRequest, UsecaseTask, start_usecase},
 };
+
+use super::lifecycle::{handle_host_event, update};
 
 pub(crate) type EditorSession<'a> = LocalTask<'a, io::Result<EditorOutcome>>;
 
-pub(crate) fn handle_app_effect<'a, S, C, E, H>(
-    effect: AppEffect,
+/// Componentが`sink`に書いた要求を処理する。Usecaseの要求をすべて起動した後にeditorを起動する。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn handle_component_requests<'a, S, C, E, H>(
+    sink: &mut RequestSink,
+    requests: &mut VecDeque<UsecaseRequest>,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
@@ -31,74 +33,99 @@ pub(crate) fn handle_app_effect<'a, S, C, E, H>(
     editor_session: &mut Option<EditorSession<'a>>,
     host: &mut H,
 ) where
-    S: BackgroundSpawner,
+    S: BackgroundSpawner<Output = UsecaseOutput>,
     C: RedmineClient + Send + Sync + 'static,
     E: TextEditor,
     H: PlatformHost,
 {
-    match effect {
-        AppEffect::FetchIssue(id) => {
-            start_issue_fetch(dispatcher, spawner, client, id);
-        }
-        AppEffect::FetchProjectIssuesPage { project_id, page } => {
-            start_project_issues_page_fetch(dispatcher, spawner, client, project_id, page);
-        }
-        AppEffect::OpenEditor(request) => {
-            // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
-            // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
-            // FIXME: 実terminalとexternal editor processを使い、アプリ終了時にterminal状態が復元されeditor processがkillされることをE2E testで確認する。
-            if let Err(error) = host.suspend_for_editor() {
-                handle_editor_failure(
-                    app_component,
-                    dispatcher,
-                    &error,
-                    "failed to leave terminal for editor",
-                );
-            } else {
-                *editor_session = Some(LocalTask::new(editor.edit(request)));
-            }
-        }
-        AppEffect::StartIssueUpload(id) => {
-            let future = start_issue_upload(dispatcher, client, id);
-            spawner.spawn(future);
-        }
-        AppEffect::ContinueIssueUpload { id, diffs } => {
-            spawner.spawn(async move { upload_issue_action(client.as_ref(), id, &diffs).await });
-        }
-        AppEffect::StartRemoteJournalUpload {
-            issue_id,
-            journal_id,
-        } => {
-            start_remote_journal_upload_action(dispatcher, spawner, client, issue_id, journal_id);
-        }
-        AppEffect::StartLocalJournalUpload { issue_id } => {
-            start_local_journal_upload_action(dispatcher, spawner, client, issue_id);
-        }
-        AppEffect::StartDeletedJournalUpload {
-            issue_id,
-            original_id,
-        } => {
-            spawner.spawn(start_deleted_journal_upload(
-                dispatcher,
-                client,
-                issue_id,
-                original_id,
-            ));
-        }
-        AppEffect::ContinueRemoteJournalUpload {
-            issue_id,
-            journal_id,
-            resolved_notes,
-        } => {
-            continue_remote_journal_upload_action(
-                dispatcher,
-                spawner,
-                client,
-                issue_id,
-                journal_id,
-                resolved_notes,
-            );
-        }
+    requests.extend(sink.take_usecases());
+    let area = host.area();
+    drain_requests(
+        requests,
+        app_component,
+        dispatcher.clone(),
+        spawner,
+        client,
+        area,
+    );
+    if let Some(request) = sink.take_editor() {
+        open_editor(
+            request,
+            app_component,
+            dispatcher,
+            editor,
+            editor_session,
+            host,
+        );
+    }
+}
+
+/// 入力をComponentへ渡し、発行された要求を起動してからComponentを更新する。
+///
+/// Usecaseが起動時にdispatchするActionを、この入力の後のupdateで反映済みにするため、
+/// updateより先に要求を起動する。アプリを続ける場合にtrueを返す。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn handle_input<'a, S, C, E, H>(
+    event: HostEvent,
+    sink: &mut RequestSink,
+    requests: &mut VecDeque<UsecaseRequest>,
+    app_component: &mut AppComponent,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    spawner: &S,
+    client: Arc<C>,
+    editor: &'a E,
+    editor_session: &mut Option<EditorSession<'a>>,
+    host: &mut H,
+) -> bool
+where
+    S: BackgroundSpawner<Output = UsecaseOutput>,
+    C: RedmineClient + Send + Sync + 'static,
+    E: TextEditor,
+    H: PlatformHost,
+{
+    let should_continue = handle_host_event(event, app_component, dispatcher.clone(), sink);
+    handle_component_requests(
+        sink,
+        requests,
+        app_component,
+        dispatcher.clone(),
+        spawner,
+        client,
+        editor,
+        editor_session,
+        host,
+    );
+    if should_continue {
+        let area = host.area();
+        update(dispatcher.clone(), app_component, area);
+        app_component.update(dispatcher.clone(), dispatcher.borrow().store(), area);
+    }
+    should_continue
+}
+
+fn open_editor<'a, E, H>(
+    request: EditorRequest,
+    app_component: &mut AppComponent,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    editor: &'a E,
+    editor_session: &mut Option<EditorSession<'a>>,
+    host: &mut H,
+) where
+    E: TextEditor,
+    H: PlatformHost,
+{
+    // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
+    // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
+    // FIXME: 実terminalとexternal editor processを使い、アプリ終了時にterminal状態が復元されeditor processがkillされることをE2E testで確認する。
+    if let Err(error) = host.suspend_for_editor() {
+        handle_editor_failure(
+            app_component,
+            dispatcher,
+            &error,
+            "failed to leave terminal for editor",
+        );
+    } else {
+        *editor_session = Some(LocalTask::new(editor.edit(request)));
     }
 }
 
@@ -122,70 +149,35 @@ pub(crate) fn editor_failure_notice_action(error: &dyn std::fmt::Display) -> Not
     }
 }
 
-pub(crate) fn start_remote_journal_upload_action<S: BackgroundSpawner, C>(
+/// `requests`を先頭から1件ずつ起動し、起動するたびにupdateする。
+///
+/// 次の要求を起動する時点で前の要求の起動Actionを消費済みにするため、同じIssueへの
+/// `FetchIssue`が続いても、2件目は1件目の取得開始を観測して起動しない。
+pub(crate) fn drain_requests<S, C>(
+    requests: &mut VecDeque<UsecaseRequest>,
+    app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
     client: Arc<C>,
-    issue_id: IssueId,
-    journal_id: JournalId,
+    area: Rect,
 ) where
+    S: BackgroundSpawner<Output = UsecaseOutput>,
     C: RedmineClient + Send + Sync + 'static,
 {
-    let future = start_remote_journal_upload(dispatcher, client, issue_id, journal_id);
-    spawner.spawn(future);
+    while let Some(request) = requests.pop_front() {
+        spawn_usecase(
+            spawner,
+            start_usecase(request, dispatcher.clone(), client.clone()),
+        );
+        update(dispatcher.clone(), app_component, area);
+    }
 }
 
-pub(crate) fn start_local_journal_upload_action<S: BackgroundSpawner, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    issue_id: IssueId,
-) where
-    C: RedmineClient + Send + Sync + 'static,
+fn spawn_usecase<S>(spawner: &S, task: Option<UsecaseTask>)
+where
+    S: BackgroundSpawner<Output = UsecaseOutput>,
 {
-    let future = start_local_journal_upload(dispatcher, client, issue_id);
-    spawner.spawn(future);
-}
-
-pub(crate) fn continue_remote_journal_upload_action<S: BackgroundSpawner, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    issue_id: IssueId,
-    journal_id: JournalId,
-    resolved_notes: String,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    let future =
-        continue_remote_journal_upload(dispatcher, client, issue_id, journal_id, resolved_notes);
-    spawner.spawn(future);
-}
-
-pub(crate) fn start_project_issues_page_fetch<S: BackgroundSpawner, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    project_id: ProjectId,
-    page: NonZeroUsize,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    let future = fetch_project_issues_page(dispatcher, client, project_id, page);
-    spawner.spawn(async move { vec![future.await.into()] });
-}
-
-pub(crate) fn start_issue_fetch<S: BackgroundSpawner, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    id: IssueId,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    let Some(future) = fetch_issue(dispatcher, client, id) else {
-        return;
-    };
-
-    spawner.spawn(future);
+    if let Some(task) = task {
+        spawner.spawn(task);
+    }
 }
