@@ -1,6 +1,6 @@
 //! runner loopから呼ぶapplication lifecycleの共通処理。
 
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc, time::Duration};
 
 use ratatui::{Frame, layout::Rect};
 
@@ -9,7 +9,7 @@ use crate::{
     platform::host::HostEvent,
     platform::runtime::{BackgroundCompletion, BackgroundSpawner},
     stores::{Action, Dispatcher},
-    usecases::UsecaseOutput,
+    usecases::{UsecaseOutput, UsecaseRequest},
 };
 
 /// `now`が`last`より前、または`chrono::Duration`の範囲外ならゼロを返す。
@@ -33,22 +33,21 @@ pub(crate) fn handle_host_event(
     should_continue
 }
 
+/// 受理したcompletionのActionをdispatchし、後続要求を`requests`の末尾に積む。
 pub(crate) fn move_worker_action<S: BackgroundSpawner<Output = UsecaseOutput>>(
     spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
+    requests: &mut VecDeque<UsecaseRequest>,
 ) -> Option<String> {
     let mut worker_panic_message = None;
     while let Some(completion) = spawner.try_recv_completion() {
         match completion {
             BackgroundCompletion::Succeeded(output) => {
-                assert!(
-                    output.requests.is_empty(),
-                    "runner does not accept follow-up usecase requests"
-                );
                 // completionの受理順とtaskが生成したActionの順序を保ってmain thread上でdispatchする。
                 for action in output.actions {
                     dispatcher.borrow_mut().dispatch(action);
                 }
+                requests.extend(output.requests);
             }
             BackgroundCompletion::Panicked { message } => {
                 // Storeへ通常のActionとして流さず、runnerへ返してプロセスの異常終了を判断させる。
@@ -62,8 +61,9 @@ pub(crate) fn move_worker_action<S: BackgroundSpawner<Output = UsecaseOutput>>(
 pub(crate) fn consume_editor_worker_actions<S: BackgroundSpawner<Output = UsecaseOutput>>(
     spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
+    requests: &mut VecDeque<UsecaseRequest>,
 ) -> Option<String> {
-    let worker_panic_message = move_worker_action(spawner, dispatcher.clone());
+    let worker_panic_message = move_worker_action(spawner, dispatcher.clone(), requests);
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }

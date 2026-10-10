@@ -1,6 +1,8 @@
 //! `AppEffect`が要求する外部副作用をnative/Web共通runnerから起動する。
 
-use std::{cell::RefCell, io, rc::Rc, sync::Arc};
+use std::{cell::RefCell, collections::VecDeque, io, rc::Rc, sync::Arc};
+
+use ratatui::layout::Rect;
 
 use crate::{
     clients::redmine::RedmineClient,
@@ -11,8 +13,10 @@ use crate::{
         runtime::{BackgroundSpawner, LocalTask},
     },
     stores::{Dispatcher, NoticeAction, NoticeId},
-    usecases::{UsecaseOutput, UsecaseTask, start_usecase},
+    usecases::{UsecaseOutput, UsecaseRequest, UsecaseTask, start_usecase},
 };
+
+use super::lifecycle::update;
 
 pub(crate) type EditorSession<'a> = LocalTask<'a, io::Result<EditorOutcome>>;
 
@@ -25,6 +29,7 @@ pub(crate) fn handle_app_effect<'a, S, C, E, H>(
     editor: &'a E,
     editor_session: &mut Option<EditorSession<'a>>,
     host: &mut H,
+    requests: &mut VecDeque<UsecaseRequest>,
 ) where
     S: BackgroundSpawner<Output = UsecaseOutput>,
     C: RedmineClient + Send + Sync + 'static,
@@ -33,7 +38,9 @@ pub(crate) fn handle_app_effect<'a, S, C, E, H>(
 {
     match effect {
         AppEffect::Usecase(request) => {
-            spawn_usecase(spawner, start_usecase(request, dispatcher, client));
+            requests.push_back(request);
+            let area = host.area();
+            drain_requests(requests, app_component, dispatcher, spawner, client, area);
         }
         AppEffect::OpenEditor(request) => {
             // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
@@ -70,6 +77,30 @@ pub(crate) fn editor_failure_notice_action(error: &dyn std::fmt::Display) -> Not
     NoticeAction::Push {
         id: NoticeId::new(),
         message: format!("エディタによる編集に失敗しました: {error}"),
+    }
+}
+
+/// `requests`を先頭から1件ずつ起動し、起動するたびにupdateする。
+///
+/// 次の要求を起動する時点で前の要求の起動Actionを消費済みにするため、同じIssueへの
+/// `FetchIssue`が続いても、2件目は1件目の取得開始を観測して起動しない。
+pub(crate) fn drain_requests<S, C>(
+    requests: &mut VecDeque<UsecaseRequest>,
+    app_component: &mut AppComponent,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    spawner: &S,
+    client: Arc<C>,
+    area: Rect,
+) where
+    S: BackgroundSpawner<Output = UsecaseOutput>,
+    C: RedmineClient + Send + Sync + 'static,
+{
+    while let Some(request) = requests.pop_front() {
+        spawn_usecase(
+            spawner,
+            start_usecase(request, dispatcher.clone(), client.clone()),
+        );
+        update(dispatcher.clone(), app_component, area);
     }
 }
 

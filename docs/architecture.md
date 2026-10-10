@@ -13,7 +13,7 @@
   - `store.rs` は、子 Store ・子 Action の統合を行う。外部からはこのファイルからエクスポートされる Store と Action を公開インターフェースとして用いる。
 - `src/usecases/`
   - アプリ固有の操作を置く。Store・Client の情報統合、および同期的な Dispatch や非同期タスクによる Action の形成を担う。
-  - 非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期の処理は `Option<UsecaseTask>` として返却する形が基本形である。`UsecaseTask` は完了 Action を `UsecaseOutput` に入れて返す Future で、非同期の処理がない場合は `None` を返す。`Store` を直接書き換えず、`Dispatcher::dispatch` を介して Action を積む。`runner` が `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で起動し、完了 Action を Dispatcher へ戻す。
+  - 非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期の処理は `Option<UsecaseTask>` として返却する形が基本形である。`UsecaseTask` は完了 Action を `UsecaseOutput` に入れて返す Future で、非同期の処理がない場合は `None` を返す。完了後に別の Usecase を起動するときは、Future の中で起動せず、`UsecaseOutput::requests` に後続の `UsecaseRequest` を入れて返す。`Store` を直接書き換えず、`Dispatcher::dispatch` を介して Action を積む。`runner` が `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で起動し、完了 Action を Dispatcher へ戻す。
 - `src/clients/`
   - 外部プロセスとの通信を行う。
   - `redmine/base.rs` は `RedmineClient` trait を定義し、 Redmine との通信のインターフェースを定義する。`redmine/default.rs` は `DefaultRedmineClient`（実 HTTP 実装）を定義する。
@@ -114,7 +114,7 @@ Store の更新は原則として Dispatcher を介して行う。
 - Component と usecase は `IssueStore` を直接参照せず、親 `Store` の Issue getter を通して entity、同期状態、diff、競合情報を取得する。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。
-- editor 起動、Redmine への非同期取得・保存などの外部副作用は `AppEffect` として Component から取り出し、`runner` 側で実行する。Redmine の Usecase は `AppEffect::Usecase(UsecaseRequest)` で要求する。`runner` は `start_usecase` で Usecase を起動し、返された `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で spawn して、完了 Action を Dispatcher に戻す。
+- editor 起動、Redmine への非同期取得・保存などの外部副作用は `AppEffect` として Component から取り出し、`runner` 側で実行する。Redmine の Usecase は `AppEffect::Usecase(UsecaseRequest)` で要求する。`runner` は `start_usecase` で Usecase を起動し、返された `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で spawn して、完了 Action を Dispatcher に戻す。`runner` は要求を queue に積み、1件起動するたびに update する。completion の後続要求は、その completion の Action を消費した update の後に起動する。そのため Usecase の起動条件は、それまでの要求と completion を反映した Store で判定できる。
 - `create_widget(&Store)` で Store を参照して表示用 entity を取得してよい。
 
 Store は、失敗または Action の不受理に見える分岐を以下に区別して扱う。

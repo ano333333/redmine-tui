@@ -16,8 +16,10 @@ use crate::vos::{IssueId, IssuePropertyDiff, JournalId, ProjectId};
 /// runnerに起動を依頼するRedmine Usecase。1つのvariantが1つのUsecaseに対応する。
 #[derive(Clone, Debug, PartialEq)]
 pub enum UsecaseRequest {
+    /// `with_parent`が真なら、取得したIssueの親も後続要求で取得する。
     FetchIssue {
         id: IssueId,
+        with_parent: bool,
     },
     FetchProjectIssuesPage {
         project_id: ProjectId,
@@ -63,7 +65,9 @@ where
     C: RedmineClient + Send + Sync + 'static,
 {
     match request {
-        UsecaseRequest::FetchIssue { id } => fetch_issue(dispatcher, client, id),
+        UsecaseRequest::FetchIssue { id, with_parent } => {
+            fetch_issue(dispatcher, client, id, with_parent)
+        }
         UsecaseRequest::FetchProjectIssuesPage { project_id, page } => {
             fetch_project_issues_page(dispatcher, client, project_id, page)
         }
@@ -251,7 +255,10 @@ mod tests {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
 
         assert!(start(
-            UsecaseRequest::FetchIssue { id: ISSUE_ID },
+            UsecaseRequest::FetchIssue {
+                id: ISSUE_ID,
+                with_parent: true,
+            },
             &dispatcher
         ));
 

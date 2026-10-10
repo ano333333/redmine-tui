@@ -4,16 +4,18 @@ use std::sync::Arc;
 
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{Action, Dispatcher, IssueAction, IssueFetchState};
-use crate::usecases::UsecaseTask;
+use crate::usecases::{UsecaseOutput, UsecaseRequest, UsecaseTask};
 use crate::vos::{EntityIdValue, IssueId};
 
 /// 未取得、または取得失敗状態のIssueについて詳細取得を開始する。
 ///
-/// 取得開始Actionは同期的にqueueへ追加する。
+/// 取得開始Actionは同期的にqueueへ追加する。`with_parent`が真で、取得したIssueに親があれば、
+/// 親の取得を後続要求として返す。親の取得はさらに上の親を要求しない。
 pub fn fetch_issue<C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     client: Arc<C>,
     id: IssueId,
+    with_parent: bool,
 ) -> Option<UsecaseTask>
 where
     C: RedmineClient + Send + Sync + 'static,
@@ -37,11 +39,25 @@ where
 
     Some(Box::pin(async move {
         let actions = match client.get_issue(id).await {
-            Ok(fetched) if fetched.aggregate.issue.id == id => vec![Action::IssueFetchSucceeded {
-                id,
-                issue: fetched.aggregate,
-                children: fetched.children,
-            }],
+            Ok(fetched) if fetched.aggregate.issue.id == id => {
+                let parent_request =
+                    fetched
+                        .aggregate
+                        .parent_id
+                        .filter(|_| with_parent)
+                        .map(|parent_id| UsecaseRequest::FetchIssue {
+                            id: parent_id,
+                            with_parent: false,
+                        });
+                return UsecaseOutput {
+                    actions: vec![Action::IssueFetchSucceeded {
+                        id,
+                        issue: fetched.aggregate,
+                        children: fetched.children,
+                    }],
+                    requests: parent_request.into_iter().collect(),
+                };
+            }
             // 応答IDの不一致はサーバー側の外部データ異常のため、Storeでpanicさせず取得失敗にする。
             Ok(fetched) => vec![
                 IssueAction::FetchFailed {
@@ -80,6 +96,7 @@ mod tests {
     };
     use crate::stores::{Action, Dispatcher, IssueAction, IssueFetchState, IssueState};
     use crate::test_support::{local_datetime, sample_issue_aggregate};
+    use crate::usecases::UsecaseRequest;
     use crate::vos::{IssueId, IssueStatusId, JournalId};
 
     use super::fetch_issue;
@@ -89,7 +106,7 @@ mod tests {
         let dispatcher = dispatcher();
         let client = Arc::new(StubClient::succeeds(issue(42)));
 
-        let future = fetch_issue(dispatcher.clone(), client.clone(), IssueId::new(42));
+        let future = fetch_issue(dispatcher.clone(), client.clone(), IssueId::new(42), false);
 
         assert!(future.is_some());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
@@ -109,7 +126,7 @@ mod tests {
             vec![journal(1, 42), journal(2, 42)],
         ));
 
-        let actions = fetch_issue(dispatcher, client.clone(), IssueId::new(42))
+        let actions = fetch_issue(dispatcher, client.clone(), IssueId::new(42), false)
             .expect("unregistered issue should start fetching")
             .await
             .actions;
@@ -128,13 +145,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn with_parent_requests_the_parent_without_its_parent() {
+        let mut child = issue(42);
+        child.parent_id = Some(IssueId::new(3));
+        let client = Arc::new(StubClient::succeeds(child));
+
+        let output = fetch_issue(dispatcher(), client, IssueId::new(42), true)
+            .expect("unregistered issue should start fetching")
+            .await;
+
+        assert_eq!(
+            output.requests,
+            vec![UsecaseRequest::FetchIssue {
+                id: IssueId::new(3),
+                with_parent: false,
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn without_with_parent_does_not_request_the_parent() {
+        let mut child = issue(42);
+        child.parent_id = Some(IssueId::new(3));
+        let client = Arc::new(StubClient::succeeds(child));
+
+        let output = fetch_issue(dispatcher(), client, IssueId::new(42), false)
+            .expect("unregistered issue should start fetching")
+            .await;
+
+        assert!(output.requests.is_empty());
+    }
+
+    #[tokio::test]
+    async fn with_parent_does_not_request_anything_for_a_root_issue() {
+        let client = Arc::new(StubClient::succeeds(issue(42)));
+
+        let output = fetch_issue(dispatcher(), client, IssueId::new(42), true)
+            .expect("unregistered issue should start fetching")
+            .await;
+
+        assert!(output.requests.is_empty());
+    }
+
+    #[tokio::test]
     async fn client_error_returns_fetch_failed() {
         let dispatcher = dispatcher();
         let client = Arc::new(StubClient::fails(RedmineClientError::Network {
             reason: "offline".to_string(),
         }));
 
-        let actions = fetch_issue(dispatcher, client, IssueId::new(42))
+        let actions = fetch_issue(dispatcher, client, IssueId::new(42), false)
             .expect("unregistered issue should start fetching")
             .await
             .actions;
@@ -154,7 +214,7 @@ mod tests {
         let dispatcher = dispatcher();
         let client = Arc::new(StubClient::succeeds(issue(99)));
 
-        let actions = fetch_issue(dispatcher, client, IssueId::new(42))
+        let actions = fetch_issue(dispatcher, client, IssueId::new(42), false)
             .expect("unregistered issue should start fetching")
             .await
             .actions;
@@ -183,7 +243,7 @@ mod tests {
         );
         let client = Arc::new(StubClient::succeeds(issue(42)));
 
-        let future = fetch_issue(dispatcher.clone(), client, IssueId::new(42));
+        let future = fetch_issue(dispatcher.clone(), client, IssueId::new(42), false);
 
         assert!(future.is_some());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
@@ -199,11 +259,11 @@ mod tests {
     fn suppresses_duplicate_after_start_action_is_consumed() {
         let dispatcher = dispatcher();
         let client = Arc::new(StubClient::succeeds(issue(42)));
-        let first = fetch_issue(dispatcher.clone(), client.clone(), IssueId::new(42));
+        let first = fetch_issue(dispatcher.clone(), client.clone(), IssueId::new(42), false);
         assert!(first.is_some());
         dispatcher.borrow_mut().consume_action();
 
-        let second = fetch_issue(dispatcher.clone(), client.clone(), IssueId::new(42));
+        let second = fetch_issue(dispatcher.clone(), client.clone(), IssueId::new(42), false);
 
         assert!(second.is_none());
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
@@ -220,7 +280,7 @@ mod tests {
             let dispatcher = dispatcher_in_loaded_state(state.clone());
             let client = Arc::new(StubClient::succeeds(issue(42)));
 
-            let future = fetch_issue(dispatcher.clone(), client.clone(), IssueId::new(42));
+            let future = fetch_issue(dispatcher.clone(), client.clone(), IssueId::new(42), false);
 
             assert!(future.is_none(), "state {state:?} must suppress fetch");
             assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);

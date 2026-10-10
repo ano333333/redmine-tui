@@ -1,6 +1,6 @@
 //! native版とWeb版でapplication lifecycleを共有するrunner。
 
-use std::{cell::RefCell, io, rc::Rc, sync::Arc, time::Duration};
+use std::{cell::RefCell, collections::VecDeque, io, rc::Rc, sync::Arc, time::Duration};
 
 use crate::{
     clients::redmine::RedmineClient,
@@ -17,7 +17,7 @@ pub(crate) mod lifecycle;
 #[cfg(test)]
 mod tests;
 
-use effect::{EditorSession, handle_app_effect, handle_editor_failure};
+use effect::{EditorSession, drain_requests, handle_app_effect, handle_editor_failure};
 use lifecycle::{
     consume_editor_worker_actions, draw, handle_host_event, move_worker_action, tick_since, update,
 };
@@ -49,11 +49,15 @@ where
     let tick_rate = Duration::from_millis(TICK_RATE_MS);
     let mut last_tick = host.elapsed();
     let mut editor_session: Option<EditorSession<'_>> = None;
+    let mut requests = VecDeque::new();
     loop {
         // editor中もworker完了はStoreへ取り込むが、Component更新・描画・入力と
         // Noticeの経過時間更新はeditor終了まで遅延する。
         if let Some(session) = editor_session.as_mut() {
-            if let Some(message) = consume_editor_worker_actions(spawner, dispatcher.clone()) {
+            // 後続要求の起動はComponentの更新を伴うため、editorから戻るまでqueueに残す。
+            if let Some(message) =
+                consume_editor_worker_actions(spawner, dispatcher.clone(), &mut requests)
+            {
                 return Err(RunError::WorkerPanicked(message));
             }
             let outcome = match session.poll_completion() {
@@ -90,7 +94,7 @@ where
             // editor滞在時間を次のNotice tickへ混ぜないよう、通常loopへ戻る前にresetする。
             last_tick = host.elapsed();
         }
-        if let Some(message) = move_worker_action(spawner, dispatcher.clone()) {
+        if let Some(message) = move_worker_action(spawner, dispatcher.clone(), &mut requests) {
             return Err(RunError::WorkerPanicked(message));
         }
         let now = host.elapsed();
@@ -98,6 +102,15 @@ where
         last_tick = now;
         dispatcher.borrow_mut().update_store(tick);
         update(dispatcher.clone(), &mut app_component, host.area());
+        // 後続要求の起動条件はcompletionを反映した後のStoreで判定する。
+        drain_requests(
+            &mut requests,
+            &mut app_component,
+            dispatcher.clone(),
+            spawner,
+            client.clone(),
+            host.area(),
+        );
         if let Some(effect) = app_component.take_effect() {
             handle_app_effect(
                 effect,
@@ -108,6 +121,7 @@ where
                 editor,
                 &mut editor_session,
                 host,
+                &mut requests,
             );
         }
         if editor_session.is_some() {

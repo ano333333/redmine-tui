@@ -367,7 +367,10 @@ impl<'a> AppComponent<'a> {
         };
         match result {
             IssueEventProcessResult::FetchRequested { id } => {
-                self.install_effect(AppEffect::Usecase(UsecaseRequest::FetchIssue { id }));
+                self.install_effect(AppEffect::Usecase(UsecaseRequest::FetchIssue {
+                    id,
+                    with_parent: true,
+                }));
             }
             IssueEventProcessResult::OpenIssueSelectPopup => {
                 self.open_issue_select_popup(Some(issue_id));
@@ -671,7 +674,10 @@ impl<'a> AppComponent<'a> {
     fn handle_issue_component_result(&mut self, result: IssueEventProcessResult) {
         match result {
             IssueEventProcessResult::FetchRequested { id } => {
-                self.install_effect(AppEffect::Usecase(UsecaseRequest::FetchIssue { id }));
+                self.install_effect(AppEffect::Usecase(UsecaseRequest::FetchIssue {
+                    id,
+                    with_parent: true,
+                }));
             }
             IssueEventProcessResult::OpenIssueSelectPopup | IssueEventProcessResult::Detail(_) => {
                 panic!("IssueComponent::new returned an event-only result")
@@ -796,6 +802,7 @@ impl<'a> AppComponent<'a> {
         {
             self.install_effect(AppEffect::Usecase(UsecaseRequest::FetchIssue {
                 id: parent_id,
+                with_parent: false,
             }));
         }
     }
@@ -1462,7 +1469,8 @@ mod tests {
         );
         assert!(matches!(
             app.take_effect(),
-            Some(AppEffect::Usecase(UsecaseRequest::FetchIssue { id })) if id == IssueId::new(42)
+            Some(AppEffect::Usecase(UsecaseRequest::FetchIssue { id, with_parent: true }))
+                if id == IssueId::new(42)
         ));
         assert!(app.take_effect().is_none());
     }
@@ -1482,7 +1490,7 @@ mod tests {
         let mut app = AppComponent::new(dispatcher, Some(42.into()), CursorRendering::Terminal);
 
         assert!(
-            matches!(app.take_effect(), Some(AppEffect::Usecase(UsecaseRequest::FetchIssue { id })) if id == 42)
+            matches!(app.take_effect(), Some(AppEffect::Usecase(UsecaseRequest::FetchIssue { id, with_parent: true })) if id == 42)
         );
         assert!(app.take_effect().is_none());
     }
@@ -1509,7 +1517,7 @@ mod tests {
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
         assert!(
-            matches!(app.take_effect(), Some(AppEffect::Usecase(UsecaseRequest::FetchIssue { id })) if id == 3)
+            matches!(app.take_effect(), Some(AppEffect::Usecase(UsecaseRequest::FetchIssue { id, with_parent: false })) if id == 3)
         );
     }
 
