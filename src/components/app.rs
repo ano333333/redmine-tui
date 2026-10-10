@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::num::NonZeroUsize;
 use std::rc::Rc;
 
 use ratatui::Frame;
@@ -27,6 +26,7 @@ use crate::stores::{
     Action, DeletedJournalState, Dispatcher, IssueAction, IssueState, JournalAction,
     LocalJournalState, RemoteJournalState, Store,
 };
+use crate::usecases::UsecaseRequest;
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
     build_done_ratio_options, build_issue_status_options, build_priority_options,
@@ -37,9 +37,7 @@ use crate::usecases::issue_popup_options::{
     start_date_popup_observer, target_version_popup_observer, tracker_popup_observer,
 };
 use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
-use crate::vos::{
-    EntityIdValue, IssueId, IssuePropertyDiff, JournalId, ProjectId, TimeEntityActivityId,
-};
+use crate::vos::{EntityIdValue, IssueId, JournalId, TimeEntityActivityId};
 use crate::widgets::ToastWidget;
 
 use super::date_picker_popup::component::{
@@ -56,33 +54,8 @@ use super::spent_time_input_popup::{
 };
 
 pub enum AppEffect {
-    FetchIssue(IssueId),
-    FetchProjectIssuesPage {
-        project_id: ProjectId,
-        page: NonZeroUsize,
-    },
+    Usecase(UsecaseRequest),
     OpenEditor(EditorRequest),
-    StartIssueUpload(IssueId),
-    ContinueIssueUpload {
-        id: IssueId,
-        diffs: Vec<IssuePropertyDiff>,
-    },
-    StartRemoteJournalUpload {
-        issue_id: IssueId,
-        journal_id: JournalId,
-    },
-    ContinueRemoteJournalUpload {
-        issue_id: IssueId,
-        journal_id: JournalId,
-        resolved_notes: String,
-    },
-    StartLocalJournalUpload {
-        issue_id: IssueId,
-    },
-    StartDeletedJournalUpload {
-        issue_id: IssueId,
-        original_id: JournalId,
-    },
 }
 
 enum PendingEditorContext {
@@ -325,10 +298,11 @@ impl<'a> AppComponent<'a> {
                     IssuePropertyConflictEventProcessResult::Continued { diffs } => {
                         let retry_diffs =
                             continue_issue_upload(&mut dispatcher.borrow_mut(), *issue_id, diffs);
-                        self.pending_effect = Some(AppEffect::ContinueIssueUpload {
-                            id: *issue_id,
-                            diffs: retry_diffs,
-                        });
+                        self.pending_effect =
+                            Some(AppEffect::Usecase(UsecaseRequest::ContinueIssueUpload {
+                                id: *issue_id,
+                                retry_diffs,
+                            }));
                         self.popup_components.pop_back();
                     }
                     IssuePropertyConflictEventProcessResult::Handled => {}
@@ -355,11 +329,13 @@ impl<'a> AppComponent<'a> {
                     RemoteJournalConflictEventProcessResult::Continued { resolved_notes } => {
                         // FIXME: 競合情報を同期的に消さないため、直後のupdateで古いサーバーnotesのままpopupが
                         // 開き直し、続行中に届いた新しい競合でも更新されない。
-                        self.pending_effect = Some(AppEffect::ContinueRemoteJournalUpload {
-                            issue_id: *issue_id,
-                            journal_id: *journal_id,
-                            resolved_notes,
-                        });
+                        self.pending_effect = Some(AppEffect::Usecase(
+                            UsecaseRequest::ContinueRemoteJournalUpload {
+                                issue_id: *issue_id,
+                                journal_id: *journal_id,
+                                resolved_notes,
+                            },
+                        ));
                         self.popup_components.pop_back();
                     }
                     RemoteJournalConflictEventProcessResult::Handled => {}
@@ -391,7 +367,7 @@ impl<'a> AppComponent<'a> {
         };
         match result {
             IssueEventProcessResult::FetchRequested { id } => {
-                self.install_effect(AppEffect::FetchIssue(id));
+                self.install_effect(AppEffect::Usecase(UsecaseRequest::FetchIssue { id }));
             }
             IssueEventProcessResult::OpenIssueSelectPopup => {
                 self.open_issue_select_popup(Some(issue_id));
@@ -536,7 +512,9 @@ impl<'a> AppComponent<'a> {
                 )));
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::StartIssueUpload) => {
-                self.pending_effect = Some(AppEffect::StartIssueUpload(issue_id));
+                self.pending_effect = Some(AppEffect::Usecase(UsecaseRequest::StartIssueUpload {
+                    id: issue_id,
+                }));
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::SaveRequested {
                 issue_id,
@@ -550,17 +528,21 @@ impl<'a> AppComponent<'a> {
                     )
                 };
                 if is_edited {
-                    self.pending_effect = Some(AppEffect::StartRemoteJournalUpload {
-                        issue_id,
-                        journal_id: id,
-                    });
+                    self.pending_effect = Some(AppEffect::Usecase(
+                        UsecaseRequest::StartRemoteJournalUpload {
+                            issue_id,
+                            journal_id: id,
+                        },
+                    ));
                 }
             }
             IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::SaveLocalJournalRequested { issue_id },
             ) => {
                 // Local Journal側が保存可能な状態でだけ要求を返すため、ここでは状態を再検査しない。
-                self.pending_effect = Some(AppEffect::StartLocalJournalUpload { issue_id });
+                self.pending_effect = Some(AppEffect::Usecase(
+                    UsecaseRequest::StartLocalJournalUpload { issue_id },
+                ));
             }
             IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::SaveDeletedJournalRequested {
@@ -569,10 +551,12 @@ impl<'a> AppComponent<'a> {
                 },
             ) => {
                 // 退避したJournal側が投稿可能な状態でだけ要求を返すため、ここでは状態を再検査しない。
-                self.pending_effect = Some(AppEffect::StartDeletedJournalUpload {
-                    issue_id,
-                    original_id,
-                });
+                self.pending_effect = Some(AppEffect::Usecase(
+                    UsecaseRequest::StartDeletedJournalUpload {
+                        issue_id,
+                        original_id,
+                    },
+                ));
             }
             IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::DiscardDeletedJournalRequested {
@@ -687,7 +671,7 @@ impl<'a> AppComponent<'a> {
     fn handle_issue_component_result(&mut self, result: IssueEventProcessResult) {
         match result {
             IssueEventProcessResult::FetchRequested { id } => {
-                self.install_effect(AppEffect::FetchIssue(id));
+                self.install_effect(AppEffect::Usecase(UsecaseRequest::FetchIssue { id }));
             }
             IssueEventProcessResult::OpenIssueSelectPopup | IssueEventProcessResult::Detail(_) => {
                 panic!("IssueComponent::new returned an event-only result")
@@ -706,7 +690,10 @@ impl<'a> AppComponent<'a> {
     fn install_issue_select_popup_effect(&mut self, effect: IssueSelectPopupEffect) {
         match effect {
             IssueSelectPopupEffect::FetchProjectIssuesPage { project_id, page } => {
-                self.install_effect(AppEffect::FetchProjectIssuesPage { project_id, page });
+                self.install_effect(AppEffect::Usecase(UsecaseRequest::FetchProjectIssuesPage {
+                    project_id,
+                    page,
+                }));
             }
         }
     }
@@ -807,7 +794,9 @@ impl<'a> AppComponent<'a> {
         if store.try_get_issue_state(parent_id).is_none()
             && store.try_get_issue_fetch_state(parent_id).is_none()
         {
-            self.install_effect(AppEffect::FetchIssue(parent_id));
+            self.install_effect(AppEffect::Usecase(UsecaseRequest::FetchIssue {
+                id: parent_id,
+            }));
         }
     }
 
@@ -1069,6 +1058,7 @@ fn create_toast_widget(store: &Store) -> ToastWidget {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::num::NonZeroUsize;
 
     use crate::entities::{Issue, ProjectIssuesPage};
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
@@ -1364,7 +1354,9 @@ mod tests {
         app: &mut AppComponent<'_>,
         dispatcher: Rc<RefCell<Dispatcher>>,
     ) {
-        let Some(AppEffect::FetchProjectIssuesPage { project_id, page }) = app.take_effect() else {
+        let Some(AppEffect::Usecase(UsecaseRequest::FetchProjectIssuesPage { project_id, page })) =
+            app.take_effect()
+        else {
             panic!("expected the popup's initial project page effect")
         };
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
@@ -1470,7 +1462,7 @@ mod tests {
         );
         assert!(matches!(
             app.take_effect(),
-            Some(AppEffect::FetchIssue(id)) if id == IssueId::new(42)
+            Some(AppEffect::Usecase(UsecaseRequest::FetchIssue { id })) if id == IssueId::new(42)
         ));
         assert!(app.take_effect().is_none());
     }
@@ -1489,7 +1481,9 @@ mod tests {
         dispatcher.borrow_mut().consume_action();
         let mut app = AppComponent::new(dispatcher, Some(42.into()), CursorRendering::Terminal);
 
-        assert!(matches!(app.take_effect(), Some(AppEffect::FetchIssue(id)) if id == 42));
+        assert!(
+            matches!(app.take_effect(), Some(AppEffect::Usecase(UsecaseRequest::FetchIssue { id })) if id == 42)
+        );
         assert!(app.take_effect().is_none());
     }
 
@@ -1514,7 +1508,9 @@ mod tests {
 
         app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
 
-        assert!(matches!(app.take_effect(), Some(AppEffect::FetchIssue(id)) if id == 3));
+        assert!(
+            matches!(app.take_effect(), Some(AppEffect::Usecase(UsecaseRequest::FetchIssue { id })) if id == 3)
+        );
     }
 
     #[test]
@@ -1684,7 +1680,7 @@ mod tests {
 
         assert!(matches!(
             app.take_effect(),
-            Some(AppEffect::FetchProjectIssuesPage { project_id, page, .. })
+            Some(AppEffect::Usecase(UsecaseRequest::FetchProjectIssuesPage { project_id, page, .. }))
                 if project_id == 1 && page == std::num::NonZeroUsize::MIN
         ));
         assert!(app.take_effect().is_none());
@@ -1730,7 +1726,7 @@ mod tests {
 
         assert!(matches!(
             app.take_effect(),
-            Some(AppEffect::FetchProjectIssuesPage { project_id, page, .. })
+            Some(AppEffect::Usecase(UsecaseRequest::FetchProjectIssuesPage { project_id, page, .. }))
                 if project_id == ProjectId::new(1) && page == NonZeroUsize::MIN
         ));
     }
@@ -1743,7 +1739,7 @@ mod tests {
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
         assert!(matches!(
             app.take_effect(),
-            Some(AppEffect::FetchProjectIssuesPage { project_id, page })
+            Some(AppEffect::Usecase(UsecaseRequest::FetchProjectIssuesPage { project_id, page }))
                 if project_id == ProjectId::new(1)
                     && page == NonZeroUsize::MIN
         ));

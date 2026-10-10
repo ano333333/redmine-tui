@@ -41,6 +41,10 @@ pub(crate) fn move_worker_action<S: BackgroundSpawner<Output = UsecaseOutput>>(
     while let Some(completion) = spawner.try_recv_completion() {
         match completion {
             BackgroundCompletion::Succeeded(output) => {
+                assert!(
+                    output.requests.is_empty(),
+                    "runner does not accept follow-up usecase requests"
+                );
                 // completionの受理順とtaskが生成したActionの順序を保ってmain thread上でdispatchする。
                 for action in output.actions {
                     dispatcher.borrow_mut().dispatch(action);

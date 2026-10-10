@@ -114,7 +114,7 @@ Store の更新は原則として Dispatcher を介して行う。
 - Component と usecase は `IssueStore` を直接参照せず、親 `Store` の Issue getter を通して entity、同期状態、diff、競合情報を取得する。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。
-- editor 起動、Redmine への非同期取得・保存などの外部副作用は `AppEffect` として Component から取り出し、`runner` 側で実行する。Redmine 関連の `AppEffect` は `usecases::redmine` の関数を platform の runtime port（native は Tokio、Web は `spawn_local`）で spawn し、完了 Action を Dispatcher に戻す。
+- editor 起動、Redmine への非同期取得・保存などの外部副作用は `AppEffect` として Component から取り出し、`runner` 側で実行する。Redmine の Usecase は `AppEffect::Usecase(UsecaseRequest)` で要求する。`runner` は `start_usecase` で Usecase を起動し、返された `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で spawn して、完了 Action を Dispatcher に戻す。
 - `create_widget(&Store)` で Store を参照して表示用 entity を取得してよい。
 
 Store は、失敗または Action の不受理に見える分岐を以下に区別して扱う。

@@ -5,16 +5,12 @@ use crate::platform::host::{CursorRendering, HostEvent, PlatformHost};
 use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use crate::platform::runtime::tokio_spawner::TokioBackgroundSpawner;
 use crate::platform::runtime::{BackgroundCompletion, BackgroundSpawner};
-use crate::runner::effect::{
-    start_issue_fetch, start_local_journal_upload_action, start_project_issues_page_fetch,
-    start_remote_journal_upload_action,
-};
 use crate::runner::lifecycle::{
     consume_editor_worker_actions, move_worker_action, tick_since, update,
 };
 use crate::stores::{self, Action, Dispatcher};
-use crate::usecases::UsecaseOutput;
 use crate::usecases::redmine::{start_issue_upload, upload_issue_action};
+use crate::usecases::{UsecaseOutput, UsecaseRequest, start_usecase};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 use std::{
     collections::VecDeque,
@@ -67,6 +63,19 @@ fn recv_actions(spawner: &TokioBackgroundSpawner<UsecaseOutput>, expected: usize
         }
     }
     actions
+}
+
+fn start_request<C>(
+    request: UsecaseRequest,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    spawner: &TokioBackgroundSpawner<UsecaseOutput>,
+    client: Arc<C>,
+) where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    if let Some(task) = start_usecase(request, dispatcher, client) {
+        spawner.spawn(task);
+    }
 }
 
 struct CompletionSpawner {
@@ -151,10 +160,10 @@ fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion
     let effect = app
         .take_effect()
         .expect("initial fetch effect should be taken before draw");
-    let AppEffect::FetchIssue(id) = effect else {
+    let AppEffect::Usecase(request @ UsecaseRequest::FetchIssue { .. }) = effect else {
         panic!("test app only has a fetch effect")
     };
-    start_issue_fetch(dispatcher.clone(), &spawner, client, id);
+    start_request(request, dispatcher.clone(), &spawner, client);
 
     assert!(app.take_effect().is_none());
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
@@ -244,11 +253,11 @@ fn project_page_effect_queues_start_loading_and_routes_only_completion_to_worker
     let effect = app
         .take_effect()
         .expect("initial popup effect should be taken at the common loop point");
-    let AppEffect::FetchProjectIssuesPage { project_id, page } = effect else {
+    let AppEffect::Usecase(request @ UsecaseRequest::FetchProjectIssuesPage { .. }) = effect else {
         panic!("initial popup should request a project issue page")
     };
 
-    start_project_issues_page_fetch(dispatcher.clone(), &spawner, client, project_id, page);
+    start_request(request, dispatcher.clone(), &spawner, client);
 
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
     assert!(
@@ -819,7 +828,7 @@ fn editor_worker_actions_are_consumed_without_component_updates() {
 }
 
 #[test]
-fn start_remote_journal_upload_action_routes_the_upload_completion_to_worker_channel() {
+fn remote_journal_upload_request_routes_the_upload_completion_to_worker_channel() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let mut dispatcher = Dispatcher::new();
     start_edited_journal_upload(&mut dispatcher, 3, "first journal notes marker");
@@ -829,12 +838,14 @@ fn start_remote_journal_upload_action_routes_the_upload_completion_to_worker_cha
         vec![sample_journal(3)],
     ));
 
-    start_remote_journal_upload_action(
+    start_request(
+        UsecaseRequest::StartRemoteJournalUpload {
+            issue_id: IssueId::new(3),
+            journal_id: JournalId::new(1),
+        },
         dispatcher.clone(),
         &spawner,
         client.clone(),
-        IssueId::new(3),
-        JournalId::new(1),
     );
 
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
@@ -851,7 +862,7 @@ fn start_remote_journal_upload_action_routes_the_upload_completion_to_worker_cha
 }
 
 #[test]
-fn start_remote_journal_upload_action_routes_the_failure_completion_to_worker_channel() {
+fn remote_journal_upload_request_routes_the_failure_completion_to_worker_channel() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let mut dispatcher = Dispatcher::new();
     start_edited_journal_upload(&mut dispatcher, 3, "first journal notes marker");
@@ -863,12 +874,14 @@ fn start_remote_journal_upload_action_routes_the_failure_completion_to_worker_ch
     client.update_journal_result = Err(IssueUploadClient::network_error());
     let client = Arc::new(client);
 
-    start_remote_journal_upload_action(
+    start_request(
+        UsecaseRequest::StartRemoteJournalUpload {
+            issue_id: IssueId::new(3),
+            journal_id: JournalId::new(1),
+        },
         dispatcher.clone(),
         &spawner,
         client.clone(),
-        IssueId::new(3),
-        JournalId::new(1),
     );
 
     let mut actions = recv_actions(&spawner, 2).into_iter();
@@ -905,7 +918,7 @@ fn start_local_journal(dispatcher: &mut Dispatcher, issue_id: u16, notes: &str) 
 }
 
 #[test]
-fn start_local_journal_upload_action_routes_the_upload_completion_to_worker_channel() {
+fn local_journal_upload_request_routes_the_upload_completion_to_worker_channel() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let mut dispatcher = Dispatcher::new();
     start_local_journal(&mut dispatcher, 3, "local notes");
@@ -915,11 +928,13 @@ fn start_local_journal_upload_action_routes_the_upload_completion_to_worker_chan
         vec![sample_journal(3)],
     ));
 
-    start_local_journal_upload_action(
+    start_request(
+        UsecaseRequest::StartLocalJournalUpload {
+            issue_id: IssueId::new(3),
+        },
         dispatcher.clone(),
         &spawner,
         client.clone(),
-        IssueId::new(3),
     );
 
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
@@ -944,7 +959,7 @@ fn start_local_journal_upload_action_routes_the_upload_completion_to_worker_chan
 }
 
 #[test]
-fn start_local_journal_upload_action_routes_the_failure_completion_to_worker_channel() {
+fn local_journal_upload_request_routes_the_failure_completion_to_worker_channel() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let mut dispatcher = Dispatcher::new();
     start_local_journal(&mut dispatcher, 3, "local notes");
@@ -956,11 +971,13 @@ fn start_local_journal_upload_action_routes_the_failure_completion_to_worker_cha
     client.update_issue_notes_result = Err(IssueUploadClient::network_error());
     let client = Arc::new(client);
 
-    start_local_journal_upload_action(
+    start_request(
+        UsecaseRequest::StartLocalJournalUpload {
+            issue_id: IssueId::new(3),
+        },
         dispatcher.clone(),
         &spawner,
         client.clone(),
-        IssueId::new(3),
     );
 
     let mut actions = recv_actions(&spawner, 2).into_iter();
@@ -1133,12 +1150,12 @@ fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clear
     let client = Arc::new(IssueUploadClient::failing_update(server_issue));
 
     press_ctrl_s(&mut app, dispatcher.clone());
-    let Some(AppEffect::StartIssueUpload(id)) = app.take_effect() else {
+    let Some(AppEffect::Usecase(request @ UsecaseRequest::StartIssueUpload { id })) =
+        app.take_effect()
+    else {
         panic!("expected issue upload effect");
     };
-    let task = start_issue_upload(dispatcher.clone(), client.clone(), id)
-        .expect("edited issue starts upload");
-    spawner.spawn(task);
+    start_request(request, dispatcher.clone(), &spawner, client.clone());
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
     route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
 
@@ -1157,12 +1174,12 @@ fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clear
     assert_toast_contains(&app, dispatcher.clone(), "Issue #3の保存に失敗しました");
 
     press_ctrl_s(&mut app, dispatcher.clone());
-    let Some(AppEffect::StartIssueUpload(id)) = app.take_effect() else {
+    let Some(AppEffect::Usecase(request @ UsecaseRequest::StartIssueUpload { id })) =
+        app.take_effect()
+    else {
         panic!("expected retry issue upload effect");
     };
-    let task =
-        start_issue_upload(dispatcher.clone(), client, id).expect("edited issue starts upload");
-    spawner.spawn(task);
+    start_request(request, dispatcher.clone(), &spawner, client);
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
     assert_eq!(
         dispatcher.borrow().store().try_get_issue_upload_failure(id),
@@ -1188,10 +1205,8 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
     let mut app = journal_upload_app(dispatcher.clone());
     focus_remote_journal_notes(&mut app, dispatcher.clone());
     press_ctrl_s(&mut app, dispatcher.clone());
-    let Some(AppEffect::StartRemoteJournalUpload {
-        issue_id,
-        journal_id,
-    }) = app.take_effect()
+    let Some(AppEffect::Usecase(request @ UsecaseRequest::StartRemoteJournalUpload { .. })) =
+        app.take_effect()
     else {
         panic!("expected remote upload effect");
     };
@@ -1201,13 +1216,7 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
     ));
     *client.get_failures_remaining.lock().unwrap() = 1;
 
-    start_remote_journal_upload_action(
-        dispatcher.clone(),
-        &spawner,
-        client.clone(),
-        issue_id,
-        journal_id,
-    );
+    start_request(request, dispatcher.clone(), &spawner, client.clone());
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
     press_ctrl_s(&mut app, dispatcher.clone());
     // upload中の重複Ctrl+Sはeffectを生成せず、usecase呼び出し前に正常なno-opとなる。
@@ -1220,20 +1229,16 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
     );
 
     press_ctrl_s(&mut app, dispatcher.clone());
-    let Some(AppEffect::StartRemoteJournalUpload {
-        issue_id,
-        journal_id,
-    }) = app.take_effect()
+    let Some(AppEffect::Usecase(
+        request @ UsecaseRequest::StartRemoteJournalUpload {
+            issue_id,
+            journal_id,
+        },
+    )) = app.take_effect()
     else {
         panic!("toast must not take focus from remote journal notes");
     };
-    start_remote_journal_upload_action(
-        dispatcher.clone(),
-        &spawner,
-        client.clone(),
-        issue_id,
-        journal_id,
-    );
+    start_request(request, dispatcher.clone(), &spawner, client.clone());
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
     route_worker_actions(&spawner, 1, dispatcher.clone(), &mut app);
 
@@ -1265,20 +1270,12 @@ fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
 
     for expected_actions in [2, 1] {
         press_ctrl_s(&mut app, dispatcher.clone());
-        let Some(AppEffect::StartRemoteJournalUpload {
-            issue_id,
-            journal_id,
-        }) = app.take_effect()
+        let Some(AppEffect::Usecase(request @ UsecaseRequest::StartRemoteJournalUpload { .. })) =
+            app.take_effect()
         else {
             panic!("toast must not take focus from remote journal notes");
         };
-        start_remote_journal_upload_action(
-            dispatcher.clone(),
-            &spawner,
-            client.clone(),
-            issue_id,
-            journal_id,
-        );
+        start_request(request, dispatcher.clone(), &spawner, client.clone());
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
         route_worker_actions(&spawner, expected_actions, dispatcher.clone(), &mut app);
         if expected_actions == 2 {
@@ -1314,10 +1311,12 @@ fn local_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
 
     for expected_actions in [2, 1] {
         press_ctrl_s(&mut app, dispatcher.clone());
-        let Some(AppEffect::StartLocalJournalUpload { issue_id }) = app.take_effect() else {
+        let Some(AppEffect::Usecase(request @ UsecaseRequest::StartLocalJournalUpload { .. })) =
+            app.take_effect()
+        else {
             panic!("toast must not take focus from local journal notes");
         };
-        start_local_journal_upload_action(dispatcher.clone(), &spawner, client.clone(), issue_id);
+        start_request(request, dispatcher.clone(), &spawner, client.clone());
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
         route_worker_actions(&spawner, expected_actions, dispatcher.clone(), &mut app);
         if expected_actions == 2 {
@@ -1355,10 +1354,12 @@ fn local_confirmation_get_failure_tells_that_the_notes_were_saved_and_removes_th
     *client.get_failures_remaining.lock().unwrap() = 1;
 
     press_ctrl_s(&mut app, dispatcher.clone());
-    let Some(AppEffect::StartLocalJournalUpload { issue_id }) = app.take_effect() else {
+    let Some(AppEffect::Usecase(request @ UsecaseRequest::StartLocalJournalUpload { .. })) =
+        app.take_effect()
+    else {
         panic!("ctrl+s on local journal notes must start the upload");
     };
-    start_local_journal_upload_action(dispatcher.clone(), &spawner, client.clone(), issue_id);
+    start_request(request, dispatcher.clone(), &spawner, client.clone());
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
     route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
 

@@ -1,6 +1,6 @@
 //! `AppEffect`が要求する外部副作用をnative/Web共通runnerから起動する。
 
-use std::{cell::RefCell, io, num::NonZeroUsize, rc::Rc, sync::Arc};
+use std::{cell::RefCell, io, rc::Rc, sync::Arc};
 
 use crate::{
     clients::redmine::RedmineClient,
@@ -11,15 +11,7 @@ use crate::{
         runtime::{BackgroundSpawner, LocalTask},
     },
     stores::{Dispatcher, NoticeAction, NoticeId},
-    usecases::{
-        UsecaseOutput, UsecaseTask,
-        redmine::{
-            continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
-            start_deleted_journal_upload, start_issue_upload, start_local_journal_upload,
-            start_remote_journal_upload, upload_issue_action,
-        },
-    },
-    vos::{IssueId, JournalId, ProjectId},
+    usecases::{UsecaseOutput, UsecaseTask, start_usecase},
 };
 
 pub(crate) type EditorSession<'a> = LocalTask<'a, io::Result<EditorOutcome>>;
@@ -40,11 +32,8 @@ pub(crate) fn handle_app_effect<'a, S, C, E, H>(
     H: PlatformHost,
 {
     match effect {
-        AppEffect::FetchIssue(id) => {
-            start_issue_fetch(dispatcher, spawner, client, id);
-        }
-        AppEffect::FetchProjectIssuesPage { project_id, page } => {
-            start_project_issues_page_fetch(dispatcher, spawner, client, project_id, page);
+        AppEffect::Usecase(request) => {
+            spawn_usecase(spawner, start_usecase(request, dispatcher, client));
         }
         AppEffect::OpenEditor(request) => {
             // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
@@ -60,48 +49,6 @@ pub(crate) fn handle_app_effect<'a, S, C, E, H>(
             } else {
                 *editor_session = Some(LocalTask::new(editor.edit(request)));
             }
-        }
-        AppEffect::StartIssueUpload(id) => {
-            spawn_usecase(spawner, start_issue_upload(dispatcher, client, id));
-        }
-        AppEffect::ContinueIssueUpload { id, diffs } => {
-            spawner.spawn(async move {
-                upload_issue_action(client.as_ref(), id, &diffs)
-                    .await
-                    .into()
-            });
-        }
-        AppEffect::StartRemoteJournalUpload {
-            issue_id,
-            journal_id,
-        } => {
-            start_remote_journal_upload_action(dispatcher, spawner, client, issue_id, journal_id);
-        }
-        AppEffect::StartLocalJournalUpload { issue_id } => {
-            start_local_journal_upload_action(dispatcher, spawner, client, issue_id);
-        }
-        AppEffect::StartDeletedJournalUpload {
-            issue_id,
-            original_id,
-        } => {
-            spawn_usecase(
-                spawner,
-                start_deleted_journal_upload(dispatcher, client, issue_id, original_id),
-            );
-        }
-        AppEffect::ContinueRemoteJournalUpload {
-            issue_id,
-            journal_id,
-            resolved_notes,
-        } => {
-            continue_remote_journal_upload_action(
-                dispatcher,
-                spawner,
-                client,
-                issue_id,
-                journal_id,
-                resolved_notes,
-            );
         }
     }
 }
@@ -124,80 +71,6 @@ pub(crate) fn editor_failure_notice_action(error: &dyn std::fmt::Display) -> Not
         id: NoticeId::new(),
         message: format!("エディタによる編集に失敗しました: {error}"),
     }
-}
-
-pub(crate) fn start_remote_journal_upload_action<S: BackgroundSpawner<Output = UsecaseOutput>, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    issue_id: IssueId,
-    journal_id: JournalId,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    spawn_usecase(
-        spawner,
-        start_remote_journal_upload(dispatcher, client, issue_id, journal_id),
-    );
-}
-
-pub(crate) fn start_local_journal_upload_action<S: BackgroundSpawner<Output = UsecaseOutput>, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    issue_id: IssueId,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    spawn_usecase(
-        spawner,
-        start_local_journal_upload(dispatcher, client, issue_id),
-    );
-}
-
-pub(crate) fn continue_remote_journal_upload_action<
-    S: BackgroundSpawner<Output = UsecaseOutput>,
-    C,
->(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    issue_id: IssueId,
-    journal_id: JournalId,
-    resolved_notes: String,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    spawn_usecase(
-        spawner,
-        continue_remote_journal_upload(dispatcher, client, issue_id, journal_id, resolved_notes),
-    );
-}
-
-pub(crate) fn start_project_issues_page_fetch<S: BackgroundSpawner<Output = UsecaseOutput>, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    project_id: ProjectId,
-    page: NonZeroUsize,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    spawn_usecase(
-        spawner,
-        fetch_project_issues_page(dispatcher, client, project_id, page),
-    );
-}
-
-pub(crate) fn start_issue_fetch<S: BackgroundSpawner<Output = UsecaseOutput>, C>(
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    spawner: &S,
-    client: Arc<C>,
-    id: IssueId,
-) where
-    C: RedmineClient + Send + Sync + 'static,
-{
-    spawn_usecase(spawner, fetch_issue(dispatcher, client, id));
 }
 
 fn spawn_usecase<S>(spawner: &S, task: Option<UsecaseTask>)
