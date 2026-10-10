@@ -1174,7 +1174,7 @@ fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clear
     let Ok([request @ UsecaseRequest::StartIssueUpload { id }]) =
         <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
     else {
-        panic!("expected issue upload effect");
+        panic!("expected issue upload request");
     };
     start_request(request, dispatcher.clone(), &spawner, client.clone());
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
@@ -1197,7 +1197,7 @@ fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clear
     let Ok([request @ UsecaseRequest::StartIssueUpload { id }]) =
         <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
     else {
-        panic!("expected retry issue upload effect");
+        panic!("expected retry issue upload request");
     };
     start_request(request, dispatcher.clone(), &spawner, client);
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
@@ -1227,7 +1227,7 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
     let Ok([request @ UsecaseRequest::StartRemoteJournalUpload { .. }]) =
         <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
     else {
-        panic!("expected remote upload effect");
+        panic!("expected remote upload request");
     };
     let client = Arc::new(IssueUploadClient::with_journals(
         sample_issue_aggregate(3, "subject", IssueStatusId::new(1), None, None, None, 0),

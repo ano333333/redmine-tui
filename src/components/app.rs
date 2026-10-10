@@ -14,9 +14,7 @@ use crate::components::issue_property_conflict_popup::{
     EventProcessResult as IssuePropertyConflictEventProcessResult, IssuePropertyConflictComponent,
 };
 use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
-use crate::components::issue_select_popup::component::{
-    Effect as IssueSelectPopupEffect, IssueSelectPopupComponent,
-};
+use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
 use crate::components::remote_journal_conflict_popup::{
     EventProcessResult as RemoteJournalConflictEventProcessResult, RemoteJournalConflictComponent,
 };
@@ -252,11 +250,8 @@ impl<'a> AppComponent<'a> {
             PopupComponent::IssueSelect(popup_component) => {
                 let result = {
                     let dispatcher = dispatcher.borrow();
-                    popup_component.process_event(event, dispatcher.store())
+                    popup_component.process_event(event, dispatcher.store(), sink)
                 };
-                if let Some(effect) = popup_component.take_effect() {
-                    write_issue_select_popup_effect(effect, sink);
-                }
                 let Some(result) = result else {
                     return false;
                 };
@@ -664,13 +659,10 @@ impl<'a> AppComponent<'a> {
         focused_issue_id: Option<IssueId>,
         sink: &mut RequestSink,
     ) {
-        let mut popup = {
+        let popup = {
             let dispatcher = self.dispatcher.borrow();
-            IssueSelectPopupComponent::new(dispatcher.store(), focused_issue_id)
+            IssueSelectPopupComponent::new(dispatcher.store(), focused_issue_id, sink)
         };
-        if let Some(effect) = popup.take_effect() {
-            write_issue_select_popup_effect(effect, sink);
-        }
         self.popup_components
             .push_back(Rc::new(RefCell::new(PopupComponent::IssueSelect(popup))));
     }
@@ -973,14 +965,6 @@ impl<'a> AppComponent<'a> {
                 }),
             ),
         )))
-    }
-}
-
-fn write_issue_select_popup_effect(effect: IssueSelectPopupEffect, sink: &mut RequestSink) {
-    match effect {
-        IssueSelectPopupEffect::FetchProjectIssuesPage { project_id, page } => {
-            sink.request_usecase(UsecaseRequest::FetchProjectIssuesPage { project_id, page });
-        }
     }
 }
 
