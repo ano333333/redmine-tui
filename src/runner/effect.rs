@@ -9,14 +9,14 @@ use crate::{
     components::{AppComponent, RequestSink},
     platform::{
         editor::{EditorOutcome, EditorRequest, TextEditor},
-        host::PlatformHost,
+        host::{HostEvent, PlatformHost},
         runtime::{BackgroundSpawner, LocalTask},
     },
     stores::{Dispatcher, NoticeAction, NoticeId},
     usecases::{UsecaseOutput, UsecaseRequest, UsecaseTask, start_usecase},
 };
 
-use super::lifecycle::update;
+use super::lifecycle::{handle_host_event, update};
 
 pub(crate) type EditorSession<'a> = LocalTask<'a, io::Result<EditorOutcome>>;
 
@@ -58,6 +58,49 @@ pub(crate) fn handle_component_requests<'a, S, C, E, H>(
             host,
         );
     }
+}
+
+/// 入力をComponentへ渡し、発行された要求を起動してからComponentを更新する。
+///
+/// Usecaseが起動時にdispatchするActionを、この入力の後のupdateで反映済みにするため、
+/// updateより先に要求を起動する。アプリを続ける場合にtrueを返す。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn handle_input<'a, S, C, E, H>(
+    event: HostEvent,
+    sink: &mut RequestSink,
+    requests: &mut VecDeque<UsecaseRequest>,
+    app_component: &mut AppComponent,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    spawner: &S,
+    client: Arc<C>,
+    editor: &'a E,
+    editor_session: &mut Option<EditorSession<'a>>,
+    host: &mut H,
+) -> bool
+where
+    S: BackgroundSpawner<Output = UsecaseOutput>,
+    C: RedmineClient + Send + Sync + 'static,
+    E: TextEditor,
+    H: PlatformHost,
+{
+    let should_continue = handle_host_event(event, app_component, dispatcher.clone(), sink);
+    handle_component_requests(
+        sink,
+        requests,
+        app_component,
+        dispatcher.clone(),
+        spawner,
+        client,
+        editor,
+        editor_session,
+        host,
+    );
+    if should_continue {
+        let area = host.area();
+        update(dispatcher.clone(), app_component, area);
+        app_component.update(dispatcher.clone(), dispatcher.borrow().store(), area);
+    }
+    should_continue
 }
 
 fn open_editor<'a, E, H>(

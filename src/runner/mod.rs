@@ -17,10 +17,10 @@ pub(crate) mod lifecycle;
 #[cfg(test)]
 mod tests;
 
-use effect::{EditorSession, drain_requests, handle_component_requests, handle_editor_failure};
-use lifecycle::{
-    consume_editor_worker_actions, draw, handle_host_event, move_worker_action, tick_since, update,
+use effect::{
+    EditorSession, drain_requests, handle_component_requests, handle_editor_failure, handle_input,
 };
+use lifecycle::{consume_editor_worker_actions, draw, move_worker_action, tick_since, update};
 
 const TICK_RATE_MS: u64 = 250;
 
@@ -132,10 +132,8 @@ where
         match host.next_event(tick_rate).await {
             Ok(None) => {}
             Ok(Some(event)) => {
-                let should_continue =
-                    handle_host_event(event, &mut app_component, dispatcher.clone(), &mut sink);
-                // 入力の同期処理の結果を同じ入力のupdateへ反映するため、要求はupdateより前に起動する。
-                handle_component_requests(
+                if !handle_input(
+                    event,
                     &mut sink,
                     &mut requests,
                     &mut app_component,
@@ -145,12 +143,9 @@ where
                     editor,
                     &mut editor_session,
                     host,
-                );
-                if !should_continue {
+                ) {
                     break;
                 }
-                update(dispatcher.clone(), &mut app_component, host.area());
-                app_component.update(dispatcher.clone(), dispatcher.borrow().store(), host.area());
             }
             Err(error) => {
                 trace_dbg!(level: tracing::Level::ERROR, "failed to read event");
