@@ -4,6 +4,8 @@
 
 redmine-tui is a draft terminal UI for browsing and editing Redmine issues from your terminal. It connects to a Redmine server through the REST API.
 
+**Try it in your browser:** <https://ano333333.github.io/redmine-tui/> (web demo with sample data; no Redmine server required)
+
 ## Features
 
 - Browse issues and their properties, descriptions, child issues, and journals.

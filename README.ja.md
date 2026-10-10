@@ -4,6 +4,8 @@
 
 redmine-tui は、ターミナルから Redmine の Issue を閲覧・編集するための TUI のドラフトです。Redmine REST API に接続します。
 
+**ブラウザで試す:** <https://ano333333.github.io/redmine-tui/>（サンプルデータで動く Web デモ。Redmine サーバーは不要です）
+
 ## 主な機能
 
 - Issue のプロパティ、説明、子 Issue、Journal の閲覧
