@@ -35,7 +35,7 @@ use crate::usecases::issue_popup_options::{
     issue_status_popup_observer, priority_popup_observer, project_popup_observer,
     start_date_popup_observer, target_version_popup_observer, tracker_popup_observer,
 };
-use crate::usecases::redmine::{cancel_issue_upload, continue_issue_upload};
+use crate::usecases::redmine::continue_issue_upload;
 use crate::vos::{EntityIdValue, IssueId, JournalId, TimeEntityActivityId};
 use crate::widgets::ToastWidget;
 
@@ -274,7 +274,7 @@ impl<'a> AppComponent<'a> {
                 };
                 match result {
                     IssuePropertyConflictEventProcessResult::Canceled => {
-                        cancel_issue_upload(&mut dispatcher.borrow_mut(), *issue_id);
+                        sink.request_usecase(UsecaseRequest::CancelIssueUpload { id: *issue_id });
                         self.popup_components.pop_back();
                     }
                     IssuePropertyConflictEventProcessResult::Continued { diffs } => {
@@ -299,12 +299,10 @@ impl<'a> AppComponent<'a> {
                 };
                 match result {
                     RemoteJournalConflictEventProcessResult::Canceled => {
-                        dispatcher.borrow_mut().dispatch(
-                            JournalAction::CancelRemoteUploadConflict {
-                                issue_id: *issue_id,
-                                journal_id: *journal_id,
-                            },
-                        );
+                        sink.request_usecase(UsecaseRequest::CancelRemoteJournalUpload {
+                            issue_id: *issue_id,
+                            journal_id: *journal_id,
+                        });
                         self.popup_components.pop_back();
                     }
                     RemoteJournalConflictEventProcessResult::Continued { resolved_notes } => {

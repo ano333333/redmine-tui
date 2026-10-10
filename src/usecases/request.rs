@@ -7,9 +7,9 @@ use crate::clients::redmine::RedmineClient;
 use crate::stores::Dispatcher;
 use crate::usecases::UsecaseTask;
 use crate::usecases::redmine::{
-    continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
-    start_deleted_journal_upload, start_issue_upload, start_local_journal_upload,
-    start_remote_journal_upload, upload_issue_action,
+    cancel_issue_upload, cancel_remote_journal_upload, continue_remote_journal_upload, fetch_issue,
+    fetch_project_issues_page, start_deleted_journal_upload, start_issue_upload,
+    start_local_journal_upload, start_remote_journal_upload, upload_issue_action,
 };
 use crate::vos::{IssueId, IssuePropertyDiff, JournalId, ProjectId};
 
@@ -28,6 +28,9 @@ pub enum UsecaseRequest {
     StartIssueUpload {
         id: IssueId,
     },
+    CancelIssueUpload {
+        id: IssueId,
+    },
     /// 競合解決後のIssue保存を`retry_diffs`で再開する。
     ///
     /// `retry_diffs`はStoreに保存されないため、競合解決の同期処理で作った値を要求に載せて運ぶ。
@@ -36,6 +39,10 @@ pub enum UsecaseRequest {
         retry_diffs: Vec<IssuePropertyDiff>,
     },
     StartRemoteJournalUpload {
+        issue_id: IssueId,
+        journal_id: JournalId,
+    },
+    CancelRemoteJournalUpload {
         issue_id: IssueId,
         journal_id: JournalId,
     },
@@ -72,6 +79,10 @@ where
             fetch_project_issues_page(dispatcher, client, project_id, page)
         }
         UsecaseRequest::StartIssueUpload { id } => start_issue_upload(dispatcher, client, id),
+        UsecaseRequest::CancelIssueUpload { id } => {
+            cancel_issue_upload(&mut dispatcher.borrow_mut(), id);
+            None
+        }
         UsecaseRequest::ContinueIssueUpload { id, retry_diffs } => Some(Box::pin(async move {
             upload_issue_action(client.as_ref(), id, &retry_diffs)
                 .await
@@ -81,6 +92,13 @@ where
             issue_id,
             journal_id,
         } => start_remote_journal_upload(dispatcher, client, issue_id, journal_id),
+        UsecaseRequest::CancelRemoteJournalUpload {
+            issue_id,
+            journal_id,
+        } => {
+            cancel_remote_journal_upload(&mut dispatcher.borrow_mut(), issue_id, journal_id);
+            None
+        }
         UsecaseRequest::ContinueRemoteJournalUpload {
             issue_id,
             journal_id,
@@ -317,6 +335,54 @@ mod tests {
         );
     }
 
+    /// 説明をローカルで編集して保存したところ、サーバーでも説明が変わっていて競合した状態。
+    fn issue_conflict_dispatcher(server_issue: IssueAggregate) -> Rc<RefCell<Dispatcher>> {
+        dispatcher_with(
+            issue(),
+            vec![
+                IssueAction::UpdateDescription {
+                    id: ISSUE_ID,
+                    body: "local description".to_string(),
+                }
+                .into(),
+                IssueAction::StartUpload { id: ISSUE_ID }.into(),
+                IssueAction::UploadConflictsDetected {
+                    server_issue,
+                    conflicts: vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
+                        before: "body".to_string(),
+                        after: "local description".to_string(),
+                    })],
+                    children: vec![],
+                }
+                .into(),
+            ],
+        )
+    }
+
+    #[test]
+    fn cancel_issue_upload_returns_the_issue_to_edited_without_a_task() {
+        let mut server_issue = issue();
+        server_issue.issue.description = "server description".to_string();
+        let dispatcher = issue_conflict_dispatcher(server_issue);
+
+        assert!(!start(
+            UsecaseRequest::CancelIssueUpload { id: ISSUE_ID },
+            &dispatcher
+        ));
+
+        let dispatcher = dispatcher.borrow();
+        assert_eq!(
+            dispatcher.store().try_get_issue_state(ISSUE_ID),
+            Some(IssueState::Edited)
+        );
+        assert!(
+            dispatcher
+                .store()
+                .try_get_issue_upload_conflict(ISSUE_ID)
+                .is_none()
+        );
+    }
+
     #[tokio::test]
     async fn continue_issue_upload_puts_the_retry_diffs() {
         let mut server_issue = issue();
@@ -379,9 +445,9 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn continue_remote_journal_upload_puts_the_resolved_notes() {
-        let dispatcher = dispatcher_with(
+    /// notesをローカルで編集して保存したところ、サーバーのnotesが"server notes"に変わっていて競合した状態。
+    fn remote_journal_conflict_dispatcher() -> Rc<RefCell<Dispatcher>> {
+        dispatcher_with(
             issue_with_journal_notes("remote notes"),
             vec![
                 JournalAction::EditRemoteNotes {
@@ -402,7 +468,34 @@ mod tests {
                 }
                 .into(),
             ],
-        );
+        )
+    }
+
+    #[test]
+    fn cancel_remote_journal_upload_returns_the_journal_to_edited_without_a_task() {
+        let dispatcher = remote_journal_conflict_dispatcher();
+
+        assert!(!start(
+            UsecaseRequest::CancelRemoteJournalUpload {
+                issue_id: ISSUE_ID,
+                journal_id: JOURNAL_ID,
+            },
+            &dispatcher,
+        ));
+
+        assert!(matches!(
+            dispatcher
+                .borrow()
+                .store()
+                .get_remote_journal(ISSUE_ID, JOURNAL_ID)
+                .state,
+            RemoteJournalState::Edited { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn continue_remote_journal_upload_puts_the_resolved_notes() {
+        let dispatcher = remote_journal_conflict_dispatcher();
         let client = RecordingClient::new(issue_with_journal_notes("server notes"));
 
         complete_usecase(start_usecase(
