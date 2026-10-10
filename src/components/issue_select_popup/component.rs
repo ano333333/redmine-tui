@@ -9,8 +9,8 @@ use crate::vos::{IssueId, ProjectId};
 
 use super::focus_state::{self, FocusState};
 use super::widget::{
-    IssueSelectPopupIssue, IssueSelectPopupProject, IssueSelectPopupWidget,
-    IssueSelectPopupWidgetState,
+    IssueSelectPopupFocusColumn, IssueSelectPopupIssue, IssueSelectPopupProject,
+    IssueSelectPopupWidget, IssueSelectPopupWidgetState,
 };
 
 pub enum EventProcessResult {
@@ -31,13 +31,15 @@ pub struct IssueSelectPopupComponent {
     projects: Vec<IssueSelectPopupProject>,
     display_pages: HashMap<ProjectId, NonZeroUsize>,
     pending_effect: Option<Effect>,
+    /// 初回fetchで現在pageが読み込み直されるため、入力でフォーカスが動くまで保持して再適用する。
+    initial_issue_id: Option<IssueId>,
     focus_state: FocusState,
     widget_state: IssueSelectPopupWidgetState,
 }
 
 impl IssueSelectPopupComponent {
     /// focused_issue_idがある場合は、ポップアップを開いた時点で表示していたissueに
-    /// フォーカスを合わせて初期化する。
+    /// Issue列のフォーカスを合わせて初期化する。
     /// project一覧は生成時のsnapshotとし、現在pageのIssue表示はStoreから都度構成する。
     pub fn new(store: &Store, focused_issue_id: Option<IssueId>) -> Self {
         let mut projects = store
@@ -58,6 +60,7 @@ impl IssueSelectPopupComponent {
             projects,
             display_pages: HashMap::new(),
             pending_effect: None,
+            initial_issue_id: focused_issues_project_id.and(focused_issue_id),
             focus_state: FocusState::new(),
             widget_state: IssueSelectPopupWidgetState::new(),
         };
@@ -68,9 +71,7 @@ impl IssueSelectPopupComponent {
                 .display_pages
                 .insert(project_id, NonZeroUsize::MIN);
             component.activate_focused_project(store);
-            if let Some(focused_issue_id) = focused_issue_id {
-                component.focus_issue_in_current_page(store, focused_issue_id);
-            }
+            component.focus_initial_issue(store);
             component.install_fetch_effect(project_id, NonZeroUsize::MIN);
         }
         component
@@ -92,6 +93,7 @@ impl IssueSelectPopupComponent {
         if let Some(issue_id) = focused_issue_id {
             self.focus_issue_in_current_page(store, issue_id);
         }
+        self.focus_initial_issue(store);
 
         let issues = self.current_page_issues(store);
         if let Some(issue) = issues.get(self.focus_state.focused_issue_index()) {
@@ -113,68 +115,70 @@ impl IssueSelectPopupComponent {
         event: InputEvent,
         store: &Store,
     ) -> Option<EventProcessResult> {
-        self.focus_state
-            .process_event(event)
-            .map(|result| match result {
-                focus_state::EventProcessResult::Selected => self
-                    .focused_issue_id(store)
-                    .map_or(EventProcessResult::Handled, |issue_id| {
-                        EventProcessResult::Selected { issue_id }
-                    }),
-                focus_state::EventProcessResult::Quited => EventProcessResult::Quited,
-                focus_state::EventProcessResult::Handled => EventProcessResult::Handled,
-                focus_state::EventProcessResult::ProjectChanged => {
-                    if let Some(project_id) = self.focused_project_id() {
-                        let page = *self
-                            .display_pages
-                            .entry(project_id)
-                            .or_insert(NonZeroUsize::MIN);
-                        self.activate_focused_project(store);
-                        self.request_page(project_id, page);
-                    }
-                    EventProcessResult::Handled
+        let focus_before = self.focus_position();
+        let result = self.focus_state.process_event(event)?;
+        if self.focus_position() != focus_before {
+            self.initial_issue_id = None;
+        }
+        Some(match result {
+            focus_state::EventProcessResult::Selected => self
+                .focused_issue_id(store)
+                .map_or(EventProcessResult::Handled, |issue_id| {
+                    EventProcessResult::Selected { issue_id }
+                }),
+            focus_state::EventProcessResult::Quited => EventProcessResult::Quited,
+            focus_state::EventProcessResult::Handled => EventProcessResult::Handled,
+            focus_state::EventProcessResult::ProjectChanged => {
+                if let Some(project_id) = self.focused_project_id() {
+                    let page = *self
+                        .display_pages
+                        .entry(project_id)
+                        .or_insert(NonZeroUsize::MIN);
+                    self.activate_focused_project(store);
+                    self.request_page(project_id, page);
                 }
-                focus_state::EventProcessResult::PreviousPageRequested => {
-                    if let Some((project_id, page)) = self.focused_project_and_page()
-                        && matches!(
-                            store.get_project_issues_page_state(project_id, page),
-                            Some(ProjectIssuesPageState::Loaded { .. })
-                        )
-                        && let Some(previous) =
-                            page.get().checked_sub(1).and_then(NonZeroUsize::new)
-                    {
-                        self.navigate_to_page(store, project_id, previous);
-                    }
-                    EventProcessResult::Handled
+                EventProcessResult::Handled
+            }
+            focus_state::EventProcessResult::PreviousPageRequested => {
+                if let Some((project_id, page)) = self.focused_project_and_page()
+                    && matches!(
+                        store.get_project_issues_page_state(project_id, page),
+                        Some(ProjectIssuesPageState::Loaded { .. })
+                    )
+                    && let Some(previous) = page.get().checked_sub(1).and_then(NonZeroUsize::new)
+                {
+                    self.navigate_to_page(store, project_id, previous);
                 }
-                focus_state::EventProcessResult::NextPageRequested => {
-                    if let Some((project_id, page)) = self.focused_project_and_page()
-                        && let Some(ProjectIssuesPageState::Loaded {
-                            issues,
-                            total_count,
-                            offset,
-                            ..
-                        }) = store.get_project_issues_page_state(project_id, page)
-                        && !issues.is_empty()
-                        && offset.saturating_add(issues.len()) < *total_count
-                        && let Some(next) = page.get().checked_add(1).and_then(NonZeroUsize::new)
-                    {
-                        self.navigate_to_page(store, project_id, next);
-                    }
-                    EventProcessResult::Handled
+                EventProcessResult::Handled
+            }
+            focus_state::EventProcessResult::NextPageRequested => {
+                if let Some((project_id, page)) = self.focused_project_and_page()
+                    && let Some(ProjectIssuesPageState::Loaded {
+                        issues,
+                        total_count,
+                        offset,
+                        ..
+                    }) = store.get_project_issues_page_state(project_id, page)
+                    && !issues.is_empty()
+                    && offset.saturating_add(issues.len()) < *total_count
+                    && let Some(next) = page.get().checked_add(1).and_then(NonZeroUsize::new)
+                {
+                    self.navigate_to_page(store, project_id, next);
                 }
-                focus_state::EventProcessResult::RetryRequested => {
-                    if let Some((project_id, page)) = self.focused_project_and_page()
-                        && matches!(
-                            store.get_project_issues_page_state(project_id, page),
-                            Some(ProjectIssuesPageState::Failed { .. })
-                        )
-                    {
-                        self.request_page(project_id, page);
-                    }
-                    EventProcessResult::Handled
+                EventProcessResult::Handled
+            }
+            focus_state::EventProcessResult::RetryRequested => {
+                if let Some((project_id, page)) = self.focused_project_and_page()
+                    && matches!(
+                        store.get_project_issues_page_state(project_id, page),
+                        Some(ProjectIssuesPageState::Failed { .. })
+                    )
+                {
+                    self.request_page(project_id, page);
                 }
-            })
+                EventProcessResult::Handled
+            }
+        })
     }
 
     pub fn take_effect(&mut self) -> Option<Effect> {
@@ -249,17 +253,26 @@ impl IssueSelectPopupComponent {
             .collect()
     }
 
-    fn focus_issue_in_current_page(&mut self, store: &Store, issue_id: impl Into<IssueId>) {
+    fn focus_initial_issue(&mut self, store: &Store) {
+        if let Some(issue_id) = self.initial_issue_id
+            && self.focus_issue_in_current_page(store, issue_id)
+        {
+            self.focus_state.focus_issue_column();
+        }
+    }
+
+    fn focus_issue_in_current_page(&mut self, store: &Store, issue_id: impl Into<IssueId>) -> bool {
         let issue_id = issue_id.into();
         let Some(issue_index) = self
             .focused_project_and_page()
             .and_then(|(project_id, page)| store.get_project_issues(project_id, page))
             .and_then(|issues| issues.iter().position(|issue| issue.id == issue_id))
         else {
-            return;
+            return false;
         };
         self.focus_state
             .focus_issue(self.focus_state.focused_project_index(), issue_index);
+        true
     }
 
     fn focused_issue_id(&self, store: &Store) -> Option<IssueId> {
@@ -277,6 +290,14 @@ impl IssueSelectPopupComponent {
         {
             self.focus_state.focus_issue(project_index, 0);
         }
+    }
+
+    fn focus_position(&self) -> (usize, usize, IssueSelectPopupFocusColumn) {
+        (
+            self.focus_state.focused_project_index(),
+            self.focus_state.focused_issue_index(),
+            self.focus_state.focused_column(),
+        )
     }
 
     fn focused_project_id(&self) -> Option<ProjectId> {
@@ -339,10 +360,8 @@ impl IssueSelectPopupComponent {
 mod tests {
     use super::*;
 
-    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
-
-    use crate::components::issue_select_popup::widget::IssueSelectPopupFocusColumn;
     use crate::entities::{Issue, ProjectIssuesPage};
+    use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::stores::IssueAction;
     use crate::stores::ProjectIssuesAction;
     use crate::test_support::{
@@ -738,6 +757,7 @@ mod tests {
                 if project_id == 1 && requested_page == page(1)
         ));
 
+        component.process_event(key_event(KeyCode::Char('h')), &store);
         component.process_event(key_event(KeyCode::Char('j')), &store);
 
         assert!(matches!(
@@ -1001,6 +1021,113 @@ mod tests {
     }
 
     #[test]
+    fn new_focuses_the_issue_column_on_the_displayed_issue() {
+        let store = store();
+        let component = IssueSelectPopupComponent::new(&store, Some(2.into()));
+
+        let widget = component.create_widget(&store);
+
+        assert_eq!(widget.focused_column, IssueSelectPopupFocusColumn::Issue);
+        assert_eq!(widget.focused_issue_index, 1);
+    }
+
+    #[test]
+    fn new_without_displayed_issue_focuses_the_project_column() {
+        let store = store();
+        let component = IssueSelectPopupComponent::new(&store, None);
+
+        let widget = component.create_widget(&store);
+
+        assert_eq!(widget.focused_column, IssueSelectPopupFocusColumn::Project);
+        assert_eq!(widget.focused_issue_index, 0);
+    }
+
+    #[test]
+    fn initial_fetch_completion_focuses_the_displayed_issue() {
+        let mut store = store();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()));
+        let _ = component.take_effect();
+        store.consume_action(
+            ProjectIssuesAction::StartLoading {
+                request_id: crate::stores::ProjectIssuesRequestId::new(),
+                project_id: 1.into(),
+                page: page(1),
+            }
+            .into(),
+        );
+        component.update(&store, AREA);
+
+        load_project_page(
+            &mut store,
+            1,
+            1,
+            vec![
+                project_issue(1, 1, "issue1", "body"),
+                project_issue(2, 1, "issue2", "body"),
+                project_issue(3, 1, "issue3", "body"),
+            ],
+            3,
+            0,
+        );
+        component.update(&store, AREA);
+
+        let widget = component.create_widget(&store);
+        assert_eq!(widget.focused_column, IssueSelectPopupFocusColumn::Issue);
+        assert_eq!(widget.focused_issue_index, 2);
+    }
+
+    #[test]
+    fn input_that_does_not_move_focus_keeps_the_displayed_issue_as_target() {
+        let mut store = unloaded_store();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()));
+        let _ = component.take_effect();
+
+        component.process_event(key_event(KeyCode::Char('l')), &store);
+        load_project_page(
+            &mut store,
+            1,
+            1,
+            vec![
+                project_issue(1, 1, "issue1", "body"),
+                project_issue(3, 1, "issue3", "body"),
+            ],
+            2,
+            0,
+        );
+        component.update(&store, AREA);
+
+        let widget = component.create_widget(&store);
+        assert_eq!(widget.focused_column, IssueSelectPopupFocusColumn::Issue);
+        assert_eq!(widget.focused_issue_index, 1);
+    }
+
+    #[test]
+    fn focus_move_before_initial_fetch_completion_cancels_displayed_issue_focus() {
+        let mut store = store();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()));
+        let _ = component.take_effect();
+
+        component.process_event(key_event(KeyCode::Char('k')), &store);
+        load_project_page(
+            &mut store,
+            1,
+            1,
+            vec![
+                project_issue(1, 1, "issue1", "body"),
+                project_issue(2, 1, "issue2", "body"),
+                project_issue(3, 1, "issue3", "body"),
+            ],
+            3,
+            0,
+        );
+        component.update(&store, AREA);
+
+        let widget = component.create_widget(&store);
+        assert_eq!(widget.focused_column, IssueSelectPopupFocusColumn::Issue);
+        assert_eq!(widget.focused_issue_index, 1);
+    }
+
+    #[test]
     fn snapshot_update_renders_initial_focus_and_preview() {
         let store = store();
         let mut component = IssueSelectPopupComponent::new(&store, Some(2.into()));
@@ -1032,6 +1159,7 @@ mod tests {
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
         let _ = component.take_effect();
 
+        component.process_event(key_event(KeyCode::Char('h')), &store);
         component.process_event(key_event(KeyCode::Char('j')), &store);
         component.process_event(key_event(KeyCode::Char('l')), &store);
         let widget = component.create_widget(&store);

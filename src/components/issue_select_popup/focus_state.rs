@@ -77,6 +77,10 @@ impl FocusState {
         self.focused_column = IssueSelectPopupFocusColumn::Project;
     }
 
+    pub fn focus_issue_column(&mut self) {
+        self.focused_column = IssueSelectPopupFocusColumn::Issue;
+    }
+
     pub(super) fn set_empty_issue_column_enterable(&mut self, enterable: bool) {
         self.empty_issue_column_enterable = enterable;
     }

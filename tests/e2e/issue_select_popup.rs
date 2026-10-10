@@ -94,9 +94,9 @@ fn selecting_an_issue_in_the_popup_switches_the_detail() {
     press_keys(&mut session, &["l", "j", "Enter"]);
     wait_for_popup_to_close(&mut session);
 
-    // When popupで3番目のIssue 2を選ぶ
+    // When popupで表示中のIssue 3の次にあるIssue 2を選ぶ
     open_popup(&mut session);
-    press_keys(&mut session, &["l", "j", "j", "Enter"]);
+    press_keys(&mut session, &["j", "Enter"]);
 
     // Then Issue 2の詳細に切り替わる
     let frame = wait_until(&mut session, "showing issue 2", |frame| {
@@ -104,9 +104,9 @@ fn selecting_an_issue_in_the_popup_switches_the_detail() {
     });
     assert!(!frame.contains(ISSUE_3_TRACKER));
 
-    // When popupで表示中のIssue 2を選び直す
+    // When popupで最初にフォーカスされている表示中のIssue 2を選び直す
     open_popup(&mut session);
-    press_keys(&mut session, &["l", "j", "j", "Enter"]);
+    press_keys(&mut session, &["Enter"]);
 
     // Then Issue 2の詳細が表示されたままになる
     let frame = wait_until(&mut session, "showing issue 2 again", |frame| {
