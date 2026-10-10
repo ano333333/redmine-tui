@@ -91,7 +91,7 @@ flowchart TD
 ```
 
 `usecases` は `components` に依存しない。
-Component から usecase の関数を呼ぶことはあるが（例: `app.rs` が `issue_popup_options` を呼び、`UsecaseRequest` を作る）、逆方向の依存は発生させない。Redmine の usecase は Component から呼ばず、`UsecaseRequest` で `runner` に起動を要求する。
+Component は usecase の関数を呼んだり（例: `app.rs` が `issue_popup_options` を呼ぶ）、`UsecaseRequest` を作ったりするが、逆方向の依存は発生させない。Redmine の usecase は Component から呼ばず、`UsecaseRequest` で `runner` に起動を要求する。
 同様に `clients` は `stores` にも `usecases` にも依存せず、`RedmineClient` trait と HTTP 実装（`DefaultRedmineClient`）、`DemoRedmineClient` を提供する。`DemoRedmineClient` の fixture は `src/libs/yaml.rs` の parser を使うため `clients` から `libs` への依存がある。
 
 ## Flux を参考にした構成

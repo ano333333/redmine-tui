@@ -145,7 +145,7 @@
       <main>
         <h1>15. Usecase起動要求の統一とrunnerのqueue</h1>
         <h2 id="status">Status</h2>
-        <p>Proposed</p>
+        <p>Accepted</p>
         <h2 id="context">Context</h2>
         <p>
           ComponentからrunnerへUsecaseの起動を要求する方法が統一されていない。
@@ -268,6 +268,9 @@
     StartIssueUpload { id: IssueId },
     CancelIssueUpload { id: IssueId },
     ContinueIssueUpload { id: IssueId, selected_local_diffs: Vec&lt;IssuePropertyDiff&gt; },
+    PutIssueUpload { id: IssueId, diffs: Vec&lt;IssuePropertyDiff&gt; },
+    ConfirmIssueUpload { id: IssueId },
+    RetryIssueUploadConfirmation { id: IssueId },
     StartRemoteJournalUpload { issue_id: IssueId, journal_id: JournalId },
     CancelRemoteJournalUpload { issue_id: IssueId, journal_id: JournalId },
     ContinueRemoteJournalUpload { issue_id: IssueId, journal_id: JournalId, resolved_notes: String },
@@ -278,9 +281,33 @@
           <code>ContinueIssueUpload</code
           >は、<code>continue_issue_upload</code>の同期処理と<code>upload_issue_action</code>の非同期処理を、1つのUsecaseにまとめる。<code>CancelRemoteJournalUpload</code>は、Componentが直接dispatchしていた競合の取り消しをUsecaseに移したものである。
         </p>
+        <h3>Issue保存を段階ごとのUsecaseに分ける</h3>
         <p>
           <code>upload_issue_action</code
-          >は、保存前GET、PUT、確認GETをそれぞれ別のUsecaseに分ける。各段階の完了が次の段階を後続要求として返す。分割後の段階に対応するvariantは実装時に追加する。
+          >は、保存前GET、PUT、確認GETをそれぞれ別のUsecaseに分ける。各段階の完了が次の段階を後続要求として返す。
+        </p>
+        <ul>
+          <li>
+            保存前GET:
+            <code>StartIssueUpload</code
+            >と<code>ContinueIssueUpload</code>が起動する。競合があれば、今と同じく競合を返す。競合がなければ、取得したIssueを基準値にしてStoreのdiffを送信するdiffに置き換える完了Actionと、<code
+              >PutIssueUpload { id, diffs }</code
+            >の後続要求を返す。競合の続行では、送信するdiffがStoreのdiffと異なる。置き換えないと、サーバーの値を選んだ属性がローカルの値で表示される。送信するdiffは、Storeではなく要求に載せて運ぶ。
+          </li>
+          <li>
+            PUT: 成功したら、送信したdiffを基準値へ適用する完了Actionと、<code
+              >ConfirmIssueUpload { id }</code
+            >の後続要求を返す。
+          </li>
+          <li>確認GET: 成功したら、取得したIssueを取り込んでSyncedにする。</li>
+        </ul>
+        <p>
+          PUTの成功から確認GETの完了までは、IssueをUploadingのままにして編集を受け付けない。確認GETは短時間で終わることが多く、編集を許すと確認結果と新しい編集を比べる処理が必要になるためである。
+        </p>
+        <p>
+          確認GETに失敗しても、PUTの成功は取り消さない。PUTで確定した基準値のままSyncedにし、失敗の理由を残す。ヘッダには「？未確認」と表示する。利用者が<code>r</code>を押すと<code
+            >RetryIssueUploadConfirmation { id }</code
+          >を発行し、PUTを繰り返さずに確認GETだけをやり直す。編集を始めたとき、またはJournalの保存でIssueを取得し直したときは、失敗の理由を消す。編集した場合は次の保存で保存前GETを行い、取得し直した場合はその取得値が確認GETの代わりになるためである。
         </p>
         <h3>Componentは借用した<code>RequestSink</code>に要求を書く</h3>
         <p>
@@ -501,6 +528,10 @@ where
           <li>
             <code>docs/architecture.md</code
             >のusecases、runner、<code>AppEffect</code>、ComponentからUsecaseへの依存の説明を更新する。
+          </li>
+          <li>
+            親の取得（<code>with_parent: false</code
+            >）が終わる前にその親を開くと、さらに上の親は取得されない。取得中の<code>FetchIssue</code>は起動されず、Storeにも親IDがないためである。起動済みの取得に親の取得を後から依頼する手段は、別途設計する。
           </li>
           <li>
             起動時に呼ぶ<code>load_initial_entities</code>は、runnerのloopが始まる前に実行するため対象外とする。
