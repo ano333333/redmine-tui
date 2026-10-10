@@ -8,12 +8,12 @@ use crate::usecases::UsecaseTask;
 use crate::vos::issue_property_diff::same_issue_property;
 use crate::vos::{IssueId, IssuePropertyDiff};
 
-use super::upload_issue::upload_issue_action;
+use super::upload_issue::preflight_issue_upload;
 
 /// 競合popupで選んだ値で、Issueの保存を再開する。
 ///
-/// 競合情報を破棄するActionを同期的にdispatchし、再試行用のdiffで保存し直すtaskを返す。
-/// Storeが保持する元のdiffは変更しない。
+/// 競合情報を破棄するActionを同期的にdispatchし、再試行用のdiffで保存前の取得からやり直すtaskを返す。
+/// Storeのdiffは、保存前の取得で競合がなかった時点で再試行用のdiffに置き換わる。
 ///
 /// # Panics
 ///
@@ -31,11 +31,7 @@ where
     dispatcher
         .borrow_mut()
         .dispatch(IssueAction::ClearUploadConflicts { id });
-    Some(Box::pin(async move {
-        upload_issue_action(client.as_ref(), id, &retry_diffs)
-            .await
-            .into()
-    }))
+    Some(Box::pin(preflight_issue_upload(client, id, retry_diffs)))
 }
 
 /// popupの競合解決結果から、最新Issueで再試行するための一時的なdiffを作成する。

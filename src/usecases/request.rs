@@ -7,8 +7,8 @@ use crate::clients::redmine::RedmineClient;
 use crate::stores::Dispatcher;
 use crate::usecases::UsecaseTask;
 use crate::usecases::redmine::{
-    cancel_issue_upload, cancel_remote_journal_upload, continue_issue_upload,
-    continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
+    cancel_issue_upload, cancel_remote_journal_upload, confirm_issue_upload, continue_issue_upload,
+    continue_remote_journal_upload, fetch_issue, fetch_project_issues_page, put_issue_upload,
     start_deleted_journal_upload, start_issue_upload, start_local_journal_upload,
     start_remote_journal_upload,
 };
@@ -36,6 +36,13 @@ pub enum UsecaseRequest {
     ContinueIssueUpload {
         id: IssueId,
         selected_local_diffs: Vec<IssuePropertyDiff>,
+    },
+    PutIssueUpload {
+        id: IssueId,
+        diffs: Vec<IssuePropertyDiff>,
+    },
+    ConfirmIssueUpload {
+        id: IssueId,
     },
     StartRemoteJournalUpload {
         issue_id: IssueId,
@@ -86,6 +93,10 @@ where
             id,
             selected_local_diffs,
         } => continue_issue_upload(dispatcher, client, id, selected_local_diffs),
+        UsecaseRequest::PutIssueUpload { id, diffs } => {
+            put_issue_upload(dispatcher, client, id, diffs)
+        }
+        UsecaseRequest::ConfirmIssueUpload { id } => confirm_issue_upload(dispatcher, client, id),
         UsecaseRequest::StartRemoteJournalUpload {
             issue_id,
             journal_id,
@@ -382,7 +393,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn continue_issue_upload_clears_the_conflict_before_putting_the_selected_value() {
+    async fn continue_issue_upload_clears_the_conflict_and_requests_a_put_of_the_selected_value() {
         let mut server_issue = issue();
         server_issue.issue.description = "server description".to_string();
         let dispatcher = issue_conflict_dispatcher(server_issue.clone());
@@ -397,7 +408,7 @@ mod tests {
                 })],
             },
             dispatcher.clone(),
-            client.clone(),
+            client,
         );
         dispatcher.borrow_mut().consume_action();
 
@@ -408,8 +419,51 @@ mod tests {
                 .try_get_issue_upload_conflict(ISSUE_ID)
                 .is_none()
         );
-        assert!(client.issue_updates.lock().unwrap().is_empty());
-        complete_usecase(task).await;
+        let output = task.expect("continue starts the preflight fetch").await;
+        assert_eq!(
+            output.requests,
+            [UsecaseRequest::PutIssueUpload {
+                id: ISSUE_ID,
+                diffs: vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
+                    before: "server description".to_string(),
+                    after: "local description".to_string(),
+                })],
+            }]
+        );
+    }
+
+    /// 説明を"local description"へ編集して保存を始めた状態。
+    fn uploading_dispatcher() -> Rc<RefCell<Dispatcher>> {
+        dispatcher_with(
+            issue(),
+            vec![
+                IssueAction::UpdateDescription {
+                    id: ISSUE_ID,
+                    body: "local description".to_string(),
+                }
+                .into(),
+                IssueAction::StartUpload { id: ISSUE_ID }.into(),
+            ],
+        )
+    }
+
+    #[tokio::test]
+    async fn put_issue_upload_puts_the_requested_diffs() {
+        let client = RecordingClient::new(issue());
+
+        complete_usecase(start_usecase(
+            UsecaseRequest::PutIssueUpload {
+                id: ISSUE_ID,
+                diffs: vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
+                    before: "body".to_string(),
+                    after: "local description".to_string(),
+                })],
+            },
+            uploading_dispatcher(),
+            client.clone(),
+        ))
+        .await;
+
         assert_eq!(
             *client.issue_updates.lock().unwrap(),
             vec![IssueUpdate {
@@ -417,6 +471,21 @@ mod tests {
                 ..IssueUpdate::default()
             }]
         );
+    }
+
+    #[tokio::test]
+    async fn confirm_issue_upload_completes_the_upload() {
+        let actions = complete_usecase(start_usecase(
+            UsecaseRequest::ConfirmIssueUpload { id: ISSUE_ID },
+            uploading_dispatcher(),
+            RecordingClient::new(issue()),
+        ))
+        .await;
+
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::Issue(IssueAction::UploadSucceeded { .. })]
+        ));
     }
 
     #[test]

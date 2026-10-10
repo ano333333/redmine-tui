@@ -10,7 +10,6 @@ use crate::runner::lifecycle::{
     consume_editor_worker_actions, move_worker_action, tick_since, update,
 };
 use crate::stores::{self, Action, Dispatcher};
-use crate::usecases::redmine::{start_issue_upload, upload_issue_action};
 use crate::usecases::{UsecaseOutput, UsecaseRequest, start_usecase};
 use std::{
     cell::{Cell, RefCell},
@@ -32,10 +31,8 @@ use crate::entities::{
     TimeEntityActivity, Tracker, User,
 };
 use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId};
-use crate::test_support::complete_usecase;
 use crate::test_support::sample_issue_aggregate;
-use crate::vos::issue_property_diff::IssueDescriptionDiff;
-use crate::vos::{self, IssueId, IssuePropertyDiff, IssueStatusId, JournalId};
+use crate::vos::{self, IssueId, IssueStatusId, JournalId};
 
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, widgets::Widget};
 
@@ -292,143 +289,6 @@ fn project_page_request_queues_start_loading_and_routes_only_completion_to_worke
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
 }
 
-#[tokio::test]
-async fn issue_upload_puts_only_edited_properties_and_completes_with_the_confirmed_issue() {
-    let mut server_issue = sample_issue_aggregate(
-        1,
-        "server subject",
-        IssueStatusId::new(1),
-        None,
-        None,
-        None,
-        0,
-    );
-    server_issue.updated_on = crate::test_support::local_datetime("2026-08-23T12:00:00+09:00");
-    server_issue.issue.description = "original description".to_string();
-    let client = Arc::new(IssueUploadClient::new(server_issue.clone()));
-    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    crate::test_support::dispatch_loaded_issue(&mut dispatcher.borrow_mut(), server_issue.clone());
-    dispatcher
-        .borrow_mut()
-        .dispatch(IssueAction::UpdateDescription {
-            id: 1.into(),
-            body: "local description".to_string(),
-        });
-    dispatcher.borrow_mut().consume_action();
-
-    let actions = complete_usecase(start_issue_upload(
-        dispatcher.clone(),
-        client.clone(),
-        1.into(),
-    ))
-    .await;
-
-    assert_eq!(actions.len(), 1);
-    assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
-    // stubは保存後も同じIssueを返すため、確認の取得値はサーバー側の値のままになる。
-    let [Action::Issue(IssueAction::UploadSucceeded { issue, .. })] = actions.as_slice() else {
-        panic!("expected UploadSucceeded");
-    };
-    assert_eq!(issue.issue.subject, "server subject");
-    assert_eq!(issue.issue.description, "original description");
-    assert_eq!(*client.get_requests.lock().unwrap(), 2);
-    assert_eq!(
-        *client.uploaded.lock().unwrap(),
-        vec![(
-            IssueId::new(1),
-            IssueUpdate {
-                description: Some("local description".to_string()),
-                ..IssueUpdate::default()
-            }
-        )]
-    );
-}
-
-#[test]
-#[should_panic(expected = "uploading issue is not edited")]
-fn starting_issue_upload_panics_when_issue_is_not_edited() {
-    let issue = sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
-    let client = Arc::new(IssueUploadClient::new(issue.clone()));
-    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    crate::test_support::dispatch_loaded_issue(&mut dispatcher.borrow_mut(), issue);
-
-    std::mem::drop(start_issue_upload(dispatcher, client, 1.into()));
-}
-
-#[tokio::test]
-async fn issue_upload_returns_fail_action_when_fetch_fails() {
-    let client = IssueUploadClient::failing_get();
-
-    let actions = upload_issue_action(&client, 1.into(), &[]).await;
-
-    assert_eq!(actions.len(), 2);
-    let Action::Notice(NoticeAction::Push { message, .. }) = &actions[0] else {
-        panic!("expected failure notice action");
-    };
-    assert_eq!(
-        message,
-        "Issue #1の保存に失敗しました: network error: offline"
-    );
-    let Action::Issue(IssueAction::FailUpload { id, message }) = &actions[1] else {
-        panic!("expected fail upload action");
-    };
-    assert_eq!(*id, IssueId::new(1));
-    assert_eq!(message, "network error: offline");
-    assert!(client.uploaded.lock().unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn issue_upload_returns_fail_action_when_update_fails() {
-    let server_issue =
-        sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
-    let client = IssueUploadClient::failing_update(server_issue);
-
-    let actions = upload_issue_action(&client, 1.into(), &[]).await;
-
-    assert_eq!(actions.len(), 2);
-    let Action::Notice(NoticeAction::Push { message, .. }) = &actions[0] else {
-        panic!("expected failure notice action");
-    };
-    assert_eq!(
-        message,
-        "Issue #1の保存に失敗しました: network error: offline"
-    );
-    let Action::Issue(IssueAction::FailUpload { id, message }) = &actions[1] else {
-        panic!("expected fail upload action");
-    };
-    assert_eq!(*id, IssueId::new(1));
-    assert_eq!(message, "network error: offline");
-}
-
-#[tokio::test]
-async fn issue_upload_returns_conflict_action_when_property_conflicts() {
-    let mut server_issue =
-        sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
-    server_issue.issue.description = "server description".to_string();
-    let client = IssueUploadClient::new(server_issue);
-    let diffs = vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
-        before: "original description".to_string(),
-        after: "local description".to_string(),
-    })];
-
-    let actions = upload_issue_action(&client, 1.into(), &diffs).await;
-
-    assert_eq!(actions.len(), 1);
-    let [
-        Action::Issue(IssueAction::UploadConflictsDetected {
-            server_issue,
-            conflicts,
-            ..
-        }),
-    ] = actions.as_slice()
-    else {
-        panic!("expected UploadConflictsDetected");
-    };
-    assert_eq!(server_issue.issue.description, "server description");
-    assert_eq!(conflicts, &diffs);
-    assert!(client.uploaded.lock().unwrap().is_empty());
-}
-
 #[test]
 fn background_completion_panic_is_reported_by_the_main_loop_acceptor() {
     let spawner = CompletionSpawner::from_completions(vec![
@@ -492,9 +352,8 @@ fn update_store_keeps_notices_within_the_visible_duration() {
 }
 
 struct IssueUploadClient {
-    issue: Option<IssueAggregate>,
+    issue: IssueAggregate,
     journals: Vec<Journal>,
-    get_error: bool,
     update_error: bool,
     update_journal_result: std::result::Result<(), RedmineClientError>,
     update_issue_notes_result: std::result::Result<(), RedmineClientError>,
@@ -516,27 +375,8 @@ impl IssueUploadClient {
 
     fn with_journals(issue: IssueAggregate, journals: Vec<Journal>) -> Self {
         Self {
-            issue: Some(issue),
+            issue,
             journals,
-            get_error: false,
-            update_error: false,
-            update_journal_result: Ok(()),
-            update_issue_notes_result: Ok(()),
-            uploaded_journal_notes: Mutex::new(Vec::new()),
-            uploaded_issue_notes: Mutex::new(Vec::new()),
-            uploaded: Mutex::new(Vec::new()),
-            get_failures_remaining: Mutex::new(0),
-            journal_failures_remaining: Mutex::new(0),
-            local_failures_remaining: Mutex::new(0),
-            get_requests: Mutex::new(0),
-        }
-    }
-
-    fn failing_get() -> Self {
-        Self {
-            issue: None,
-            journals: Vec::new(),
-            get_error: true,
             update_error: false,
             update_journal_result: Ok(()),
             update_issue_notes_result: Ok(()),
@@ -552,9 +392,8 @@ impl IssueUploadClient {
 
     fn failing_update(issue: IssueAggregate) -> Self {
         Self {
-            issue: Some(issue),
+            issue,
             journals: Vec::new(),
-            get_error: false,
             update_error: true,
             update_journal_result: Ok(()),
             update_issue_notes_result: Ok(()),
@@ -583,10 +422,7 @@ impl RedmineClient for IssueUploadClient {
             *failures_remaining -= 1;
             return Err(Self::network_error());
         }
-        if self.get_error {
-            return Err(Self::network_error());
-        }
-        let mut aggregate = self.issue.clone().expect("test issue must exist");
+        let mut aggregate = self.issue.clone();
         aggregate.journals = self.journals.clone();
         Ok(FetchedIssue {
             aggregate,
@@ -1134,6 +970,41 @@ fn route_worker_actions(
     update(dispatcher, app, Rect::new(0, 0, 80, 24));
 }
 
+/// completionを`completions`件受理する。runと同じく、各completionのActionを消費してから後続要求を起動する。
+fn route_completions_with_follow_ups<C>(
+    spawner: &TokioBackgroundSpawner<UsecaseOutput>,
+    completions: usize,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    app: &mut AppComponent<'_>,
+    client: Arc<C>,
+) where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    for _ in 0..completions {
+        let mut requests = VecDeque::new();
+        accept_completion(spawner, dispatcher.clone(), app, &mut requests);
+        drain_requests(
+            &mut requests,
+            app,
+            dispatcher.clone(),
+            spawner,
+            client.clone(),
+            Rect::new(0, 0, 80, 24),
+        );
+    }
+}
+
+fn accept_completion(
+    spawner: &TokioBackgroundSpawner<UsecaseOutput>,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    app: &mut AppComponent<'_>,
+    requests: &mut VecDeque<UsecaseRequest>,
+) {
+    let acceptor = CompletionSpawner::from_completions(vec![recv_completion(spawner)]);
+    assert!(move_worker_action(&acceptor, dispatcher.clone(), requests).is_none());
+    update(dispatcher, app, Rect::new(0, 0, 80, 24));
+}
+
 fn assert_toast_contains(
     app: &AppComponent<'_>,
     dispatcher: Rc<RefCell<Dispatcher>>,
@@ -1178,7 +1049,8 @@ fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clear
     };
     start_request(request, dispatcher.clone(), &spawner, client.clone());
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-    route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
+    // 保存前の取得の後、PUTが失敗する。
+    route_completions_with_follow_ups(&spawner, 2, dispatcher.clone(), &mut app, client.clone());
 
     let store = dispatcher.borrow();
     assert!(matches!(
@@ -1903,4 +1775,179 @@ fn continuing_an_issue_conflict_does_not_reopen_the_conflict_popup() {
 
     assert_eq!(spawner.spawned.get(), 1);
     assert!(!rendered_without_spaces(&app, dispatcher.clone()).contains("続行"));
+}
+
+/// 保存前の取得はすぐ返し、PUTと確認の取得はそれぞれのgateにpermitを足すまで完了しない。
+struct GatedUploadClient {
+    issue: IssueAggregate,
+    put_gate: tokio::sync::Semaphore,
+    confirm_gate: tokio::sync::Semaphore,
+    get_requests: std::sync::atomic::AtomicUsize,
+}
+
+impl GatedUploadClient {
+    fn get_requests(&self) -> usize {
+        self.get_requests.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl RedmineClient for GatedUploadClient {
+    async fn get_issue(&self, _: IssueId) -> std::result::Result<FetchedIssue, RedmineClientError> {
+        let previous = self
+            .get_requests
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if previous > 0 {
+            self.confirm_gate.acquire().await.unwrap().forget();
+        }
+        Ok(FetchedIssue {
+            aggregate: self.issue.clone(),
+            children: vec![],
+        })
+    }
+
+    async fn update_issue(
+        &self,
+        _: IssueId,
+        _: &IssueUpdate,
+    ) -> std::result::Result<(), RedmineClientError> {
+        self.put_gate.acquire().await.unwrap().forget();
+        Ok(())
+    }
+
+    async fn update_journal_notes(
+        &self,
+        _: JournalId,
+        _: &str,
+    ) -> std::result::Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn update_issue_notes(
+        &self,
+        _: IssueId,
+        _: &str,
+    ) -> std::result::Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_categories(&self) -> std::result::Result<Vec<Category>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_issue_statuses(
+        &self,
+    ) -> std::result::Result<Vec<IssueStatus>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_priorities(&self) -> std::result::Result<Vec<Priority>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_projects(&self) -> std::result::Result<Vec<Project>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_project_issues(
+        &self,
+        _: crate::vos::ProjectId,
+        _: std::num::NonZeroUsize,
+    ) -> std::result::Result<crate::entities::ProjectIssuesPage, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_target_versions(
+        &self,
+    ) -> std::result::Result<Vec<TargetVersion>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_time_entity_activities(
+        &self,
+    ) -> std::result::Result<Vec<TimeEntityActivity>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_trackers(&self) -> std::result::Result<Vec<Tracker>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_users(&self) -> std::result::Result<Vec<User>, RedmineClientError> {
+        unreachable!()
+    }
+}
+
+#[test]
+fn issue_upload_applies_the_put_before_starting_the_confirmation_fetch() {
+    let spawner = TokioBackgroundSpawner::new().unwrap();
+    let (initial_dispatcher, server_issue) = edited_issue_dispatcher();
+    let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
+    let mut app = journal_upload_app(dispatcher.clone());
+    let client = Arc::new(GatedUploadClient {
+        issue: server_issue,
+        put_gate: tokio::sync::Semaphore::new(0),
+        confirm_gate: tokio::sync::Semaphore::new(0),
+        get_requests: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let area = Rect::new(0, 0, 80, 24);
+    let mut requests = VecDeque::from([UsecaseRequest::StartIssueUpload { id: 3.into() }]);
+    drain_requests(
+        &mut requests,
+        &mut app,
+        dispatcher.clone(),
+        &spawner,
+        client.clone(),
+        area,
+    );
+    accept_completion(&spawner, dispatcher.clone(), &mut app, &mut requests);
+    drain_requests(
+        &mut requests,
+        &mut app,
+        dispatcher.clone(),
+        &spawner,
+        client.clone(),
+        area,
+    );
+
+    client.put_gate.add_permits(1);
+    accept_completion(&spawner, dispatcher.clone(), &mut app, &mut requests);
+
+    assert_eq!(client.get_requests(), 1);
+    {
+        let dispatcher = dispatcher.borrow();
+        let store = dispatcher.store();
+        assert_eq!(
+            store.try_get_issue_state(3),
+            Some(stores::IssueState::Uploading)
+        );
+        assert!(store.get_issue_property_diffs(3).is_empty());
+        assert_eq!(
+            store.get_issue(3).0.description(),
+            "locally edited description"
+        );
+    }
+    drain_requests(
+        &mut requests,
+        &mut app,
+        dispatcher.clone(),
+        &spawner,
+        client.clone(),
+        area,
+    );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while client.get_requests() < 2 {
+        assert!(
+            Instant::now() < deadline,
+            "confirmation fetch did not start"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    client.confirm_gate.add_permits(1);
+    accept_completion(&spawner, dispatcher.clone(), &mut app, &mut requests);
+
+    assert_eq!(
+        dispatcher.borrow().store().try_get_issue_state(3),
+        Some(stores::IssueState::Synced)
+    );
 }

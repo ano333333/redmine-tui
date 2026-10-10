@@ -21,6 +21,4 @@ pub use load_initial_entities::load_initial_entities;
 pub use start_deleted_journal_upload::start_deleted_journal_upload;
 pub use start_local_journal_upload::start_local_journal_upload;
 pub use start_remote_journal_upload::start_remote_journal_upload;
-pub use upload_issue::start_issue_upload;
-#[cfg(test)]
-pub use upload_issue::upload_issue_action;
+pub use upload_issue::{confirm_issue_upload, put_issue_upload, start_issue_upload};
