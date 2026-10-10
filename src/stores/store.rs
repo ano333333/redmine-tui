@@ -172,6 +172,21 @@ impl Store {
         self.issue_store.get_issue_children(issue_id)
     }
 
+    /// 優先度を更新できるかを返す。
+    pub fn is_issue_priority_editable(&self, issue_id: impl Into<IssueId>) -> bool {
+        self.get_issue_children(issue_id).is_empty()
+    }
+
+    /// 開始日・期日を更新できるかを返す。
+    pub fn are_issue_dates_editable(&self, issue_id: impl Into<IssueId>) -> bool {
+        self.get_issue_children(issue_id).is_empty()
+    }
+
+    /// 進捗率を更新できるかを返す。
+    pub fn is_issue_done_ratio_editable(&self, issue_id: impl Into<IssueId>) -> bool {
+        self.get_issue_children(issue_id).is_empty()
+    }
+
     pub fn get_issues(&self) -> impl Iterator<Item = (IssueView<'_>, IssueState)> {
         self.issue_store.get_issues()
     }

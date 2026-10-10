@@ -450,7 +450,9 @@ impl IssueDetailComponent {
                 }
             }
             FocusedComponent::Property => {
-                let result = self.property.process_event(event.clone());
+                let result = self
+                    .property
+                    .process_event(event.clone(), dispatcher.clone());
                 match result {
                     Some(PropertyEventProcessResult::CursorLeavedFromAbove) => {
                         self.property
