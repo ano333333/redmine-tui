@@ -282,8 +282,9 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
         );
         for (row, issue) in widget.issues.iter().enumerate() {
             let style = selected_row_style(
-                row == widget.focused_issue_index,
-                widget.focused_column == IssueSelectPopupFocusColumn::Issue,
+                widget.focused_column == IssueSelectPopupFocusColumn::Issue
+                    && row == widget.focused_issue_index,
+                true,
             );
             let label = format!("#{:<5} {}", issue.issue_id, issue.subject);
             issue_scroll.render_widget(SingleLineWidget::new(label, style), 1);
@@ -727,6 +728,35 @@ mod tests {
         let project_row = project_column.y + 1 + 1;
         for x in project_column.x..project_column.x + project_column.width {
             assert_eq!(buffer[(x, project_row)].bg, FOCUS_BG);
+        }
+    }
+
+    #[test]
+    fn render_does_not_highlight_issue_row_when_project_column_is_active() {
+        let projects = projects();
+        let issues = issues();
+        let area = Rect::new(0, 0, 80, 24);
+        let popup_inner = Block::default()
+            .borders(Borders::ALL)
+            .inner(IssueSelectPopupWidget::popup_area(area));
+        let issue_column = split_columns(popup_inner)[1];
+        let state = IssueSelectPopupWidgetState::new();
+        let widget = IssueSelectPopupWidget::new(
+            &projects,
+            &issues,
+            0,
+            0,
+            IssueSelectPopupFocusColumn::Project,
+            &state,
+            IssueSelectPopupIssueColumnState::Loaded,
+        );
+        let mut buffer = Buffer::empty(area);
+
+        Widget::render(widget, area, &mut buffer);
+
+        let issue_row = issue_column.y + 1;
+        for x in issue_column.x..issue_column.x + issue_column.width {
+            assert_eq!(buffer[(x, issue_row)].bg, ratatui::style::Color::Reset);
         }
     }
 
