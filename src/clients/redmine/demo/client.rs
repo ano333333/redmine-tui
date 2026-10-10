@@ -339,13 +339,11 @@ mod tests {
     use crate::clients::redmine::IssueUpdate;
     use crate::clients::redmine::demo::DemoRedmineClient;
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
-    use crate::stores::{Action, Dispatcher, IssueAction, JournalAction};
-    use crate::test_support::complete_usecase;
-    use crate::usecases::redmine::{
-        start_local_journal_upload, start_remote_journal_upload, upload_issue_action,
-    };
-    use crate::vos::issue_property_diff::IssueSubjectDiff;
-    use crate::vos::{EntityIdValue, IssueId, IssuePropertyDiff, JournalId, ProjectId};
+    use crate::stores::{Action, Dispatcher, IssueAction, IssueState, JournalAction};
+    use crate::test_support::{complete_usecase, run_usecases};
+    use crate::usecases::UsecaseRequest;
+    use crate::usecases::redmine::{start_local_journal_upload, start_remote_journal_upload};
+    use crate::vos::{EntityIdValue, IssueId, JournalId, ProjectId};
     use tokio::runtime::Builder;
 
     #[test]
@@ -522,52 +520,66 @@ mod tests {
     }
 
     #[test]
-    fn issue_upload_action_succeeds_and_detects_conflicts() {
-        let client = DemoRedmineClient::new();
+    fn issue_upload_succeeds_and_detects_conflicts() {
         let runtime = Builder::new_current_thread().build().unwrap();
-        let original = runtime
-            .block_on(client.get_issue(IssueId::new(3)))
-            .unwrap()
-            .aggregate
-            .issue
-            .subject;
-        let diff = IssuePropertyDiff::Subject(IssueSubjectDiff {
-            before: original.clone(),
-            after: "local edit".into(),
-        });
-        let actions = runtime.block_on(upload_issue_action(
-            &client,
-            IssueId::new(3),
-            &[diff.clone()],
+        let client = Arc::new(DemoRedmineClient::new());
+        let dispatcher = journal_dispatcher(&client, &runtime);
+        edit_description(&dispatcher, "local edit");
+        runtime.block_on(run_usecases(
+            UsecaseRequest::StartIssueUpload {
+                id: IssueId::new(3),
+            },
+            dispatcher.clone(),
+            client.clone(),
         ));
-        assert!(matches!(
-            actions.as_slice(),
-            [Action::Issue(IssueAction::UploadSucceeded { issue, .. })]
-                if issue.issue.subject == "local edit"
-        ));
+        assert_eq!(
+            dispatcher.borrow().store().try_get_issue_state(3),
+            Some(IssueState::Synced)
+        );
         assert_eq!(
             runtime
                 .block_on(client.get_issue(IssueId::new(3)))
                 .unwrap()
                 .aggregate
                 .issue
-                .subject,
+                .description,
             "local edit"
         );
 
-        let client = DemoRedmineClient::new();
+        let client = Arc::new(DemoRedmineClient::new());
+        let dispatcher = journal_dispatcher(&client, &runtime);
+        edit_description(&dispatcher, "local edit");
         let server_edit = IssueUpdate {
-            subject: Some("server edit".into()),
+            description: Some("server edit".into()),
             ..IssueUpdate::default()
         };
         runtime
             .block_on(client.update_issue(IssueId::new(3), &server_edit))
             .unwrap();
-        let actions = runtime.block_on(upload_issue_action(&client, IssueId::new(3), &[diff]));
-        assert!(matches!(
-            actions.as_slice(),
-            [Action::Issue(IssueAction::UploadConflictsDetected { .. })]
+        runtime.block_on(run_usecases(
+            UsecaseRequest::StartIssueUpload {
+                id: IssueId::new(3),
+            },
+            dispatcher.clone(),
+            client,
         ));
+        assert!(
+            dispatcher
+                .borrow()
+                .store()
+                .try_get_issue_upload_conflict(IssueId::new(3))
+                .is_some()
+        );
+    }
+
+    fn edit_description(dispatcher: &Rc<RefCell<Dispatcher>>, body: &str) {
+        dispatcher
+            .borrow_mut()
+            .dispatch(IssueAction::UpdateDescription {
+                id: IssueId::new(3),
+                body: body.to_string(),
+            });
+        dispatcher.borrow_mut().consume_action();
     }
 
     fn journal_dispatcher(
