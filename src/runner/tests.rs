@@ -36,7 +36,9 @@ use crate::vos::{self, IssueId, IssuePropertyDiff, IssueStatusId, JournalId};
 
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, widgets::Widget};
 
-fn recv_completion(spawner: &TokioBackgroundSpawner) -> BackgroundCompletion {
+fn recv_completion(
+    spawner: &TokioBackgroundSpawner<Vec<Action>>,
+) -> BackgroundCompletion<Vec<Action>> {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
         if let Some(completion) = spawner.try_recv_completion() {
@@ -50,7 +52,7 @@ fn recv_completion(spawner: &TokioBackgroundSpawner) -> BackgroundCompletion {
     }
 }
 
-fn recv_actions(spawner: &TokioBackgroundSpawner, expected: usize) -> Vec<Action> {
+fn recv_actions(spawner: &TokioBackgroundSpawner<Vec<Action>>, expected: usize) -> Vec<Action> {
     let mut actions = Vec::new();
     while actions.len() < expected {
         match recv_completion(spawner) {
@@ -64,7 +66,7 @@ fn recv_actions(spawner: &TokioBackgroundSpawner, expected: usize) -> Vec<Action
 }
 
 struct CompletionSpawner {
-    completions: RefCell<VecDeque<BackgroundCompletion>>,
+    completions: RefCell<VecDeque<BackgroundCompletion<Vec<Action>>>>,
 }
 
 impl CompletionSpawner {
@@ -72,13 +74,13 @@ impl CompletionSpawner {
         Self::from_completions(vec![BackgroundCompletion::Succeeded(actions)])
     }
 
-    fn from_completions(completions: Vec<BackgroundCompletion>) -> Self {
+    fn from_completions(completions: Vec<BackgroundCompletion<Vec<Action>>>) -> Self {
         Self {
             completions: RefCell::new(completions.into_iter().collect()),
         }
     }
 
-    fn panicked(message: &str) -> BackgroundCompletion {
+    fn panicked(message: &str) -> BackgroundCompletion<Vec<Action>> {
         BackgroundCompletion::Panicked {
             message: message.to_string(),
         }
@@ -86,13 +88,15 @@ impl CompletionSpawner {
 }
 
 impl BackgroundSpawner for CompletionSpawner {
+    type Output = Vec<Action>;
+
     fn spawn<F>(&self, _: F)
     where
         F: Future<Output = Vec<Action>> + Send + 'static,
     {
     }
 
-    fn try_recv_completion(&self) -> Option<BackgroundCompletion> {
+    fn try_recv_completion(&self) -> Option<BackgroundCompletion<Vec<Action>>> {
         self.completions.borrow_mut().pop_front()
     }
 }
@@ -1068,7 +1072,7 @@ fn press_ctrl_s(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>)
 }
 
 fn route_worker_actions(
-    spawner: &TokioBackgroundSpawner,
+    spawner: &TokioBackgroundSpawner<Vec<Action>>,
     expected: usize,
     dispatcher: Rc<RefCell<Dispatcher>>,
     app: &mut AppComponent<'_>,

@@ -54,7 +54,7 @@
 上の層は下の層に依存してよく（層を飛ばしてもよい）、下の層から上の層への依存はない。
 層内の依存は個別の矢印で表す。
 `src/clients/` のうち `usecases` が使うのは `redmine/base.rs` の `RedmineClient` trait などのインターフェース定義だけで、これを application に置く。実装（`default.rs` の `DefaultRedmineClient`、`demo/` の `DemoRedmineClient`）と外部表現の変換（`src/libs/`）は `adapter` に置き、実装は起動処理が組み立てて渡す。
-例として、`runner` は `components`・`usecases`・`stores`・`clients`・`vos` に、`platform` は completion を `Action` として dispatch するため `stores` に依存する。
+例として、`runner` は `components`・`usecases`・`stores`・`clients`・`vos` に依存する。`platform` の runtime port は完了値の型を利用側（`runner`）に指定させ、`stores` には依存しない。
 
 ```mermaid
 flowchart TD

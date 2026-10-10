@@ -10,7 +10,7 @@ use crate::{
         host::PlatformHost,
         runtime::{BackgroundSpawner, LocalTask},
     },
-    stores::{Dispatcher, NoticeAction, NoticeId},
+    stores::{Action, Dispatcher, NoticeAction, NoticeId},
     usecases::redmine::{
         continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
         start_deleted_journal_upload, start_issue_upload, start_local_journal_upload,
@@ -31,7 +31,7 @@ pub(crate) fn handle_app_effect<'a, S, C, E, H>(
     editor_session: &mut Option<EditorSession<'a>>,
     host: &mut H,
 ) where
-    S: BackgroundSpawner,
+    S: BackgroundSpawner<Output = Vec<Action>>,
     C: RedmineClient + Send + Sync + 'static,
     E: TextEditor,
     H: PlatformHost,
@@ -122,7 +122,7 @@ pub(crate) fn editor_failure_notice_action(error: &dyn std::fmt::Display) -> Not
     }
 }
 
-pub(crate) fn start_remote_journal_upload_action<S: BackgroundSpawner, C>(
+pub(crate) fn start_remote_journal_upload_action<S: BackgroundSpawner<Output = Vec<Action>>, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
     client: Arc<C>,
@@ -135,7 +135,7 @@ pub(crate) fn start_remote_journal_upload_action<S: BackgroundSpawner, C>(
     spawner.spawn(future);
 }
 
-pub(crate) fn start_local_journal_upload_action<S: BackgroundSpawner, C>(
+pub(crate) fn start_local_journal_upload_action<S: BackgroundSpawner<Output = Vec<Action>>, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
     client: Arc<C>,
@@ -147,7 +147,7 @@ pub(crate) fn start_local_journal_upload_action<S: BackgroundSpawner, C>(
     spawner.spawn(future);
 }
 
-pub(crate) fn continue_remote_journal_upload_action<S: BackgroundSpawner, C>(
+pub(crate) fn continue_remote_journal_upload_action<S: BackgroundSpawner<Output = Vec<Action>>, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
     client: Arc<C>,
@@ -162,7 +162,7 @@ pub(crate) fn continue_remote_journal_upload_action<S: BackgroundSpawner, C>(
     spawner.spawn(future);
 }
 
-pub(crate) fn start_project_issues_page_fetch<S: BackgroundSpawner, C>(
+pub(crate) fn start_project_issues_page_fetch<S: BackgroundSpawner<Output = Vec<Action>>, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
     client: Arc<C>,
@@ -175,7 +175,7 @@ pub(crate) fn start_project_issues_page_fetch<S: BackgroundSpawner, C>(
     spawner.spawn(async move { vec![future.await.into()] });
 }
 
-pub(crate) fn start_issue_fetch<S: BackgroundSpawner, C>(
+pub(crate) fn start_issue_fetch<S: BackgroundSpawner<Output = Vec<Action>>, C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
     client: Arc<C>,

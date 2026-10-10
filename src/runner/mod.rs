@@ -6,7 +6,7 @@ use crate::{
     clients::redmine::RedmineClient,
     components::AppComponent,
     platform::{editor::TextEditor, host::PlatformHost, runtime::BackgroundSpawner},
-    stores::Dispatcher,
+    stores::{Action, Dispatcher},
     trace_dbg,
 };
 
@@ -40,7 +40,7 @@ pub(crate) async fn run<H, E, S, C>(
 where
     H: PlatformHost,
     E: TextEditor,
-    S: BackgroundSpawner,
+    S: BackgroundSpawner<Output = Vec<Action>>,
     C: RedmineClient + Send + Sync + 'static,
 {
     let mut app_component = AppComponent::new(dispatcher.clone(), None, host.cursor_rendering());

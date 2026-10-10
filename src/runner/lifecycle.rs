@@ -32,7 +32,7 @@ pub(crate) fn handle_host_event(
     should_continue
 }
 
-pub(crate) fn move_worker_action<S: BackgroundSpawner>(
+pub(crate) fn move_worker_action<S: BackgroundSpawner<Output = Vec<Action>>>(
     spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
 ) -> Option<String> {
@@ -54,7 +54,7 @@ pub(crate) fn move_worker_action<S: BackgroundSpawner>(
     worker_panic_message
 }
 
-pub(crate) fn consume_editor_worker_actions<S: BackgroundSpawner>(
+pub(crate) fn consume_editor_worker_actions<S: BackgroundSpawner<Output = Vec<Action>>>(
     spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
 ) -> Option<String> {
