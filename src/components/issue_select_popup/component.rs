@@ -336,6 +336,7 @@ impl IssueSelectPopupComponent {
     }
 
     fn navigate_to_page(&mut self, store: &Store, project_id: ProjectId, page: NonZeroUsize) {
+        self.initial_issue_id = None;
         self.display_pages.insert(project_id, page);
         self.activate_focused_project(store);
         self.request_page(project_id, page);
@@ -1125,6 +1126,48 @@ mod tests {
         let widget = component.create_widget(&store);
         assert_eq!(widget.focused_column, IssueSelectPopupFocusColumn::Issue);
         assert_eq!(widget.focused_issue_index, 1);
+    }
+
+    #[test]
+    fn page_navigation_cancels_displayed_issue_focus() {
+        let mut store = unloaded_store();
+        load_project_page(
+            &mut store,
+            1,
+            1,
+            vec![project_issue(3, 1, "issue3", "body")],
+            51,
+            0,
+        );
+        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()));
+        let _ = component.take_effect();
+        component.process_event(key_event(KeyCode::Char('j')), &store);
+        let _ = component.take_effect();
+        load_project_page(
+            &mut store,
+            1,
+            2,
+            vec![project_issue(42, 1, "second page", "body")],
+            51,
+            50,
+        );
+        component.update(&store, AREA);
+
+        component.process_event(key_event(KeyCode::Char('k')), &store);
+        load_project_page(
+            &mut store,
+            1,
+            1,
+            vec![
+                project_issue(1, 1, "issue1", "body"),
+                project_issue(3, 1, "issue3", "body"),
+            ],
+            51,
+            0,
+        );
+        component.update(&store, AREA);
+
+        assert_eq!(component.create_widget(&store).focused_issue_index, 0);
     }
 
     #[test]
