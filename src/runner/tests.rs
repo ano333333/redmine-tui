@@ -5,7 +5,7 @@ use crate::platform::host::{CursorRendering, HostEvent, PlatformHost};
 use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use crate::platform::runtime::tokio_spawner::TokioBackgroundSpawner;
 use crate::platform::runtime::{BackgroundCompletion, BackgroundSpawner};
-use crate::runner::effect::{drain_requests, handle_component_requests};
+use crate::runner::effect::{drain_requests, handle_component_requests, handle_input};
 use crate::runner::lifecycle::{
     consume_editor_worker_actions, move_worker_action, tick_since, update,
 };
@@ -1837,4 +1837,70 @@ fn component_requests_start_usecases_before_the_editor() {
         host.issue_2_fetch_states_at_suspend,
         [Some(stores::IssueFetchState::Fetching)]
     );
+}
+
+fn rendered_without_spaces(app: &AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) -> String {
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    terminal
+        .draw(|frame| app.render(dispatcher.borrow().store(), frame, frame.area()))
+        .unwrap();
+    // 全角文字の後ろのセルは空白になるため、空白を除いて連続した文字列として検索する。
+    terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(|cell| cell.symbol())
+        .filter(|symbol| !symbol.trim().is_empty())
+        .collect()
+}
+
+#[test]
+fn continuing_an_issue_conflict_does_not_reopen_the_conflict_popup() {
+    let (initial_dispatcher, mut server_issue) = edited_issue_dispatcher();
+    let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
+    server_issue.issue.description = "server description".to_string();
+    let conflicts = dispatcher
+        .borrow()
+        .store()
+        .get_issue_property_diffs(3)
+        .to_vec();
+    for action in [
+        Action::from(IssueAction::StartUpload { id: 3.into() }),
+        IssueAction::UploadConflictsDetected {
+            server_issue: server_issue.clone(),
+            conflicts,
+            children: vec![],
+        }
+        .into(),
+    ] {
+        dispatcher.borrow_mut().dispatch(action);
+        dispatcher.borrow_mut().consume_action();
+    }
+    let mut app = journal_upload_app(dispatcher.clone());
+    assert!(rendered_without_spaces(&app, dispatcher.clone()).contains("続行"));
+    let spawner = CompletionSpawner::from_completions(vec![]);
+    let client = Arc::new(IssueUploadClient::new(server_issue));
+    let mut host = RunnerHost::new(dispatcher.clone());
+    let mut editor_session = None;
+    let mut sink = RequestSink::default();
+
+    // 続行ボタンへ移動してEnterを押す。
+    for code in [KeyCode::Char('j'), KeyCode::Enter] {
+        handle_input(
+            HostEvent::Input(InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))),
+            &mut sink,
+            &mut VecDeque::new(),
+            &mut app,
+            dispatcher.clone(),
+            &spawner,
+            client.clone(),
+            &RunnerEditor,
+            &mut editor_session,
+            &mut host,
+        );
+    }
+
+    assert_eq!(spawner.spawned.get(), 1);
+    assert!(!rendered_without_spaces(&app, dispatcher.clone()).contains("続行"));
 }

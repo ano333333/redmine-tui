@@ -35,7 +35,6 @@ use crate::usecases::issue_popup_options::{
     issue_status_popup_observer, priority_popup_observer, project_popup_observer,
     start_date_popup_observer, target_version_popup_observer, tracker_popup_observer,
 };
-use crate::usecases::redmine::continue_issue_upload;
 use crate::vos::{EntityIdValue, IssueId, JournalId, TimeEntityActivityId};
 use crate::widgets::ToastWidget;
 
@@ -278,11 +277,9 @@ impl<'a> AppComponent<'a> {
                         self.popup_components.pop_back();
                     }
                     IssuePropertyConflictEventProcessResult::Continued { diffs } => {
-                        let retry_diffs =
-                            continue_issue_upload(&mut dispatcher.borrow_mut(), *issue_id, diffs);
                         sink.request_usecase(UsecaseRequest::ContinueIssueUpload {
                             id: *issue_id,
-                            retry_diffs,
+                            selected_local_diffs: diffs,
                         });
                         self.popup_components.pop_back();
                     }

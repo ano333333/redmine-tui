@@ -7,9 +7,10 @@ use crate::clients::redmine::RedmineClient;
 use crate::stores::Dispatcher;
 use crate::usecases::UsecaseTask;
 use crate::usecases::redmine::{
-    cancel_issue_upload, cancel_remote_journal_upload, continue_remote_journal_upload, fetch_issue,
-    fetch_project_issues_page, start_deleted_journal_upload, start_issue_upload,
-    start_local_journal_upload, start_remote_journal_upload, upload_issue_action,
+    cancel_issue_upload, cancel_remote_journal_upload, continue_issue_upload,
+    continue_remote_journal_upload, fetch_issue, fetch_project_issues_page,
+    start_deleted_journal_upload, start_issue_upload, start_local_journal_upload,
+    start_remote_journal_upload,
 };
 use crate::vos::{IssueId, IssuePropertyDiff, JournalId, ProjectId};
 
@@ -31,12 +32,10 @@ pub enum UsecaseRequest {
     CancelIssueUpload {
         id: IssueId,
     },
-    /// 競合解決後のIssue保存を`retry_diffs`で再開する。
-    ///
-    /// `retry_diffs`はStoreに保存されないため、競合解決の同期処理で作った値を要求に載せて運ぶ。
+    /// `selected_local_diffs`は、競合popupでローカルの値を選んだpropertyのdiffである。
     ContinueIssueUpload {
         id: IssueId,
-        retry_diffs: Vec<IssuePropertyDiff>,
+        selected_local_diffs: Vec<IssuePropertyDiff>,
     },
     StartRemoteJournalUpload {
         issue_id: IssueId,
@@ -83,11 +82,10 @@ where
             cancel_issue_upload(&mut dispatcher.borrow_mut(), id);
             None
         }
-        UsecaseRequest::ContinueIssueUpload { id, retry_diffs } => Some(Box::pin(async move {
-            upload_issue_action(client.as_ref(), id, &retry_diffs)
-                .await
-                .into()
-        })),
+        UsecaseRequest::ContinueIssueUpload {
+            id,
+            selected_local_diffs,
+        } => continue_issue_upload(dispatcher, client, id, selected_local_diffs),
         UsecaseRequest::StartRemoteJournalUpload {
             issue_id,
             journal_id,
@@ -384,33 +382,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn continue_issue_upload_puts_the_retry_diffs() {
+    async fn continue_issue_upload_clears_the_conflict_before_putting_the_selected_value() {
         let mut server_issue = issue();
         server_issue.issue.description = "server description".to_string();
+        let dispatcher = issue_conflict_dispatcher(server_issue.clone());
         let client = RecordingClient::new(server_issue);
-        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
 
-        complete_usecase(start_usecase(
+        let task = start_usecase(
             UsecaseRequest::ContinueIssueUpload {
                 id: ISSUE_ID,
-                retry_diffs: vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
+                selected_local_diffs: vec![IssuePropertyDiff::Description(IssueDescriptionDiff {
                     before: "server description".to_string(),
-                    after: "resolved description".to_string(),
+                    after: "local description".to_string(),
                 })],
             },
             dispatcher.clone(),
             client.clone(),
-        ))
-        .await;
+        );
+        dispatcher.borrow_mut().consume_action();
 
+        assert!(
+            dispatcher
+                .borrow()
+                .store()
+                .try_get_issue_upload_conflict(ISSUE_ID)
+                .is_none()
+        );
+        assert!(client.issue_updates.lock().unwrap().is_empty());
+        complete_usecase(task).await;
         assert_eq!(
             *client.issue_updates.lock().unwrap(),
             vec![IssueUpdate {
-                description: Some("resolved description".to_string()),
+                description: Some("local description".to_string()),
                 ..IssueUpdate::default()
             }]
         );
-        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
     }
 
     #[test]
