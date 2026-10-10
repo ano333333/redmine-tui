@@ -1,4 +1,4 @@
-//! `AppEffect`が要求する外部副作用をnative/Web共通runnerから起動する。
+//! Componentが要求した外部副作用をnative/Web共通runnerから起動する。
 
 use std::{cell::RefCell, collections::VecDeque, io, rc::Rc, sync::Arc};
 
@@ -6,9 +6,9 @@ use ratatui::layout::Rect;
 
 use crate::{
     clients::redmine::RedmineClient,
-    components::{AppComponent, app::AppEffect},
+    components::{AppComponent, RequestSink},
     platform::{
-        editor::{EditorOutcome, TextEditor},
+        editor::{EditorOutcome, EditorRequest, TextEditor},
         host::PlatformHost,
         runtime::{BackgroundSpawner, LocalTask},
     },
@@ -20,8 +20,11 @@ use super::lifecycle::update;
 
 pub(crate) type EditorSession<'a> = LocalTask<'a, io::Result<EditorOutcome>>;
 
-pub(crate) fn handle_app_effect<'a, S, C, E, H>(
-    effect: AppEffect,
+/// Componentが`sink`に書いた要求を処理する。Usecaseの要求をすべて起動した後にeditorを起動する。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn handle_component_requests<'a, S, C, E, H>(
+    sink: &mut RequestSink,
+    requests: &mut VecDeque<UsecaseRequest>,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
@@ -29,34 +32,57 @@ pub(crate) fn handle_app_effect<'a, S, C, E, H>(
     editor: &'a E,
     editor_session: &mut Option<EditorSession<'a>>,
     host: &mut H,
-    requests: &mut VecDeque<UsecaseRequest>,
 ) where
     S: BackgroundSpawner<Output = UsecaseOutput>,
     C: RedmineClient + Send + Sync + 'static,
     E: TextEditor,
     H: PlatformHost,
 {
-    match effect {
-        AppEffect::Usecase(request) => {
-            requests.push_back(request);
-            let area = host.area();
-            drain_requests(requests, app_component, dispatcher, spawner, client, area);
-        }
-        AppEffect::OpenEditor(request) => {
-            // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
-            // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
-            // FIXME: 実terminalとexternal editor processを使い、アプリ終了時にterminal状態が復元されeditor processがkillされることをE2E testで確認する。
-            if let Err(error) = host.suspend_for_editor() {
-                handle_editor_failure(
-                    app_component,
-                    dispatcher,
-                    &error,
-                    "failed to leave terminal for editor",
-                );
-            } else {
-                *editor_session = Some(LocalTask::new(editor.edit(request)));
-            }
-        }
+    requests.extend(sink.take_usecases());
+    let area = host.area();
+    drain_requests(
+        requests,
+        app_component,
+        dispatcher.clone(),
+        spawner,
+        client,
+        area,
+    );
+    if let Some(request) = sink.take_editor() {
+        open_editor(
+            request,
+            app_component,
+            dispatcher,
+            editor,
+            editor_session,
+            host,
+        );
+    }
+}
+
+fn open_editor<'a, E, H>(
+    request: EditorRequest,
+    app_component: &mut AppComponent,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    editor: &'a E,
+    editor_session: &mut Option<EditorSession<'a>>,
+    host: &mut H,
+) where
+    E: TextEditor,
+    H: PlatformHost,
+{
+    // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
+    // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
+    // FIXME: 実terminalとexternal editor processを使い、アプリ終了時にterminal状態が復元されeditor processがkillされることをE2E testで確認する。
+    if let Err(error) = host.suspend_for_editor() {
+        handle_editor_failure(
+            app_component,
+            dispatcher,
+            &error,
+            "failed to leave terminal for editor",
+        );
+    } else {
+        *editor_session = Some(LocalTask::new(editor.edit(request)));
     }
 }
 

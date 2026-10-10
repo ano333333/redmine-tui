@@ -1,11 +1,11 @@
 use crate::components::AppComponent;
-use crate::components::app::AppEffect;
+use crate::components::RequestSink;
 use crate::platform::editor::{EditorOutcome, EditorRequest, TextEditor};
 use crate::platform::host::{CursorRendering, HostEvent, PlatformHost};
 use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
 use crate::platform::runtime::tokio_spawner::TokioBackgroundSpawner;
 use crate::platform::runtime::{BackgroundCompletion, BackgroundSpawner};
-use crate::runner::effect::drain_requests;
+use crate::runner::effect::{drain_requests, handle_component_requests};
 use crate::runner::lifecycle::{
     consume_editor_worker_actions, move_worker_action, tick_since, update,
 };
@@ -145,14 +145,15 @@ fn tick_since_returns_a_positive_duration_after_elapsed_time() {
 }
 
 #[test]
-fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion_to_worker_channel()
-{
+fn initial_fetch_request_routes_only_completion_to_worker_channel() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+    let mut sink = RequestSink::default();
     let mut app = AppComponent::new(
         dispatcher.clone(),
         Some(42.into()),
         CursorRendering::Terminal,
+        &mut sink,
     );
     let client = Arc::new(IssueUploadClient::new(sample_issue_aggregate(
         42,
@@ -165,15 +166,13 @@ fn loop_update_takes_initial_fetch_effect_before_draw_and_routes_only_completion
     )));
 
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-    let effect = app
-        .take_effect()
-        .expect("initial fetch effect should be taken before draw");
-    let AppEffect::Usecase(request @ UsecaseRequest::FetchIssue { .. }) = effect else {
-        panic!("test app only has a fetch effect")
+    let Ok([request @ UsecaseRequest::FetchIssue { .. }]) =
+        <[UsecaseRequest; 1]>::try_from(sink.take_usecases())
+    else {
+        panic!("test app only requests the initial issue")
     };
     start_request(request, dispatcher.clone(), &spawner, client);
 
-    assert!(app.take_effect().is_none());
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
     assert_eq!(dispatcher.borrow().store().try_get_issue_state(42), None);
     assert_eq!(
@@ -240,14 +239,20 @@ fn issue_detail_shows_journals_from_the_first_frame_after_fetch_completion() {
 }
 
 #[test]
-fn project_page_effect_queues_start_loading_and_routes_only_completion_to_worker_channel() {
+fn project_page_request_queues_start_loading_and_routes_only_completion_to_worker_channel() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
     crate::test_support::dispatch_sample_masters(&mut dispatcher.borrow_mut());
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
-    let mut app = AppComponent::new(dispatcher.clone(), None, CursorRendering::Terminal);
+    let mut sink = RequestSink::default();
+    let mut app = AppComponent::new(
+        dispatcher.clone(),
+        None,
+        CursorRendering::Terminal,
+        &mut sink,
+    );
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
     let client = Arc::new(IssueUploadClient::new(sample_issue_aggregate(
         1,
@@ -258,10 +263,9 @@ fn project_page_effect_queues_start_loading_and_routes_only_completion_to_worker
         None,
         0,
     )));
-    let effect = app
-        .take_effect()
-        .expect("initial popup effect should be taken at the common loop point");
-    let AppEffect::Usecase(request @ UsecaseRequest::FetchProjectIssuesPage { .. }) = effect else {
+    let Ok([request @ UsecaseRequest::FetchProjectIssuesPage { .. }]) =
+        <[UsecaseRequest; 1]>::try_from(sink.take_usecases())
+    else {
         panic!("initial popup should request a project issue page")
     };
 
@@ -1005,6 +1009,7 @@ fn journal_upload_app(dispatcher: Rc<RefCell<Dispatcher>>) -> AppComponent<'stat
         dispatcher.clone(),
         Some(IssueId::new(3)),
         CursorRendering::Terminal,
+        &mut RequestSink::default(),
     );
     app.update(
         dispatcher.clone(),
@@ -1076,6 +1081,7 @@ fn move_focus_down(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher
         app.process_event(
             InputEvent::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::none())),
             dispatcher.clone(),
+            &mut RequestSink::default(),
         );
         app.update(
             dispatcher.clone(),
@@ -1094,6 +1100,7 @@ fn focus_local_journal_notes(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<
     app.process_event(
         InputEvent::Key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::none())),
         dispatcher.clone(),
+        &mut RequestSink::default(),
     );
     app.update(
         dispatcher.clone(),
@@ -1102,11 +1109,17 @@ fn focus_local_journal_notes(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<
     );
 }
 
-fn press_ctrl_s(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) {
+fn press_ctrl_s(
+    app: &mut AppComponent<'_>,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+) -> Vec<UsecaseRequest> {
+    let mut sink = RequestSink::default();
     app.process_event(
         InputEvent::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::control())),
         dispatcher,
+        &mut sink,
     );
+    sink.take_usecases()
 }
 
 fn route_worker_actions(
@@ -1158,9 +1171,8 @@ fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clear
     let mut app = journal_upload_app(dispatcher.clone());
     let client = Arc::new(IssueUploadClient::failing_update(server_issue));
 
-    press_ctrl_s(&mut app, dispatcher.clone());
-    let Some(AppEffect::Usecase(request @ UsecaseRequest::StartIssueUpload { id })) =
-        app.take_effect()
+    let Ok([request @ UsecaseRequest::StartIssueUpload { id }]) =
+        <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
     else {
         panic!("expected issue upload effect");
     };
@@ -1182,9 +1194,8 @@ fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clear
     drop(store);
     assert_toast_contains(&app, dispatcher.clone(), "Issue #3の保存に失敗しました");
 
-    press_ctrl_s(&mut app, dispatcher.clone());
-    let Some(AppEffect::Usecase(request @ UsecaseRequest::StartIssueUpload { id })) =
-        app.take_effect()
+    let Ok([request @ UsecaseRequest::StartIssueUpload { id }]) =
+        <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
     else {
         panic!("expected retry issue upload effect");
     };
@@ -1213,9 +1224,8 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
     let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
     let mut app = journal_upload_app(dispatcher.clone());
     focus_remote_journal_notes(&mut app, dispatcher.clone());
-    press_ctrl_s(&mut app, dispatcher.clone());
-    let Some(AppEffect::Usecase(request @ UsecaseRequest::StartRemoteJournalUpload { .. })) =
-        app.take_effect()
+    let Ok([request @ UsecaseRequest::StartRemoteJournalUpload { .. }]) =
+        <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
     else {
         panic!("expected remote upload effect");
     };
@@ -1227,9 +1237,8 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
 
     start_request(request, dispatcher.clone(), &spawner, client.clone());
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-    press_ctrl_s(&mut app, dispatcher.clone());
-    // upload中の重複Ctrl+Sはeffectを生成せず、usecase呼び出し前に正常なno-opとなる。
-    assert!(app.take_effect().is_none());
+    // upload中の重複Ctrl+Sは要求を生成せず、usecase呼び出し前に正常なno-opとなる。
+    assert_eq!(press_ctrl_s(&mut app, dispatcher.clone()), []);
     route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
     assert_toast_contains(
         &app,
@@ -1237,13 +1246,14 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
         "Remote Journalの保存に失敗しました",
     );
 
-    press_ctrl_s(&mut app, dispatcher.clone());
-    let Some(AppEffect::Usecase(
-        request @ UsecaseRequest::StartRemoteJournalUpload {
-            issue_id,
-            journal_id,
-        },
-    )) = app.take_effect()
+    let Ok(
+        [
+            request @ UsecaseRequest::StartRemoteJournalUpload {
+                issue_id,
+                journal_id,
+            },
+        ],
+    ) = <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
     else {
         panic!("toast must not take focus from remote journal notes");
     };
@@ -1278,9 +1288,8 @@ fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     *client.journal_failures_remaining.lock().unwrap() = 1;
 
     for expected_actions in [2, 1] {
-        press_ctrl_s(&mut app, dispatcher.clone());
-        let Some(AppEffect::Usecase(request @ UsecaseRequest::StartRemoteJournalUpload { .. })) =
-            app.take_effect()
+        let Ok([request @ UsecaseRequest::StartRemoteJournalUpload { .. }]) =
+            <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
         else {
             panic!("toast must not take focus from remote journal notes");
         };
@@ -1319,9 +1328,8 @@ fn local_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     *client.local_failures_remaining.lock().unwrap() = 1;
 
     for expected_actions in [2, 1] {
-        press_ctrl_s(&mut app, dispatcher.clone());
-        let Some(AppEffect::Usecase(request @ UsecaseRequest::StartLocalJournalUpload { .. })) =
-            app.take_effect()
+        let Ok([request @ UsecaseRequest::StartLocalJournalUpload { .. }]) =
+            <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
         else {
             panic!("toast must not take focus from local journal notes");
         };
@@ -1362,9 +1370,8 @@ fn local_confirmation_get_failure_tells_that_the_notes_were_saved_and_removes_th
     ));
     *client.get_failures_remaining.lock().unwrap() = 1;
 
-    press_ctrl_s(&mut app, dispatcher.clone());
-    let Some(AppEffect::Usecase(request @ UsecaseRequest::StartLocalJournalUpload { .. })) =
-        app.take_effect()
+    let Ok([request @ UsecaseRequest::StartLocalJournalUpload { .. }]) =
+        <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
     else {
         panic!("ctrl+s on local journal notes must start the upload");
     };
@@ -1490,6 +1497,8 @@ impl TextEditor for RunnerEditor {
 struct DrawRecord {
     notices: Vec<String>,
     rendered: String,
+    pending_actions: usize,
+    loading_project_ids: Vec<u16>,
 }
 
 struct RunnerHost {
@@ -1499,6 +1508,8 @@ struct RunnerHost {
     events: VecDeque<io::Result<Option<HostEvent>>>,
     draws: Vec<DrawRecord>,
     input_observations: Vec<Vec<String>>,
+    /// editorを起動した時点の、Issue 2の取得状態。
+    issue_2_fetch_states_at_suspend: Vec<Option<stores::IssueFetchState>>,
 }
 
 impl RunnerHost {
@@ -1510,6 +1521,7 @@ impl RunnerHost {
             events: VecDeque::new(),
             draws: Vec::new(),
             input_observations: Vec::new(),
+            issue_2_fetch_states_at_suspend: Vec::new(),
         }
     }
 
@@ -1551,9 +1563,25 @@ impl PlatformHost for RunnerHost {
             .iter()
             .map(|cell| cell.symbol())
             .collect();
+        let dispatcher = self.dispatcher.borrow();
+        let loading_project_ids = [1, 2]
+            .into_iter()
+            .filter(|&project_id| {
+                matches!(
+                    dispatcher
+                        .store()
+                        .get_project_issues_page_state(project_id, std::num::NonZeroUsize::MIN),
+                    Some(stores::ProjectIssuesPageState::Loading { .. })
+                )
+            })
+            .collect();
+        let pending_actions = dispatcher.consume_actinos_len();
+        drop(dispatcher);
         self.draws.push(DrawRecord {
             notices: self.messages(),
             rendered,
+            pending_actions,
+            loading_project_ids,
         });
         Ok(())
     }
@@ -1566,6 +1594,12 @@ impl PlatformHost for RunnerHost {
     async fn wait(&mut self, _: Duration) {}
 
     fn suspend_for_editor(&mut self) -> io::Result<()> {
+        let state = self
+            .dispatcher
+            .borrow()
+            .store()
+            .try_get_issue_fetch_state(2);
+        self.issue_2_fetch_states_at_suspend.push(state);
         Ok(())
     }
 
@@ -1683,6 +1717,7 @@ fn drain_requests_does_not_start_a_second_fetch_of_the_same_issue() {
         dispatcher.clone(),
         Some(2.into()),
         CursorRendering::Terminal,
+        &mut RequestSink::default(),
     );
     let spawner = CompletionSpawner::from_completions(vec![]);
     let request = UsecaseRequest::FetchIssue {
@@ -1726,5 +1761,80 @@ fn editor_worker_completion_keeps_its_requests_queued() {
     assert_eq!(
         dispatcher.borrow().store().try_get_issue_fetch_state(2),
         None
+    );
+}
+
+#[tokio::test]
+async fn run_starts_startup_and_input_requests_before_drawing() {
+    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+    crate::test_support::dispatch_sample_masters(&mut dispatcher.borrow_mut());
+    while dispatcher.borrow().consume_actinos_len() > 0 {
+        dispatcher.borrow_mut().consume_action();
+    }
+    let spawner = CompletionSpawner::from_completions(vec![]);
+    let mut host = RunnerHost::new(dispatcher.clone());
+    // 起動時のpopupはProject列にfocusがあり、jで次のProjectのページを要求する。
+    host.events
+        .push_back(Ok(Some(HostEvent::Input(InputEvent::Key(KeyEvent::new(
+            KeyCode::Char('j'),
+            KeyModifiers::none(),
+        ))))));
+    host.events.push_back(Ok(Some(quit_event())));
+    host.events.push_back(Ok(Some(quit_event())));
+
+    let result = super::run(
+        &mut host,
+        &RunnerEditor,
+        &spawner,
+        Arc::new(FailingClient),
+        dispatcher,
+    )
+    .await;
+
+    assert!(result.is_ok());
+    assert_eq!(host.draws[0].loading_project_ids, [1]);
+    assert_eq!(host.draws[0].pending_actions, 0);
+    assert_eq!(host.draws[1].loading_project_ids, [1, 2]);
+    assert_eq!(host.draws[1].pending_actions, 0);
+    assert_eq!(spawner.spawned.get(), 2);
+}
+
+#[test]
+fn component_requests_start_usecases_before_the_editor() {
+    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+    let mut app = AppComponent::new(
+        dispatcher.clone(),
+        Some(2.into()),
+        CursorRendering::Terminal,
+        &mut RequestSink::default(),
+    );
+    let mut sink = RequestSink::default();
+    sink.request_editor(EditorRequest {
+        initial_text: String::new(),
+    });
+    sink.request_usecase(UsecaseRequest::FetchIssue {
+        id: 2.into(),
+        with_parent: false,
+    });
+    let spawner = CompletionSpawner::from_completions(vec![]);
+    let mut host = RunnerHost::new(dispatcher.clone());
+    let mut editor_session = None;
+
+    handle_component_requests(
+        &mut sink,
+        &mut VecDeque::new(),
+        &mut app,
+        dispatcher,
+        &spawner,
+        Arc::new(FailingClient),
+        &RunnerEditor,
+        &mut editor_session,
+        &mut host,
+    );
+
+    assert!(editor_session.is_some());
+    assert_eq!(
+        host.issue_2_fetch_states_at_suspend,
+        [Some(stores::IssueFetchState::Fetching)]
     );
 }

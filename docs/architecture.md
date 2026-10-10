@@ -114,7 +114,7 @@ Store の更新は原則として Dispatcher を介して行う。
 - Component と usecase は `IssueStore` を直接参照せず、親 `Store` の Issue getter を通して entity、同期状態、diff、競合情報を取得する。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。
-- editor 起動、Redmine への非同期取得・保存などの外部副作用は `AppEffect` として Component から取り出し、`runner` 側で実行する。Redmine の Usecase は `AppEffect::Usecase(UsecaseRequest)` で要求する。`runner` は `start_usecase` で Usecase を起動し、返された `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で spawn して、完了 Action を Dispatcher に戻す。`runner` は要求を queue に積み、1件起動するたびに update する。completion の後続要求は、その completion の Action を消費した update の後に起動する。そのため Usecase の起動条件は、それまでの要求と completion を反映した Store で判定できる。
+- editor 起動、Redmine への非同期取得・保存などの外部副作用は、Component が `RequestSink` に要求を書き、`runner` 側で実行する。`RequestSink` は `runner` が `&mut` で貸すもので、受け取るのは `AppComponent` の `new`・`process_event`・`handle_key_event` だけである。`update` と `render` は受け取らないため、update からは要求を発行できない。要求を Component のフィールドに溜めて後で書くことも禁止する。ただし `IssueSelectPopupComponent` は独自の effect を持ち、`AppComponent` がそれを取り出して `RequestSink` へ書き写す。Redmine の Usecase は `UsecaseRequest` で要求する。`runner` は `start_usecase` で Usecase を起動し、返された `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で spawn して、完了 Action を Dispatcher に戻す。`runner` は要求を queue に積み、1件起動するたびに update する。Component 生成と入力に由来する要求は、その処理の直後、update の前に起動し、その後に editor を起動する。completion の後続要求は、その completion の Action を消費した update の後に起動する。そのため Usecase の起動条件は、それまでの要求と completion を反映した Store で判定できる。
 - `create_widget(&Store)` で Store を参照して表示用 entity を取得してよい。
 
 Store は、失敗または Action の不受理に見える分岐を以下に区別して扱う。
@@ -171,7 +171,7 @@ Component は以下の lifecycle を前提に実装する。
    - `Widget::render`
 2. 同期的なキーイベント処理時
    - `Component::process_event`
-   - 必要に応じて action dispatch、popup open/close、effect request
+   - 必要に応じて action dispatch、popup open/close、`RequestSink` への要求
    - `Component::update`
    - `Component::create_widget`
    - `Widget::render`
@@ -367,7 +367,7 @@ GitHub Pages向けWebデモをRatzilla `DomBackend`で配信するため、Store
 ```mermaid
 flowchart TD
     input["InputEvent"] --> component["Component"]
-    component -->|effect| runner["App runner"]
+    component -->|RequestSink| runner["App runner"]
     runner --> ports["platform ports<br/>Redmine・Editor・Runtime・Logging"]
     ports -->|completion| store["Dispatcher/Store"]
     component --> action["Action"]
@@ -387,7 +387,7 @@ flowchart TD
 
 - Componentはcrosstermではなく`src/platform/input/`の`InputEvent`を受け取る。
 - 共通層（components・widgets・stores・usecases・entities・vos）はcrossterm、Ratzilla、DOM、Tokio、filesystem、process、HTTP実装へ直接依存しない。
-- 外部副作用は`AppEffect`としてrunnerに渡し、runnerがplatformのportで実行する（runtime handle や executor 固有型を Component、Store、Client に渡さない）。
+- 外部副作用は`RequestSink`への要求としてrunnerに渡し、runnerがplatformのportで実行する（runtime handle や executor 固有型を Component、Store、Client に渡さない）。
 - `InteractionMode::Editing`中はComponentへの入力配送を止める。
 
 Webは`web-demo` featureとwasm32 targetでbuildする。ローカルでの確認手順は[README.ja.md](../README.ja.md)を参照する。GitHub Pagesへの配信は`.github/workflows/pages.yml`が`cargo xtask build-pages`でbuildして行う。

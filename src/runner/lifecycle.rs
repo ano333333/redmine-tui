@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc, time::Duration};
 use ratatui::{Frame, layout::Rect};
 
 use crate::{
-    components::AppComponent,
+    components::{AppComponent, RequestSink},
     platform::host::HostEvent,
     platform::runtime::{BackgroundCompletion, BackgroundSpawner},
     stores::{Action, Dispatcher},
@@ -22,15 +22,12 @@ pub(crate) fn handle_host_event(
     event: HostEvent,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
-    area: Rect,
+    sink: &mut RequestSink,
 ) -> bool {
-    let should_continue = match event {
-        HostEvent::Input(event) => app_component.handle_key_event(event, dispatcher.clone()),
+    match event {
+        HostEvent::Input(event) => app_component.handle_key_event(event, dispatcher, sink),
         HostEvent::Ignored => true,
-    };
-    update(dispatcher.clone(), app_component, area);
-    app_component.update(dispatcher.clone(), dispatcher.borrow().store(), area);
-    should_continue
+    }
 }
 
 /// 受理したcompletionのActionをdispatchし、後続要求を`requests`の末尾に積む。
