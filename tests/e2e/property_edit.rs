@@ -16,18 +16,21 @@ const CATEGORY_LINE: usize = 14;
 
 const NONE_CHOICE: &str = "(None)";
 
-/// Issue 3の詳細を開き、`line`のpropertyでeを押して編集popupを開く。
-fn open_property_popup_of_issue_3(line: usize) -> PtySession {
+/// 初期popupの`position`番目のIssueの詳細を開き、`line`のpropertyでeを押す。
+///
+/// 最初のjでheaderからpropertyへ移り、以降のjで1行ずつ下がる。親Issueを持つIssueでは、
+/// 最初のjでheaderの親の行へ移るため、1回多く押す。
+fn press_e_on_property(position: usize, has_parent: bool, line: usize) -> PtySession {
     reseed_redmine();
     let mut session = spawn_app();
-    open_issue_from_initial_popup(&mut session, 1);
-    // 最初のjでheaderからpropertyへ移り、以降のjで1行ずつ下がる。
+    open_issue_from_initial_popup(&mut session, position);
     let (row, move_right) = if line < RIGHT_COLUMN_FIRST_LINE {
         (line, false)
     } else {
         (line - RIGHT_COLUMN_FIRST_LINE, true)
     };
-    for _ in 0..=row {
+    let presses = row + 1 + usize::from(has_parent);
+    for _ in 0..presses {
         session.press_key("j").expect("failed to press j");
     }
     if move_right {
@@ -35,6 +38,18 @@ fn open_property_popup_of_issue_3(line: usize) -> PtySession {
     }
     session.press_key("e").expect("failed to press e");
     session
+}
+
+/// 子Issueを持ち、親Issueを持たないIssue 3で`line`のpropertyの編集popupを開く。
+fn open_property_popup_of_issue_3(line: usize) -> PtySession {
+    press_e_on_property(1, false, line)
+}
+
+/// 子Issueを持たず、Issue 3を親に持つIssue 2で`line`のpropertyの編集popupを開く。
+///
+/// 子Issueを持つIssueの優先度・開始日・期日・進捗率は子から計算され、編集できないため、Issue 2を使う。
+fn open_property_popup_of_issue_2(line: usize) -> PtySession {
+    press_e_on_property(2, true, line)
 }
 
 fn wait_for_property(session: &mut PtySession, label: &str, expected: &str) {
@@ -64,8 +79,8 @@ fn tracker_popup_excludes_none_and_changes_the_tracker() {
 // Scenario: priorityのpopupは選択なしを含まず、選んだpriorityに変わる
 #[test]
 fn priority_popup_excludes_none_and_changes_the_priority() {
-    // Given Issue 3（priority: major）のpriority popupを開いている
-    let mut session = open_property_popup_of_issue_3(PRIORITY_LINE);
+    // Given Issue 2（priority: major）のpriority popupを開いている
+    let mut session = open_property_popup_of_issue_2(PRIORITY_LINE);
 
     // Then popupにpriorityが並び、選択なしは含まれない
     let frame = wait_for_text(&mut session, "blocker");
@@ -76,6 +91,18 @@ fn priority_popup_excludes_none_and_changes_the_priority() {
 
     // Then priorityがminorになる
     wait_for_property(&mut session, "優先度", "minor");
+}
+
+// Scenario: 子Issueを持つIssueの優先度は、popupを開かずに編集できない理由を表示する
+#[test]
+fn priority_of_issue_with_children_shows_notice_without_popup() {
+    // Given 子Issueを持つIssue 3（priority: major）の優先度でeを押した
+    let mut session = open_property_popup_of_issue_3(PRIORITY_LINE);
+
+    // Then 編集できない理由が表示され、priority popupは開かない
+    // 通知は右上の狭い枠で折り返されるため、1行に収まる先頭部分で待つ。
+    let frame = wait_for_text(&mut session, "優先度は");
+    assert!(!frame.contains("blocker"));
 }
 
 // Scenario: projectを移すと、project固有のcategoryが外れる
@@ -127,8 +154,8 @@ fn category_popup_includes_none_and_clears_the_category() {
 // Scenario: 開始日と期日を日付選択popupで変更できる
 #[test]
 fn date_picker_changes_the_start_date_and_the_due_date() {
-    // Given Issue 3（開始日: 2026/02/16）の開始日popupを開いている
-    let mut session = open_property_popup_of_issue_3(START_DATE_LINE);
+    // Given Issue 2（開始日: 2025/12/09）の開始日popupを開いている
+    let mut session = open_property_popup_of_issue_2(START_DATE_LINE);
 
     // When カレンダーで翌日を選び、入力欄で確定する
     // Tabで年・月・日の欄を越えてカレンダーボタンへ移り、Enterでカレンダーを開く。
@@ -137,12 +164,12 @@ fn date_picker_changes_the_start_date_and_the_due_date() {
     press_keys(&mut session, &pick_next_day);
 
     // Then 開始日が翌日になる
-    wait_for_property(&mut session, "開始日", "2026/02/17");
+    wait_for_property(&mut session, "開始日", "2025/12/10");
 
-    // When 期日（2026/02/17）のpopupを開き、翌日を選ぶ
+    // When 期日（2025/12/19）のpopupを開き、翌日を選ぶ
     press_keys(&mut session, &["j", "e"]);
     press_keys(&mut session, &pick_next_day);
 
     // Then 期日が翌日になる
-    wait_for_property(&mut session, "期日", "2026/02/18");
+    wait_for_property(&mut session, "期日", "2025/12/20");
 }

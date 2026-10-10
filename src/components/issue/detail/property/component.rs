@@ -1,10 +1,13 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
 use super::widget::PropertyWidget;
 use ratatui::layout::Position;
 
 use crate::entities::{IssueStatus, IssueView};
 use crate::platform::input::InputEvent;
-use crate::stores::Store;
+use crate::stores::{Dispatcher, NoticeAction, NoticeId, Store};
 use crate::vos::IssueId;
 
 pub struct PropertyComponent {
@@ -20,8 +23,51 @@ impl PropertyComponent {
         }
     }
 
-    pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
-        self.focus_state.process_event(event)
+    /// 編集できない属性のpopupを開く要求は、Noticeを出して`Handled`に置き換える。
+    pub fn process_event(
+        &mut self,
+        event: InputEvent,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+    ) -> Option<EventProcessResult> {
+        let result = self.focus_state.process_event(event)?;
+        let blocked_property = {
+            let dispatcher_ref = dispatcher.borrow();
+            let store = dispatcher_ref.store();
+            match result {
+                EventProcessResult::OpenPriorityPopup
+                    if !store.is_issue_priority_editable(self.id) =>
+                {
+                    Some("優先度")
+                }
+                EventProcessResult::OpenStartDatePopup
+                    if !store.are_issue_dates_editable(self.id) =>
+                {
+                    Some("開始日")
+                }
+                EventProcessResult::OpenDueDatePopup
+                    if !store.are_issue_dates_editable(self.id) =>
+                {
+                    Some("期日")
+                }
+                EventProcessResult::OpenDoneRatioPopup
+                    if !store.is_issue_done_ratio_editable(self.id) =>
+                {
+                    Some("進捗率")
+                }
+                _ => None,
+            }
+        };
+        let Some(property) = blocked_property else {
+            return Some(result);
+        };
+        dispatcher.borrow_mut().dispatch(NoticeAction::Push {
+            id: NoticeId::new(),
+            message: format!(
+                "Issue #{}の{property}は子Issueから計算されるため編集できません",
+                self.id
+            ),
+        });
+        Some(EventProcessResult::Handled)
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
@@ -124,7 +170,7 @@ mod tests {
     use super::*;
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::stores::Action;
-    use crate::test_support::{render_snapshot, sync_sample_masters};
+    use crate::test_support::{dispatch_sample_masters, render_snapshot, sync_sample_masters};
     use crate::widgets::gutter::GUTTER_WIDTH;
     use ratatui::layout::Position;
 
@@ -157,6 +203,40 @@ mod tests {
         crate::test_support::load_issue(&mut store, crate::test_support::sample_open_child_issue());
         store
     }
+
+    fn dispatcher_with_issue(actions: [Action; 2]) -> Rc<RefCell<Dispatcher>> {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        {
+            let mut dispatcher_ref = dispatcher.borrow_mut();
+            dispatch_sample_masters(&mut dispatcher_ref);
+            for action in actions {
+                dispatcher_ref.dispatch(action);
+            }
+            consume_all(&mut dispatcher_ref);
+        }
+        dispatcher
+    }
+
+    fn consume_all(dispatcher: &mut Dispatcher) {
+        while dispatcher.consume_actinos_len() > 0 {
+            dispatcher.consume_action();
+        }
+    }
+
+    fn dispatcher_with_property_issue() -> Rc<RefCell<Dispatcher>> {
+        dispatcher_with_issue(crate::test_support::fetch_issue_actions(
+            crate::test_support::sample_open_child_issue(),
+        ))
+    }
+
+    /// Issue 3を子Issue 1・2とともに取得済みにする。
+    fn dispatcher_with_parent_issue() -> Rc<RefCell<Dispatcher>> {
+        dispatcher_with_issue(crate::test_support::fetch_sample_parent_issue_actions(
+            vec![],
+        ))
+    }
+
+    const PRIORITY_LINE: u16 = 5;
 
     fn store_with_missing_issue_status() -> Store {
         let mut store = store_with_property_issue();
@@ -225,74 +305,86 @@ mod tests {
 
     #[test]
     fn process_event_j_updates_widget_focus_and_cursor() {
-        let store = store_with_property_issue();
+        let dispatcher = dispatcher_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
 
-        let result = component.process_event(key_event(KeyCode::Char('j')));
+        let result = component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
 
         assert!(matches!(result, Some(EventProcessResult::Handled)));
-        assert_layout_contract(&component, &store, Position::new(VALUE_X, 1));
+        assert_layout_contract(
+            &component,
+            dispatcher.borrow().store(),
+            Position::new(VALUE_X, 1),
+        );
         render_snapshot(
             "property_component_process_j",
             WIDTH,
-            component.line_count(&store, WIDTH),
-            component.create_widget(&store),
+            component.line_count(dispatcher.borrow().store(), WIDTH),
+            component.create_widget(dispatcher.borrow().store()),
         );
     }
 
     #[test]
     fn process_event_e_returns_status_popup_result_without_changing_widget_focus() {
-        let store = store_with_property_issue();
+        let dispatcher = dispatcher_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
         for _ in 0..3 {
-            component.process_event(key_event(KeyCode::Char('j')));
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         }
 
-        let result = component.process_event(key_event(KeyCode::Char('e')));
+        let result = component.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
 
         assert!(matches!(
             result,
             Some(EventProcessResult::OpenIssueStatusPopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(VALUE_X, 3));
+        assert_layout_contract(
+            &component,
+            dispatcher.borrow().store(),
+            Position::new(VALUE_X, 3),
+        );
         render_snapshot(
             "property_component_process_e_on_status",
             WIDTH,
-            component.line_count(&store, WIDTH),
-            component.create_widget(&store),
+            component.line_count(dispatcher.borrow().store(), WIDTH),
+            component.create_widget(dispatcher.borrow().store()),
         );
     }
 
     #[test]
     fn process_event_e_returns_assigned_to_popup_result_without_changing_widget_focus() {
-        let store = store_with_property_issue();
+        let dispatcher = dispatcher_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
         for _ in 0..7 {
-            component.process_event(key_event(KeyCode::Char('j')));
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         }
 
-        let result = component.process_event(key_event(KeyCode::Char('e')));
+        let result = component.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
 
         assert!(matches!(
             result,
             Some(EventProcessResult::OpenAssignedToPopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(VALUE_X, 7));
+        assert_layout_contract(
+            &component,
+            dispatcher.borrow().store(),
+            Position::new(VALUE_X, 7),
+        );
     }
 
     #[test]
     fn process_event_e_returns_target_version_popup_result_without_changing_widget_focus() {
-        let store = store_with_property_issue();
+        let dispatcher = dispatcher_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
         for _ in 0..TARGET_VERSION_LINE {
-            component.process_event(key_event(KeyCode::Char('j')));
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         }
 
-        let result = component.process_event(key_event(KeyCode::Char('e')));
+        let result = component.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
 
         assert!(matches!(
             result,
@@ -300,70 +392,82 @@ mod tests {
         ));
         assert_layout_contract(
             &component,
-            &store,
+            dispatcher.borrow().store(),
             Position::new(VALUE_X, TARGET_VERSION_LINE),
         );
     }
 
     #[test]
     fn process_event_e_returns_done_ratio_popup_result_without_changing_widget_focus() {
-        let store = store_with_property_issue();
+        let dispatcher = dispatcher_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
         for _ in 0..DONE_RATIO_LINE {
-            component.process_event(key_event(KeyCode::Char('j')));
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         }
 
-        let result = component.process_event(key_event(KeyCode::Char('e')));
+        let result = component.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
 
         assert!(matches!(
             result,
             Some(EventProcessResult::OpenDoneRatioPopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(VALUE_X, DONE_RATIO_LINE));
+        assert_layout_contract(
+            &component,
+            dispatcher.borrow().store(),
+            Position::new(VALUE_X, DONE_RATIO_LINE),
+        );
     }
 
     #[test]
     fn process_event_e_returns_start_date_popup_result_without_changing_widget_focus() {
-        let store = store_with_property_issue();
+        let dispatcher = dispatcher_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
         for _ in 0..START_DATE_LINE {
-            component.process_event(key_event(KeyCode::Char('j')));
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         }
 
-        let result = component.process_event(key_event(KeyCode::Char('e')));
+        let result = component.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
 
         assert!(matches!(
             result,
             Some(EventProcessResult::OpenStartDatePopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(VALUE_X, START_DATE_LINE));
+        assert_layout_contract(
+            &component,
+            dispatcher.borrow().store(),
+            Position::new(VALUE_X, START_DATE_LINE),
+        );
     }
 
     #[test]
     fn process_event_e_returns_due_date_popup_result_without_changing_widget_focus() {
-        let store = store_with_property_issue();
+        let dispatcher = dispatcher_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromAbove);
         for _ in 0..DUE_DATE_LINE {
-            component.process_event(key_event(KeyCode::Char('j')));
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
         }
 
-        let result = component.process_event(key_event(KeyCode::Char('e')));
+        let result = component.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
 
         assert!(matches!(result, Some(EventProcessResult::OpenDueDatePopup)));
-        assert_layout_contract(&component, &store, Position::new(VALUE_X, DUE_DATE_LINE));
+        assert_layout_contract(
+            &component,
+            dispatcher.borrow().store(),
+            Position::new(VALUE_X, DUE_DATE_LINE),
+        );
     }
 
     #[test]
     fn process_event_e_returns_spent_time_popup_result_without_changing_widget_focus() {
-        let store = store_with_property_issue();
+        let dispatcher = dispatcher_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromBelow);
-        component.process_event(key_event(KeyCode::Char('k')));
+        component.process_event(key_event(KeyCode::Char('k')), dispatcher.clone());
 
-        let result = component.process_event(key_event(KeyCode::Char('e')));
+        let result = component.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
 
         assert!(matches!(
             result,
@@ -371,29 +475,110 @@ mod tests {
         ));
         assert_layout_contract(
             &component,
-            &store,
+            dispatcher.borrow().store(),
             Position::new(VALUE_X, TOTAL_SPENT_HOURS_LINE),
         );
         render_snapshot(
             "property_component_process_e_on_spent_time",
             WIDTH,
-            component.line_count(&store, WIDTH),
-            component.create_widget(&store),
+            component.line_count(dispatcher.borrow().store(), WIDTH),
+            component.create_widget(dispatcher.borrow().store()),
         );
     }
 
     #[test]
     fn process_event_e_returns_category_popup_result_without_changing_widget_focus() {
-        let store = store_with_property_issue();
+        let dispatcher = dispatcher_with_property_issue();
         let mut component = PropertyComponent::new(ISSUE_ID);
         component.focus_event(FocusEvent::CursorEnteredFromBelow);
 
-        let result = component.process_event(key_event(KeyCode::Char('e')));
+        let result = component.process_event(key_event(KeyCode::Char('e')), dispatcher.clone());
 
         assert!(matches!(
             result,
             Some(EventProcessResult::OpenCategoryPopup)
         ));
-        assert_layout_contract(&component, &store, Position::new(VALUE_X, CATEGORY_LINE));
+        assert_layout_contract(
+            &component,
+            dispatcher.borrow().store(),
+            Position::new(VALUE_X, CATEGORY_LINE),
+        );
+    }
+
+    /// `id`のIssueのプロパティ先頭行から`line`行下へフォーカスを移し、`e`を押す。
+    fn press_e_on_line(
+        dispatcher: Rc<RefCell<Dispatcher>>,
+        id: u16,
+        line: u16,
+    ) -> Option<EventProcessResult> {
+        let mut component = PropertyComponent::new(id);
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+        for _ in 0..line {
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+        }
+        component.process_event(key_event(KeyCode::Char('e')), dispatcher)
+    }
+
+    #[test]
+    fn process_event_e_on_derived_property_of_issue_with_children_pushes_notice() {
+        for (line, expected) in [
+            (
+                PRIORITY_LINE,
+                "Issue #3の優先度は子Issueから計算されるため編集できません",
+            ),
+            (
+                START_DATE_LINE,
+                "Issue #3の開始日は子Issueから計算されるため編集できません",
+            ),
+            (
+                DUE_DATE_LINE,
+                "Issue #3の期日は子Issueから計算されるため編集できません",
+            ),
+            (
+                DONE_RATIO_LINE,
+                "Issue #3の進捗率は子Issueから計算されるため編集できません",
+            ),
+        ] {
+            let dispatcher = dispatcher_with_parent_issue();
+
+            let result = press_e_on_line(dispatcher.clone(), 3, line);
+
+            assert!(matches!(result, Some(EventProcessResult::Handled)));
+            consume_all(&mut dispatcher.borrow_mut());
+            let messages: Vec<_> = dispatcher
+                .borrow()
+                .store()
+                .get_notices()
+                .iter()
+                .map(|notice| notice.message.clone())
+                .collect();
+            assert_eq!(messages, [expected]);
+        }
+    }
+
+    #[test]
+    fn process_event_e_on_priority_of_issue_without_children_opens_popup() {
+        let dispatcher = dispatcher_with_property_issue();
+
+        let result = press_e_on_line(dispatcher.clone(), ISSUE_ID, PRIORITY_LINE);
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenPriorityPopup)
+        ));
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+    }
+
+    #[test]
+    fn process_event_e_on_category_of_issue_with_children_opens_popup() {
+        let dispatcher = dispatcher_with_parent_issue();
+
+        let result = press_e_on_line(dispatcher.clone(), 3, CATEGORY_LINE);
+
+        assert!(matches!(
+            result,
+            Some(EventProcessResult::OpenCategoryPopup)
+        ));
+        assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
     }
 }

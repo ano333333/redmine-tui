@@ -1205,3 +1205,19 @@ fn fetched_issue_99() -> Action {
         children: vec![],
     }
 }
+
+#[test]
+fn derived_properties_are_not_editable_only_when_issue_has_children() {
+    let mut store = Store::new();
+    crate::test_support::load_issue(&mut store, crate::test_support::sample_open_child_issue());
+    for action in crate::test_support::fetch_sample_parent_issue_actions(vec![]) {
+        store.consume_action(action);
+    }
+
+    assert!(!store.is_issue_priority_editable(3));
+    assert!(!store.are_issue_dates_editable(3));
+    assert!(!store.is_issue_done_ratio_editable(3));
+    assert!(store.is_issue_priority_editable(1));
+    assert!(store.are_issue_dates_editable(1));
+    assert!(store.is_issue_done_ratio_editable(1));
+}

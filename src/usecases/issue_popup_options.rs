@@ -206,8 +206,6 @@ pub fn project_popup_observer(
 /// PriorityPopupの選択結果からUpdatePriorityをdispatchするobserverを組み立てる。
 ///
 /// priorityは必須項目のため、選択なし(None)は無視する。
-// FIXME: 子チケットを持つIssueでは、Redmine既定の`parent_issue_priority: derived`により
-// サーバーがpriority_idをエラーなしで無視する。ローカルでは変更済みに見えてしまう。
 pub fn priority_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
