@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 15 — Usecase起動要求の統一とrunnerのqueue</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0f1117;
+        color: #d0d4e8;
+        font:
+          15px/1.75 system-ui,
+          "Noto Sans JP",
+          sans-serif;
+      }
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+      nav {
+        position: sticky;
+        top: 0;
+        width: 240px;
+        height: 100vh;
+        padding: 28px 20px;
+        background: #1a1d27;
+        border-right: 1px solid #2e3350;
+      }
+      nav a {
+        display: block;
+        padding: 5px 0;
+        color: #8ba3f5;
+        text-decoration: none;
+        font-size: 13px;
+      }
+      main {
+        max-width: 980px;
+        padding: 52px 64px;
+      }
+      h1,
+      h2,
+      h3 {
+        color: #e8eaf6;
+      }
+      h1 {
+        font-size: 27px;
+        line-height: 1.25;
+      }
+      h2 {
+        margin-top: 44px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #2e3350;
+        font-size: 19px;
+      }
+      h3 {
+        margin-top: 28px;
+        font-size: 16px;
+      }
+      code,
+      pre {
+        font-family: "JetBrains Mono", monospace;
+      }
+      code {
+        color: #8ba3f5;
+      }
+      pre {
+        overflow: auto;
+        padding: 16px 18px;
+        background: #13151f;
+        border: 1px solid #2a2e45;
+        border-radius: 8px;
+        color: #d0d4e8;
+      }
+      .status {
+        display: inline-block;
+        padding: 3px 10px;
+        border: 1px solid #2a7a50;
+        border-radius: 20px;
+        color: #4caf8a;
+      }
+      li {
+        margin: 5px 0;
+      }
+      @media (max-width: 820px) {
+        .layout {
+          display: block;
+        }
+        nav {
+          position: static;
+          width: auto;
+          height: auto;
+        }
+        main {
+          padding: 32px 22px;
+        }
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 9px 12px;
+        border: 1px solid #2e3350;
+        text-align: left;
+      }
+      th {
+        background: #1a1d27;
+      }
+      main {
+        min-width: 0;
+      }
+      nav {
+        flex-shrink: 0;
+        overflow-y: auto;
+      }
+      a {
+        color: #8ba3f5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <strong>ADR 15</strong><a href="#status">Status</a
+        ><a href="#context">Context</a><a href="#decision">Decision</a
+        ><a href="#rationale">Rationale</a
+        ><a href="#consequences">Consequences</a
+        ><a href="#alternatives-considered">Alternatives Considered</a>
+        <hr />
+        <a href="014.html">ADR 14</a
+        ><a href="../architecture.html">Architecture</a>
+      </nav>
+      <main>
+        <h1>15. Usecase起動要求の統一とrunnerのqueue</h1>
+        <h2 id="status">Status</h2>
+        <p>Accepted</p>
+        <h2 id="context">Context</h2>
+        <p>
+          ComponentからrunnerへUsecaseの起動を要求する方法が統一されていない。
+        </p>
+        <ul>
+          <li>
+            <code>AppComponent</code>は<code
+              >pending_effect: Option&lt;AppEffect&gt;</code
+            >を1つだけ持つ。runnerは1周につき1回<code>take_effect</code>を呼び、<code>handle_app_effect</code>で処理する。
+          </li>
+          <li>
+            effectを設定する方法が2種類ある。<code>install_effect</code>は既存のeffectをassertで検査し、直接代入は検査しない。
+          </li>
+          <li>
+            <code>AppEffect</code>には、Redmine
+            Usecaseの起動要求と、platformの副作用である<code>OpenEditor</code>が混在している。
+          </li>
+          <li>
+            <code>IssueSelectPopupComponent</code
+            >は独自の<code>Effect</code>と<code>pending_effect</code>を持つ。<code>AppComponent</code>はこれを取り出し、<code>AppEffect</code>へ詰め替える。
+          </li>
+          <li>
+            <code>cancel_issue_upload</code
+            >と<code>continue_issue_upload</code>は、Componentから直接呼ばれている。<code>ContinueIssueUpload</code>では、同期の前処理をComponentが行い、非同期処理をrunnerが起動している。Remote
+            Journalの競合popupでCancelを選ぶと、Componentが<code>JournalAction::CancelRemoteUploadConflict</code>を直接dispatchする。
+          </li>
+        </ul>
+        <p>
+          <code>pending_effect</code
+          >が1つしかないため、1回の処理で発行できる要求は1件に限られる。表示中Issueの親を取得する<code>request_parent_issue_fetch_if_needed</code>は、他のeffectが待っている間は要求を見送り、次のupdateで改めて判定している。この処理はupdateから要求を発行しており、<a
+            href="006.html"
+            >ADR 6</a
+          >の「<code>update</code>からeffectを生成しない」にも反している。
+        </p>
+        <p>Usecaseの戻り値の型も統一されていない。</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Usecase</th>
+                <th>戻り値</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>fetch_issue</code></td>
+                <td><code>Option&lt;FetchIssueFuture&gt;</code></td>
+              </tr>
+              <tr>
+                <td><code>fetch_project_issues_page</code></td>
+                <td>Outputが<code>ProjectIssuesAction</code>1つのFuture</td>
+              </tr>
+              <tr>
+                <td><code>start_issue_upload</code></td>
+                <td>
+                  Boxしていない<code
+                    >impl Future&lt;Output = Vec&lt;Action&gt;&gt;</code
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>start_remote_journal_upload</code
+                  >、<code>start_local_journal_upload</code>、<code>start_deleted_journal_upload</code>、<code
+                    >continue_remote_journal_upload</code
+                  >
+                </td>
+                <td>
+                  別名で中身が同じ<code
+                    >Pin&lt;Box&lt;dyn Future&lt;Output = Vec&lt;Action&gt;&gt;
+                    + Send&gt;&gt;</code
+                  >
+                </td>
+              </tr>
+              <tr>
+                <td><code>upload_issue_action</code></td>
+                <td>
+                  Dispatcherを受け取らない<code>async fn</code
+                  >。runnerが直接spawnする
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>cancel_issue_upload</code>、<code
+                    >continue_issue_upload</code
+                  >
+                </td>
+                <td>同期関数。Componentが直接呼ぶ</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          また、あるUsecaseの完了後に別のUsecaseを起動する手段がない。そのため<code>upload_issue_action</code>は、保存前GET、PUT、確認GETを1つのFutureで続けて実行し、結果を最後にまとめて返している。PUTの成功をStoreへ確定してから確認GETを始めることができず、確認GETだけを再試行する経路もない。<a
+            href="014.html"
+            >ADR 14</a
+          >は各リクエストの完了Actionを適用してから後続のリクエストへ進むと定めているが、今の実行方式ではこれを実現できない。
+        </p>
+        <p>
+          後続のUsecaseをFutureの中で起動することはできない。理由は次の2つである。
+        </p>
+        <ul>
+          <li>
+            Futureは<code>Send + &#x27;static</code>であり、Tokio
+            adapterでは別threadで動く。Usecaseの起動関数は<code>Rc&lt;RefCell&lt;Dispatcher&gt;&gt;</code>を受け取るため、Futureの中から起動できない。
+          </li>
+          <li>
+            Usecaseの起動関数は、起動時に消費済みのStoreを見て起動条件を判定する。Futureは、返したActionが消費される時点のStoreを参照できない。そのため、後続Usecaseの開始Actionを完了Actionと一緒に返すと、Storeの遷移規則に反してpanicすることがある。
+          </li>
+        </ul>
+        <h2 id="decision">Decision</h2>
+        <h3>Usecase起動要求を<code>UsecaseRequest</code>に統一する</h3>
+        <p>
+          Redmine Usecaseの起動要求を表す<code>UsecaseRequest</code>
+          enumを<code>src/usecases/</code>に置く。Componentは、Usecaseを直接呼ばずに<code>UsecaseRequest</code>を発行する。runnerがこれを受け取って、Usecaseを起動する。1つの<code>UsecaseRequest</code>は1つのUsecaseに対応する。
+        </p>
+        <pre><code>pub enum UsecaseRequest {
+    FetchIssue { id: IssueId, with_parent: bool },
+    FetchProjectIssuesPage { project_id: ProjectId, page: NonZeroUsize },
+    StartIssueUpload { id: IssueId },
+    CancelIssueUpload { id: IssueId },
+    ContinueIssueUpload { id: IssueId, selected_local_diffs: Vec&lt;IssuePropertyDiff&gt; },
+    PutIssueUpload { id: IssueId, diffs: Vec&lt;IssuePropertyDiff&gt; },
+    ConfirmIssueUpload { id: IssueId },
+    RetryIssueUploadConfirmation { id: IssueId },
+    StartRemoteJournalUpload { issue_id: IssueId, journal_id: JournalId },
+    CancelRemoteJournalUpload { issue_id: IssueId, journal_id: JournalId },
+    ContinueRemoteJournalUpload { issue_id: IssueId, journal_id: JournalId, resolved_notes: String },
+    StartLocalJournalUpload { issue_id: IssueId },
+    StartDeletedJournalUpload { issue_id: IssueId, original_id: JournalId },
+}</code></pre>
+        <p>
+          <code>ContinueIssueUpload</code
+          >は、<code>continue_issue_upload</code>の同期処理と<code>upload_issue_action</code>の非同期処理を、1つのUsecaseにまとめる。<code>CancelRemoteJournalUpload</code>は、Componentが直接dispatchしていた競合の取り消しをUsecaseに移したものである。
+        </p>
+        <h3>Issue保存を段階ごとのUsecaseに分ける</h3>
+        <p>
+          <code>upload_issue_action</code
+          >は、保存前GET、PUT、確認GETをそれぞれ別のUsecaseに分ける。各段階の完了が次の段階を後続要求として返す。
+        </p>
+        <ul>
+          <li>
+            保存前GET:
+            <code>StartIssueUpload</code
+            >と<code>ContinueIssueUpload</code>が起動する。競合があれば、今と同じく競合を返す。競合がなければ、取得したIssueを基準値にしてStoreのdiffを送信するdiffに置き換える完了Actionと、<code
+              >PutIssueUpload { id, diffs }</code
+            >の後続要求を返す。競合の続行では、送信するdiffがStoreのdiffと異なる。置き換えないと、サーバーの値を選んだ属性がローカルの値で表示される。送信するdiffは、Storeではなく要求に載せて運ぶ。
+          </li>
+          <li>
+            PUT: 成功したら、送信したdiffを基準値へ適用する完了Actionと、<code
+              >ConfirmIssueUpload { id }</code
+            >の後続要求を返す。
+          </li>
+          <li>確認GET: 成功したら、取得したIssueを取り込んでSyncedにする。</li>
+        </ul>
+        <p>
+          PUTの成功から確認GETの完了までは、IssueをUploadingのままにして編集を受け付けない。確認GETは短時間で終わることが多く、編集を許すと確認結果と新しい編集を比べる処理が必要になるためである。
+        </p>
+        <p>
+          確認GETに失敗しても、PUTの成功は取り消さない。PUTで確定した基準値のままSyncedにし、失敗の理由を残す。ヘッダには「？未確認」と表示する。利用者が<code>r</code>を押すと<code
+            >RetryIssueUploadConfirmation { id }</code
+          >を発行し、PUTを繰り返さずに確認GETだけをやり直す。編集を始めたとき、またはJournalの保存でIssueを取得し直したときは、失敗の理由を消す。編集した場合は次の保存で保存前GETを行い、取得し直した場合はその取得値が確認GETの代わりになるためである。
+        </p>
+        <h3>Componentは借用した<code>RequestSink</code>に要求を書く</h3>
+        <p>
+          Componentは要求をフィールドに溜めない。runnerが持つ<code>RequestSink</code>を<code>&amp;mut</code>で借用して受け取り、そこに要求を書く。<code>RequestSink</code>は<code>src/components/</code>に置き、Usecaseの起動要求とeditorの起動要求を保持する。
+        </p>
+        <pre><code>pub struct RequestSink {
+    usecases: Vec&lt;UsecaseRequest&gt;,
+    editor: Option&lt;EditorRequest&gt;,
+}</code></pre>
+        <p>
+          <code>AppEffect</code
+          >は廃止し、<code>OpenEditor</code>も<code>RequestSink</code>へ移す。editorの起動要求は1件までとし、2件目はassertで検出する。
+        </p>
+        <p>
+          <code>RequestSink</code
+          >を受け取るのは、要求を発行してよい次の入口だけである。
+        </p>
+        <ul>
+          <li>
+            <code>AppComponent::new</code
+            >、<code>AppComponent::process_event</code>、<code
+              >AppComponent::handle_key_event</code
+            >
+          </li>
+          <li>
+            <code>IssueSelectPopupComponent::new</code>、<code
+              >IssueSelectPopupComponent::process_event</code
+            >
+          </li>
+        </ul>
+        <p>
+          <code>update</code
+          >と<code>render</code>は<code>RequestSink</code>を受け取らない。そのため、updateからは型の上で要求を発行できない。updateで競合popupを開く処理はStoreの状態の表示であり、要求ではないため、この制約の対象外である。
+        </p>
+        <p>
+          <code>UsecaseRequest</code
+          >の値をフィールドに保存して後で<code>RequestSink</code>へ書くことは、型では防げない。updateで作った要求を保存しておくことは禁止とし、レビューで確認する。
+        </p>
+        <h3>親Issueは1段だけ取得する</h3>
+        <p>表示中Issueの親の題名を表示するため、親Issueを1段だけ取得する。</p>
+        <ul>
+          <li>
+            Issueを開いて詳細取得を要求するとき、Componentは<code
+              >FetchIssue { id, with_parent: true }</code
+            >を発行する。
+          </li>
+          <li>
+            <code>with_parent: true</code
+            >の取得が完了し、親IDが分かれば、完了は<code
+              >FetchIssue { id: parent_id, with_parent: false }</code
+            >を後続要求として返す。親の取得完了は、さらに上の親を要求しない。
+          </li>
+          <li>
+            取得済みのIssueを開くときは完了が発生しない。この場合、Componentは開く時点でStoreから親IDを読み、<code
+              >FetchIssue { id: parent_id, with_parent: false }</code
+            >も発行する。起動するかどうかは<code>fetch_issue</code>が判定する。
+          </li>
+        </ul>
+        <p>
+          <code>request_parent_issue_fetch_if_needed</code
+          >は廃止する。Issue保存時のGETで親IDが変わっても、新しい親は取得しない。この間の親の表示が古いままになることは許容する。
+        </p>
+        <h3>Usecaseの戻り値を統一する</h3>
+        <p>
+          runnerが起動するUsecaseの戻り値を<code>Option&lt;UsecaseTask&gt;</code>に統一する。引数は、Usecaseごとに必要な値が異なるため統一しない。
+        </p>
+        <pre><code>pub struct UsecaseOutput {
+    pub actions: Vec&lt;Action&gt;,
+    pub requests: Vec&lt;UsecaseRequest&gt;,
+}
+
+pub type UsecaseTask = Pin&lt;Box&lt;dyn Future&lt;Output = UsecaseOutput&gt; + Send + &#x27;static&gt;&gt;;</code></pre>
+        <ul>
+          <li>
+            起動関数は、同期のActionをdispatchしてから<code>UsecaseTask</code>を返す。これは既存の基本形と同じである。
+          </li>
+          <li>
+            非同期処理がない場合は<code>None</code>を返す。事前条件によって起動しない場合と、<code>CancelIssueUpload</code>のように同期処理だけのUsecaseが該当する。
+          </li>
+          <li>
+            <code>UsecaseTask</code
+            >は、完了Actionに加えて後続の<code>UsecaseRequest</code>を返せる。後続要求はデータとして返し、closureは返さない。
+          </li>
+        </ul>
+        <p>
+          <code>UsecaseRequest</code
+          >から起動関数への対応は、<code>src/usecases/</code>に置く1つの関数にまとめる。runnerは、この関数を呼んで得た<code>UsecaseTask</code>をspawnするだけにする。
+        </p>
+        <pre><code>pub fn start_usecase&lt;C&gt;(
+    request: UsecaseRequest,
+    dispatcher: Rc&lt;RefCell&lt;Dispatcher&gt;&gt;,
+    client: Arc&lt;C&gt;,
+) -&gt; Option&lt;UsecaseTask&gt;
+where
+    C: RedmineClient + Send + Sync + &#x27;static;</code></pre>
+        <h3>runnerがUsecase起動要求をqueueする</h3>
+        <p>
+          runnerは<code>VecDeque&lt;UsecaseRequest&gt;</code>を持つ。queueに要求を積むのは次の2か所である。
+        </p>
+        <ul>
+          <li>
+            <code>AppComponent::new</code
+            >または入力処理の後に、<code>RequestSink</code>のUsecase起動要求を取り出して積む。
+          </li>
+          <li>
+            completionを受理したときに、<code>UsecaseOutput::requests</code>を積む。<code>actions</code>は従来どおりdispatchする。
+          </li>
+        </ul>
+        <p>runnerは次の手順でqueueを処理する。</p>
+        <pre><code>drain_requests:
+  while let Some(request) = queue.pop_front():
+    if let Some(task) = start_usecase(request, ...):
+      spawner.spawn(task)
+    update()   // 起動時にdispatchしたActionを消費し、Componentを更新する</code></pre>
+        <p>queueを処理する時点は次の2つである。</p>
+        <ul>
+          <li>
+            Component生成と入力に由来する要求:
+            <code>RequestSink</code
+            >を受け取った処理の直後、updateの前に処理する。その後、editorの起動要求があればeditorを起動する。
+          </li>
+          <li>
+            completion由来の要求:
+            completionのActionを消費するupdateの後に処理する。
+          </li>
+        </ul>
+        <p>
+          1件起動するたびにupdateを行う。これにより、次の要求の起動時には、前の要求がdispatchしたActionが消費済みになっている。たとえば、Issueを開いたときの<code>FetchIssue</code>が<code>StartFetching</code>をdispatchした後、同じIssueへの<code>FetchIssue</code>が続いても、2件目は<code>Fetching</code>を観測して起動しない。
+        </p>
+        <p>
+          editor起動中に受理したcompletionの後続要求は、queueに残す。editorから戻った後の通常loopで処理する。
+        </p>
+        <h3>platformのportは完了値の型に依存しない</h3>
+        <p>
+          <code>BackgroundSpawner</code
+          >と<code>BackgroundCompletion</code>を、完了値の型について汎用にする。こうすれば、<code>platform</code>は<code>usecases</code>の型に依存しない。runnerが<code>UsecaseOutput</code>を型引数として指定する。
+        </p>
+        <h2 id="rationale">Rationale</h2>
+        <p>
+          Usecaseの起動をrunnerにまとめると、ComponentはStoreの状態を見てUsecaseを起動する責務を持たなくなる。Componentは要求を発行し、Usecaseが起動条件を判定する。この分担は、<code>fetch_issue</code>が起動可否を判定している現在の形と同じである。
+        </p>
+        <p>
+          1つの要求を1つのUsecaseに対応させると、1回の操作で何を起動するかをComponentの発行内容から読み取れる。取得済みのIssueを開く操作では、Issue自身と親の2件を発行することがComponentのコードに現れる。
+        </p>
+        <p>
+          要求をフィールドに溜めず借用した<code>RequestSink</code>に書かせるのは、updateから要求を発行できないことを型で保証するためである。<code>pending_effect</code>のようなフィールドがあると、updateからも書き込めてしまい、assertでは実行時にしか検出できない。<code>RequestSink</code>は一時的な借用なので、Componentのフィールドに保持することもできない。
+        </p>
+        <p>
+          後続要求をデータとして返すと、Usecaseの単体テストで後続要求を検証できる。closureを返す方法ではテストで中身を検査できない。また、Clientの型引数がclosureの型に現れる。
+        </p>
+        <p>
+          入力由来の要求をupdateの前に起動するのは、同期の前処理の結果を同じupdateへ反映するためである。たとえば<code>ContinueIssueUpload</code>は<code>ClearUploadConflicts</code>をdispatchする。これをupdateの後に起動すると、updateが競合情報を観測し、閉じたはずの競合popupを開き直す。現在の<code>ContinueIssueUpload</code>はComponentが同期処理を直接呼んでいるため、この問題が起きていない。一方、<code>ContinueRemoteJournalUpload</code>は競合情報を同期的に消さないため、続行直後のupdateで競合popupが開き直る問題が起きている。
+        </p>
+        <p>
+          completion由来の要求をupdateの後に起動するのは、後続要求の起動条件が、completionを反映した後のStoreに依存するためである。
+        </p>
+        <p>
+          親の取得を1段に限るのは、画面に表示するのが親の題名だけだからである。
+        </p>
+        <h2 id="consequences">Consequences</h2>
+        <ul>
+          <li>
+            ADR 3、ADR 6、ADR 7、ADR 10、ADR
+            14のうち、次の記述は本ADRで置き換える。
+            <ul>
+              <li>
+                <code>AppEffect</code
+                >が非同期処理の開始要求を表すという記述（ADR 3）。
+              </li>
+              <li>
+                1回の入力で発行できる要求を、<code>AppComponent</code>の単一の<code>pending_effect</code>で検査するという記述（ADR
+                6、ADR
+                7）。重複の抑止は、queue処理中に1件ごとにupdateすることで担保する。
+              </li>
+              <li>
+                <code>IssueSelectPopupComponent::take_effect</code
+                >と、popupの初期effectを<code>pending_effect</code>へ移して共通の処理点で開始するという記述（ADR
+                7）。
+              </li>
+              <li>
+                main loopのeffect処理の位置（ADR 7のmain loop、ADR 10の手順5）。
+              </li>
+            </ul>
+          </li>
+          <li>
+            ADR
+            6の「<code>update</code>からeffectを生成しない」という規則は維持し、本ADRで型によって保証する。
+          </li>
+          <li>
+            <code>AppEffect</code
+            >、<code>pending_effect</code>、<code>install_effect</code>、<code>take_effect</code>は、<code>AppComponent</code>と<code>IssueSelectPopupComponent</code>の両方から削除する。<code>take_effect</code>を使うテストは、<code>RequestSink</code>の中身を検査する形に変える。
+          </li>
+          <li>
+            次のUsecaseを<code>UsecaseTask</code>に移行する:
+            <code>fetch_issue</code
+            >、<code>fetch_project_issues_page</code>、<code>start_issue_upload</code>、<code>start_remote_journal_upload</code>、<code>start_local_journal_upload</code>、<code>start_deleted_journal_upload</code>、<code>continue_remote_journal_upload</code>。個別の型エイリアスは削除する。
+          </li>
+          <li>
+            <code>upload_issue_action</code
+            >を段階ごとのUsecaseに分割する。これが後続要求を使う最初のUsecaseになり、ADR
+            14の「各リクエストの完了Actionを適用してから後続のリクエストへ進む」を実現する。
+          </li>
+          <li>
+            <code>cancel_issue_upload</code
+            >と<code>continue_issue_upload</code>は、Componentから呼ばれなくなる。Remote
+            Journalの競合の取り消しも、ComponentからdispatchせずUsecaseで行う。
+          </li>
+          <li>
+            入力由来の要求をupdateの前に起動することで、<code>ContinueRemoteJournalUpload</code>の競合popupが開き直る問題も、起動時に競合情報を同期的に消せば解消できるようになる。
+          </li>
+          <li>
+            runnerは、入力処理の直後にupdateしている今の順序を変え、<code>RequestSink</code>の処理をupdateの前に入れる。
+          </li>
+          <li>
+            <code>BackgroundSpawner</code>の型が変わるため、Tokio adapterとWeb
+            adapterの両方を変更する。
+          </li>
+          <li>
+            <code>docs/architecture.md</code
+            >のusecases、runner、<code>AppEffect</code>、ComponentからUsecaseへの依存の説明を更新する。
+          </li>
+          <li>
+            親の取得（<code>with_parent: false</code
+            >）が終わる前にその親を開くと、さらに上の親は取得されない。取得中の<code>FetchIssue</code>は起動されず、Storeにも親IDがないためである。起動済みの取得に親の取得を後から依頼する手段は、別途設計する。
+          </li>
+          <li>
+            起動時に呼ぶ<code>load_initial_entities</code>は、runnerのloopが始まる前に実行するため対象外とする。
+          </li>
+          <li>
+            <code>issue_popup_options</code
+            >のobserverは、popupの選択結果をComponent上で直接dispatchする処理であり、Usecaseの起動要求ではないため対象外とする。
+          </li>
+        </ul>
+        <h2 id="alternatives-considered">Alternatives Considered</h2>
+        <ul>
+          <li>
+            <code>pending_effect</code
+            >を<code>Vec</code>に変えて複数の要求を溜め、updateで書き込まないことをassertで検査する:
+            updateからの書き込みを実行時にしか検出できないため採用しない。
+          </li>
+          <li>
+            <code>UsecaseRequest</code
+            >を<code>src/usecases/</code>の外から作れないようにし、<code>RequestSink</code>のvariantごとのメソッドでしか発行できないようにする:
+            フィールドへの保存も防げるが、variantごとにメソッドが増え、Componentのテストで要求の中身を検査しにくくなるため採用しない。
+          </li>
+          <li>
+            <code>Action</code
+            >に要求を表すvariantを追加し、runnerがdispatch前に取り除く:
+            platformの型は変わらないが、ActionがStoreの状態遷移を表すという意味が崩れるため採用しない。
+          </li>
+          <li>
+            runnerがActionを監視し、特定の完了Actionに反応して後続を起動する:
+            どのUsecaseから生じた完了かを区別できず、制御の流れがUsecaseの外に隠れるため採用しない。
+          </li>
+          <li>
+            後続処理をclosureで返す:
+            テストで中身を検査できず、Clientの型引数がclosureの型に現れるため採用しない。
+          </li>
+          <li>
+            <code>fetch_issue</code>が常に親の取得を後続要求として返す:
+            親の取得完了がさらに上の親を要求し、根元のIssueまで取得してしまう。表示に必要なのは親の題名だけなので採用しない。
+          </li>
+        </ul>
+      </main>
+    </div>
+  </body>
+</html>

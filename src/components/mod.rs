@@ -6,10 +6,12 @@ pub mod issue_property_conflict_popup;
 pub mod issue_select_popup;
 pub mod number_input_popup;
 pub mod remote_journal_conflict_popup;
+pub mod request_sink;
 pub mod select_box_popup;
 pub mod spent_time_input_popup;
 
 pub use app::AppComponent;
+pub use request_sink::RequestSink;
 
 #[cfg(test)]
 mod module_path_tests {

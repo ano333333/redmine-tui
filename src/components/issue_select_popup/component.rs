@@ -3,8 +3,10 @@ use std::num::NonZeroUsize;
 
 use ratatui::layout::Rect;
 
+use crate::components::RequestSink;
 use crate::platform::input::InputEvent;
 use crate::stores::{ProjectIssuesPageState, Store};
+use crate::usecases::UsecaseRequest;
 use crate::vos::{IssueId, ProjectId};
 
 use super::focus_state::{self, FocusState};
@@ -19,18 +21,9 @@ pub enum EventProcessResult {
     Handled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Effect {
-    FetchProjectIssuesPage {
-        project_id: ProjectId,
-        page: NonZeroUsize,
-    },
-}
-
 pub struct IssueSelectPopupComponent {
     projects: Vec<IssueSelectPopupProject>,
     display_pages: HashMap<ProjectId, NonZeroUsize>,
-    pending_effect: Option<Effect>,
     /// 初回fetchで現在pageが読み込み直されるため、入力でフォーカスが動くまで保持して再適用する。
     initial_issue_id: Option<IssueId>,
     focus_state: FocusState,
@@ -41,7 +34,7 @@ impl IssueSelectPopupComponent {
     /// focused_issue_idがある場合は、ポップアップを開いた時点で表示していたissueに
     /// Issue列のフォーカスを合わせて初期化する。
     /// project一覧は生成時のsnapshotとし、現在pageのIssue表示はStoreから都度構成する。
-    pub fn new(store: &Store, focused_issue_id: Option<IssueId>) -> Self {
+    pub fn new(store: &Store, focused_issue_id: Option<IssueId>, sink: &mut RequestSink) -> Self {
         let mut projects = store
             .get_projects()
             .iter()
@@ -59,7 +52,6 @@ impl IssueSelectPopupComponent {
         let mut component = Self {
             projects,
             display_pages: HashMap::new(),
-            pending_effect: None,
             initial_issue_id: focused_issues_project_id.and(focused_issue_id),
             focus_state: FocusState::new(),
             widget_state: IssueSelectPopupWidgetState::new(),
@@ -72,7 +64,10 @@ impl IssueSelectPopupComponent {
                 .insert(project_id, NonZeroUsize::MIN);
             component.activate_focused_project(store);
             component.focus_initial_issue(store);
-            component.install_fetch_effect(project_id, NonZeroUsize::MIN);
+            sink.request_usecase(UsecaseRequest::FetchProjectIssuesPage {
+                project_id,
+                page: NonZeroUsize::MIN,
+            });
         }
         component
     }
@@ -114,6 +109,7 @@ impl IssueSelectPopupComponent {
         &mut self,
         event: InputEvent,
         store: &Store,
+        sink: &mut RequestSink,
     ) -> Option<EventProcessResult> {
         let focus_before = self.focus_position();
         let result = self.focus_state.process_event(event)?;
@@ -135,7 +131,7 @@ impl IssueSelectPopupComponent {
                         .entry(project_id)
                         .or_insert(NonZeroUsize::MIN);
                     self.activate_focused_project(store);
-                    self.request_page(project_id, page);
+                    self.request_page(project_id, page, sink);
                 }
                 EventProcessResult::Handled
             }
@@ -147,7 +143,7 @@ impl IssueSelectPopupComponent {
                     )
                     && let Some(previous) = page.get().checked_sub(1).and_then(NonZeroUsize::new)
                 {
-                    self.navigate_to_page(store, project_id, previous);
+                    self.navigate_to_page(store, project_id, previous, sink);
                 }
                 EventProcessResult::Handled
             }
@@ -163,7 +159,7 @@ impl IssueSelectPopupComponent {
                     && offset.saturating_add(issues.len()) < *total_count
                     && let Some(next) = page.get().checked_add(1).and_then(NonZeroUsize::new)
                 {
-                    self.navigate_to_page(store, project_id, next);
+                    self.navigate_to_page(store, project_id, next, sink);
                 }
                 EventProcessResult::Handled
             }
@@ -174,15 +170,11 @@ impl IssueSelectPopupComponent {
                         Some(ProjectIssuesPageState::Failed { .. })
                     )
                 {
-                    self.request_page(project_id, page);
+                    self.request_page(project_id, page, sink);
                 }
                 EventProcessResult::Handled
             }
         })
-    }
-
-    pub fn take_effect(&mut self) -> Option<Effect> {
-        self.pending_effect.take()
     }
 
     pub fn create_widget<'a>(&'a self, store: &'a Store) -> IssueSelectPopupWidget<'a> {
@@ -335,31 +327,31 @@ impl IssueSelectPopupComponent {
         self.refresh_focus_counts(store);
     }
 
-    fn navigate_to_page(&mut self, store: &Store, project_id: ProjectId, page: NonZeroUsize) {
+    fn navigate_to_page(
+        &mut self,
+        store: &Store,
+        project_id: ProjectId,
+        page: NonZeroUsize,
+        sink: &mut RequestSink,
+    ) {
         self.initial_issue_id = None;
         self.display_pages.insert(project_id, page);
         self.activate_focused_project(store);
-        self.request_page(project_id, page);
+        self.request_page(project_id, page, sink);
     }
 
-    fn request_page(&mut self, project_id: ProjectId, page: NonZeroUsize) {
+    fn request_page(&mut self, project_id: ProjectId, page: NonZeroUsize, sink: &mut RequestSink) {
         self.display_pages.insert(project_id, page);
         self.focus_state.reset_issue_focus();
-        self.install_fetch_effect(project_id, page);
-    }
-
-    fn install_fetch_effect(&mut self, project_id: ProjectId, page: NonZeroUsize) {
-        assert!(
-            self.pending_effect.is_none(),
-            "IssueSelectPopupComponent already has a pending effect"
-        );
-        self.pending_effect = Some(Effect::FetchProjectIssuesPage { project_id, page });
+        sink.request_usecase(UsecaseRequest::FetchProjectIssuesPage { project_id, page });
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::RequestSink;
+    use crate::usecases::UsecaseRequest;
 
     use crate::entities::{Issue, ProjectIssuesPage};
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
@@ -411,6 +403,13 @@ mod tests {
         store
     }
 
+    fn fetch_page(project_id: u16, number: usize) -> UsecaseRequest {
+        UsecaseRequest::FetchProjectIssuesPage {
+            project_id: ProjectId::new(project_id),
+            page: page(number),
+        }
+    }
+
     fn page(number: usize) -> std::num::NonZeroUsize {
         std::num::NonZeroUsize::new(number).unwrap()
     }
@@ -460,40 +459,33 @@ mod tests {
 
     #[test]
     fn new_requests_first_page_of_only_the_initially_selected_project_once() {
+        let mut sink = RequestSink::default();
         let store = unloaded_store();
-        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()));
+        let _component = IssueSelectPopupComponent::new(&store, Some(3.into()), &mut sink);
 
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page })
-                if project_id == 1
-                    && requested_page == page(1)
-        ));
-        assert!(component.take_effect().is_none());
+        assert_eq!(sink.take_usecases(), [fetch_page(1, 1)]);
     }
 
     #[test]
     fn new_requests_page_one_even_when_the_exact_page_is_already_loaded() {
+        let mut sink = RequestSink::default();
         let store = store();
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
+        let _component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
 
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page, .. })
-                if project_id == 1 && requested_page == page(1)
-        ));
-        assert!(component.take_effect().is_none());
+        assert_eq!(sink.take_usecases(), [fetch_page(1, 1)]);
     }
 
     #[test]
-    fn new_with_no_projects_has_no_initial_effect() {
-        let mut component = IssueSelectPopupComponent::new(&Store::new(), None);
+    fn new_with_no_projects_requests_nothing() {
+        let mut sink = RequestSink::default();
+        let _component = IssueSelectPopupComponent::new(&Store::new(), None, &mut sink);
 
-        assert!(component.take_effect().is_none());
+        assert_eq!(sink.take_usecases(), []);
     }
 
     #[test]
     fn loaded_projects_issues_are_displayed_and_edited_loaded_issue_values_take_precedence() {
+        let mut sink = RequestSink::default();
         let mut store = Store::new();
         sync_sample_masters(&mut store);
         let mut loaded_issue =
@@ -518,8 +510,8 @@ mod tests {
             2,
             0,
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        let _ = component.take_effect();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        sink.take_usecases();
         component.update(&store, AREA);
 
         let widget = component.create_widget(&store);
@@ -532,6 +524,7 @@ mod tests {
 
     #[test]
     fn projects_issue_does_not_determine_the_initial_project_when_issue_store_lacks_the_issue() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         load_project_page(
             &mut store,
@@ -551,20 +544,17 @@ mod tests {
         );
         assert!(store.try_get_issue_state(42).is_none());
 
-        let mut component = IssueSelectPopupComponent::new(&store, Some(42.into()));
+        let component = IssueSelectPopupComponent::new(&store, Some(42.into()), &mut sink);
         let widget = component.create_widget(&store);
 
         assert_eq!(widget.focused_project_index, 0);
         assert_eq!(widget.issues[0].issue_id, IssueId::new(10));
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page, .. })
-                if project_id == 1 && requested_page == page(1)
-        ));
+        assert_eq!(sink.take_usecases(), [fetch_page(1, 1)]);
     }
 
     #[test]
     fn boundary_navigation_and_failed_retry_request_the_store_selected_page() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         load_project_page(
             &mut store,
@@ -574,14 +564,14 @@ mod tests {
             51,
             0,
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        let _ = component.take_effect();
-        component.process_event(key_event(KeyCode::Char('l')), &store);
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        sink.take_usecases();
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
 
-        component.process_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
         assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { page: requested_page, .. }) if requested_page == page(2)
+            sink.take_usecases()[..],
+            [UsecaseRequest::FetchProjectIssuesPage { page: requested_page, .. }] if requested_page == page(2)
         ));
 
         let request_id = crate::stores::ProjectIssuesRequestId::new();
@@ -603,15 +593,16 @@ mod tests {
             .into(),
         );
         component.update(&store, AREA);
-        component.process_event(key_event(KeyCode::Char('r')), &store);
+        component.process_event(key_event(KeyCode::Char('r')), &store, &mut sink);
         assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { page: requested_page, .. }) if requested_page == page(2)
+            sink.take_usecases()[..],
+            [UsecaseRequest::FetchProjectIssuesPage { page: requested_page, .. }] if requested_page == page(2)
         ));
     }
 
     #[test]
     fn failed_page_can_be_retried_from_the_project_column() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         let request_id = crate::stores::ProjectIssuesRequestId::new();
         store.consume_action(
@@ -631,20 +622,17 @@ mod tests {
             }
             .into(),
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        let _ = component.take_effect();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        sink.take_usecases();
 
-        component.process_event(key_event(KeyCode::Char('r')), &store);
+        component.process_event(key_event(KeyCode::Char('r')), &store, &mut sink);
 
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page })
-                if project_id == 1 && requested_page == page(1)
-        ));
+        assert_eq!(sink.take_usecases(), [fetch_page(1, 1)]);
     }
 
     #[test]
     fn page_navigation_requests_an_already_loaded_destination_again() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         load_project_page(
             &mut store,
@@ -662,21 +650,22 @@ mod tests {
             51,
             50,
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        let _ = component.take_effect();
-        component.process_event(key_event(KeyCode::Char('l')), &store);
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        sink.take_usecases();
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
 
-        component.process_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
 
         assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { page: requested_page, .. })
+            sink.take_usecases()[..],
+            [UsecaseRequest::FetchProjectIssuesPage { page: requested_page, .. }]
                 if requested_page == page(2)
         ));
     }
 
     #[test]
     fn next_boundary_refetches_a_loading_destination() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         load_project_page(
             &mut store,
@@ -694,17 +683,13 @@ mod tests {
             }
             .into(),
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        let _ = component.take_effect();
-        component.process_event(key_event(KeyCode::Char('l')), &store);
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        sink.take_usecases();
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
 
-        component.process_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
 
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page })
-                if project_id == 1 && requested_page == page(2)
-        ));
+        assert_eq!(sink.take_usecases(), [fetch_page(1, 2)]);
         assert!(matches!(
             component.create_widget(&store).issue_column_state,
             super::super::widget::IssueSelectPopupIssueColumnState::Loading
@@ -713,6 +698,7 @@ mod tests {
 
     #[test]
     fn next_boundary_uses_only_the_current_exact_pages_metadata() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         load_project_page(
             &mut store,
@@ -730,18 +716,19 @@ mod tests {
             101,
             50,
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        let _ = component.take_effect();
-        component.process_event(key_event(KeyCode::Char('l')), &store);
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        sink.take_usecases();
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
 
-        component.process_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
 
-        assert!(component.take_effect().is_none());
+        assert_eq!(sink.take_usecases(), []);
         assert_eq!(component.create_widget(&store).issues[0].issue_id, 1);
     }
 
     #[test]
     fn first_move_to_an_unloaded_project_requests_only_its_first_page() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         load_project_page(
             &mut store,
@@ -751,26 +738,18 @@ mod tests {
             1,
             0,
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page, .. })
-                if project_id == 1 && requested_page == page(1)
-        ));
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        assert_eq!(sink.take_usecases(), [fetch_page(1, 1)]);
 
-        component.process_event(key_event(KeyCode::Char('h')), &store);
-        component.process_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('h')), &store, &mut sink);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
 
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page, .. })
-                if project_id == 2 && requested_page == page(1)
-        ));
-        assert!(component.take_effect().is_none());
+        assert_eq!(sink.take_usecases(), [fetch_page(2, 1)]);
     }
 
     #[test]
     fn switching_projects_restores_each_projects_last_page_and_refetches_a_b_a() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         load_project_page(
             &mut store,
@@ -796,32 +775,25 @@ mod tests {
             1,
             0,
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        let _ = component.take_effect();
-        component.process_event(key_event(KeyCode::Char('l')), &store);
-        component.process_event(key_event(KeyCode::Char('j')), &store);
-        let _ = component.take_effect();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        sink.take_usecases();
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
+        sink.take_usecases();
 
-        component.process_event(key_event(KeyCode::Char('h')), &store);
-        component.process_event(key_event(KeyCode::Char('j')), &store);
+        component.process_event(key_event(KeyCode::Char('h')), &store, &mut sink);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
         assert_eq!(component.create_widget(&store).issues[0].issue_id, 42);
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page })
-                if project_id == 2 && requested_page == page(1)
-        ));
+        assert_eq!(sink.take_usecases(), [fetch_page(2, 1)]);
 
-        component.process_event(key_event(KeyCode::Char('k')), &store);
+        component.process_event(key_event(KeyCode::Char('k')), &store, &mut sink);
         assert_eq!(component.create_widget(&store).issues[0].issue_id, 11);
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page })
-                if project_id == 1 && requested_page == page(2)
-        ));
+        assert_eq!(sink.take_usecases(), [fetch_page(1, 2)]);
     }
 
     #[test]
     fn switching_back_refetches_even_when_the_exact_page_is_loading() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         store.consume_action(
             ProjectIssuesAction::StartLoading {
@@ -839,22 +811,19 @@ mod tests {
             1,
             0,
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        let _ = component.take_effect();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        sink.take_usecases();
 
-        component.process_event(key_event(KeyCode::Char('j')), &store);
-        let _ = component.take_effect();
-        component.process_event(key_event(KeyCode::Char('k')), &store);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
+        sink.take_usecases();
+        component.process_event(key_event(KeyCode::Char('k')), &store, &mut sink);
 
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page })
-                if project_id == 1 && requested_page == page(1)
-        ));
+        assert_eq!(sink.take_usecases(), [fetch_page(1, 1)]);
     }
 
     #[test]
     fn switching_back_refetches_the_remembered_page() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         load_project_page(
             &mut store,
@@ -880,26 +849,23 @@ mod tests {
             1,
             0,
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        let _ = component.take_effect();
-        component.process_event(key_event(KeyCode::Char('l')), &store);
-        component.process_event(key_event(KeyCode::Char('j')), &store);
-        let _ = component.take_effect();
-        component.process_event(key_event(KeyCode::Char('h')), &store);
-        component.process_event(key_event(KeyCode::Char('j')), &store);
-        let _ = component.take_effect();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        sink.take_usecases();
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
+        sink.take_usecases();
+        component.process_event(key_event(KeyCode::Char('h')), &store, &mut sink);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
+        sink.take_usecases();
 
-        component.process_event(key_event(KeyCode::Char('k')), &store);
+        component.process_event(key_event(KeyCode::Char('k')), &store, &mut sink);
 
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page, .. })
-                if project_id == 1 && requested_page == page(2)
-        ));
+        assert_eq!(sink.take_usecases(), [fetch_page(1, 2)]);
     }
 
     #[test]
     fn loading_project_blocks_issue_focus_selection_and_retry() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         store.consume_action(
             ProjectIssuesAction::StartLoading {
@@ -909,28 +875,25 @@ mod tests {
             }
             .into(),
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
 
-        assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { project_id, page: requested_page, .. })
-                if project_id == 1 && requested_page == page(1)
-        ));
-        component.process_event(key_event(KeyCode::Char('l')), &store);
+        assert_eq!(sink.take_usecases(), [fetch_page(1, 1)]);
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
         assert_eq!(
             component.create_widget(&store).focused_column,
             IssueSelectPopupFocusColumn::Project
         );
         assert!(matches!(
-            component.process_event(key_event(KeyCode::Enter), &store),
+            component.process_event(key_event(KeyCode::Enter), &store, &mut sink),
             Some(EventProcessResult::Handled)
         ));
-        component.process_event(key_event(KeyCode::Char('r')), &store);
-        assert!(component.take_effect().is_none());
+        component.process_event(key_event(KeyCode::Char('r')), &store, &mut sink);
+        assert_eq!(sink.take_usecases(), []);
     }
 
     #[test]
     fn empty_second_page_can_reenter_issue_column_and_k_requests_previous_page() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         load_project_page(
             &mut store,
@@ -940,11 +903,11 @@ mod tests {
             51,
             0,
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        let _ = component.take_effect();
-        component.process_event(key_event(KeyCode::Char('l')), &store);
-        component.process_event(key_event(KeyCode::Char('j')), &store);
-        let _ = component.take_effect();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        sink.take_usecases();
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
+        sink.take_usecases();
         let request_id = crate::stores::ProjectIssuesRequestId::new();
         store.consume_action(
             ProjectIssuesAction::StartLoading {
@@ -970,22 +933,23 @@ mod tests {
         );
         component.update(&store, AREA);
 
-        component.process_event(key_event(KeyCode::Char('h')), &store);
-        component.process_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('h')), &store, &mut sink);
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
         assert_eq!(
             component.create_widget(&store).focused_column,
             IssueSelectPopupFocusColumn::Issue
         );
-        component.process_event(key_event(KeyCode::Char('k')), &store);
+        component.process_event(key_event(KeyCode::Char('k')), &store, &mut sink);
 
         assert!(matches!(
-            component.take_effect(),
-            Some(Effect::FetchProjectIssuesPage { page: requested_page, .. }) if requested_page == page(1)
+            sink.take_usecases()[..],
+            [UsecaseRequest::FetchProjectIssuesPage { page: requested_page, .. }] if requested_page == page(1)
         ));
     }
 
     #[test]
     fn loaded_empty_first_page_returns_focus_to_the_project_column() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         load_project_page(
             &mut store,
@@ -1003,16 +967,16 @@ mod tests {
             51,
             50,
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        let _ = component.take_effect();
-        component.process_event(key_event(KeyCode::Char('l')), &store);
-        component.process_event(key_event(KeyCode::Char('j')), &store);
-        let _ = component.take_effect();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        sink.take_usecases();
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
+        sink.take_usecases();
 
         load_project_page(&mut store, 1, 1, Vec::new(), 0, 0);
 
-        component.process_event(key_event(KeyCode::Char('k')), &store);
-        let _ = component.take_effect();
+        component.process_event(key_event(KeyCode::Char('k')), &store, &mut sink);
+        sink.take_usecases();
         component.update(&store, AREA);
 
         assert_eq!(
@@ -1023,8 +987,9 @@ mod tests {
 
     #[test]
     fn new_focuses_the_issue_column_on_the_displayed_issue() {
+        let mut sink = RequestSink::default();
         let store = store();
-        let component = IssueSelectPopupComponent::new(&store, Some(2.into()));
+        let component = IssueSelectPopupComponent::new(&store, Some(2.into()), &mut sink);
 
         let widget = component.create_widget(&store);
 
@@ -1034,8 +999,9 @@ mod tests {
 
     #[test]
     fn new_without_displayed_issue_focuses_the_project_column() {
+        let mut sink = RequestSink::default();
         let store = store();
-        let component = IssueSelectPopupComponent::new(&store, None);
+        let component = IssueSelectPopupComponent::new(&store, None, &mut sink);
 
         let widget = component.create_widget(&store);
 
@@ -1045,9 +1011,10 @@ mod tests {
 
     #[test]
     fn initial_fetch_completion_focuses_the_displayed_issue() {
+        let mut sink = RequestSink::default();
         let mut store = store();
-        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()));
-        let _ = component.take_effect();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()), &mut sink);
+        sink.take_usecases();
         store.consume_action(
             ProjectIssuesAction::StartLoading {
                 request_id: crate::stores::ProjectIssuesRequestId::new(),
@@ -1079,11 +1046,12 @@ mod tests {
 
     #[test]
     fn input_that_does_not_move_focus_keeps_the_displayed_issue_as_target() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
-        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()));
-        let _ = component.take_effect();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()), &mut sink);
+        sink.take_usecases();
 
-        component.process_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
         load_project_page(
             &mut store,
             1,
@@ -1104,11 +1072,12 @@ mod tests {
 
     #[test]
     fn focus_move_before_initial_fetch_completion_cancels_displayed_issue_focus() {
+        let mut sink = RequestSink::default();
         let mut store = store();
-        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()));
-        let _ = component.take_effect();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()), &mut sink);
+        sink.take_usecases();
 
-        component.process_event(key_event(KeyCode::Char('k')), &store);
+        component.process_event(key_event(KeyCode::Char('k')), &store, &mut sink);
         load_project_page(
             &mut store,
             1,
@@ -1130,6 +1099,7 @@ mod tests {
 
     #[test]
     fn page_navigation_cancels_displayed_issue_focus() {
+        let mut sink = RequestSink::default();
         let mut store = unloaded_store();
         load_project_page(
             &mut store,
@@ -1139,10 +1109,10 @@ mod tests {
             51,
             0,
         );
-        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()));
-        let _ = component.take_effect();
-        component.process_event(key_event(KeyCode::Char('j')), &store);
-        let _ = component.take_effect();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(3.into()), &mut sink);
+        sink.take_usecases();
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
+        sink.take_usecases();
         load_project_page(
             &mut store,
             1,
@@ -1153,7 +1123,7 @@ mod tests {
         );
         component.update(&store, AREA);
 
-        component.process_event(key_event(KeyCode::Char('k')), &store);
+        component.process_event(key_event(KeyCode::Char('k')), &store, &mut sink);
         load_project_page(
             &mut store,
             1,
@@ -1172,8 +1142,9 @@ mod tests {
 
     #[test]
     fn snapshot_update_renders_initial_focus_and_preview() {
+        let mut sink = RequestSink::default();
         let store = store();
-        let mut component = IssueSelectPopupComponent::new(&store, Some(2.into()));
+        let mut component = IssueSelectPopupComponent::new(&store, Some(2.into()), &mut sink);
 
         component.update(&store, AREA);
 
@@ -1187,8 +1158,9 @@ mod tests {
 
     #[test]
     fn create_widget_includes_projects_with_no_issues() {
+        let mut sink = RequestSink::default();
         let store = store();
-        let component = IssueSelectPopupComponent::new(&store, Some(1.into()));
+        let component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
         let widget = component.create_widget(&store);
 
         assert_eq!(widget.projects.len(), 2);
@@ -1198,13 +1170,14 @@ mod tests {
 
     #[test]
     fn process_event_l_ignores_empty_project_focus() {
+        let mut sink = RequestSink::default();
         let store = store();
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
-        let _ = component.take_effect();
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
+        sink.take_usecases();
 
-        component.process_event(key_event(KeyCode::Char('h')), &store);
-        component.process_event(key_event(KeyCode::Char('j')), &store);
-        component.process_event(key_event(KeyCode::Char('l')), &store);
+        component.process_event(key_event(KeyCode::Char('h')), &store, &mut sink);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
         let widget = component.create_widget(&store);
 
         assert_eq!(widget.focused_project_index, 1);
@@ -1213,22 +1186,24 @@ mod tests {
 
     #[test]
     fn process_event_q_returns_quited() {
+        let mut sink = RequestSink::default();
         let store = store();
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
 
-        let result = component.process_event(key_event(KeyCode::Char('q')), &store);
+        let result = component.process_event(key_event(KeyCode::Char('q')), &store, &mut sink);
 
         assert!(matches!(result, Some(EventProcessResult::Quited)));
     }
 
     #[test]
     fn process_event_enter_returns_selected_issue_id() {
+        let mut sink = RequestSink::default();
         let store = store();
-        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()));
+        let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
 
-        component.process_event(key_event(KeyCode::Char('l')), &store);
-        component.process_event(key_event(KeyCode::Char('j')), &store);
-        let result = component.process_event(key_event(KeyCode::Enter), &store);
+        component.process_event(key_event(KeyCode::Char('l')), &store, &mut sink);
+        component.process_event(key_event(KeyCode::Char('j')), &store, &mut sink);
+        let result = component.process_event(key_event(KeyCode::Enter), &store, &mut sink);
 
         match result {
             Some(EventProcessResult::Selected { issue_id }) => {

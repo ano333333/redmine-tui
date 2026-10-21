@@ -385,6 +385,11 @@ impl Store {
         self.issue_store.try_get_issue_upload_failure(id)
     }
 
+    /// PUT後の確認の取得に失敗したSyncedのIssueでだけ、失敗の理由を返す。
+    pub fn try_get_issue_confirmation_failure(&self, id: IssueId) -> Option<&str> {
+        self.issue_store.try_get_issue_confirmation_failure(id)
+    }
+
     /// 表示中のnoticeを追加順で返す。
     pub fn get_notices(&self) -> &[Notice] {
         self.notice_store.notices()

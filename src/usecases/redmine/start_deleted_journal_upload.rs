@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -7,11 +6,8 @@ use crate::clients::redmine::RedmineClient;
 use crate::stores::{
     Action, DeletedJournalState, Dispatcher, IssueState, JournalAction, NoticeAction, NoticeId,
 };
+use crate::usecases::UsecaseTask;
 use crate::vos::{EntityIdValue, IssueId, JournalId};
-
-/// 退避したJournalの投稿結果に応じたActionを生成するFuture。
-pub type StartDeletedJournalUploadFuture =
-    Pin<Box<dyn Future<Output = Vec<Action>> + Send + 'static>>;
 
 /// 取得結果から消えて退避したJournalを、新規Journalとして投稿し始める。
 ///
@@ -27,7 +23,7 @@ pub fn start_deleted_journal_upload<C>(
     client: Arc<C>,
     issue_id: IssueId,
     original_id: JournalId,
-) -> StartDeletedJournalUploadFuture
+) -> Option<UsecaseTask>
 where
     C: RedmineClient + Send + Sync + 'static,
 {
@@ -59,9 +55,11 @@ where
             original_id,
         });
 
-    Box::pin(
-        async move { upload_deleted_journal(client.as_ref(), issue_id, original_id, notes).await },
-    )
+    Some(Box::pin(async move {
+        upload_deleted_journal(client.as_ref(), issue_id, original_id, notes)
+            .await
+            .into()
+    }))
 }
 
 // FIXME: PUTと確認GETを1つのFutureで続けて実行し、結果を最後に1つのActionで反映している。
@@ -131,6 +129,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::complete_usecase;
     use std::sync::Mutex;
 
     use crate::clients::redmine::RedmineClientError;
@@ -340,8 +339,7 @@ mod tests {
         let future =
             start_deleted_journal_upload(dispatcher.clone(), client, ISSUE_ID, ORIGINAL_ID);
         dispatcher.borrow_mut().consume_action();
-        let actions = future.await;
-        actions
+        complete_usecase(future).await
     }
 
     fn apply(dispatcher: &Rc<RefCell<Dispatcher>>, actions: Vec<Action>) {

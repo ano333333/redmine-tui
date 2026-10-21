@@ -1,17 +1,13 @@
 use std::cell::RefCell;
-use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::clients::redmine::RedmineClient;
-use crate::stores::{Action, Dispatcher, RemoteJournalState};
+use crate::stores::{Dispatcher, RemoteJournalState};
+use crate::usecases::UsecaseTask;
 use crate::vos::{IssueId, JournalId};
 
 use super::start_remote_journal_upload::upload_remote_journal_action;
-
-/// 競合解決後のRemote Journal upload継続の完了Actionを生成するFuture。
-pub type ContinueRemoteJournalUploadFuture =
-    Pin<Box<dyn Future<Output = Vec<Action>> + Send + 'static>>;
 
 /// 競合解決後のRemote Journal uploadを継続する。
 ///
@@ -24,7 +20,7 @@ pub fn continue_remote_journal_upload<C>(
     issue_id: IssueId,
     journal_id: JournalId,
     resolved_notes: String,
-) -> ContinueRemoteJournalUploadFuture
+) -> Option<UsecaseTask>
 where
     C: RedmineClient + Send + Sync + 'static,
 {
@@ -44,7 +40,7 @@ where
     };
 
     // 前回の競合検出時点からのサーバー更新も検出するため、その時点の値を比較の基準にする。
-    Box::pin(async move {
+    Some(Box::pin(async move {
         upload_remote_journal_action(
             client.as_ref(),
             issue_id,
@@ -53,7 +49,8 @@ where
             &resolved_notes,
         )
         .await
-    })
+        .into()
+    }))
 }
 
 #[cfg(test)]
@@ -66,6 +63,7 @@ mod tests {
         Action, DeletedJournalEntry, DeletedJournalState, Dispatcher, JournalAction,
         RemoteJournalState, RemoteJournalUploadConflict,
     };
+    use crate::test_support::complete_usecase;
     use crate::test_support::sample_issue_aggregate;
     use crate::vos::{IssueId, IssueStatusId, JournalId};
 
@@ -140,13 +138,13 @@ mod tests {
         dispatcher: &Rc<RefCell<Dispatcher>>,
         client: &Arc<StubClient>,
     ) -> Vec<Action> {
-        continue_remote_journal_upload(
+        complete_usecase(continue_remote_journal_upload(
             dispatcher.clone(),
             client.clone(),
             ISSUE_ID,
             JOURNAL_ID,
             RESOLVED.to_string(),
-        )
+        ))
         .await
     }
 

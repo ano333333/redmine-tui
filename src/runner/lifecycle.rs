@@ -1,14 +1,15 @@
 //! runner loopから呼ぶapplication lifecycleの共通処理。
 
-use std::{cell::RefCell, rc::Rc, time::Duration};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc, time::Duration};
 
 use ratatui::{Frame, layout::Rect};
 
 use crate::{
-    components::AppComponent,
+    components::{AppComponent, RequestSink},
     platform::host::HostEvent,
     platform::runtime::{BackgroundCompletion, BackgroundSpawner},
     stores::{Action, Dispatcher},
+    usecases::{UsecaseOutput, UsecaseRequest},
 };
 
 /// `now`が`last`より前、または`chrono::Duration`の範囲外ならゼロを返す。
@@ -21,29 +22,29 @@ pub(crate) fn handle_host_event(
     event: HostEvent,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
-    area: Rect,
+    sink: &mut RequestSink,
 ) -> bool {
-    let should_continue = match event {
-        HostEvent::Input(event) => app_component.handle_key_event(event, dispatcher.clone()),
+    match event {
+        HostEvent::Input(event) => app_component.handle_key_event(event, dispatcher, sink),
         HostEvent::Ignored => true,
-    };
-    update(dispatcher.clone(), app_component, area);
-    app_component.update(dispatcher.clone(), dispatcher.borrow().store(), area);
-    should_continue
+    }
 }
 
-pub(crate) fn move_worker_action<S: BackgroundSpawner>(
+/// 受理したcompletionのActionをdispatchし、後続要求を`requests`の末尾に積む。
+pub(crate) fn move_worker_action<S: BackgroundSpawner<Output = UsecaseOutput>>(
     spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
+    requests: &mut VecDeque<UsecaseRequest>,
 ) -> Option<String> {
     let mut worker_panic_message = None;
     while let Some(completion) = spawner.try_recv_completion() {
         match completion {
-            BackgroundCompletion::Succeeded(actions) => {
+            BackgroundCompletion::Succeeded(output) => {
                 // completionの受理順とtaskが生成したActionの順序を保ってmain thread上でdispatchする。
-                for action in actions {
+                for action in output.actions {
                     dispatcher.borrow_mut().dispatch(action);
                 }
+                requests.extend(output.requests);
             }
             BackgroundCompletion::Panicked { message } => {
                 // Storeへ通常のActionとして流さず、runnerへ返してプロセスの異常終了を判断させる。
@@ -54,11 +55,12 @@ pub(crate) fn move_worker_action<S: BackgroundSpawner>(
     worker_panic_message
 }
 
-pub(crate) fn consume_editor_worker_actions<S: BackgroundSpawner>(
+pub(crate) fn consume_editor_worker_actions<S: BackgroundSpawner<Output = UsecaseOutput>>(
     spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
+    requests: &mut VecDeque<UsecaseRequest>,
 ) -> Option<String> {
-    let worker_panic_message = move_worker_action(spawner, dispatcher.clone());
+    let worker_panic_message = move_worker_action(spawner, dispatcher.clone(), requests);
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }

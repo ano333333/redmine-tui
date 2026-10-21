@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -7,6 +6,7 @@ use crate::clients::redmine::RedmineClient;
 use crate::stores::{
     Action, Dispatcher, IssueState, JournalAction, NoticeAction, NoticeId, RemoteJournalState,
 };
+use crate::usecases::UsecaseTask;
 use crate::vos::{EntityIdValue, IssueId, JournalId};
 
 use super::resolve_remote_journal_upload::{
@@ -36,10 +36,6 @@ pub fn remote_journal_upload_failure_actions(
     ]
 }
 
-/// Remote Journal uploadの完了Actionを生成するFuture。
-pub type StartRemoteJournalUploadFuture =
-    Pin<Box<dyn Future<Output = Vec<Action>> + Send + 'static>>;
-
 /// 編集済みのRemote Journalのuploadを開始する。
 ///
 /// `StartRemoteUpload`はFutureをpollする前に同期的にqueueへ追加し、返却したFutureは
@@ -54,7 +50,7 @@ pub fn start_remote_journal_upload<C>(
     client: Arc<C>,
     issue_id: IssueId,
     journal_id: JournalId,
-) -> StartRemoteJournalUploadFuture
+) -> Option<UsecaseTask>
 where
     C: RedmineClient + Send + Sync + 'static,
 {
@@ -91,7 +87,7 @@ where
             journal_id,
         });
 
-    Box::pin(async move {
+    Some(Box::pin(async move {
         upload_remote_journal_action(
             client.as_ref(),
             issue_id,
@@ -100,7 +96,8 @@ where
             &diff.after,
         )
         .await
-    })
+        .into()
+    }))
 }
 
 /// 保存前の取得、対象JournalのPUT、確認の取得を順に行い、結果のActionを返す。
@@ -243,6 +240,7 @@ pub(super) mod tests {
         Action, DeletedJournalEntry, DeletedJournalState, Dispatcher, IssueAction, IssueState,
         JournalAction, NoticeAction, RemoteJournalState,
     };
+    use crate::test_support::complete_usecase;
     use crate::test_support::{local_datetime, sample_issue_aggregate};
     use crate::vos::{IssueId, IssueStatusId, JournalId, TrackerId};
 
@@ -520,8 +518,13 @@ pub(super) mod tests {
         let dispatcher = Rc::new(RefCell::new(dispatcher));
         let client = Arc::new(StubClient::new(vec![Err(offline())], Ok(())));
 
-        let actions =
-            start_remote_journal_upload(dispatcher.clone(), client, ISSUE_ID, JOURNAL_ID).await;
+        let actions = complete_usecase(start_remote_journal_upload(
+            dispatcher.clone(),
+            client,
+            ISSUE_ID,
+            JOURNAL_ID,
+        ))
+        .await;
 
         let [
             Action::Notice(NoticeAction::Push { message, .. }),
@@ -558,9 +561,13 @@ pub(super) mod tests {
             Ok(()),
         ));
 
-        let actions =
-            start_remote_journal_upload(dispatcher.clone(), client.clone(), ISSUE_ID, JOURNAL_ID)
-                .await;
+        let actions = complete_usecase(start_remote_journal_upload(
+            dispatcher.clone(),
+            client.clone(),
+            ISSUE_ID,
+            JOURNAL_ID,
+        ))
+        .await;
 
         assert!(client.put_notes.lock().unwrap().is_empty());
         dispatch_all(&dispatcher, actions);
@@ -815,9 +822,13 @@ pub(super) mod tests {
             Ok(()),
         ));
 
-        let actions =
-            start_remote_journal_upload(dispatcher.clone(), client.clone(), ISSUE_ID, JOURNAL_ID)
-                .await;
+        let actions = complete_usecase(start_remote_journal_upload(
+            dispatcher.clone(),
+            client.clone(),
+            ISSUE_ID,
+            JOURNAL_ID,
+        ))
+        .await;
 
         assert_eq!(*client.put_notes.lock().unwrap(), vec![""]);
         dispatch_all(&dispatcher, actions);

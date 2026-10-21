@@ -6,19 +6,18 @@ use tokio::{
 };
 
 use super::{BackgroundCompletion, BackgroundSpawner, panic_message};
-use crate::stores::Action;
 
 /// native runner向けにTokio runtimeとbackground taskの完了channelを一体で所有するadapter。
 ///
 /// executorとcompletionの配送経路を同じ境界に閉じ込めることで、呼び出し側へTokio固有型を
 /// 渡さずにtaskの起動から完了受理までを扱える。
-pub(crate) struct TokioBackgroundSpawner {
+pub(crate) struct TokioBackgroundSpawner<T> {
     runtime: Runtime,
-    completion_receiver: mpsc::Receiver<BackgroundCompletion>,
-    completion_sender: mpsc::Sender<BackgroundCompletion>,
+    completion_receiver: mpsc::Receiver<BackgroundCompletion<T>>,
+    completion_sender: mpsc::Sender<BackgroundCompletion<T>>,
 }
 
-impl TokioBackgroundSpawner {
+impl<T> TokioBackgroundSpawner<T> {
     pub(crate) fn new() -> std::io::Result<Self> {
         let runtime = TokioRuntimeBuilder::new_multi_thread()
             .enable_all()
@@ -37,10 +36,12 @@ impl TokioBackgroundSpawner {
     }
 }
 
-impl BackgroundSpawner for TokioBackgroundSpawner {
+impl<T: Send + 'static> BackgroundSpawner for TokioBackgroundSpawner<T> {
+    type Output = T;
+
     fn spawn<F>(&self, task: F)
     where
-        F: Future<Output = Vec<Action>> + Send + 'static,
+        F: Future<Output = T> + Send + 'static,
     {
         let handle = self.runtime.spawn(task);
         let completion_sender = self.completion_sender.clone();
@@ -53,16 +54,14 @@ impl BackgroundSpawner for TokioBackgroundSpawner {
         });
     }
 
-    fn try_recv_completion(&self) -> Option<BackgroundCompletion> {
+    fn try_recv_completion(&self) -> Option<BackgroundCompletion<T>> {
         self.completion_receiver.try_recv().ok()
     }
 }
 
-fn completion_from_join_result(
-    result: Result<Vec<Action>, JoinError>,
-) -> Option<BackgroundCompletion> {
+fn completion_from_join_result<T>(result: Result<T, JoinError>) -> Option<BackgroundCompletion<T>> {
     match result {
-        Ok(actions) => Some(BackgroundCompletion::Succeeded(actions)),
+        Ok(output) => Some(BackgroundCompletion::Succeeded(output)),
         Err(error) if error.is_panic() => Some(BackgroundCompletion::Panicked {
             message: join_error_panic_message(error),
         }),
@@ -82,13 +81,14 @@ fn join_error_panic_message(error: JoinError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stores::{NoticeAction, NoticeId};
     use std::{
         thread,
         time::{Duration, Instant},
     };
 
-    fn recv_completion(spawner: &TokioBackgroundSpawner) -> BackgroundCompletion {
+    fn recv_completion<T: Send + 'static>(
+        spawner: &TokioBackgroundSpawner<T>,
+    ) -> BackgroundCompletion<T> {
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
             if let Some(completion) = spawner.try_recv_completion() {
@@ -103,33 +103,19 @@ mod tests {
     }
 
     #[test]
-    fn spawner_returns_successful_actions_in_order() {
+    fn spawner_returns_successful_output() {
         let spawner = TokioBackgroundSpawner::new().unwrap();
-        spawner.spawn(async {
-            vec![
-                Action::Notice(NoticeAction::Push {
-                    id: NoticeId::new(),
-                    message: "first".to_string(),
-                }),
-                Action::Notice(NoticeAction::Push {
-                    id: NoticeId::new(),
-                    message: "second".to_string(),
-                }),
-            ]
-        });
+        spawner.spawn(async { vec!["first", "second"] });
 
-        let BackgroundCompletion::Succeeded(actions) = recv_completion(&spawner) else {
+        let BackgroundCompletion::Succeeded(output) = recv_completion(&spawner) else {
             panic!("expected successful completion");
         };
-        assert!(matches!(&actions[..], [
-            Action::Notice(NoticeAction::Push { message: first, .. }),
-            Action::Notice(NoticeAction::Push { message: second, .. }),
-        ] if first == "first" && second == "second"));
+        assert_eq!(output, vec!["first", "second"]);
     }
 
     #[test]
     fn spawner_returns_panic_message() {
-        let spawner = TokioBackgroundSpawner::new().unwrap();
+        let spawner = TokioBackgroundSpawner::<()>::new().unwrap();
         spawner.spawn(async { panic!("worker panic marker") });
 
         let BackgroundCompletion::Panicked { message } = recv_completion(&spawner) else {
@@ -140,10 +126,9 @@ mod tests {
 
     #[test]
     fn spawner_returns_async_assertion_panic_message() {
-        async fn usecase(precondition_met: bool) -> Vec<Action> {
+        async fn usecase(precondition_met: bool) {
             tokio::task::yield_now().await;
             assert!(precondition_met, "usecase precondition violated");
-            Vec::new()
         }
 
         let spawner = TokioBackgroundSpawner::new().unwrap();
@@ -160,8 +145,8 @@ mod tests {
 
     #[test]
     fn cancelled_task_does_not_produce_a_completion() {
-        let spawner = TokioBackgroundSpawner::new().unwrap();
-        let handle = spawner.runtime.spawn(std::future::pending::<Vec<Action>>());
+        let spawner = TokioBackgroundSpawner::<()>::new().unwrap();
+        let handle = spawner.runtime.spawn(std::future::pending::<()>());
         handle.abort();
 
         let completion = spawner.block_on(async { completion_from_join_result(handle.await) });

@@ -1,16 +1,60 @@
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::rc::Rc;
+use std::sync::Arc;
+
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use insta::assert_snapshot;
 use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
+use crate::clients::redmine::RedmineClient;
 use crate::entities::{
     Category, Issue, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::stores::{Action, Dispatcher, Store};
+use crate::usecases::{UsecaseRequest, UsecaseTask, start_usecase};
 use crate::vos::{
     CategoryId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, PriorityId,
     ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
+
+/// 起動したUsecaseを完了まで進め、完了Actionを返す。起動しなかった場合はpanicする。
+pub async fn complete_usecase(task: Option<UsecaseTask>) -> Vec<Action> {
+    task.expect("usecase should start").await.actions
+}
+
+/// `request`と、その後続要求を完了まで順に進める。
+///
+/// runnerと同じく、起動時のActionと完了Actionを消費してから次の要求を起動する。
+pub async fn run_usecases<C>(
+    request: UsecaseRequest,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    client: Arc<C>,
+) where
+    C: RedmineClient + Send + Sync + 'static,
+{
+    let mut requests = VecDeque::from([request]);
+    while let Some(request) = requests.pop_front() {
+        let task = start_usecase(request, dispatcher.clone(), client.clone());
+        consume_all(&dispatcher);
+        let Some(task) = task else {
+            continue;
+        };
+        let output = task.await;
+        for action in output.actions {
+            dispatcher.borrow_mut().dispatch(action);
+        }
+        consume_all(&dispatcher);
+        requests.extend(output.requests);
+    }
+}
+
+fn consume_all(dispatcher: &Rc<RefCell<Dispatcher>>) {
+    while dispatcher.borrow().consume_actinos_len() > 0 {
+        dispatcher.borrow_mut().consume_action();
+    }
+}
 
 pub fn local_datetime(input: &str) -> DateTime<Local> {
     DateTime::parse_from_rfc3339(input)

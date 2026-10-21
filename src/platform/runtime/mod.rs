@@ -3,8 +3,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll, Waker};
 
-use crate::stores::Action;
-
 #[cfg(feature = "native")]
 pub(crate) mod tokio_spawner;
 #[cfg(feature = "web-demo")]
@@ -12,23 +10,25 @@ pub(crate) mod web_spawner;
 
 /// background taskからrunnerへ返す、実行環境に依存しない完了通知。
 ///
-/// task側ではStoreを更新せず、runnerがこの通知をUI thread上でAction dispatchへ接続する。
-pub enum BackgroundCompletion {
-    Succeeded(Vec<Action>),
+/// task側ではStoreを更新せず、runnerがUI thread上で完了値を受け取ってStoreへ反映する。
+pub enum BackgroundCompletion<T> {
+    Succeeded(T),
     Panicked { message: String },
 }
 
 /// background taskの起動方法と完了通知の配送を、executor固有の型から分離するport。
 pub trait BackgroundSpawner {
+    type Output: Send + 'static;
+
     /// Redmine I/Oなど、UI threadから独立して進められるtaskを起動する。
     ///
     /// Web adapterでも同じbackground task契約を保つため、Futureの`Send + 'static`は緩めない。
     fn spawn<F>(&self, task: F)
     where
-        F: Future<Output = Vec<Action>> + Send + 'static;
+        F: Future<Output = Self::Output> + Send + 'static;
 
     /// 完了済みの通知を受理順に1件だけ取り出し、未完了なら直ちに`None`を返す。
-    fn try_recv_completion(&self) -> Option<BackgroundCompletion>;
+    fn try_recv_completion(&self) -> Option<BackgroundCompletion<Self::Output>>;
 }
 
 /// UI thread上で、frame/loopごとの明示的なpollによって進めるlocal task。
@@ -79,13 +79,7 @@ pub fn panic_message(payload: &(dyn Any + Send)) -> String {
     )
 }
 
-impl From<Vec<Action>> for BackgroundCompletion {
-    fn from(actions: Vec<Action>) -> Self {
-        Self::Succeeded(actions)
-    }
-}
-
-impl From<Box<dyn Any + Send>> for BackgroundCompletion {
+impl<T> From<Box<dyn Any + Send>> for BackgroundCompletion<T> {
     fn from(payload: Box<dyn Any + Send>) -> Self {
         Self::Panicked {
             message: panic_message(payload.as_ref()),
@@ -96,7 +90,6 @@ impl From<Box<dyn Any + Send>> for BackgroundCompletion {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stores::{NoticeAction, NoticeId};
     use std::cell::{Cell, RefCell};
     use std::collections::VecDeque;
     use std::pin::Pin;
@@ -106,8 +99,8 @@ mod tests {
     use std::task::{Context, Poll, Waker};
 
     struct FakeSpawner {
-        tasks: RefCell<Vec<Pin<Box<dyn Future<Output = Vec<Action>> + Send>>>>,
-        completions: RefCell<VecDeque<BackgroundCompletion>>,
+        tasks: RefCell<Vec<Pin<Box<dyn Future<Output = &'static str> + Send>>>>,
+        completions: RefCell<VecDeque<BackgroundCompletion<&'static str>>>,
     }
 
     impl FakeSpawner {
@@ -117,10 +110,10 @@ mod tests {
             let mut context = Context::from_waker(Waker::noop());
             for mut task in tasks.drain(..) {
                 match task.as_mut().poll(&mut context) {
-                    Poll::Ready(actions) => self
+                    Poll::Ready(output) => self
                         .completions
                         .borrow_mut()
-                        .push_back(BackgroundCompletion::Succeeded(actions)),
+                        .push_back(BackgroundCompletion::Succeeded(output)),
                     Poll::Pending => pending.push(task),
                 }
             }
@@ -129,59 +122,38 @@ mod tests {
     }
 
     impl BackgroundSpawner for FakeSpawner {
+        type Output = &'static str;
+
         fn spawn<F>(&self, task: F)
         where
-            F: Future<Output = Vec<Action>> + Send + 'static,
+            F: Future<Output = &'static str> + Send + 'static,
         {
             self.tasks.borrow_mut().push(Box::pin(task));
             self.poll_tasks();
         }
 
-        fn try_recv_completion(&self) -> Option<BackgroundCompletion> {
+        fn try_recv_completion(&self) -> Option<BackgroundCompletion<&'static str>> {
             self.completions.borrow_mut().pop_front()
         }
-    }
-
-    fn dummy_action(message: &str) -> Action {
-        Action::Notice(NoticeAction::Push {
-            id: NoticeId::new(),
-            message: message.to_string(),
-        })
     }
 
     struct ControlledTask {
         started: Arc<AtomicBool>,
         ready: Arc<AtomicBool>,
-        actions: Vec<Action>,
+        output: &'static str,
     }
 
     impl Future for ControlledTask {
-        type Output = Vec<Action>;
+        type Output = &'static str;
 
         fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
             let task = self.get_mut();
             task.started.store(true, Ordering::SeqCst);
             task.ready
                 .load(Ordering::SeqCst)
-                .then(|| std::mem::take(&mut task.actions))
+                .then_some(task.output)
                 .map_or(Poll::Pending, Poll::Ready)
         }
-    }
-
-    #[test]
-    fn maps_success_value_to_succeeded() {
-        let completion =
-            BackgroundCompletion::from(vec![dummy_action("first"), dummy_action("second")]);
-        let BackgroundCompletion::Succeeded(actions) = completion else {
-            panic!("expected successful completion")
-        };
-        assert_eq!(actions.len(), 2);
-        assert!(
-            matches!(&actions[0], Action::Notice(NoticeAction::Push { message, .. }) if message == "first")
-        );
-        assert!(
-            matches!(&actions[1], Action::Notice(NoticeAction::Push { message, .. }) if message == "second")
-        );
     }
 
     #[test]
@@ -193,7 +165,7 @@ mod tests {
         ];
         for (payload, expected_message) in cases {
             assert!(matches!(
-                BackgroundCompletion::from(payload),
+                BackgroundCompletion::<()>::from(payload),
                 BackgroundCompletion::Panicked { message } if message == expected_message
             ));
         }
@@ -213,12 +185,12 @@ mod tests {
         spawner.spawn(ControlledTask {
             started: Arc::clone(&first_started),
             ready: Arc::clone(&first_ready),
-            actions: vec![dummy_action("first")],
+            output: "first",
         });
         spawner.spawn(ControlledTask {
             started: Arc::clone(&second_started),
             ready: Arc::clone(&second_ready),
-            actions: vec![dummy_action("second")],
+            output: "second",
         });
 
         assert!(first_started.load(Ordering::SeqCst));
@@ -230,20 +202,14 @@ mod tests {
         first_ready.store(true, Ordering::SeqCst);
         spawner.poll_tasks();
 
-        let Some(BackgroundCompletion::Succeeded(second_actions)) = spawner.try_recv_completion()
-        else {
-            panic!("expected second completion")
-        };
-        let Some(BackgroundCompletion::Succeeded(first_actions)) = spawner.try_recv_completion()
-        else {
-            panic!("expected first completion")
-        };
-        assert!(
-            matches!(&second_actions[..], [Action::Notice(NoticeAction::Push { message, .. })] if message == "second")
-        );
-        assert!(
-            matches!(&first_actions[..], [Action::Notice(NoticeAction::Push { message, .. })] if message == "first")
-        );
+        assert!(matches!(
+            spawner.try_recv_completion(),
+            Some(BackgroundCompletion::Succeeded("second"))
+        ));
+        assert!(matches!(
+            spawner.try_recv_completion(),
+            Some(BackgroundCompletion::Succeeded("first"))
+        ));
         assert!(spawner.try_recv_completion().is_none());
     }
 
