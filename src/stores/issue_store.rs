@@ -124,7 +124,7 @@ pub enum IssueAction {
     },
     /// 確認の取得だけをやり直すため、確認の取得に失敗したSyncedを、diffのないUploadingへ戻す。
     ///
-    /// 確認の取得に失敗したSynced以外の状態の場合はpanicする。
+    /// 確認の取得に失敗したSynced以外の状態の場合、または同じIssueのJournalが保存中の場合はpanicする。
     RetryUploadConfirmation {
         id: IssueId,
     },
@@ -445,6 +445,10 @@ impl IssueStore {
                         Self::entry_state_name(self.entries.get(&id))
                     );
                 }
+                assert!(
+                    !self.has_uploading_journal(id),
+                    "cannot retry issue upload confirmation while a journal of issue {id} is uploading"
+                );
                 let Some(IssueEntry::Synced {
                     issue,
                     journal_states,

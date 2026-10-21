@@ -666,6 +666,28 @@ fn retrying_the_confirmation_returns_to_uploading_without_diffs() {
 
 #[test]
 #[should_panic(
+    expected = "cannot retry issue upload confirmation while a journal of issue 1 is uploading"
+)]
+fn retrying_the_confirmation_while_a_journal_is_uploading_panics() {
+    let mut store = Store::new();
+    put_description_upload(&mut store);
+    confirm_failed(&mut store);
+    for action in [
+        JournalAction::CreateLocal { issue_id: 1.into() },
+        JournalAction::EditLocalNotes {
+            issue_id: 1.into(),
+            notes: "draft".to_string(),
+        },
+        JournalAction::StartLocalUpload { issue_id: 1.into() },
+    ] {
+        store.consume_action(action.into());
+    }
+
+    store.consume_action(IssueAction::RetryUploadConfirmation { id: 1.into() }.into());
+}
+
+#[test]
+#[should_panic(
     expected = "cannot retry issue upload confirmation while issue 1 is Synced or has no confirmation failure"
 )]
 fn retrying_the_confirmation_of_a_confirmed_issue_panics() {
