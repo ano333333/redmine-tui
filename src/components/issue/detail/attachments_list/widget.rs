@@ -5,6 +5,7 @@ use ratatui::style::Stylize;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget};
 
+use crate::stores::AttachmentUploadStage;
 use crate::widgets::gutter::{Gutter, indented_area};
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED, SECTION_BAR};
 
@@ -20,28 +21,47 @@ pub struct AttachmentRow<'a> {
     pub created_on: DateTime<Local>,
 }
 
-/// 添付ファイルの行の後に、追加行を1行描画する。
+pub struct UploadingRow<'a> {
+    pub filename: &'a str,
+    pub stage: AttachmentUploadStage,
+}
+
+/// 添付ファイルの行の後に、追加中のファイルがあればその行を、最後に追加行を描画する。
 pub struct AttachmentsListWidget<'a> {
     attachments: Vec<AttachmentRow<'a>>,
+    uploading: Option<UploadingRow<'a>>,
+    /// Issue属性・Journal・添付ファイルの保存中は追加できないため、追加行を無効の色で描画する。
+    add_enabled: bool,
     focused_index: Option<usize>,
 }
 
 impl<'a> AttachmentsListWidget<'a> {
-    pub fn new(attachments: Vec<AttachmentRow<'a>>, focused_index: Option<usize>) -> Self {
+    pub fn new(
+        attachments: Vec<AttachmentRow<'a>>,
+        uploading: Option<UploadingRow<'a>>,
+        add_enabled: bool,
+        focused_index: Option<usize>,
+    ) -> Self {
         Self {
             attachments,
+            uploading,
+            add_enabled,
             focused_index,
         }
     }
 
     pub fn line_count(&self) -> u16 {
-        line_count(self.attachments.len())
+        HEADER_LINES + self.row_count() as u16 + GUTTER_TRAILING_LINES
+    }
+
+    fn row_count(&self) -> usize {
+        row_count(self.attachments.len(), self.uploading.is_some())
     }
 }
 
-/// 見出し2行 + 添付ファイル + 追加行 + 縦線を引かない末尾の余白1行。
-pub fn line_count(attachment_count: usize) -> u16 {
-    HEADER_LINES + attachment_count as u16 + 1 + GUTTER_TRAILING_LINES
+/// 添付ファイル + 追加中の行 + 追加行。
+pub fn row_count(attachment_count: usize, uploading: bool) -> usize {
+    attachment_count + usize::from(uploading) + 1
 }
 
 impl Widget for AttachmentsListWidget<'_> {
@@ -66,19 +86,25 @@ impl Widget for AttachmentsListWidget<'_> {
         Gutter::line().render(gutter_area, buf);
 
         let mut row_area = indented_area(list_area);
-        for (index, attachment) in self.attachments.iter().enumerate() {
-            render_attachment(attachment, row_area, buf);
-            highlight_if_focused(row_area, buf, self.focused_index == Some(index));
+        let mut index = 0;
+        let mut next_row = |row_area: &mut Rect, buf: &mut Buffer| {
+            highlight_if_focused(*row_area, buf, self.focused_index == Some(index));
+            index += 1;
             row_area.y += 1;
             row_area.height = row_area.height.saturating_sub(1);
+        };
+        for attachment in &self.attachments {
+            render_attachment(attachment, row_area, buf);
+            next_row(&mut row_area, buf);
+        }
+        if let Some(uploading) = &self.uploading {
+            render_uploading(uploading, row_area, buf);
+            next_row(&mut row_area, buf);
         }
         if row_area.height > 0 {
-            Paragraph::new(Line::from("＋ ファイルを追加").fg(ACCENT)).render(row_area, buf);
-            highlight_if_focused(
-                row_area,
-                buf,
-                self.focused_index == Some(self.attachments.len()),
-            );
+            let color = if self.add_enabled { ACCENT } else { MUTED };
+            Paragraph::new(Line::from("＋ ファイルを追加").fg(color)).render(row_area, buf);
+            next_row(&mut row_area, buf);
         }
     }
 }
@@ -117,6 +143,22 @@ fn render_attachment(attachment: &AttachmentRow, area: Rect, buf: &mut Buffer) {
     Paragraph::new(attachment.created_on.format("%Y/%m/%d").to_string())
         .fg(MUTED)
         .render(cols[6], buf);
+}
+
+fn render_uploading(uploading: &UploadingRow, area: Rect, buf: &mut Buffer) {
+    let stage = match uploading.stage {
+        AttachmentUploadStage::Uploading => "送信中",
+        AttachmentUploadStage::Attaching => "添付中",
+        AttachmentUploadStage::Confirming => "確認中",
+    };
+    Paragraph::new(Line::from(vec![
+        Span::from(uploading.filename.to_string()),
+        Span::from(format!(" ({stage})")).yellow(),
+    ]))
+    .render(
+        Rect::new(area.x, area.y, area.width, area.height.min(1)),
+        buf,
+    );
 }
 
 fn highlight_if_focused(area: Rect, buf: &mut Buffer, focused: bool) {
@@ -170,6 +212,8 @@ mod tests {
                 author: "user1 Fixture",
                 created_on: local_datetime("2026-02-05T09:00:00+09:00"),
             }],
+            None,
+            true,
             Some(1),
         );
         let line_count = widget.line_count();
@@ -179,9 +223,30 @@ mod tests {
 
     #[test]
     fn snapshot_empty_attachments_list() {
-        let widget = AttachmentsListWidget::new(vec![], None);
+        let widget = AttachmentsListWidget::new(vec![], None, true, None);
         let line_count = widget.line_count();
 
         render_snapshot("attachments_list_empty", 64, line_count, widget);
+    }
+
+    #[test]
+    fn snapshot_uploading_row_and_disabled_add_row() {
+        let widget = AttachmentsListWidget::new(
+            vec![],
+            Some(UploadingRow {
+                filename: "screen.png",
+                stage: AttachmentUploadStage::Attaching,
+            }),
+            false,
+            None,
+        );
+        let line_count = widget.line_count();
+
+        render_snapshot(
+            "attachments_list_uploading_and_disabled_add_row",
+            64,
+            line_count,
+            widget,
+        );
     }
 }

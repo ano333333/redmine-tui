@@ -13,10 +13,12 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromAbove,
     CursorLeavedFromBelow,
+    /// 末尾の追加行でEnterが押された。
+    AddRequested,
     Handled,
 }
 
-/// 添付ファイルの行と、末尾の追加行のうち、どの行にカーソルがあるかを持つ。
+/// 添付ファイルの行、追加中の行、末尾の追加行のうち、どの行にカーソルがあるかを持つ。
 ///
 /// 追加行は常にあるため、行数は1以上になる。
 pub struct FocusState {
@@ -66,6 +68,9 @@ impl FocusState {
                 self.focused_index = Some(focused_index - 1);
                 Some(EventProcessResult::Handled)
             }
+            KeyCode::Enter if focused_index + 1 == self.row_count => {
+                Some(EventProcessResult::AddRequested)
+            }
             _ => None,
         }
     }
@@ -110,6 +115,20 @@ mod tests {
         assert!(matches!(
             state.process_event(&key_event(KeyCode::Char('k'))),
             Some(EventProcessResult::CursorLeavedFromAbove)
+        ));
+    }
+
+    #[test]
+    fn enter_requests_an_addition_only_on_the_last_row() {
+        let mut state = FocusState::new();
+        state.update(2);
+        state.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        assert!(state.process_event(&key_event(KeyCode::Enter)).is_none());
+        state.process_event(&key_event(KeyCode::Char('j')));
+        assert!(matches!(
+            state.process_event(&key_event(KeyCode::Enter)),
+            Some(EventProcessResult::AddRequested)
         ));
     }
 

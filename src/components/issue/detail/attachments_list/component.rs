@@ -1,11 +1,11 @@
 use ratatui::layout::Position;
 
 use crate::platform::input::InputEvent;
-use crate::stores::Store;
+use crate::stores::{IssueState, Store};
 use crate::vos::IssueId;
 
 use super::focus_state::{EventProcessResult, FocusEvent, FocusState};
-use super::widget::{AttachmentRow, AttachmentsListWidget, line_count};
+use super::widget::{AttachmentRow, AttachmentsListWidget, UploadingRow, row_count};
 
 pub struct AttachmentsListComponent {
     id: IssueId,
@@ -21,9 +21,21 @@ impl AttachmentsListComponent {
     }
 
     pub fn update(&mut self, store: &Store) {
-        // 末尾の追加行の分を足す。
-        self.focus_state
-            .update(store.get_issue(self.id).0.attachments().len() + 1);
+        self.focus_state.update(self.row_count(store));
+    }
+
+    /// Issue属性・Journal・添付ファイルの保存中は、Storeが添付ファイルの追加を受け付けない。
+    pub fn can_add(&self, store: &Store) -> bool {
+        store.try_get_issue_state(self.id) != Some(IssueState::Uploading)
+            && !store.has_uploading_journal(self.id)
+            && store.try_get_attachment_upload(self.id).is_none()
+    }
+
+    fn row_count(&self, store: &Store) -> usize {
+        row_count(
+            store.get_issue(self.id).0.attachments().len(),
+            store.try_get_attachment_upload(self.id).is_some(),
+        )
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> AttachmentsListWidget<'a> {
@@ -39,11 +51,22 @@ impl AttachmentsListComponent {
                 created_on: attachment.created_on,
             })
             .collect();
-        AttachmentsListWidget::new(rows, self.focus_state.focused_index())
+        let uploading = store
+            .try_get_attachment_upload(self.id)
+            .map(|upload| UploadingRow {
+                filename: &upload.filename,
+                stage: upload.stage,
+            });
+        AttachmentsListWidget::new(
+            rows,
+            uploading,
+            self.can_add(store),
+            self.focus_state.focused_index(),
+        )
     }
 
     pub fn line_count(&self, store: &Store) -> u16 {
-        line_count(store.get_issue(self.id).0.attachments().len())
+        self.create_widget(store).line_count()
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {

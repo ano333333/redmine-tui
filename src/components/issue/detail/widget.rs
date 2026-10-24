@@ -297,7 +297,7 @@ mod tests {
                 self.header_widget(),
                 self.property_widget(),
                 self.body_widget(),
-                AttachmentsListWidget::new(vec![], None),
+                AttachmentsListWidget::new(vec![], None, true, None),
                 self.children_list_widget(),
                 self.journals_list_widget(),
                 state,

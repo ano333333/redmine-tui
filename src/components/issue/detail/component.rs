@@ -47,6 +47,9 @@ pub enum EventProcessResult {
     CreateLocalJournalRequested {
         issue_id: IssueId,
     },
+    AddAttachmentRequested {
+        issue_id: IssueId,
+    },
     SaveLocalJournalRequested {
         issue_id: IssueId,
     },
@@ -302,6 +305,60 @@ mod tests {
         assert!(matches!(result, Some(EventProcessResult::StartIssueUpload)));
     }
 
+    /// Property(2カラム時の左カラム8行) -> Body -> AttachmentsList(追加行)の順にフォーカスを送る
+    const J_PRESSES_TO_ADD_ATTACHMENT_ROW: usize = J_PRESSES_TO_FIRST_JOURNAL_NOTES - 4;
+
+    fn press_j_to_add_attachment_row(
+        component: &mut IssueDetailComponent,
+        dispatcher: &Rc<RefCell<Dispatcher>>,
+    ) {
+        for _ in 0..J_PRESSES_TO_ADD_ATTACHMENT_ROW {
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+            component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        }
+    }
+
+    #[test]
+    fn process_event_enter_on_add_attachment_row_returns_add_attachment_requested() {
+        let dispatcher = dispatcher_with_issue_and_journals();
+        let mut component = IssueDetailComponent::new(3);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        press_j_to_add_attachment_row(&mut component, &dispatcher);
+
+        let result = component.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+
+        assert_eq!(
+            result,
+            Some(EventProcessResult::AddAttachmentRequested {
+                issue_id: IssueId::new(3)
+            })
+        );
+    }
+
+    #[test]
+    fn process_event_during_attachment_upload_consumes_enter_and_ctrl_s() {
+        let dispatcher = dispatcher_with_issue_and_journals();
+        let mut component = IssueDetailComponent::new(3);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        press_j_to_add_attachment_row(&mut component, &dispatcher);
+        dispatcher
+            .borrow_mut()
+            .dispatch(crate::stores::AttachmentAction::StartUpload {
+                issue_id: IssueId::new(3),
+                filename: "a.png".to_string(),
+            });
+        dispatcher.borrow_mut().consume_action();
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        // 追加中の行が増えたため、追加行へ移る。
+        component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+
+        let enter = component.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+        let ctrl_s = component.process_event(ctrl_s_event(), dispatcher.clone());
+
+        assert_eq!(enter, Some(EventProcessResult::Handled));
+        assert_eq!(ctrl_s, Some(EventProcessResult::Handled));
+    }
+
     #[test]
     fn process_event_e_on_journals_list_notes_returns_edit_journal_requested() {
         let dispatcher = dispatcher_with_issue_and_journals();
@@ -397,6 +454,7 @@ impl IssueDetailComponent {
                     store.store().try_get_issue_state(self.id),
                     Some(IssueState::Uploading)
                 ) || store.store().has_uploading_journal(self.id)
+                    || store.store().try_get_attachment_upload(self.id).is_some()
                 {
                     return Some(EventProcessResult::Handled);
                 }
@@ -564,6 +622,15 @@ impl IssueDetailComponent {
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::CursorEnteredFromAbove);
                         return Some(EventProcessResult::Handled);
+                    }
+                    Some(AttachmentsListEventProcessResult::AddRequested) => {
+                        // 保存中は追加行が無効なので、押下を消費するだけにする
+                        if !self.attachments_list.can_add(dispatcher.borrow().store()) {
+                            return Some(EventProcessResult::Handled);
+                        }
+                        return Some(EventProcessResult::AddAttachmentRequested {
+                            issue_id: self.id,
+                        });
                     }
                     Some(AttachmentsListEventProcessResult::Handled) => {
                         return Some(EventProcessResult::Handled);

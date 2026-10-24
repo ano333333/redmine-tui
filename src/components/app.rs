@@ -38,6 +38,9 @@ use crate::usecases::issue_popup_options::{
 use crate::vos::{EntityIdValue, IssueId, JournalId, TimeEntityActivityId};
 use crate::widgets::ToastWidget;
 
+use super::attachment_input_popup::{
+    AttachmentInputPopupComponent, EventProcessResult as AttachmentInputPopupEventProcessResult,
+};
 use super::date_picker_popup::component::{
     DatePickerPopupComponent, EventProcessResult as DatePickerPopupEventProcessResult,
 };
@@ -105,6 +108,10 @@ fn can_start_editing(
 }
 
 enum PopupComponent<'a> {
+    AttachmentInput {
+        issue_id: IssueId,
+        component: AttachmentInputPopupComponent<'a>,
+    },
     SelectBox(SelectBoxPopupComponent<'a>),
     SpentTimeInput(SpentTimeInputPopupComponent<'a>),
     DatePicker(DatePickerPopupComponent<'a>),
@@ -188,6 +195,28 @@ impl<'a> AppComponent<'a> {
             .expect("caller checked that a popup exists")
             .clone();
         match &mut *(popup_component_rc.borrow_mut()) {
+            PopupComponent::AttachmentInput {
+                issue_id,
+                component,
+            } => {
+                let Some(result) = component.process_event(event) else {
+                    return false;
+                };
+                match result {
+                    AttachmentInputPopupEventProcessResult::Entered { filename, path } => {
+                        sink.request_usecase(UsecaseRequest::StartAttachmentUpload {
+                            issue_id: *issue_id,
+                            filename,
+                            path,
+                        });
+                        self.popup_components.pop_back();
+                    }
+                    AttachmentInputPopupEventProcessResult::Canceled => {
+                        self.popup_components.pop_back();
+                    }
+                    AttachmentInputPopupEventProcessResult::Handled => {}
+                }
+            }
             PopupComponent::SelectBox(popup_component) => {
                 let Some(result) = popup_component.process_event(event) else {
                     return false;
@@ -489,6 +518,16 @@ impl<'a> AppComponent<'a> {
                     PopupComponent::SpentTimeInput(SpentTimeInputPopupComponent::new(
                         dispatcher.borrow().store(),
                     )),
+                )));
+            }
+            IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::AddAttachmentRequested { issue_id },
+            ) => {
+                self.popup_components.push_back(Rc::new(RefCell::new(
+                    PopupComponent::AttachmentInput {
+                        issue_id,
+                        component: AttachmentInputPopupComponent::new(),
+                    },
                 )));
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::StartIssueUpload) => {
@@ -869,6 +908,10 @@ impl<'a> AppComponent<'a> {
         for popup_component in &self.popup_components {
             let popup_component = popup_component.clone();
             match &mut *(popup_component.borrow_mut()) {
+                PopupComponent::AttachmentInput { component, .. } => {
+                    let widget = component.create_widget();
+                    frame.render_widget(widget, area);
+                }
                 PopupComponent::SelectBox(popup_component) => {
                     let widget = popup_component.create_widget();
                     frame.render_widget(widget, area);
@@ -905,6 +948,8 @@ impl<'a> AppComponent<'a> {
         if let Some(popup_component) = self.popup_components.back() {
             let popup_component = popup_component.borrow();
             match &*popup_component {
+                // ratatui_textarea::TextAreaが表示するカーソルをそのまま使用する
+                PopupComponent::AttachmentInput { .. } => None,
                 PopupComponent::SelectBox(_) => None,
                 PopupComponent::SpentTimeInput(popup_component) => {
                     popup_component.cursor_position(area)
@@ -1854,6 +1899,43 @@ mod tests {
             &*app.popup_components.back().unwrap().borrow(),
             PopupComponent::DatePicker(_)
         ));
+    }
+
+    #[test]
+    fn entering_an_attachment_requests_its_upload_and_closes_the_popup() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(3.into()),
+            CursorRendering::Terminal,
+            &mut sink,
+        );
+        sink.take_usecases();
+        app.popup_components
+            .push_back(Rc::new(RefCell::new(PopupComponent::AttachmentInput {
+                issue_id: 3.into(),
+                component: AttachmentInputPopupComponent::new(),
+            })));
+        for code in "a.png"
+            .chars()
+            .map(KeyCode::Char)
+            .chain([KeyCode::Tab])
+            .chain("/tmp/a.png".chars().map(KeyCode::Char))
+            .chain([KeyCode::Enter])
+        {
+            app.handle_key_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+
+        assert!(app.popup_components.is_empty());
+        assert_eq!(
+            sink.take_usecases(),
+            vec![UsecaseRequest::StartAttachmentUpload {
+                issue_id: 3.into(),
+                filename: "a.png".to_string(),
+                path: std::path::PathBuf::from("/tmp/a.png"),
+            }]
+        );
     }
 
     #[test]
