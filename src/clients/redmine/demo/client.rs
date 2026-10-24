@@ -137,8 +137,9 @@ impl RedmineClient for DemoRedmineClient {
         let snapshot = {
             let state = self.state.lock().expect("demo fixture state lock poisoned");
             state.issues.get(&id).cloned().map(|mut aggregate| {
-                // デモのJournalはサーバー側の保存単位として別に持ち、取得時にIssueへ含める。
+                // デモのJournalと添付ファイルはサーバー側の保存単位として別に持ち、取得時にIssueへ含める。
                 aggregate.journals = state.journals.get(&id).cloned().unwrap_or_default();
+                aggregate.attachments = state.attachments.get(&id).cloned().unwrap_or_default();
                 (aggregate, Self::children_of(&state.issues, id))
             })
         };

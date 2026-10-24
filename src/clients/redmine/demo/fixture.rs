@@ -3,11 +3,11 @@
 use std::collections::BTreeMap;
 
 use crate::entities::{
-    Category, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
+    Attachment, Category, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
     TimeEntityActivity, Tracker, User,
 };
 use crate::libs::yaml;
-use crate::vos::{IssueId, JournalId};
+use crate::vos::{AttachmentId, IssueId, JournalId};
 
 macro_rules! fixture {
     ($path:literal) => {
@@ -23,7 +23,7 @@ const TRACKERS: &str = fixture!("trackers.yml");
 const TARGET_VERSIONS: &str = fixture!("target_versions.yml");
 const CATEGORIES: &str = fixture!("categories.yml");
 const TIME_ENTITY_ACTIVITIES: &str = fixture!("time_entity_activities.yml");
-// FIXME: Issue/Journalのfixtureファイルを手書きで列挙しているため、追加・削除時にcatalogの更新が必要。build時の列挙などで自動化する。
+// FIXME: Issue/Journal/添付ファイルのfixtureファイルを手書きで列挙しているため、追加・削除時にcatalogの更新が必要。build時の列挙などで自動化する。
 const ISSUES: &[(IssueId, &str, &[(JournalId, &str)])] = &[
     (IssueId::new(1), fixture!("issues/1.yml"), &[]),
     (IssueId::new(2), fixture!("issues/2.yml"), &[]),
@@ -38,6 +38,16 @@ const ISSUES: &[(IssueId, &str, &[(JournalId, &str)])] = &[
     ),
     (IssueId::new(4), fixture!("issues/4.yml"), &[]),
 ];
+// Webデモのwasmを小さくするため、seedの`sample.png`ではなく縮小版の大きさを使う。
+const ATTACHMENTS: &[(AttachmentId, IssueId, &str, &[u8])] = &[(
+    AttachmentId::new(1),
+    IssueId::new(4),
+    fixture!("attachments/1.yml"),
+    include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/datas/attachment_files/sample_web.png"
+    )),
+)];
 
 pub struct DemoFixtureState {
     pub users: Vec<User>,
@@ -50,6 +60,7 @@ pub struct DemoFixtureState {
     pub time_entity_activities: Vec<TimeEntityActivity>,
     pub issues: BTreeMap<IssueId, IssueAggregate>,
     pub journals: BTreeMap<IssueId, Vec<Journal>>,
+    pub attachments: BTreeMap<IssueId, Vec<Attachment>>,
 }
 
 impl DemoFixtureState {
@@ -71,6 +82,21 @@ impl DemoFixtureState {
                 (issues, journals)
             },
         );
+        let attachments = ATTACHMENTS.iter().fold(
+            BTreeMap::<IssueId, Vec<Attachment>>::new(),
+            |mut attachments, (id, issue_id, fixture, file)| {
+                attachments
+                    .entry(*issue_id)
+                    .or_default()
+                    .push(yaml::parse_attachment(
+                        *id,
+                        *issue_id,
+                        fixture,
+                        file.len() as u64,
+                    ));
+                attachments
+            },
+        );
         Self {
             users: yaml::parse_users(USERS),
             issue_statuses: yaml::parse_issue_statuses(ISSUE_STATUSES),
@@ -82,13 +108,14 @@ impl DemoFixtureState {
             time_entity_activities: yaml::parse_time_entity_activities(TIME_ENTITY_ACTIVITIES),
             issues,
             journals,
+            attachments,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DemoFixtureState, ISSUES};
+    use super::{ATTACHMENTS, DemoFixtureState, ISSUES};
     use crate::vos::EntityIdValue;
     use std::collections::BTreeSet;
 
@@ -143,5 +170,16 @@ mod tests {
             .flat_map(|(_, _, journals)| journals.iter().map(|(id, _)| id.get()))
             .collect();
         assert_eq!(embedded_journals, files("datas/journals"));
+        let embedded_attachments: BTreeSet<_> =
+            ATTACHMENTS.iter().map(|(id, _, _, _)| id.get()).collect();
+        assert_eq!(embedded_attachments, files("datas/attachments"));
+        let issue_4_attachments = &state.attachments[&crate::vos::IssueId::new(4)];
+        assert_eq!(
+            issue_4_attachments
+                .iter()
+                .map(|attachment| attachment.filename.as_str())
+                .collect::<Vec<_>>(),
+            vec!["sample.png"]
+        );
     }
 }

@@ -6,9 +6,11 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use sha2::{Digest, Sha256};
 use yaml_rust::{Yaml, YamlLoader};
 
 const ACTIVITY_ID_OFFSET: u16 = 10_000;
+const REDMINE_FILES_DIR: &str = "/usr/src/redmine/files";
 const REDMINE_TUI_TEST_API_USER_ID: u16 = 1;
 /// Redmineが作成する組み込みrole（Non member、Anonymous）のIDと重ならない値にする。
 const FIXTURE_ROLE_ID: u16 = 3;
@@ -62,13 +64,68 @@ pub(crate) fn seed_redmine(args: Vec<String>) -> Result<(), String> {
         }
     }
 
-    let sql = load_seed_data_sql(&datas_dir, &reset_sql_path)?;
+    let seed = SeedData::load(&datas_dir)?;
+    let sql = seed_data_sql(&seed, &reset_sql_path)?;
     if dry_run {
         print!("{sql}");
         return Ok(());
     }
 
-    run_mysql(&compose_file, project_name.as_deref(), &sql)
+    run_mysql(&compose_file, project_name.as_deref(), &sql)?;
+    for attachment in &seed.attachments {
+        put_attachment_file(&compose_file, project_name.as_deref(), attachment)?;
+    }
+    Ok(())
+}
+
+/// 添付ファイルの行が参照するファイル本体を、Redmineの保存先へ置く。
+///
+/// 同じパスのファイルは上書きする。再seedで消えた添付ファイルの本体は削除しない。
+fn put_attachment_file(
+    compose_file: &Path,
+    project_name: Option<&str>,
+    attachment: &AttachmentRecord,
+) -> Result<(), String> {
+    let mut command = Command::new("docker");
+    command.arg("compose").arg("-f").arg(compose_file);
+    if let Some(project_name) = project_name {
+        command.arg("-p").arg(project_name);
+    }
+
+    let mut child = command
+        .arg("exec")
+        .arg("-T")
+        .arg("redmine")
+        .arg("sh")
+        .arg("-c")
+        .arg("mkdir -p \"$(dirname \"$1\")\" && cat > \"$1\"")
+        .arg("sh")
+        .arg(format!(
+            "{REDMINE_FILES_DIR}/{}/{}",
+            attachment.disk_directory(),
+            attachment.disk_filename()
+        ))
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("failed to start docker compose attachment copy: {err}"))?;
+
+    child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| "failed to open attachment copy stdin".to_string())?
+        .write_all(&attachment.content)
+        .map_err(|err| format!("failed to write attachment file: {err}"))?;
+
+    let status = child
+        .wait()
+        .map_err(|err| format!("failed to wait for attachment copy: {err}"))?;
+    if !status.success() {
+        return Err(format!(
+            "attachment copy for {} failed with status: {status}",
+            attachment.filename
+        ));
+    }
+    Ok(())
 }
 
 fn run_mysql(compose_file: &Path, project_name: Option<&str>, sql: &str) -> Result<(), String> {
@@ -110,8 +167,12 @@ fn mysql_shell_command() -> &'static str {
     "mysql --default-character-set=utf8mb4 -u\"$MYSQL_USER\" -p\"$MYSQL_PASSWORD\" \"$MYSQL_DATABASE\""
 }
 
+#[cfg(test)]
 fn load_seed_data_sql(datas_dir: &Path, reset_sql_path: &Path) -> Result<String, String> {
-    let seed = SeedData::load(datas_dir)?;
+    seed_data_sql(&SeedData::load(datas_dir)?, reset_sql_path)
+}
+
+fn seed_data_sql(seed: &SeedData, reset_sql_path: &Path) -> Result<String, String> {
     let mut sql = fs::read_to_string(reset_sql_path)
         .map_err(|err| format!("failed to read {}: {err}", reset_sql_path.display()))?;
     if !sql.ends_with('\n') {
@@ -190,6 +251,32 @@ struct JournalDetailRecord {
 }
 
 #[derive(Debug)]
+struct AttachmentRecord {
+    id: u16,
+    issue_id: u16,
+    filename: String,
+    content_type: Option<String>,
+    description: String,
+    author: String,
+    created_on: String,
+    content: Vec<u8>,
+}
+
+impl AttachmentRecord {
+    /// Redmineがuploadで使う`YYYY/MM`形式を、作成日から作る。
+    fn disk_directory(&self) -> String {
+        let date = self.created_on.replace('/', "-");
+        format!("{}/{}", &date[0..4], &date[5..7])
+    }
+
+    /// Redmineがuploadで使う`YYMMDDHHMMSS_ファイル名`形式を、作成日の0時として作る。
+    fn disk_filename(&self) -> String {
+        let date = self.created_on.replace(['-', '/'], "");
+        format!("{}000000_{}", &date[2..8], self.filename)
+    }
+}
+
+#[derive(Debug)]
 struct SeedData {
     projects: Vec<NamedRecord>,
     users: Vec<NamedRecord>,
@@ -201,6 +288,7 @@ struct SeedData {
     activities: Vec<ActivityRecord>,
     issues: Vec<IssueRecord>,
     journals: BTreeMap<u16, JournalRecord>,
+    attachments: Vec<AttachmentRecord>,
 }
 
 impl SeedData {
@@ -222,6 +310,10 @@ impl SeedData {
             activities: load_activities(datas_dir.join("time_entity_activities.yml"))?,
             issues: load_issues(&datas_dir.join("issues"))?,
             journals: load_journals(&datas_dir.join("journals"))?,
+            attachments: load_attachments(
+                &datas_dir.join("attachments"),
+                &datas_dir.join("attachment_files"),
+            )?,
         })
     }
 
@@ -242,6 +334,7 @@ impl SeedData {
         self.push_categories_sql(&mut sql);
         self.push_issues_sql(&mut sql);
         self.push_journals_sql(&mut sql);
+        self.push_attachments_sql(&mut sql);
         sql.push_str("COMMIT;\n");
         sql
     }
@@ -643,6 +736,73 @@ impl SeedData {
             sql.push_str(";\n\n");
         }
     }
+
+    fn push_attachments_sql(&self, sql: &mut String) {
+        if self.attachments.is_empty() {
+            return;
+        }
+        let user_ids_by_name = self
+            .users
+            .iter()
+            .map(|user| (user.name.as_str(), db_user_id(user.id)))
+            .collect::<BTreeMap<_, _>>();
+
+        sql.push_str("INSERT INTO attachments (id, container_id, container_type, filename, disk_filename, filesize, content_type, digest, downloads, author_id, created_on, description, disk_directory) VALUES\n");
+        push_values(
+            sql,
+            self.attachments.iter().map(|attachment| {
+                let author_id = user_ids_by_name
+                    .get(attachment.author.as_str())
+                    .copied()
+                    .unwrap_or(1);
+                format!(
+                    "({}, {}, 'Issue', {}, {}, {}, {}, {}, 0, {}, {}, {}, {})",
+                    attachment.id,
+                    attachment.issue_id,
+                    sql_string(&attachment.filename),
+                    sql_string(&attachment.disk_filename()),
+                    attachment.content.len(),
+                    sql_string_option(attachment.content_type.as_deref()),
+                    sql_string(&sha256_hex(&attachment.content)),
+                    author_id,
+                    sql_datetime(&attachment.created_on),
+                    sql_string(&attachment.description),
+                    sql_string(&attachment.disk_directory())
+                )
+            }),
+        );
+        sql.push_str(";\n\n");
+    }
+}
+
+fn sha256_hex(content: &[u8]) -> String {
+    Sha256::digest(content)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn load_attachments(dir: &Path, files_dir: &Path) -> Result<Vec<AttachmentRecord>, String> {
+    let mut paths = numbered_yaml_paths(dir)?;
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| {
+            let yaml = read_yaml(&path)?;
+            let file_path = files_dir.join(as_string(&yaml, "file")?);
+            Ok(AttachmentRecord {
+                id: as_u16(&yaml, "id")?,
+                issue_id: as_u16(&yaml, "issue_id")?,
+                filename: as_string(&yaml, "filename")?,
+                content_type: as_string_option(&yaml, "content_type")?,
+                description: as_string_option(&yaml, "description")?.unwrap_or_default(),
+                author: as_string(&yaml, "author")?,
+                created_on: as_string(&yaml, "created_on")?,
+                content: fs::read(&file_path)
+                    .map_err(|err| format!("failed to read {}: {err}", file_path.display()))?,
+            })
+        })
+        .collect()
 }
 
 fn load_project_scoped_records(
@@ -1089,6 +1249,20 @@ mod tests {
         assert!(sql.contains("INSERT INTO journal_details"));
         assert!(sql.contains("'attr', 'status_id', '1', '2'"));
         assert!(sql.contains("'attr', 'due_date', '2026-02-16', '2026-02-17'"));
+    }
+
+    #[test]
+    fn seed_sql_includes_attachments_from_datas() {
+        let sql = load_seed_data_sql(
+            &repo_path("datas"),
+            &repo_path("docker/redmine/fresh_test_data.sql"),
+        )
+        .expect("seed SQL should be generated from repository fixtures");
+
+        assert!(sql.contains("INSERT INTO attachments"));
+        assert!(sql.contains(
+            "(1, 4, 'Issue', 'sample.png', '260205000000_sample.png', 1471702, 'image/png', '4da0fb3a9cbea6d0a5a41fa4f4f063a9c769e0326cc6ab5dbf80b9a8a3543ed7', 0, 1001, '2026-02-05 00:00:00', 'サンプル画像', '2026/02')"
+        ));
     }
 
     #[test]

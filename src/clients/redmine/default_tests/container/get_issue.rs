@@ -1,6 +1,6 @@
 use super::integration_support::{
-    authenticated_client, expect_not_found, expect_unauthorized, run_contract, test_error,
-    unauthorized_client,
+    TEST_API_KEY, authenticated_client, expect_not_found, expect_unauthorized, run_contract,
+    test_error, unauthorized_client,
 };
 use crate::clients::redmine::RedmineClient;
 use crate::test_support::{SAMPLE_MARKDOWN, local_date, local_datetime};
@@ -11,6 +11,7 @@ fn get_issue_contract_against_redmine_container() {
     run_contract(|base_url| async move {
         assert_get_issue_200(&base_url).await?;
         assert_get_issue_returns_parent_and_grandchildren(&base_url).await?;
+        assert_get_issue_returns_seeded_attachment(&base_url).await?;
         assert_get_issue_401(&base_url).await?;
         assert_get_issue_404(&base_url).await?;
         Ok(())
@@ -136,6 +137,45 @@ async fn assert_get_issue_returns_parent_and_grandchildren(
             .collect::<Vec<_>>(),
         vec![(4, "issue4")]
     );
+    Ok(())
+}
+
+/// seedのIssue 4は、`datas/attachment_files/sample.png`を添付ファイルとして持つ。
+async fn assert_get_issue_returns_seeded_attachment(
+    base_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let fetched = authenticated_client(base_url)
+        .get_issue(IssueId::new(4))
+        .await
+        .map_err(|error| test_error(format!("get_issue(4) returned {error:?}")))?;
+
+    let [attachment] = fetched.aggregate.attachments.as_slice() else {
+        return Err(test_error(format!(
+            "expected one attachment, got {:?}",
+            fetched.aggregate.attachments
+        )));
+    };
+    assert_eq!(attachment.id.get(), 1);
+    assert_eq!(attachment.filename, "sample.png");
+    assert_eq!(attachment.filesize, 1_471_702);
+    assert_eq!(attachment.content_type.as_deref(), Some("image/png"));
+    assert_eq!(attachment.description, "サンプル画像");
+    assert_eq!(attachment.author, "user1 Fixture");
+    assert_eq!(
+        attachment.created_on,
+        local_datetime("2026-02-05T00:00:00Z")
+    );
+
+    // content_urlのホスト名はRedmineの設定値になり、テスト用のポートを含まないため、パスだけを使う。
+    let downloaded = reqwest::Client::new()
+        .get(format!("{base_url}/attachments/download/1/sample.png"))
+        .header("X-Redmine-API-Key", TEST_API_KEY)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    assert_eq!(downloaded.len(), 1_471_702);
     Ok(())
 }
 
