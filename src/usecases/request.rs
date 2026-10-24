@@ -8,12 +8,12 @@ use crate::stores::Dispatcher;
 use crate::usecases::redmine::{
     cancel_issue_upload, cancel_remote_journal_upload, confirm_attachment_upload,
     confirm_issue_upload, continue_issue_upload, continue_remote_journal_upload, fetch_issue,
-    fetch_project_issues_page, put_issue_upload, retry_issue_upload_confirmation,
-    start_deleted_journal_upload, start_issue_upload, start_local_journal_upload,
-    start_remote_journal_upload,
+    fetch_project_issues_page, put_attachment_upload, put_issue_upload,
+    retry_issue_upload_confirmation, start_deleted_journal_upload, start_issue_upload,
+    start_local_journal_upload, start_remote_journal_upload,
 };
 use crate::usecases::{UsecaseClients, UsecaseTask};
-use crate::vos::{IssueId, IssuePropertyDiff, JournalId, ProjectId};
+use crate::vos::{IssueId, IssuePropertyDiff, JournalId, ProjectId, UploadToken};
 
 /// runnerに起動を依頼するRedmine Usecase。1つのvariantが1つのUsecaseに対応する。
 #[derive(Clone, Debug, PartialEq)]
@@ -67,6 +67,11 @@ pub enum UsecaseRequest {
     StartDeletedJournalUpload {
         issue_id: IssueId,
         original_id: JournalId,
+    },
+    PutAttachmentUpload {
+        issue_id: IssueId,
+        token: UploadToken,
+        filename: String,
     },
     ConfirmAttachmentUpload {
         issue_id: IssueId,
@@ -134,6 +139,11 @@ where
             issue_id,
             original_id,
         } => start_deleted_journal_upload(dispatcher, client, issue_id, original_id),
+        UsecaseRequest::PutAttachmentUpload {
+            issue_id,
+            token,
+            filename,
+        } => put_attachment_upload(dispatcher, client, issue_id, token, filename),
         UsecaseRequest::ConfirmAttachmentUpload { issue_id } => {
             confirm_attachment_upload(dispatcher, client, issue_id)
         }
