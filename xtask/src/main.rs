@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 mod build_pages;
+mod coverage;
 mod redmine_container;
 mod seed_redmine;
 
@@ -9,6 +10,8 @@ const CONTAINER_TEST_FEATURE: &str = "container-tests";
 const CONTAINER_TEST_MODULE: &str = "clients::redmine::default::tests::container::";
 const E2E_TEST_FEATURE: &str = "e2e-tests";
 const E2E_TEST_TARGET: &str = "e2e";
+pub(crate) const E2E_TEST_ARGS: &[&str] =
+    &["--features", E2E_TEST_FEATURE, "--test", E2E_TEST_TARGET];
 
 fn main() {
     if let Err(err) = run() {
@@ -28,6 +31,7 @@ fn run() -> Result<(), String> {
         "test-redmine-client" => test_redmine_client(args.collect()),
         "test-e2e" => test_e2e(args.collect()),
         "build-pages" => build_pages::build_pages(args.collect()),
+        "coverage" => coverage::coverage(args.collect()),
         "--help" | "-h" => {
             println!("{}", usage());
             Ok(())
@@ -46,11 +50,7 @@ fn test_redmine_client(args: Vec<String>) -> Result<(), String> {
 
 fn test_e2e(args: Vec<String>) -> Result<(), String> {
     // E2EはPTY上でnativeバイナリを起動するため、`CARGO_BIN_EXE_*`を使えるtest targetとして置く。
-    run_container_tests(
-        "test-e2e",
-        args,
-        &["--features", E2E_TEST_FEATURE, "--test", E2E_TEST_TARGET],
-    )
+    run_container_tests("test-e2e", args, E2E_TEST_ARGS)
 }
 
 fn run_container_tests(name: &str, args: Vec<String>, cargo_args: &[&str]) -> Result<(), String> {
@@ -68,7 +68,7 @@ fn run_container_tests(name: &str, args: Vec<String>, cargo_args: &[&str]) -> Re
 /// Redmine containerを1つ起動し、指定したテストを直列に1回の`cargo test`で実行する。
 ///
 /// `envs`は`cargo test`のプロセスに追加で渡す環境変数。
-fn run_cargo_test_with_container(
+pub(crate) fn run_cargo_test_with_container(
     name: &str,
     cargo_args: &[&str],
     envs: &[(String, String)],
@@ -102,6 +102,7 @@ pub(crate) fn usage() -> String {
         "  cargo xtask test-redmine-client",
         "  cargo xtask test-e2e",
         "  cargo xtask build-pages --public-url URL",
+        "  cargo xtask coverage [cargo llvm-cov report options (default: --html)]",
     ]
     .join("\n")
 }

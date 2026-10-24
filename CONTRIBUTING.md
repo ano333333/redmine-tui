@@ -102,6 +102,16 @@ cargo xtask test-e2e
 
 The task starts Redmine, re-seeds for each scenario, and runs the native app in a PTY. Scenarios check both the terminal screen and Redmine API. Text editing uses a fake editor configured through `VISUAL`.
 
+### Coverage
+
+Generate a combined coverage report for unit tests and E2E scenarios. Docker is required:
+
+```sh
+cargo xtask coverage
+```
+
+The HTML report is written to `target/llvm-cov-target/llvm-cov/html`. Arguments are passed through to `cargo llvm-cov report` (for example, `cargo xtask coverage --summary-only`). Because the E2E app is terminated by a signal, coverage is collected in LLVM continuous mode.
+
 ### Web build and demo
 
 The Web build uses wasm32 and Trunk. To run the demo locally:

@@ -102,6 +102,16 @@ cargo xtask test-e2e
 
 このタスクは Redmine を起動し、各シナリオの前に seed を入れ直して、native アプリを PTY 上で実行します。画面表示と Redmine API の両方を確認します。テキスト編集には `VISUAL` で指定した偽の editor を使います。
 
+### カバレッジ
+
+単体テストと E2E のカバレッジをまとめたレポートを作成します。Docker が必要です。
+
+```sh
+cargo xtask coverage
+```
+
+HTML レポートは `target/llvm-cov-target/llvm-cov/html` に出力されます。引数は `cargo llvm-cov report` にそのまま渡します（例: `cargo xtask coverage --summary-only`）。E2E のアプリはシグナルで終了するため、LLVM の continuous mode で計測します。
+
 ### Web build とデモ
 
 Web build は wasm32 と Trunk を使います。デモをローカルで起動する場合:
