@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 16 — Issue添付ファイルの取得と追加</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0f1117;
+        color: #d0d4e8;
+        font:
+          15px/1.75 system-ui,
+          "Noto Sans JP",
+          sans-serif;
+      }
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+      nav {
+        position: sticky;
+        top: 0;
+        width: 240px;
+        height: 100vh;
+        padding: 28px 20px;
+        background: #1a1d27;
+        border-right: 1px solid #2e3350;
+      }
+      nav a {
+        display: block;
+        padding: 5px 0;
+        color: #8ba3f5;
+        text-decoration: none;
+        font-size: 13px;
+      }
+      main {
+        max-width: 980px;
+        padding: 52px 64px;
+      }
+      h1,
+      h2,
+      h3 {
+        color: #e8eaf6;
+      }
+      h1 {
+        font-size: 27px;
+        line-height: 1.25;
+      }
+      h2 {
+        margin-top: 44px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #2e3350;
+        font-size: 19px;
+      }
+      h3 {
+        margin-top: 28px;
+        font-size: 16px;
+      }
+      code,
+      pre {
+        font-family: "JetBrains Mono", monospace;
+      }
+      code {
+        color: #8ba3f5;
+      }
+      pre {
+        overflow: auto;
+        padding: 16px 18px;
+        background: #13151f;
+        border: 1px solid #2a2e45;
+        border-radius: 8px;
+        color: #d0d4e8;
+      }
+      .status {
+        display: inline-block;
+        padding: 3px 10px;
+        border: 1px solid #2a7a50;
+        border-radius: 20px;
+        color: #4caf8a;
+      }
+      li {
+        margin: 5px 0;
+      }
+      @media (max-width: 820px) {
+        .layout {
+          display: block;
+        }
+        nav {
+          position: static;
+          width: auto;
+          height: auto;
+        }
+        main {
+          padding: 32px 22px;
+        }
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 9px 12px;
+        border: 1px solid #2e3350;
+        text-align: left;
+      }
+      th {
+        background: #1a1d27;
+      }
+      main {
+        min-width: 0;
+      }
+      nav {
+        flex-shrink: 0;
+        overflow-y: auto;
+      }
+      a {
+        color: #8ba3f5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <strong>ADR 16</strong><a href="#status">Status</a
+        ><a href="#context">Context</a><a href="#decision">Decision</a
+        ><a href="#rationale">Rationale</a
+        ><a href="#consequences">Consequences</a
+        ><a href="#alternatives-considered">Alternatives Considered</a
+        ><a href="#future-work">Future Work</a
+        ><a href="#references">References</a>
+        <hr />
+        <a href="014.html">ADR 14</a><a href="015.html">ADR 15</a
+        ><a href="../architecture.html">Architecture</a>
+      </nav>
+      <main>
+        <h1>16. Issue添付ファイルの取得と追加</h1>
+        <h2 id="status">Status</h2>
+        <p>Accepted</p>
+        <h2 id="context">Context</h2>
+        <p>
+          Redmineでは、Issueにファイルを添付でき、本文やJournalのnotesに添付した画像を埋め込める。現在のTUIは添付ファイルを扱っていない。
+        </p>
+        <ul>
+          <li>
+            Issue詳細GETは<code>include=children,journals</code>だけを指定し、添付ファイルを取得していない。
+          </li>
+          <li>
+            <code>IssueAggregate</code
+            >と<code>entities/</code>には、添付ファイルを表す型がない。
+          </li>
+          <li>
+            <code>JournalDetail</code
+            >は<code>Attr</code>だけを持つ。<code>property</code>が<code>attr</code>でないJournal
+            detailは、Clientが変換時に読み飛ばしている。添付ファイルの追加・削除の履歴は表示されない。
+          </li>
+          <li>
+            <code>RedmineClient</code
+            >には、ファイルを送るメソッドがない。HTTP実装には、JSONのGETとPUTしかない。
+          </li>
+        </ul>
+        <p>Redmine APIでは、添付ファイルは次のように扱う。</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>API</th>
+                <th>用途</th>
+                <th>成功時の応答</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GET /issues/:id.json?include=attachments</code></td>
+                <td>添付ファイル一覧の取得</td>
+                <td>
+                  Issueの<code>attachments</code>にID、ファイル名、サイズ、Content-Type、説明、<code>content_url</code>、作成者、作成日時が入る
+                </td>
+              </tr>
+              <tr>
+                <td><code>POST /uploads.json</code></td>
+                <td>ファイル本体の送信</td>
+                <td>
+                  <code>201</code>と<code>{"upload": {"id", "token"}}</code>
+                </td>
+              </tr>
+              <tr>
+                <td><code>PUT /issues/:id.json</code>の<code>uploads</code></td>
+                <td>tokenをIssueに紐付ける</td>
+                <td><code>204</code>。本文はない</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          ファイルを添付するには、まず<code>POST /uploads.json</code
+          >で本体を送ってtokenを受け取る。次に<code>PUT /issues/:id.json</code
+          >の<code>uploads</code>にtokenを指定して、Issueに紐付ける。tokenは1回しか使えない。紐付けなかったuploadは、Redmineが後で削除する。
+        </p>
+        <p>
+          PUTの応答には本文がない。添付ファイルの<code>content_url</code>や作成日時、追加で作られたJournalを知るには、Issueを取得し直す必要がある。追加で作られたJournalのdetailは、<code>property</code>が<code>attachment</code>、<code>name</code>が添付ファイルID、<code>new_value</code>がファイル名になる。
+        </p>
+        <p>
+          <a href="014.html">ADR 14</a>は、1
+          APIリクエストの結果を1つのActionで反映し、各リクエストの完了Actionを適用してから後続のリクエストへ進むと定めた。<a
+            href="015.html"
+            >ADR 15</a
+          >は、その手段として<code>UsecaseOutput</code>の後続要求とrunnerのqueueを導入した。添付ファイルの追加は3つのリクエストを順に行うため、この仕組みを使う。
+        </p>
+        <h2 id="decision">Decision</h2>
+        <h3>添付ファイルをIssueAggregateが所有する</h3>
+        <p>
+          添付ファイルを表す<code>Attachment</code>
+          entityを<code>src/entities/</code>に置き、<code>IssueAggregate</code>に取得順の<code
+            >attachments: Vec&lt;Attachment&gt;</code
+          >を持たせる。集約ルートとStore境界は、Journalと同じくIssueAggregateとIssueStoreとする。添付ファイル用のStoreは作らない。
+        </p>
+        <p>
+          <code>Attachment</code
+          >は、IDの<code>AttachmentId</code>、ファイル名、サイズ、Content-Type、説明、<code>content_url</code>、作成者、作成日時を持つ。値の表現は既存のJournalやIssueAggregateに合わせ、詳細は実装時に決める。
+        </p>
+        <p>
+          添付ファイルは取得値だけを持ち、ローカル編集の差分は持たない。追加はサーバーへの送信が成功し、確認GETで取得し直したときにIssueAggregateへ現れる。
+        </p>
+        <h3>Issue詳細GETは常に添付ファイルを含める</h3>
+        <p>
+          <code>get_issue</code
+          >は常に<code>include=children,journals,attachments</code>で取得する。初回取得、Issue保存前GET、確認GET、Journal保存後のGETのすべてが対象になる。
+        </p>
+        <p>
+          IssueStoreは、取得結果でIssueAggregateを置き換える。添付ファイルを含めないGETがあると、その取得で添付ファイル一覧が空になる。
+        </p>
+        <h3>Journal detailの添付ファイル履歴を変換する</h3>
+        <p>
+          <code>JournalDetail</code
+          >に添付ファイルのvariantを追加する。Redmineは、追加を変更後だけに、削除を変更前だけにファイル名を持つdetailで表す。Clientは、<code>property</code>が<code>attachment</code>のdetailを、添付ファイルIDと、追加か削除かとファイル名の組へ変換する。変更前と変更後の両方にファイル名があるか、どちらにもないdetailはエラーにする。<code>cf</code>と<code>relation</code>は、今回も読み飛ばす。
+        </p>
+        <h3>添付ファイル追加を1リクエスト1状態で進める</h3>
+        <p>
+          添付ファイルの追加状態は、IssueStoreがIssueごとに、IssueEntryとは別のMapで持つ。Issue属性の状態が変わっても、追加状態はそのまま引き継がれる。取得済みのIssueは未取得の状態へ戻らないため、追加を始めるときにIssueが取得済みかを検査すれば、取得済みのIssueにだけ追加状態があることを保てる。
+        </p>
+        <p>
+          1つのIssueで同時に追加できる添付ファイルは1件とする。追加は次の3段階で進め、1つのリクエストに1つの状態を対応させる。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>状態</th>
+                <th>リクエスト</th>
+                <th>成功時</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>Uploading</code></td>
+                <td><code>POST /uploads.json</code></td>
+                <td>
+                  <code>Attaching</code
+                  >へ進み、tokenを載せた後続要求でPUTを起動する
+                </td>
+              </tr>
+              <tr>
+                <td><code>Attaching</code></td>
+                <td><code>PUT /issues/:id.json</code>の<code>uploads</code></td>
+                <td>
+                  <code>Confirming</code>へ進み、後続要求で確認GETを起動する
+                </td>
+              </tr>
+              <tr>
+                <td><code>Confirming</code></td>
+                <td><code>GET /issues/:id.json</code></td>
+                <td>取得したIssueを取り込み、追加状態を削除する</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          各段階は別のUsecaseとし、<code>UsecaseRequest</code>のvariantを1つずつ割り当てる。前の段階の完了は、状態を進めるActionと、次の段階の<code>UsecaseRequest</code>を返す。tokenはStoreに置かず、ADR
+          15の<code>PutIssueUpload</code>と同じく要求に載せて運ぶ。
+        </p>
+        <p>
+          紐付けのPUTは、Issue属性の保存やJournalの投稿と同じ<code
+            >PUT /issues/:id.json</code
+          >である。それでも、このPUTでは<code>uploads</code>だけを送り、Issue属性の差分やnotesを同じリクエストに含めない。ADR
+          14がnotesをIssue属性の保存と分けたのと同じく、Issue属性、Journal、添付ファイルは個別に保存する。
+        </p>
+        <p>
+          添付ファイルの追加は、3段階のすべてでIssueのupload排他の対象になる。Issue属性やJournalのupload中は追加を始めず、追加中はそれらのuploadを始めない。排他の検査はIssueStore内で行う。
+        </p>
+        <h3>各状態でリトライしない</h3>
+        <p>
+          どの段階で失敗しても、その段階を再試行しない。失敗したら追加状態を削除し、失敗を通知する。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>失敗した段階</th>
+                <th>サーバーの状態</th>
+                <th>利用者の操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>Uploading</code></td>
+                <td>何も残らないか、未紐付けのuploadが残る</td>
+                <td>ファイルの追加をやり直す</td>
+              </tr>
+              <tr>
+                <td><code>Attaching</code></td>
+                <td>未紐付けのuploadが残る</td>
+                <td>ファイルの追加をやり直す</td>
+              </tr>
+              <tr>
+                <td><code>Confirming</code></td>
+                <td>添付ファイルはIssueに紐付いている</td>
+                <td>追加はやり直さない</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <code>Confirming</code
+          >の失敗では、添付ファイルはすでにIssueに紐付いている。通知では、追加が成功して確認だけに失敗したことを伝え、二重に追加しないよう促す。添付ファイルは、Issue属性やJournalの保存などで次にIssueを取得し直したときに表示される。PUTの成功応答を受け取れずに<code>Attaching</code>で失敗した場合も、サーバーでは紐付いていることがある。利用者がやり直すと二重に添付されるが、これを許容する。
+        </p>
+        <h3>Storeには添付ファイルのメタデータだけを置く</h3>
+        <p>
+          Storeには添付ファイルの中身を置かず、メタデータだけを置く。取得した添付ファイルは<code>Attachment</code>としてメタデータだけを持ち、中身はダウンロードしない。添付ファイルの中身を取得して保持する場所は、画像表示やダウンロードを実装するときに決める。
+        </p>
+        <p>
+          追加するファイルも同じく扱う。<code>Uploading</code>の状態には、表示に使うファイル名などだけを持たせる。ファイルの中身は、<code
+            >POST /uploads.json</code
+          >を行うUsecaseの非同期処理の中で読み込む。
+        </p>
+        <p>
+          ローカルファイルの読み込みはplatformごとに異なる。<code>usecases</code>は<code>platform</code>に依存できないため、<code>RedmineClient</code>と同じく<code>src/clients/</code>に<code
+            >LocalFileClient</code
+          >
+          traitを置き、実装は起動処理が組み立てる。Usecaseは、Redmineとローカルファイルのclientを<code>UsecaseClients</code>にまとめて受け取る。Webデモの実装は、どのパスにも埋め込みのサンプル画像を返す。
+        </p>
+        <p>
+          ファイルを選ぶUIは、ファイル名とファイルパスを入力するpopupとする。ファイルエクスプローラなどのGUIとの結合は今後の課題とする。
+        </p>
+        <h3>API固有の表現はRedmineClientで変換する</h3>
+        <p>
+          <code>RedmineClient</code
+          >に、ファイル本体を送ってtokenを返すメソッドと、tokenをIssueに紐付けるメソッドを追加する。<code>application/octet-stream</code>での送信や<code>uploads</code>のJSON表現は、HTTP実装が担当する。UsecaseとStoreはtokenの中身を解釈せず、tokenを専用の型で包んで扱う。
+        </p>
+        <h2 id="rationale">Rationale</h2>
+        <p>
+          添付ファイルをIssueAggregateに持たせると、Issue詳細GETの1回の応答を1つのActionで反映するADR
+          14の方針を保てる。別のStoreに分けると、同じ応答の一部だけを反映した状態が生じる。
+        </p>
+        <p>
+          GETで常に添付ファイルを含めるのは、IssueStoreが取得結果でIssueAggregateを置き換えるためである。GETごとに含めるかを選ばせると、含めないGETの後に添付ファイルが消えて見える。
+        </p>
+        <p>
+          1リクエスト1状態にすると、どのリクエストまで成功したかがStoreの状態から分かる。<code>Confirming</code>での失敗を<code>Uploading</code>や<code>Attaching</code>での失敗と区別でき、確認だけに失敗したときにPUTを繰り返さずに済む。
+        </p>
+        <p>
+          リトライをしないのは、失敗がまれで、やり直しの手間も小さいためである。<code>Uploading</code>と<code>Attaching</code>の失敗は、ファイルの追加をやり直せば回復できる。未紐付けのuploadはRedmineが削除する。<code>Confirming</code>の失敗は、次にIssueを取得し直したときに回復する。段階ごとの再試行経路を設けると、状態とUsecaseが段階の数だけ増える。
+        </p>
+        <p>
+          同時に追加できる添付ファイルを1件に限り、Issueのupload排他に含めるのは、確認GETによるIssueAggregateの置き換えと、他のuploadの確認GETが重ならないようにするためである。
+        </p>
+        <p>
+          Storeにメタデータだけを置くのは、Storeを画面の状態だけに保ち、大きなファイルを状態遷移のたびに保持しないためである。
+        </p>
+        <h2 id="consequences">Consequences</h2>
+        <ul>
+          <li>
+            <code>IssueAggregate</code
+            >に<code>attachments</code>を追加するため、HTTP実装、Demo
+            client、fixture変換、テストデータの組み立てを更新する。fixtureに添付ファイルを加える場合は、seeder、SQL、整合性テストへの影響も確認する。
+          </li>
+          <li>
+            <code>get_issue</code>のURLを変えるため、Redmine
+            clientテストで<code>attachments</code>の取得を確認する。
+          </li>
+          <li>
+            <code>JournalDetail</code
+            >のFIXMEのうち、添付ファイルの分を解消する。Journalの表示では、添付ファイルの履歴の表示を追加する。
+          </li>
+          <li>
+            IssueStoreに添付ファイルの追加状態のMapを加える。Issue属性とJournalのupload排他の検査に、添付ファイルの追加を加える。
+          </li>
+          <li>
+            <code>start_usecase</code
+            >とrunnerは、Redmineのclientに代えて<code>UsecaseClients</code>を受け取る。
+          </li>
+          <li>
+            取得済みのIssueを利用者が取り直す操作はないため、<code>Confirming</code>で失敗すると、次の取得まで追加した添付ファイルが表示されない。
+          </li>
+          <li><code>UsecaseRequest</code>に3段階分のvariantを追加する。</li>
+          <li>
+            <code>RedmineClient</code>にメソッドが増えるため、HTTP実装、Demo
+            client、テスト用のClientを更新する。HTTP実装には、バイト列をPOSTしてJSONを受け取る処理を追加する。
+          </li>
+          <li>
+            <code>POST /uploads.json</code
+            >の応答、PUTの<code>204</code>、紐付け後のJournal
+            detailの形は、Redmine clientテストで確認する。
+          </li>
+          <li>
+            <code>docs/architecture.md</code
+            >に、<code>LocalFileClient</code>と<code>UsecaseClients</code>、upload排他の範囲の変更を追記する。
+          </li>
+        </ul>
+        <h2 id="alternatives-considered">Alternatives Considered</h2>
+        <ul>
+          <li>
+            添付ファイル用のStoreを分ける:
+            Issue詳細GETの応答を2つのStoreへ分けて反映することになり、ADR
+            14の反映単位に反するため採用しない。
+          </li>
+          <li>
+            追加状態をIssueEntryのSynced・Edited・Uploadingに付加情報として持たせる:
+            どのvariantも追加状態を持つことを型で表せるが、variantを作り直すすべての箇所で値を受け渡す必要があるため採用しない。
+          </li>
+          <li>
+            ファイルの読み込みを<code>RedmineClient</code>のuploadに含める:
+            clientは増えないが、Redmineとの通信とローカルファイルの読み込みが1つのtraitに混ざるため採用しない。
+          </li>
+          <li>
+            添付ファイルが必要な画面を開いたときだけ<code>include=attachments</code>を付ける:
+            含めないGETで添付ファイル一覧が消えるため採用しない。
+          </li>
+          <li>
+            3つのリクエストを1つのFutureで続けて実行する:
+            どこまで成功したかをStoreに残せず、ADR 14とADR
+            15の方針に反するため採用しない。
+          </li>
+          <li>
+            段階ごとに再試行を設ける:
+            失敗がまれで、やり直しで回復できるため採用しない。必要になったら、<code>Confirming</code>のGETだけを再試行する経路から追加する。
+          </li>
+          <li>
+            添付ファイルの追加をIssue属性の保存フローに組み込み、保存PUTに<code>uploads</code>を含める:
+            Journalが1件にまとまり、ctrl+sで全てを保存できる。しかし、Issue属性の競合確認と添付ファイルの追加が1回の操作に結び付き、一方が失敗するともう一方も保存されない。属性を編集していないIssueでも、添付するだけでEditedになる。保存までファイルのパスをStoreに持ち続ける必要もあるため採用しない。
+          </li>
+          <li>
+            ファイルの中身をStoreに置く:
+            Storeが大きなデータを持ち、状態遷移のたびに保持し続けるため採用しない。
+          </li>
+        </ul>
+        <h2 id="future-work">Future Work</h2>
+        <ul>
+          <li>
+            添付ファイルの削除（<code>DELETE /attachments/:id.json</code
+            >）とダウンロード（<code>content_url</code>）、ファイル名と説明の変更（<code
+              >PATCH /attachments/:id.json</code
+            >）。
+          </li>
+          <li>
+            本文とJournalのnotesに埋め込まれた画像の表示と、未対応terminalやWebでの代替表示。
+          </li>
+          <li>
+            ファイルエクスプローラなどのGUIとの結合。Webでのファイル選択。
+          </li>
+          <li>取得済みのIssueを利用者が取り直す操作。</li>
+        </ul>
+        <h2 id="references">References</h2>
+        <p>
+          APIの仕様は開発用containerの既定であるRedmine
+          6.1を対象とする。応答の形は実装時にRedmine clientテストで確認する。
+        </p>
+        <ul>
+          <li>
+            <a
+              href="https://www.redmine.org/projects/redmine/wiki/Rest_api#Attaching-files"
+              >REST API: Attaching files</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://www.redmine.org/projects/redmine/wiki/Rest_Attachments"
+              >Attachments REST API</a
+            >
+          </li>
+          <li>
+            <a href="https://www.redmine.org/projects/redmine/wiki/Rest_Issues"
+              >Issue REST API</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/redmine/redmine/blob/6.1-stable/app/views/issues/show.api.rsb"
+              >Issue詳細の応答項目</a
+            >
+          </li>
+        </ul>
+      </main>
+    </div>
+  </body>
+</html>
