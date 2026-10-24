@@ -1338,7 +1338,7 @@ fn evacuate_missing_remote_upload_moves_the_notes_to_deleted_and_takes_in_the_re
 }
 
 #[test]
-#[should_panic(expected = "cannot take in a journal upload result while issue 1 is Uploading")]
+#[should_panic(expected = "cannot take in an upload result while issue 1 is Uploading")]
 fn remote_upload_results_panic_while_the_issue_is_uploading() {
     let mut store = uploading_issue_store();
 

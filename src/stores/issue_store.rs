@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::issue_attachments::{AttachmentAction, AttachmentUpload, AttachmentUploadStage};
 use super::issue_journals::{IssueJournalStates, JournalAction};
 use super::journal_state::{
     DeletedJournalEntry, LocalJournalEntry, RemoteJournalState, RemoteJournalUploadConflict,
@@ -191,6 +192,8 @@ pub(super) struct IssueStore {
     entries: HashMap<IssueId, IssueEntry>,
     /// 詳細取得で得た子Issueの一覧。子Issue自身の詳細の取得状態とは独立して保持する。
     children: HashMap<IssueId, Vec<IssueChild>>,
+    /// 取得済みIssueへ追加中の添付ファイル。Issue属性の状態が変わっても引き継ぐよう、entryとは別に持つ。
+    attachment_uploads: HashMap<IssueId, AttachmentUpload>,
 }
 
 impl IssueStore {
@@ -198,6 +201,7 @@ impl IssueStore {
         Self {
             entries: HashMap::new(),
             children: HashMap::new(),
+            attachment_uploads: HashMap::new(),
         }
     }
 
@@ -240,6 +244,10 @@ impl IssueStore {
                         Self::entry_state_name(entry)
                     ),
                 }
+                assert!(
+                    !self.attachment_uploads.contains_key(&id),
+                    "cannot start issue upload while an attachment of issue {id} is uploading"
+                );
                 match self.entries.remove(&id).unwrap() {
                     IssueEntry::Edited {
                         issue,
@@ -448,6 +456,10 @@ impl IssueStore {
                 assert!(
                     !self.has_uploading_journal(id),
                     "cannot retry issue upload confirmation while a journal of issue {id} is uploading"
+                );
+                assert!(
+                    !self.attachment_uploads.contains_key(&id),
+                    "cannot retry issue upload confirmation while an attachment of issue {id} is uploading"
                 );
                 let Some(IssueEntry::Synced {
                     issue,
@@ -660,7 +672,7 @@ impl IssueStore {
                 issue,
                 children,
             } => {
-                return self.take_in_journal_upload_fetch(issue, children, |journal_states| {
+                return self.take_in_upload_fetch(issue, children, |journal_states| {
                     journal_states.complete_remote_upload(issue_id, journal_id)
                 });
             }
@@ -678,7 +690,7 @@ impl IssueStore {
                     })
                     .notes
                     .clone();
-                return self.take_in_journal_upload_fetch(issue, children, |journal_states| {
+                return self.take_in_upload_fetch(issue, children, |journal_states| {
                     journal_states.detect_remote_upload_conflict(issue_id, journal_id, server_notes)
                 });
             }
@@ -695,12 +707,12 @@ impl IssueStore {
                 {
                     panic!("fetched issue {issue_id} still contains journal {journal_id}");
                 }
-                return self.take_in_journal_upload_fetch(issue, children, |journal_states| {
+                return self.take_in_upload_fetch(issue, children, |journal_states| {
                     journal_states.return_missing_remote_upload(issue_id, journal_id, notes)
                 });
             }
             JournalAction::CompleteLocalUploadWithFetched { issue, children } => {
-                return self.take_in_journal_upload_fetch(issue, children, |journal_states| {
+                return self.take_in_upload_fetch(issue, children, |journal_states| {
                     journal_states.complete_local_upload(issue_id)
                 });
             }
@@ -709,12 +721,23 @@ impl IssueStore {
                 issue,
                 children,
             } => {
-                return self.take_in_journal_upload_fetch(issue, children, |journal_states| {
+                return self.take_in_upload_fetch(issue, children, |journal_states| {
                     journal_states.complete_deleted_upload(issue_id, original_id)
                 });
             }
             action => action,
         };
+        if matches!(
+            action,
+            JournalAction::StartLocalUpload { .. }
+                | JournalAction::StartRemoteUpload { .. }
+                | JournalAction::StartDeletedUpload { .. }
+        ) {
+            assert!(
+                !self.attachment_uploads.contains_key(&issue_id),
+                "cannot start journal upload while an attachment of issue {issue_id} is uploading"
+            );
+        }
         match &action {
             JournalAction::StartLocalUpload { .. } => assert!(
                 !matches!(
@@ -746,11 +769,87 @@ impl IssueStore {
         journal_states.consume_action(&mut issue.journals, action);
     }
 
-    /// Journal保存の取得結果を取り込む。`transition`で対象Journalの状態を遷移させてから、
-    /// Issue本体・Journal・子一覧を取得値にする。
+    pub(super) fn consume_attachment_action(&mut self, action: AttachmentAction) {
+        match action {
+            AttachmentAction::StartUpload { issue_id, filename } => {
+                let entry = self.entries.get(&issue_id);
+                match entry {
+                    Some(IssueEntry::Synced { journal_states, .. })
+                    | Some(IssueEntry::Edited { journal_states, .. }) => assert!(
+                        !journal_states.has_uploading(),
+                        "cannot start attachment upload while a journal of issue {issue_id} is uploading"
+                    ),
+                    _ => panic!(
+                        "cannot start attachment upload while issue {issue_id} is {}",
+                        Self::entry_state_name(entry)
+                    ),
+                }
+                assert!(
+                    !self.attachment_uploads.contains_key(&issue_id),
+                    "cannot start attachment upload while another attachment of issue {issue_id} is uploading"
+                );
+                self.attachment_uploads.insert(
+                    issue_id,
+                    AttachmentUpload {
+                        filename,
+                        stage: AttachmentUploadStage::Uploading,
+                    },
+                );
+            }
+            AttachmentAction::UploadSucceeded { issue_id } => self.advance_attachment_upload(
+                issue_id,
+                AttachmentUploadStage::Uploading,
+                AttachmentUploadStage::Attaching,
+            ),
+            AttachmentAction::AttachSucceeded { issue_id } => self.advance_attachment_upload(
+                issue_id,
+                AttachmentUploadStage::Attaching,
+                AttachmentUploadStage::Confirming,
+            ),
+            AttachmentAction::ConfirmSucceeded { issue, children } => {
+                let issue_id = issue.issue.id;
+                let stage = self
+                    .attachment_uploads
+                    .get(&issue_id)
+                    .map(|upload| upload.stage);
+                assert_eq!(
+                    stage,
+                    Some(AttachmentUploadStage::Confirming),
+                    "cannot confirm attachment upload of issue {issue_id} at {stage:?}"
+                );
+                self.take_in_upload_fetch(issue, children, |_| {});
+                self.attachment_uploads.remove(&issue_id);
+            }
+            AttachmentAction::FailUpload { issue_id } => {
+                assert!(
+                    self.attachment_uploads.remove(&issue_id).is_some(),
+                    "cannot fail attachment upload of issue {issue_id} without an upload"
+                );
+            }
+        }
+    }
+
+    fn advance_attachment_upload(
+        &mut self,
+        issue_id: IssueId,
+        from: AttachmentUploadStage,
+        to: AttachmentUploadStage,
+    ) {
+        let upload = self.attachment_uploads.get_mut(&issue_id);
+        let stage = upload.as_ref().map(|upload| upload.stage);
+        assert_eq!(
+            stage,
+            Some(from),
+            "cannot advance attachment upload of issue {issue_id} from {from:?} at {stage:?}"
+        );
+        upload.unwrap().stage = to;
+    }
+
+    /// Journal保存または添付ファイル追加の取得結果を取り込む。`transition`で対象Journalの状態を
+    /// 遷移させてから、Issue本体・Journal・子一覧を取得値にする。
     ///
     /// Issue属性の差分は基準値と独立に保持するため、Editedのまま差分を残す。
-    fn take_in_journal_upload_fetch(
+    fn take_in_upload_fetch(
         &mut self,
         mut fetched: IssueAggregate,
         children: Vec<IssueChild>,
@@ -774,7 +873,7 @@ impl IssueStore {
                 journal_states,
                 ..
             }) => (issue, journal_states),
-            _ => panic!("cannot take in a journal upload result while issue {id} is {state_name}"),
+            _ => panic!("cannot take in an upload result while issue {id} is {state_name}"),
         };
         transition(journal_states);
         let current = std::mem::take(&mut issue.journals);
@@ -1021,6 +1120,13 @@ impl IssueStore {
         Self::loaded_parts(self.entries.get(&issue_id.into()))
             .map(|(_, journal_states)| journal_states.deleted())
             .unwrap_or(&[])
+    }
+
+    pub(super) fn try_get_attachment_upload(
+        &self,
+        issue_id: impl Into<IssueId>,
+    ) -> Option<&AttachmentUpload> {
+        self.attachment_uploads.get(&issue_id.into())
     }
 
     pub(super) fn has_uploading_journal(&self, issue_id: impl Into<IssueId>) -> bool {
