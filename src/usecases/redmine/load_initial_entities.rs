@@ -100,15 +100,15 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::load_initial_entities;
-    use crate::clients::redmine::base::FetchedIssue;
-    use crate::clients::redmine::{DefaultRedmineClient, RedmineClient, RedmineClientError};
+    use crate::clients::redmine::fake::FakeRedmineClient;
+    use crate::clients::redmine::{DefaultRedmineClient, RedmineClientError};
     use crate::entities::{
         Category, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity, Tracker, User,
     };
     use crate::stores::Action;
     use crate::vos::{
-        CategoryId, EntityIdValue, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
-        TimeEntityActivityId, TrackerId, UserId,
+        CategoryId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId,
+        TrackerId, UserId,
     };
 
     #[test]
@@ -257,7 +257,7 @@ mod tests {
         }
     }
 
-    impl RedmineClient for RecordingClient {
+    impl FakeRedmineClient for RecordingClient {
         async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError> {
             self.record("categories").await;
             Ok(vec![Category {
@@ -265,51 +265,6 @@ mod tests {
                 name: "category".to_string(),
                 project_id: ProjectId::new(1),
             }])
-        }
-
-        async fn get_issue(&self, id: IssueId) -> Result<FetchedIssue, RedmineClientError> {
-            panic!("initial entity load should not load issue {}", id.get());
-        }
-
-        async fn update_issue(
-            &self,
-            _: crate::vos::IssueId,
-            _: &crate::clients::redmine::IssueUpdate,
-        ) -> Result<(), RedmineClientError> {
-            panic!("initial entity load should not update issue");
-        }
-
-        async fn update_journal_notes(
-            &self,
-            _: crate::vos::JournalId,
-            _: &str,
-        ) -> Result<(), RedmineClientError> {
-            panic!("initial entity load should not update journal notes")
-        }
-
-        async fn update_issue_notes(
-            &self,
-            _: crate::vos::IssueId,
-            _: &str,
-        ) -> Result<(), RedmineClientError> {
-            panic!("initial entity load should not update issue notes")
-        }
-
-        async fn upload_file(
-            &self,
-            _: &str,
-            _: Vec<u8>,
-        ) -> Result<crate::vos::UploadToken, RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn attach_upload(
-            &self,
-            _: IssueId,
-            _: &crate::vos::UploadToken,
-            _: &str,
-        ) -> Result<(), RedmineClientError> {
-            unreachable!()
         }
 
         async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
@@ -335,14 +290,6 @@ mod tests {
                 id: ProjectId::new(1),
                 name: "project".to_string(),
             }])
-        }
-
-        async fn get_project_issues(
-            &self,
-            _: crate::vos::ProjectId,
-            _: std::num::NonZeroUsize,
-        ) -> Result<crate::entities::ProjectIssuesPage, RedmineClientError> {
-            panic!("initial entity load should not load project issues");
         }
 
         async fn get_target_versions(&self) -> Result<Vec<TargetVersion>, RedmineClientError> {
