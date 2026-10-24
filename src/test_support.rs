@@ -44,16 +44,17 @@ pub async fn complete_usecase(task: Option<UsecaseTask>) -> Vec<Action> {
 /// `request`と、その後続要求を完了まで順に進める。
 ///
 /// runnerと同じく、起動時のActionと完了Actionを消費してから次の要求を起動する。
-pub async fn run_usecases<C>(
+pub async fn run_usecases<C, F>(
     request: UsecaseRequest,
     dispatcher: Rc<RefCell<Dispatcher>>,
-    client: Arc<C>,
+    clients: UsecaseClients<C, F>,
 ) where
     C: RedmineClient + Send + Sync + 'static,
+    F: LocalFileClient + Send + Sync + 'static,
 {
     let mut requests = VecDeque::from([request]);
     while let Some(request) = requests.pop_front() {
-        let task = start_usecase(request, dispatcher.clone(), usecase_clients(client.clone()));
+        let task = start_usecase(request, dispatcher.clone(), clients.clone());
         consume_all(&dispatcher);
         let Some(task) = task else {
             continue;

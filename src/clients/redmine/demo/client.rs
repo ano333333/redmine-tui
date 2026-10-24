@@ -442,16 +442,18 @@ impl RedmineClient for DemoRedmineClient {
 mod tests {
     use std::cell::RefCell;
     use std::num::NonZeroUsize;
+    use std::path::PathBuf;
     use std::rc::Rc;
     use std::sync::Arc;
 
+    use crate::clients::local_file::demo::{DemoLocalFileClient, SAMPLE_IMAGE};
     use crate::clients::redmine::IssueUpdate;
     use crate::clients::redmine::demo::DemoRedmineClient;
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::stores::{Action, Dispatcher, IssueAction, IssueState, JournalAction};
-    use crate::test_support::{complete_usecase, run_usecases};
-    use crate::usecases::UsecaseRequest;
+    use crate::test_support::{complete_usecase, run_usecases, usecase_clients};
     use crate::usecases::redmine::{start_local_journal_upload, start_remote_journal_upload};
+    use crate::usecases::{UsecaseClients, UsecaseRequest};
     use crate::vos::{
         AttachmentId, EntityIdValue, IssueId, JournalDetail, JournalDetailAttachmentChange,
         JournalId, ProjectId,
@@ -695,7 +697,7 @@ mod tests {
                 id: IssueId::new(3),
             },
             dispatcher.clone(),
-            client.clone(),
+            usecase_clients(client.clone()),
         ));
         assert_eq!(
             dispatcher.borrow().store().try_get_issue_state(3),
@@ -726,7 +728,7 @@ mod tests {
                 id: IssueId::new(3),
             },
             dispatcher.clone(),
-            client,
+            usecase_clients(client),
         ));
         assert!(
             dispatcher
@@ -755,6 +757,39 @@ mod tests {
         let mut dispatcher = Dispatcher::new();
         crate::test_support::dispatch_loaded_issue(&mut dispatcher, fetched.aggregate);
         Rc::new(RefCell::new(dispatcher))
+    }
+
+    #[test]
+    fn attachment_upload_adds_the_sample_image_to_the_issue() {
+        let runtime = Builder::new_current_thread().build().unwrap();
+        let client = Arc::new(DemoRedmineClient::new());
+        let dispatcher = journal_dispatcher(&client, &runtime);
+
+        runtime.block_on(run_usecases(
+            UsecaseRequest::StartAttachmentUpload {
+                issue_id: IssueId::new(3),
+                filename: "picked.png".to_string(),
+                path: PathBuf::from("ignored/by/the/demo.png"),
+            },
+            dispatcher.clone(),
+            UsecaseClients {
+                redmine: client,
+                local_file: Arc::new(DemoLocalFileClient),
+            },
+        ));
+
+        let dispatcher = dispatcher.borrow();
+        let store = dispatcher.store();
+        assert_eq!(store.try_get_attachment_upload(3), None);
+        let (issue, _) = store.get_issue(3);
+        assert_eq!(
+            issue
+                .attachments()
+                .iter()
+                .map(|attachment| (attachment.filename.as_str(), attachment.filesize))
+                .collect::<Vec<_>>(),
+            vec![("picked.png", SAMPLE_IMAGE.len() as u64)]
+        );
     }
 
     #[test]

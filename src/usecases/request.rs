@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::num::NonZeroUsize;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use crate::clients::local_file::LocalFileClient;
@@ -9,8 +10,8 @@ use crate::usecases::redmine::{
     cancel_issue_upload, cancel_remote_journal_upload, confirm_attachment_upload,
     confirm_issue_upload, continue_issue_upload, continue_remote_journal_upload, fetch_issue,
     fetch_project_issues_page, put_attachment_upload, put_issue_upload,
-    retry_issue_upload_confirmation, start_deleted_journal_upload, start_issue_upload,
-    start_local_journal_upload, start_remote_journal_upload,
+    retry_issue_upload_confirmation, start_attachment_upload, start_deleted_journal_upload,
+    start_issue_upload, start_local_journal_upload, start_remote_journal_upload,
 };
 use crate::usecases::{UsecaseClients, UsecaseTask};
 use crate::vos::{IssueId, IssuePropertyDiff, JournalId, ProjectId, UploadToken};
@@ -68,6 +69,11 @@ pub enum UsecaseRequest {
         issue_id: IssueId,
         original_id: JournalId,
     },
+    StartAttachmentUpload {
+        issue_id: IssueId,
+        filename: String,
+        path: PathBuf,
+    },
     PutAttachmentUpload {
         issue_id: IssueId,
         token: UploadToken,
@@ -90,7 +96,7 @@ where
     C: RedmineClient + Send + Sync + 'static,
     F: LocalFileClient + Send + Sync + 'static,
 {
-    let client = clients.redmine;
+    let client = clients.redmine.clone();
     match request {
         UsecaseRequest::FetchIssue { id, with_parent } => {
             fetch_issue(dispatcher, client, id, with_parent)
@@ -139,6 +145,11 @@ where
             issue_id,
             original_id,
         } => start_deleted_journal_upload(dispatcher, client, issue_id, original_id),
+        UsecaseRequest::StartAttachmentUpload {
+            issue_id,
+            filename,
+            path,
+        } => start_attachment_upload(dispatcher, clients, issue_id, filename, path),
         UsecaseRequest::PutAttachmentUpload {
             issue_id,
             token,
