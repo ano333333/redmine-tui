@@ -297,11 +297,15 @@ mod tests {
                 self.header_widget(),
                 self.property_widget(),
                 self.body_widget(),
-                AttachmentsListWidget::new(vec![], None, true, None),
+                self.attachments_list_widget(),
                 self.children_list_widget(),
                 self.journals_list_widget(),
                 state,
             )
+        }
+
+        fn attachments_list_widget(&self) -> AttachmentsListWidget<'_> {
+            AttachmentsListWidget::new(vec![], None, true, None)
         }
 
         fn header_widget(&self) -> HeaderWidget<'_> {
@@ -390,6 +394,7 @@ mod tests {
                 + 3
                 + self.body_widget().line_count(width) as u16
                 + 1
+                + self.attachments_list_widget().line_count()
                 + self.children_list_widget().line_count()
                 // SectionHeader::LINE_COUNT
                 + 3
