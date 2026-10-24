@@ -109,6 +109,8 @@ pub enum TimeEntityActivityTag {}
 pub enum TargetVersionTag {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CategoryTag {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AttachmentTag {}
 
 pub type IssueId = EntityId<IssueTag>;
 pub type IssueStatusId = EntityId<IssueStatusTag>;
@@ -120,3 +122,4 @@ pub type UserId = EntityId<UserTag>;
 pub type TimeEntityActivityId = EntityId<TimeEntityActivityTag>;
 pub type TargetVersionId = EntityId<TargetVersionTag>;
 pub type CategoryId = EntityId<CategoryTag>;
+pub type AttachmentId = EntityId<AttachmentTag>;

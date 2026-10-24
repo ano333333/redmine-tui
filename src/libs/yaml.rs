@@ -236,6 +236,7 @@ pub fn parse_issue(id: IssueId, yaml: &str) -> IssueAggregate {
         parent_id,
         // Journalは別のfixtureファイルで管理しており、Issueのfixtureには含めない。
         journals: vec![],
+        attachments: vec![],
     }
 }
 

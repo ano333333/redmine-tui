@@ -831,6 +831,7 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
             category_id: value.category.map(|category| CategoryId::new(category.id)),
             parent_id: value.parent.map(|parent| IssueId::new(parent.id)),
             journals,
+            attachments: vec![],
             issue,
         })
     }

@@ -264,6 +264,7 @@ pub fn sample_issue_aggregate(
         category_id: Some(CategoryId::new(1)),
         parent_id: None,
         journals: vec![],
+        attachments: vec![],
     }
 }
 
@@ -335,6 +336,7 @@ pub fn sample_open_child_issue() -> IssueAggregate {
         category_id: Some(CategoryId::new(1)),
         parent_id: Some(IssueId::new(3)),
         journals: vec![],
+        attachments: vec![],
     }
 }
 
@@ -362,6 +364,7 @@ pub fn sample_closed_child_issue() -> IssueAggregate {
         category_id: Some(CategoryId::new(1)),
         parent_id: Some(IssueId::new(3)),
         journals: vec![],
+        attachments: vec![],
     }
 }
 
@@ -391,6 +394,7 @@ pub fn sample_parent_issue() -> IssueAggregate {
         category_id: Some(CategoryId::new(1)),
         parent_id: None,
         journals: vec![],
+        attachments: vec![],
     }
 }
 
