@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use crate::support::{
-    open_issue_from_initial_popup, reseed_redmine, spawn_app, wait_for_redmine, wait_for_text,
+    open_issue_from_initial_popup, redmine_get_json, reseed_redmine, spawn_app, wait_for_redmine,
+    wait_for_text,
 };
 
 // upload.rsと同じく、幅120の端末でIssue 3を表示した状態で数えた。
@@ -52,4 +53,38 @@ fn adding_a_local_file_attaches_it_to_the_issue() {
     );
     wait_for_text(&mut session, "e2e-note.txt");
     wait_for_text(&mut session, "添付ファイル 1");
+}
+
+// Scenario: Redmineの既定の上限（5120 KB）を超えるファイルは、読み込まずに追加を中止する
+#[test]
+fn adding_a_file_over_the_upload_limit_is_rejected_before_sending() {
+    // Given 上限を1バイト超えるローカルファイルがあり、Issue 3の添付ファイルの追加行にfocusしている
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("add_large_attachment");
+    std::fs::create_dir_all(&dir).expect("failed to create the attachment directory");
+    let source = dir.join("large.bin");
+    std::fs::write(&source, vec![0_u8; 5120 * 1024 + 1]).expect("failed to write the attachment");
+    reseed_redmine();
+    let mut session = spawn_app();
+    open_issue_from_initial_popup(&mut session, 1);
+    for _ in 0..J_PRESSES_TO_ADD_ATTACHMENT_ROW {
+        session.press_key("j").expect("failed to press j");
+    }
+
+    // When popupにファイル名とパスを入力して確定する
+    session.press_key("Enter").expect("failed to press Enter");
+    wait_for_text(&mut session, "ファイルを添付");
+    session
+        .write_bytes(b"large.bin")
+        .expect("failed to type the filename");
+    session.press_key("Tab").expect("failed to press Tab");
+    session
+        .write_bytes(source.display().to_string().as_bytes())
+        .expect("failed to type the path");
+    session.press_key("Enter").expect("failed to press Enter");
+
+    // Then 読み込めなかったことが通知され、RedmineのIssue 3には添付されない
+    // 通知は端末幅の1/3で折り返すため、1行目に収まる部分で待つ。
+    wait_for_text(&mut session, "添付するファイル");
+    let issue = redmine_get_json("/issues/3.json?include=attachments");
+    assert_eq!(issue["issue"]["attachments"], serde_json::json!([]));
 }

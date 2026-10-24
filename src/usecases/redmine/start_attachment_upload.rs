@@ -8,6 +8,12 @@ use crate::stores::{AttachmentAction, Dispatcher, IssueState, NoticeAction, Noti
 use crate::usecases::{UsecaseClients, UsecaseOutput, UsecaseRequest, UsecaseTask};
 use crate::vos::IssueId;
 
+/// Redmineの添付ファイルサイズ上限の設定`attachment_max_size`の既定値（5120 KB）。
+///
+/// RedmineのREST APIは設定値を返さないため、既定値に合わせる。サーバーが上限を下げている場合は
+/// Redmineが送信を422で拒否し、上げている場合はこの値を超えるファイルを送れない。
+const ATTACHMENT_MAX_BYTES: u64 = 5120 * 1024;
+
 /// `path`のファイルを`filename`の名前でIssueへ添付する処理を始める。
 ///
 /// `StartUpload`を同期的にqueueへ追加する。返却したtaskはファイルを読み込んでRedmineへ送り、
@@ -48,7 +54,11 @@ where
             filename: filename.clone(),
         });
     Some(Box::pin(async move {
-        let content = match clients.local_file.read_file(&path).await {
+        let content = match clients
+            .local_file
+            .read_file(&path, ATTACHMENT_MAX_BYTES)
+            .await
+        {
             Ok(content) => content,
             Err(error) => {
                 return failure_output(
@@ -161,8 +171,8 @@ mod tests {
         let output = task.await;
 
         assert_eq!(
-            *clients.local_file.paths.lock().unwrap(),
-            vec![Path::new("/tmp/sample.png").to_path_buf()]
+            *clients.local_file.reads.lock().unwrap(),
+            vec![(Path::new("/tmp/sample.png").to_path_buf(), 5_242_880)]
         );
         assert_eq!(
             *clients.redmine.uploads.lock().unwrap(),

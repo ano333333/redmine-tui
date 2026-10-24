@@ -129,24 +129,27 @@ impl RedmineClient for AttachmentStubClient {
     }
 }
 
-/// 読み込み結果を返し、読み込んだパスを記録する。
+/// 読み込み結果を返し、読み込んだパスと上限を記録する。
 pub(super) struct StubLocalFileClient {
     pub(super) result: Result<Vec<u8>, LocalFileError>,
-    pub(super) paths: Mutex<Vec<PathBuf>>,
+    pub(super) reads: Mutex<Vec<(PathBuf, u64)>>,
 }
 
 impl StubLocalFileClient {
     pub(super) fn new(result: Result<Vec<u8>, LocalFileError>) -> Self {
         Self {
             result,
-            paths: Mutex::new(Vec::new()),
+            reads: Mutex::new(Vec::new()),
         }
     }
 }
 
 impl LocalFileClient for StubLocalFileClient {
-    async fn read_file(&self, path: &Path) -> Result<Vec<u8>, LocalFileError> {
-        self.paths.lock().unwrap().push(path.to_path_buf());
+    async fn read_file(&self, path: &Path, max_len: u64) -> Result<Vec<u8>, LocalFileError> {
+        self.reads
+            .lock()
+            .unwrap()
+            .push((path.to_path_buf(), max_len));
         self.result.clone()
     }
 }

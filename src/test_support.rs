@@ -24,7 +24,7 @@ use crate::vos::{
 pub struct UnusedLocalFileClient;
 
 impl LocalFileClient for UnusedLocalFileClient {
-    async fn read_file(&self, _: &std::path::Path) -> Result<Vec<u8>, LocalFileError> {
+    async fn read_file(&self, _: &std::path::Path, _: u64) -> Result<Vec<u8>, LocalFileError> {
         unreachable!("this test does not read local files")
     }
 }
