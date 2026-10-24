@@ -400,7 +400,8 @@ fn map_response_status<T>(
         400 => Err(RedmineClientError::BadRequest { context }),
         401 => Err(RedmineClientError::Unauthorized { context }),
         403 | 404 => Err(RedmineClientError::NotFound { context }),
-        422 => Err(RedmineClientError::UnprocessableEntity { context }),
+        // ファイル送信では、Redmineの前段のproxyがサイズや形式を413・415で拒否することがある。
+        413 | 415 | 422 => Err(RedmineClientError::UnprocessableEntity { context }),
         500..=599 => Err(RedmineClientError::InternalServerError { context }),
         _ => panic!(
             "unexpected Redmine response status: {} for {} {} with body: {}",
