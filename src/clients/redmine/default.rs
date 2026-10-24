@@ -12,7 +12,7 @@ use crate::entities::{
 };
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalId, PriorityId, ProjectId,
-    TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    TargetVersionId, TimeEntityActivityId, TrackerId, UploadToken, UserId,
 };
 
 mod attachment_conversion;
@@ -102,6 +102,44 @@ impl DefaultRedmineClient {
         }
 
         Ok(())
+    }
+
+    async fn post_bytes_json<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+        content: Vec<u8>,
+    ) -> Result<T, RedmineClientError> {
+        let method = "POST";
+        let url = format!("{}{}", self.host_url, path);
+        let response = self
+            .http_client
+            .post(&url)
+            .query(query)
+            .header("X-Redmine-API-Key", &self.access_token)
+            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+            .body(content)
+            .send()
+            .await
+            .map_err(map_request_error)?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let response_body = response.text().await.unwrap_or_else(|error| {
+                format!("failed to read Redmine error response body: {error}")
+            });
+            return map_response_status(
+                status,
+                RedmineHttpError {
+                    method: method.to_string(),
+                    url,
+                    status_code: status.as_u16(),
+                    response_body,
+                },
+            );
+        }
+
+        response.json().await.map_err(map_response_body_error)
     }
 
     async fn get_paginated<R>(&self, path: &str) -> Result<Vec<R::Item>, RedmineClientError>
@@ -199,6 +237,37 @@ impl RedmineClient for DefaultRedmineClient {
             &UpdateIssueNotesRequest {
                 issue: UpdateIssueNotes {
                     notes: notes.to_string(),
+                },
+            },
+        )
+        .await
+    }
+
+    async fn upload_file(
+        &self,
+        filename: &str,
+        content: Vec<u8>,
+    ) -> Result<UploadToken, RedmineClientError> {
+        let response: UploadResponse = self
+            .post_bytes_json("/uploads.json", &[("filename", filename)], content)
+            .await?;
+        Ok(UploadToken::new(response.upload.token))
+    }
+
+    async fn attach_upload(
+        &self,
+        issue_id: IssueId,
+        token: &UploadToken,
+        filename: &str,
+    ) -> Result<(), RedmineClientError> {
+        self.put_empty(
+            &format!("/issues/{}.json", issue_id.get()),
+            &AttachUploadRequest {
+                issue: AttachUpload {
+                    uploads: vec![IssueUpload {
+                        token: token.as_str().to_string(),
+                        filename: filename.to_string(),
+                    }],
                 },
             },
         )
@@ -638,6 +707,32 @@ impl From<RedmineProjectIssue> for Issue {
             status_id: IssueStatusId::new(value.status.id),
         }
     }
+}
+
+#[derive(Deserialize)]
+struct UploadResponse {
+    upload: RedmineUpload,
+}
+
+#[derive(Deserialize)]
+struct RedmineUpload {
+    token: String,
+}
+
+#[derive(Serialize)]
+struct AttachUploadRequest {
+    issue: AttachUpload,
+}
+
+#[derive(Serialize)]
+struct AttachUpload {
+    uploads: Vec<IssueUpload>,
+}
+
+#[derive(Serialize)]
+struct IssueUpload {
+    token: String,
+    filename: String,
 }
 
 #[derive(Serialize)]

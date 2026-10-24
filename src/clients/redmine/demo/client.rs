@@ -4,12 +4,15 @@ use std::sync::{Arc, Mutex};
 use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT, RedmineHttpError};
 use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError};
 use crate::entities::{
-    Category, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
+    Attachment, Category, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
     ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
 };
-use crate::vos::{EntityIdValue, IssueId, JournalId, ProjectId};
+use crate::vos::{
+    AttachmentId, EntityIdValue, IssueId, JournalDetail, JournalDetailAttachment,
+    JournalDetailAttachmentChange, JournalId, ProjectId, UploadToken,
+};
 
-use super::fixture::DemoFixtureState;
+use super::fixture::{DemoFixtureState, PendingUpload};
 
 #[derive(Clone)]
 pub struct DemoRedmineClient {
@@ -237,6 +240,111 @@ impl RedmineClient for DemoRedmineClient {
         async move { result }
     }
 
+    fn upload_file(
+        &self,
+        _: &str,
+        content: Vec<u8>,
+    ) -> impl std::future::Future<Output = Result<UploadToken, RedmineClientError>> + Send {
+        let token = {
+            let mut state = self.state.lock().expect("demo fixture state lock poisoned");
+            let next_id = state
+                .attachments
+                .values()
+                .flatten()
+                .map(|attachment| attachment.id)
+                .chain(state.pending_uploads.values().map(|upload| upload.id))
+                .map(|id| id.get())
+                .max()
+                .unwrap_or(0)
+                + 1;
+            let token = format!("{next_id}.demo");
+            state.pending_uploads.insert(
+                token.clone(),
+                PendingUpload {
+                    id: AttachmentId::new(next_id),
+                    filesize: content.len() as u64,
+                },
+            );
+            token
+        };
+        async move { Ok(UploadToken::new(token)) }
+    }
+
+    fn attach_upload(
+        &self,
+        issue_id: IssueId,
+        token: &UploadToken,
+        filename: &str,
+    ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send {
+        // デモでは、Redmineが紐付け時に作る添付ファイルと、その追加を記録したJournalを再現する。
+        // Content-Typeとダウンロード先は固定のモック値とする。
+        let result = {
+            let mut state = self.state.lock().expect("demo fixture state lock poisoned");
+            let url = format!("/issues/{}.json", issue_id.get());
+            if !state.issues.contains_key(&issue_id) {
+                Err(Self::not_found("PUT", url))
+            } else if let Some(upload) = state.pending_uploads.remove(token.as_str()) {
+                let user = state
+                    .users
+                    .first()
+                    .expect("demo fixture has no users")
+                    .name
+                    .clone();
+                let now = chrono::Local::now();
+                state
+                    .attachments
+                    .entry(issue_id)
+                    .or_default()
+                    .push(Attachment {
+                        id: upload.id,
+                        filename: filename.to_string(),
+                        filesize: upload.filesize,
+                        content_type: Some("image/png".to_string()),
+                        description: String::new(),
+                        content_url: format!(
+                            "/attachments/download/{}/{filename}",
+                            upload.id.get()
+                        ),
+                        author: user.clone(),
+                        created_on: now,
+                    });
+                let next_journal_id = state
+                    .journals
+                    .values()
+                    .flatten()
+                    .map(|journal| journal.id.get())
+                    .max()
+                    .unwrap_or(0)
+                    + 1;
+                state.journals.entry(issue_id).or_default().push(Journal {
+                    id: JournalId::new(next_journal_id),
+                    issue_id,
+                    user,
+                    updated_on: Some(now),
+                    details: vec![JournalDetail::Attachment(JournalDetailAttachment {
+                        id: upload.id,
+                        change: JournalDetailAttachmentChange::Added {
+                            filename: filename.to_string(),
+                        },
+                    })],
+                    notes: String::new(),
+                });
+                Ok(())
+            } else {
+                // Redmineは未知のtokenを、属性の検証エラーと同じ422で返す。
+                Err(RedmineClientError::UnprocessableEntity {
+                    context: RedmineHttpError {
+                        method: "PUT".to_string(),
+                        url,
+                        status_code: 422,
+                        response_body: String::new(),
+                    },
+                })
+            }
+        };
+        async move { result }
+    }
+
     fn get_issue_statuses(
         &self,
     ) -> impl std::future::Future<Output = Result<Vec<IssueStatus>, RedmineClientError>> + Send
@@ -344,7 +452,10 @@ mod tests {
     use crate::test_support::{complete_usecase, run_usecases};
     use crate::usecases::UsecaseRequest;
     use crate::usecases::redmine::{start_local_journal_upload, start_remote_journal_upload};
-    use crate::vos::{EntityIdValue, IssueId, JournalId, ProjectId};
+    use crate::vos::{
+        AttachmentId, EntityIdValue, IssueId, JournalDetail, JournalDetailAttachmentChange,
+        JournalId, ProjectId,
+    };
     use tokio::runtime::Builder;
 
     #[test]
@@ -501,6 +612,59 @@ mod tests {
         assert_eq!(added.issue_id, IssueId::new(3));
         assert_eq!(added.user, "user1");
         assert_eq!(added.notes, "local addition");
+    }
+
+    #[test]
+    fn attached_upload_appears_with_an_added_journal() {
+        let client = DemoRedmineClient::new();
+        let runtime = Builder::new_current_thread().build().unwrap();
+
+        let token = runtime
+            .block_on(client.upload_file("ignored.png", vec![0; 10]))
+            .unwrap();
+        runtime
+            .block_on(client.attach_upload(IssueId::new(2), &token, "note.png"))
+            .unwrap();
+        let issue = runtime.block_on(client.get_issue(IssueId::new(2))).unwrap();
+
+        let [attachment] = issue.aggregate.attachments.as_slice() else {
+            panic!("expected one attachment");
+        };
+        // seedのIssue 4が添付ファイル1を持つため、次のIDは2になる。
+        assert_eq!(attachment.id, AttachmentId::new(2));
+        assert_eq!(attachment.filename, "note.png");
+        assert_eq!(attachment.filesize, 10);
+        let [journal] = issue.aggregate.journals.as_slice() else {
+            panic!("expected one journal");
+        };
+        assert!(matches!(
+            journal.details.as_slice(),
+            [JournalDetail::Attachment(detail)]
+                if detail.id == AttachmentId::new(2)
+                    && detail.change
+                        == JournalDetailAttachmentChange::Added {
+                            filename: "note.png".to_string()
+                        }
+        ));
+    }
+
+    #[test]
+    fn attaching_an_unknown_or_used_token_is_rejected() {
+        let client = DemoRedmineClient::new();
+        let runtime = Builder::new_current_thread().build().unwrap();
+        let token = runtime
+            .block_on(client.upload_file("a.png", vec![0; 1]))
+            .unwrap();
+        runtime
+            .block_on(client.attach_upload(IssueId::new(2), &token, "a.png"))
+            .unwrap();
+
+        let reused = runtime.block_on(client.attach_upload(IssueId::new(2), &token, "a.png"));
+
+        assert!(matches!(
+            reused,
+            Err(RedmineClientError::UnprocessableEntity { .. })
+        ));
     }
 
     #[test]

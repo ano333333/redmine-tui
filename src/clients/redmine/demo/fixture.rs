@@ -61,6 +61,14 @@ pub struct DemoFixtureState {
     pub issues: BTreeMap<IssueId, IssueAggregate>,
     pub journals: BTreeMap<IssueId, Vec<Journal>>,
     pub attachments: BTreeMap<IssueId, Vec<Attachment>>,
+    /// uploadしたがIssueへ紐付けていないファイル。キーはtoken。
+    pub pending_uploads: BTreeMap<String, PendingUpload>,
+}
+
+pub struct PendingUpload {
+    /// Redmineと同じく、upload時点で添付ファイルIDを確保する。
+    pub id: AttachmentId,
+    pub filesize: u64,
 }
 
 impl DemoFixtureState {
@@ -109,6 +117,7 @@ impl DemoFixtureState {
             issues,
             journals,
             attachments,
+            pending_uploads: BTreeMap::new(),
         }
     }
 }

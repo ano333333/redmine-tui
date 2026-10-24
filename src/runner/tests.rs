@@ -483,6 +483,23 @@ impl RedmineClient for IssueUploadClient {
         unreachable!()
     }
 
+    async fn upload_file(
+        &self,
+        _: &str,
+        _: Vec<u8>,
+    ) -> Result<crate::vos::UploadToken, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn attach_upload(
+        &self,
+        _: IssueId,
+        _: &crate::vos::UploadToken,
+        _: &str,
+    ) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
     async fn get_issue_statuses(
         &self,
     ) -> std::result::Result<Vec<IssueStatus>, RedmineClientError> {
@@ -1315,6 +1332,23 @@ impl RedmineClient for FailingClient {
         Err(self.unauthorized())
     }
 
+    async fn upload_file(
+        &self,
+        _: &str,
+        _: Vec<u8>,
+    ) -> Result<crate::vos::UploadToken, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn attach_upload(
+        &self,
+        _: IssueId,
+        _: &crate::vos::UploadToken,
+        _: &str,
+    ) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
     async fn get_issue_statuses(
         &self,
     ) -> std::result::Result<Vec<IssueStatus>, RedmineClientError> {
@@ -1831,6 +1865,23 @@ impl RedmineClient for GatedUploadClient {
     }
 
     async fn get_categories(&self) -> std::result::Result<Vec<Category>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn upload_file(
+        &self,
+        _: &str,
+        _: Vec<u8>,
+    ) -> Result<crate::vos::UploadToken, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn attach_upload(
+        &self,
+        _: IssueId,
+        _: &crate::vos::UploadToken,
+        _: &str,
+    ) -> Result<(), RedmineClientError> {
         unreachable!()
     }
 

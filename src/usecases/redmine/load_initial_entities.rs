@@ -295,6 +295,23 @@ mod tests {
             panic!("initial entity load should not update issue notes")
         }
 
+        async fn upload_file(
+            &self,
+            _: &str,
+            _: Vec<u8>,
+        ) -> Result<crate::vos::UploadToken, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn attach_upload(
+            &self,
+            _: IssueId,
+            _: &crate::vos::UploadToken,
+            _: &str,
+        ) -> Result<(), RedmineClientError> {
+            unreachable!()
+        }
+
         async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
             self.record("issue_statuses").await;
             Ok(vec![IssueStatus {
