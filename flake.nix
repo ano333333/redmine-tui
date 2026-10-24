@@ -16,7 +16,8 @@
             cargo
             cargo-insta
             cargo-llvm-cov
-            llvmPackages_latest.llvm
+            # profrawの形式はrustcが使うLLVMのversionに依存するため、llvm-cov等もrustcのLLVMに合わせる。
+            rustc.llvmPackages.llvm
             lld
             clippy
             actionlint

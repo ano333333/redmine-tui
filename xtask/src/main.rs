@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 mod build_pages;
+mod coverage;
 mod redmine_container;
 mod seed_redmine;
 
@@ -9,6 +10,8 @@ const CONTAINER_TEST_FEATURE: &str = "container-tests";
 const CONTAINER_TEST_MODULE: &str = "clients::redmine::default::tests::container::";
 const E2E_TEST_FEATURE: &str = "e2e-tests";
 const E2E_TEST_TARGET: &str = "e2e";
+pub(crate) const E2E_TEST_ARGS: &[&str] =
+    &["--features", E2E_TEST_FEATURE, "--test", E2E_TEST_TARGET];
 
 fn main() {
     if let Err(err) = run() {
@@ -28,6 +31,7 @@ fn run() -> Result<(), String> {
         "test-redmine-client" => test_redmine_client(args.collect()),
         "test-e2e" => test_e2e(args.collect()),
         "build-pages" => build_pages::build_pages(args.collect()),
+        "coverage" => coverage::coverage(args.collect()),
         "--help" | "-h" => {
             println!("{}", usage());
             Ok(())
@@ -46,14 +50,9 @@ fn test_redmine_client(args: Vec<String>) -> Result<(), String> {
 
 fn test_e2e(args: Vec<String>) -> Result<(), String> {
     // E2EはPTY上でnativeバイナリを起動するため、`CARGO_BIN_EXE_*`を使えるtest targetとして置く。
-    run_container_tests(
-        "test-e2e",
-        args,
-        &["--features", E2E_TEST_FEATURE, "--test", E2E_TEST_TARGET],
-    )
+    run_container_tests("test-e2e", args, E2E_TEST_ARGS)
 }
 
-/// Redmine containerを1つ起動し、指定したテストを直列に1回の`cargo test`で実行する。
 fn run_container_tests(name: &str, args: Vec<String>, cargo_args: &[&str]) -> Result<(), String> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!("{}", usage());
@@ -63,6 +62,17 @@ fn run_container_tests(name: &str, args: Vec<String>, cargo_args: &[&str]) -> Re
         return Err(format!("unknown {name} option: {arg}\n\n{}", usage()));
     }
 
+    run_cargo_test_with_container(name, cargo_args, &[])
+}
+
+/// Redmine containerを1つ起動し、指定したテストを直列に1回の`cargo test`で実行する。
+///
+/// `envs`は`cargo test`のプロセスに追加で渡す環境変数。
+pub(crate) fn run_cargo_test_with_container(
+    name: &str,
+    cargo_args: &[&str],
+    envs: &[(String, String)],
+) -> Result<(), String> {
     let container =
         redmine_container::RedmineContainer::start(PathBuf::from("compose.redmine.yml"))?;
     let mut command = Command::new("cargo");
@@ -70,7 +80,8 @@ fn run_container_tests(name: &str, args: Vec<String>, cargo_args: &[&str]) -> Re
         .arg("test")
         .args(cargo_args)
         .arg("--")
-        .arg("--test-threads=1");
+        .arg("--test-threads=1")
+        .envs(envs.iter().map(|(key, value)| (key, value)));
     container.apply_env(&mut command);
     let status = command
         .status()
@@ -91,6 +102,7 @@ pub(crate) fn usage() -> String {
         "  cargo xtask test-redmine-client",
         "  cargo xtask test-e2e",
         "  cargo xtask build-pages --public-url URL",
+        "  cargo xtask coverage [cargo llvm-cov report options (default: --html)]",
     ]
     .join("\n")
 }
