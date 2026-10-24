@@ -152,7 +152,11 @@ pub fn parse_journal_detail_yaml(yaml: &yaml_rust::Yaml) -> JournalDetail {
         "attr" => JournalDetail::Attr(parse_journal_detail_attr_yaml(yaml)),
         "attachment" => JournalDetail::Attachment(JournalDetailAttachment {
             id: AttachmentId::new(as_u16(yaml, "name")),
-            change: match (yaml["old"].as_str(), yaml["new"].as_str()) {
+            // Redmineの変換と同じく、空文字のファイル名は値がないものとして扱う。
+            change: match (
+                yaml["old"].as_str().filter(|filename| !filename.is_empty()),
+                yaml["new"].as_str().filter(|filename| !filename.is_empty()),
+            ) {
                 (None, Some(filename)) => JournalDetailAttachmentChange::Added {
                     filename: filename.to_string(),
                 },
@@ -492,6 +496,21 @@ mod tests {
         assert_eq!(
             attachment.change,
             JournalDetailAttachmentChange::Added {
+                filename: "sample.png".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn parse_journal_detail_treats_an_empty_filename_as_no_value() {
+        let yaml = parse_yaml("type: attachment\nname: 1\nold: sample.png\nnew: ''");
+
+        let JournalDetail::Attachment(attachment) = parse_journal_detail_yaml(&yaml) else {
+            panic!("attachment detail was not parsed");
+        };
+        assert_eq!(
+            attachment.change,
+            JournalDetailAttachmentChange::Deleted {
                 filename: "sample.png".to_string()
             }
         );
