@@ -1,11 +1,11 @@
 //! Componentが要求した外部副作用をnative/Web共通runnerから起動する。
 
-use std::{cell::RefCell, collections::VecDeque, io, rc::Rc, sync::Arc};
+use std::{cell::RefCell, collections::VecDeque, io, rc::Rc};
 
 use ratatui::layout::Rect;
 
 use crate::{
-    clients::redmine::RedmineClient,
+    clients::{local_file::LocalFileClient, redmine::RedmineClient},
     components::{AppComponent, RequestSink},
     platform::{
         editor::{EditorOutcome, EditorRequest, TextEditor},
@@ -13,7 +13,7 @@ use crate::{
         runtime::{BackgroundSpawner, LocalTask},
     },
     stores::{Dispatcher, NoticeAction, NoticeId},
-    usecases::{UsecaseOutput, UsecaseRequest, UsecaseTask, start_usecase},
+    usecases::{UsecaseClients, UsecaseOutput, UsecaseRequest, UsecaseTask, start_usecase},
 };
 
 use super::lifecycle::{handle_host_event, update};
@@ -22,19 +22,20 @@ pub(crate) type EditorSession<'a> = LocalTask<'a, io::Result<EditorOutcome>>;
 
 /// Componentが`sink`に書いた要求を処理する。Usecaseの要求をすべて起動した後にeditorを起動する。
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn handle_component_requests<'a, S, C, E, H>(
+pub(crate) fn handle_component_requests<'a, S, C, F, E, H>(
     sink: &mut RequestSink,
     requests: &mut VecDeque<UsecaseRequest>,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
-    client: Arc<C>,
+    clients: UsecaseClients<C, F>,
     editor: &'a E,
     editor_session: &mut Option<EditorSession<'a>>,
     host: &mut H,
 ) where
     S: BackgroundSpawner<Output = UsecaseOutput>,
     C: RedmineClient + Send + Sync + 'static,
+    F: LocalFileClient + Send + Sync + 'static,
     E: TextEditor,
     H: PlatformHost,
 {
@@ -45,7 +46,7 @@ pub(crate) fn handle_component_requests<'a, S, C, E, H>(
         app_component,
         dispatcher.clone(),
         spawner,
-        client,
+        clients,
         area,
     );
     if let Some(request) = sink.take_editor() {
@@ -65,14 +66,14 @@ pub(crate) fn handle_component_requests<'a, S, C, E, H>(
 /// Usecaseが起動時にdispatchするActionを、この入力の後のupdateで反映済みにするため、
 /// updateより先に要求を起動する。アプリを続ける場合にtrueを返す。
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn handle_input<'a, S, C, E, H>(
+pub(crate) fn handle_input<'a, S, C, F, E, H>(
     event: HostEvent,
     sink: &mut RequestSink,
     requests: &mut VecDeque<UsecaseRequest>,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
-    client: Arc<C>,
+    clients: UsecaseClients<C, F>,
     editor: &'a E,
     editor_session: &mut Option<EditorSession<'a>>,
     host: &mut H,
@@ -80,6 +81,7 @@ pub(crate) fn handle_input<'a, S, C, E, H>(
 where
     S: BackgroundSpawner<Output = UsecaseOutput>,
     C: RedmineClient + Send + Sync + 'static,
+    F: LocalFileClient + Send + Sync + 'static,
     E: TextEditor,
     H: PlatformHost,
 {
@@ -90,7 +92,7 @@ where
         app_component,
         dispatcher.clone(),
         spawner,
-        client,
+        clients,
         editor,
         editor_session,
         host,
@@ -153,21 +155,22 @@ pub(crate) fn editor_failure_notice_action(error: &dyn std::fmt::Display) -> Not
 ///
 /// 次の要求を起動する時点で前の要求の起動Actionを消費済みにするため、同じIssueへの
 /// `FetchIssue`が続いても、2件目は1件目の取得開始を観測して起動しない。
-pub(crate) fn drain_requests<S, C>(
+pub(crate) fn drain_requests<S, C, F>(
     requests: &mut VecDeque<UsecaseRequest>,
     app_component: &mut AppComponent,
     dispatcher: Rc<RefCell<Dispatcher>>,
     spawner: &S,
-    client: Arc<C>,
+    clients: UsecaseClients<C, F>,
     area: Rect,
 ) where
     S: BackgroundSpawner<Output = UsecaseOutput>,
     C: RedmineClient + Send + Sync + 'static,
+    F: LocalFileClient + Send + Sync + 'static,
 {
     while let Some(request) = requests.pop_front() {
         spawn_usecase(
             spawner,
-            start_usecase(request, dispatcher.clone(), client.clone()),
+            start_usecase(request, dispatcher.clone(), clients.clone()),
         );
         update(dispatcher.clone(), app_component, area);
     }

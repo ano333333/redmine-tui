@@ -3,7 +3,7 @@
 use std::{cell::RefCell, process::ExitCode, rc::Rc, sync::Arc};
 
 use crate::{
-    clients::redmine::DefaultRedmineClient,
+    clients::{local_file::native::NativeLocalFileClient, redmine::DefaultRedmineClient},
     platform::editor::native::NativeTextEditor,
     platform::host::native::{NativePlatformHost, install_panic_hook},
     platform::redmine_config::redmine_connection_config_from_env,
@@ -11,7 +11,7 @@ use crate::{
     runner::{RunError, lifecycle::consume_initial_actions, run as run_app},
     stores::Dispatcher,
     trace_dbg,
-    usecases::redmine::load_initial_entities,
+    usecases::{UsecaseClients, redmine::load_initial_entities},
 };
 
 struct TerminalRestoreGuard;
@@ -60,7 +60,11 @@ pub(crate) fn run() -> ExitCode {
     // runのFutureが保持するeditor sessionを先に破棄し、以降のどのreturnでもterminalを復帰する。
     let _terminal_restore = TerminalRestoreGuard;
     let editor = NativeTextEditor::from_environment();
-    match spawner.block_on(run_app(&mut host, &editor, &spawner, client, dispatcher)) {
+    let clients = UsecaseClients {
+        redmine: client,
+        local_file: Arc::new(NativeLocalFileClient),
+    };
+    match spawner.block_on(run_app(&mut host, &editor, &spawner, clients, dispatcher)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(RunError::WorkerPanicked(message)) => {
             eprintln!("worker task panicked: {message}");

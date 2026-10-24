@@ -87,8 +87,11 @@ impl IssueComponent {
             ) {
                 return Some(EventProcessResult::FetchRequested { id: self.issue_id });
             }
-            // 同じIssueの保存はIssue属性とJournalを合わせて1件に限るため、Journalの保存中は再試行しない。
-            if store.has_uploading_journal(self.issue_id) {
+            // 同じIssueの保存はIssue属性、Journal、添付ファイルの追加を合わせて1件に限るため、
+            // Journalの保存中や添付ファイルの追加中は再試行しない。
+            if store.has_uploading_journal(self.issue_id)
+                || store.try_get_attachment_upload(self.issue_id).is_some()
+            {
                 return None;
             }
             return store
@@ -151,7 +154,7 @@ mod tests {
     use super::{EventProcessResult, IssueComponent, IssueWidget};
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
     use crate::{
-        stores::{Action, Dispatcher, IssueAction, JournalAction},
+        stores::{Action, AttachmentAction, Dispatcher, IssueAction, JournalAction},
         test_support::render_snapshot,
     };
     use std::{
@@ -333,6 +336,49 @@ mod tests {
             }
             .into(),
             JournalAction::StartLocalUpload { issue_id: 3.into() }.into(),
+        ] {
+            consume(&d, action);
+        }
+
+        assert_eq!(
+            component.process_event(key(KeyCode::Char('r')), d.clone()),
+            None
+        );
+    }
+
+    #[test]
+    fn r_does_not_retry_the_confirmation_while_an_attachment_is_uploading() {
+        let d = dispatcher();
+        crate::test_support::dispatch_loaded_issue(
+            &mut d.borrow_mut(),
+            crate::test_support::sample_parent_issue(),
+        );
+        let mut component = component(&d, 3);
+        for action in [
+            Action::from(IssueAction::UpdateDescription {
+                id: 3.into(),
+                body: "local".to_string(),
+            }),
+            IssueAction::StartUpload { id: 3.into() }.into(),
+        ] {
+            consume(&d, action);
+        }
+        let diffs = d.borrow().store().get_issue_property_diffs(3).to_vec();
+        for action in [
+            Action::from(IssueAction::UploadPutSucceeded {
+                id: 3.into(),
+                diffs,
+            }),
+            IssueAction::UploadConfirmFailed {
+                id: 3.into(),
+                message: "offline".to_string(),
+            }
+            .into(),
+            AttachmentAction::StartUpload {
+                issue_id: 3.into(),
+                filename: "a.png".to_string(),
+            }
+            .into(),
         ] {
             consume(&d, action);
         }

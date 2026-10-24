@@ -4,8 +4,8 @@ use super::super::journal_detail_conversion::{RedmineJournalDetail, try_into_dom
 use super::expect_error;
 use crate::clients::redmine::RedmineClientError;
 use crate::vos::{
-    CategoryId, IssueId, IssueStatusId, JournalDetailAttr, PriorityId, ProjectId, TargetVersionId,
-    TrackerId, UserId,
+    AttachmentId, CategoryId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttachmentChange,
+    JournalDetailAttr, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
 };
 
 fn detail(name: &str, old_value: Option<&str>, new_value: Option<&str>) -> RedmineJournalDetail {
@@ -21,7 +21,7 @@ fn detail(name: &str, old_value: Option<&str>, new_value: Option<&str>) -> Redmi
 fn status_id_attr_is_converted() {
     let actual = try_into_domain(detail("status_id", Some("1"), Some("2")))
         .expect("status_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("status_id attr was skipped");
     };
 
@@ -38,7 +38,7 @@ fn status_id_attr_is_converted() {
 fn tracker_id_attr_is_converted() {
     let actual = try_into_domain(detail("tracker_id", Some("3"), Some("4")))
         .expect("tracker_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("tracker_id attr was skipped");
     };
 
@@ -55,7 +55,7 @@ fn tracker_id_attr_is_converted() {
 fn project_id_attr_is_converted() {
     let actual = try_into_domain(detail("project_id", Some("5"), Some("6")))
         .expect("project_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("project_id attr was skipped");
     };
 
@@ -72,7 +72,7 @@ fn project_id_attr_is_converted() {
 fn subject_attr_is_converted_with_missing_value_as_empty_string() {
     let actual = try_into_domain(detail("subject", Some("Old title"), None))
         .expect("subject conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("subject attr was skipped");
     };
 
@@ -89,7 +89,7 @@ fn subject_attr_is_converted_with_missing_value_as_empty_string() {
 fn description_attr_is_converted_with_missing_values_as_empty_strings() {
     let actual =
         try_into_domain(detail("description", None, None)).expect("description conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("description attr was skipped");
     };
 
@@ -106,7 +106,7 @@ fn description_attr_is_converted_with_missing_values_as_empty_strings() {
 fn priority_id_attr_is_converted() {
     let actual = try_into_domain(detail("priority_id", Some("7"), Some("8")))
         .expect("priority_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("priority_id attr was skipped");
     };
 
@@ -123,7 +123,7 @@ fn priority_id_attr_is_converted() {
 fn author_id_attr_is_converted() {
     let actual = try_into_domain(detail("author_id", Some("9"), Some("10")))
         .expect("author_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("author_id attr was skipped");
     };
 
@@ -143,6 +143,70 @@ fn non_attr_property_is_skipped() {
 
     let actual = try_into_domain(skip_detail).expect("non-attr property conversion failed");
     assert!(actual.is_none());
+}
+
+fn attachment_detail(
+    name: &str,
+    old_value: Option<&str>,
+    new_value: Option<&str>,
+) -> RedmineJournalDetail {
+    RedmineJournalDetail {
+        property: "attachment".to_string(),
+        ..detail(name, old_value, new_value)
+    }
+}
+
+#[test]
+fn added_attachment_is_converted() {
+    let actual = try_into_domain(attachment_detail("12", None, Some("sample.png")))
+        .expect("attachment conversion failed");
+    let Some(JournalDetail::Attachment(attachment)) = actual else {
+        panic!("attachment detail was not converted");
+    };
+
+    assert_eq!(attachment.id, AttachmentId::new(12));
+    assert_eq!(
+        attachment.change,
+        JournalDetailAttachmentChange::Added {
+            filename: "sample.png".to_string()
+        }
+    );
+}
+
+#[test]
+fn deleted_attachment_with_empty_new_value_is_converted() {
+    let actual = try_into_domain(attachment_detail("12", Some("sample.png"), Some("")))
+        .expect("attachment conversion failed");
+    let Some(JournalDetail::Attachment(attachment)) = actual else {
+        panic!("attachment detail was not converted");
+    };
+
+    assert_eq!(
+        attachment.change,
+        JournalDetailAttachmentChange::Deleted {
+            filename: "sample.png".to_string()
+        }
+    );
+}
+
+#[test]
+fn attachment_detail_with_both_filenames_maps_to_client_error() {
+    let actual_error = expect_error(
+        try_into_domain(attachment_detail("12", Some("old.png"), Some("new.png"))),
+        "attachment detail with both filenames was accepted",
+    );
+
+    assert!(matches!(actual_error, RedmineClientError::Client { .. }));
+}
+
+#[test]
+fn non_numeric_attachment_id_maps_to_client_error() {
+    let actual_error = expect_error(
+        try_into_domain(attachment_detail("sample.png", None, Some("sample.png"))),
+        "non-numeric attachment id was accepted",
+    );
+
+    assert!(matches!(actual_error, RedmineClientError::Client { .. }));
 }
 
 #[test]
@@ -197,7 +261,7 @@ fn local_datetime_at(year: i32, month: u32, day: u32) -> DateTime<Local> {
 fn category_id_attr_is_converted() {
     let actual = try_into_domain(detail("category_id", Some("1"), Some("2")))
         .expect("category_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("category_id attr was skipped");
     };
 
@@ -214,7 +278,7 @@ fn category_id_attr_is_converted() {
 fn category_id_attr_with_missing_or_empty_values_is_converted_to_none() {
     let actual = try_into_domain(detail("category_id", None, Some("")))
         .expect("category_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("category_id attr was skipped");
     };
 
@@ -231,7 +295,7 @@ fn category_id_attr_with_missing_or_empty_values_is_converted_to_none() {
 fn assigned_to_id_attr_is_converted() {
     let actual = try_into_domain(detail("assigned_to_id", Some("3"), Some("4")))
         .expect("assigned_to_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("assigned_to_id attr was skipped");
     };
 
@@ -248,7 +312,7 @@ fn assigned_to_id_attr_is_converted() {
 fn assigned_to_id_attr_with_missing_or_empty_values_is_converted_to_none() {
     let actual = try_into_domain(detail("assigned_to_id", None, Some("")))
         .expect("assigned_to_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("assigned_to_id attr was skipped");
     };
 
@@ -265,7 +329,7 @@ fn assigned_to_id_attr_with_missing_or_empty_values_is_converted_to_none() {
 fn fixed_version_id_attr_is_converted() {
     let actual = try_into_domain(detail("fixed_version_id", Some("5"), Some("6")))
         .expect("fixed_version_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("fixed_version_id attr was skipped");
     };
 
@@ -282,7 +346,7 @@ fn fixed_version_id_attr_is_converted() {
 fn fixed_version_id_attr_with_missing_or_empty_values_is_converted_to_none() {
     let actual = try_into_domain(detail("fixed_version_id", None, Some("")))
         .expect("fixed_version_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("fixed_version_id attr was skipped");
     };
 
@@ -299,7 +363,7 @@ fn fixed_version_id_attr_with_missing_or_empty_values_is_converted_to_none() {
 fn start_date_attr_is_converted() {
     let actual = try_into_domain(detail("start_date", Some("2026-09-01"), Some("2026-09-10")))
         .expect("start_date conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("start_date attr was skipped");
     };
 
@@ -316,7 +380,7 @@ fn start_date_attr_is_converted() {
 fn start_date_attr_with_missing_or_empty_values_is_converted_to_none() {
     let actual = try_into_domain(detail("start_date", None, Some("")))
         .expect("start_date conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("start_date attr was skipped");
     };
 
@@ -333,7 +397,7 @@ fn start_date_attr_with_missing_or_empty_values_is_converted_to_none() {
 fn due_date_attr_is_converted() {
     let actual = try_into_domain(detail("due_date", Some("2026-09-02"), Some("2026-09-11")))
         .expect("due_date conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("due_date attr was skipped");
     };
 
@@ -350,7 +414,7 @@ fn due_date_attr_is_converted() {
 fn due_date_attr_with_missing_or_empty_values_is_converted_to_none() {
     let actual =
         try_into_domain(detail("due_date", None, Some(""))).expect("due_date conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("due_date attr was skipped");
     };
 
@@ -367,7 +431,7 @@ fn due_date_attr_with_missing_or_empty_values_is_converted_to_none() {
 fn done_ratio_attr_is_converted() {
     let actual = try_into_domain(detail("done_ratio", Some("30"), Some("50")))
         .expect("done_ratio conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("done_ratio attr was skipped");
     };
 
@@ -384,7 +448,7 @@ fn done_ratio_attr_is_converted() {
 fn estimated_hours_attr_is_converted_from_float_values() {
     let actual = try_into_domain(detail("estimated_hours", Some("1.5"), Some("2")))
         .expect("estimated_hours conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("estimated_hours attr was skipped");
     };
 
@@ -401,7 +465,7 @@ fn estimated_hours_attr_is_converted_from_float_values() {
 fn estimated_hours_attr_with_missing_or_empty_values_is_converted_to_none() {
     let actual = try_into_domain(detail("estimated_hours", None, Some("")))
         .expect("estimated_hours conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("estimated_hours attr was skipped");
     };
 
@@ -418,7 +482,7 @@ fn estimated_hours_attr_with_missing_or_empty_values_is_converted_to_none() {
 fn parent_id_attr_is_converted() {
     let actual = try_into_domain(detail("parent_id", Some("7"), Some("8")))
         .expect("parent_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("parent_id attr was skipped");
     };
 
@@ -435,7 +499,7 @@ fn parent_id_attr_is_converted() {
 fn parent_id_attr_with_missing_or_empty_values_is_converted_to_none() {
     let actual =
         try_into_domain(detail("parent_id", None, Some(""))).expect("parent_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("parent_id attr was skipped");
     };
 
@@ -452,7 +516,7 @@ fn parent_id_attr_with_missing_or_empty_values_is_converted_to_none() {
 fn child_id_attr_for_an_added_child_is_converted() {
     let actual =
         try_into_domain(detail("child_id", None, Some("4"))).expect("child_id conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("child_id attr was skipped");
     };
 
@@ -469,7 +533,7 @@ fn child_id_attr_for_an_added_child_is_converted() {
 fn is_private_attr_is_converted() {
     let actual = try_into_domain(detail("is_private", Some("0"), Some("1")))
         .expect("is_private conversion failed");
-    let Some(attr) = actual else {
+    let Some(JournalDetail::Attr(attr)) = actual else {
         panic!("is_private attr was skipped");
     };
 

@@ -199,7 +199,7 @@ fn assert_uploading_without_conflict(dispatcher: &Dispatcher, id: IssueId) {
 }
 
 /// 応答IDの不一致はサーバー側の外部データ異常として、取得失敗と同じく扱う。
-async fn fetch_issue_for_upload(
+pub(super) async fn fetch_issue_for_upload(
     client: &impl RedmineClient,
     id: IssueId,
 ) -> Result<FetchedIssue, String> {
@@ -330,6 +330,23 @@ mod tests {
         }
 
         async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn upload_file(
+            &self,
+            _: &str,
+            _: Vec<u8>,
+        ) -> Result<crate::vos::UploadToken, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn attach_upload(
+            &self,
+            _: IssueId,
+            _: &crate::vos::UploadToken,
+            _: &str,
+        ) -> Result<(), RedmineClientError> {
             unreachable!()
         }
 

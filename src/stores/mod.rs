@@ -1,3 +1,4 @@
+mod issue_attachments;
 mod issue_journals;
 mod issue_store;
 mod journal_state;
@@ -5,6 +6,7 @@ mod notice_store;
 mod project_issues_store;
 mod store;
 
+pub use issue_attachments::{AttachmentAction, AttachmentUpload, AttachmentUploadStage};
 pub use issue_journals::JournalAction;
 pub use issue_store::{IssueAction, IssueFetchState, IssueState};
 pub use journal_state::{
@@ -18,6 +20,8 @@ pub use store::{Action, Dispatcher, Store};
 // Journal保存などの失敗発生源が接続されるまで、Notice系の公開APIは主にテストから利用される。
 pub use notice_store::{Notice, NoticeAction, NoticeId};
 
+#[cfg(test)]
+mod issue_attachments_tests;
 #[cfg(test)]
 mod issue_journals_tests;
 #[cfg(test)]

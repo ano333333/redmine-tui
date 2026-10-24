@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local};
 
-use crate::entities::{Issue, Journal};
+use crate::entities::{Attachment, Issue, Journal};
 use crate::vos::issue_property_diff::fold_property_diffs;
 use crate::vos::{
     CategoryId, IssueId, IssuePropertyDiff, PriorityId, TargetVersionId, TrackerId, UserId,
@@ -27,6 +27,8 @@ pub struct IssueAggregate {
     pub parent_id: Option<IssueId>,
     /// 取得順のJournal。
     pub journals: Vec<Journal>,
+    /// 取得順の添付ファイル。
+    pub attachments: Vec<Attachment>,
 }
 
 impl IssueAggregate {

@@ -9,6 +9,9 @@ use crate::platform::input::{InputEvent, KeyCode};
 use crate::stores::{Dispatcher, IssueState, Store};
 use crate::vos::{IssueId, JournalId};
 
+use super::attachments_list::AttachmentsListComponent;
+use super::attachments_list::EventProcessResult as AttachmentsListEventProcessResult;
+use super::attachments_list::FocusEvent as AttachmentsListFocusEvent;
 use super::body::BodyComponent;
 use super::body::EventProcessResult as BodyEventProcessResult;
 use super::body::FocusEvent as BodyFocusEvent;
@@ -42,6 +45,9 @@ pub enum EventProcessResult {
         notes: String,
     },
     CreateLocalJournalRequested {
+        issue_id: IssueId,
+    },
+    AddAttachmentRequested {
         issue_id: IssueId,
     },
     SaveLocalJournalRequested {
@@ -148,9 +154,10 @@ mod tests {
         );
     }
 
-    /// Property(2カラム時の左カラム8行) -> Body -> ChildrenList -> JournalsList(先頭Journalのdetail)
-    /// の順にフォーカスを送り、JournalsList内の1件目JournalのNotes位置に到達させる
-    const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 47;
+    /// Property(2カラム時の左カラム8行) -> Body -> AttachmentsList(追加行) -> ChildrenList
+    /// -> JournalsList(先頭Journalのdetail)の順にフォーカスを送り、JournalsList内の1件目Journalの
+    /// Notes位置に到達させる
+    const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 48;
 
     fn dispatcher_with_issue_and_journals() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = dispatcher();
@@ -298,6 +305,60 @@ mod tests {
         assert!(matches!(result, Some(EventProcessResult::StartIssueUpload)));
     }
 
+    /// Property(2カラム時の左カラム8行) -> Body -> AttachmentsList(追加行)の順にフォーカスを送る
+    const J_PRESSES_TO_ADD_ATTACHMENT_ROW: usize = J_PRESSES_TO_FIRST_JOURNAL_NOTES - 4;
+
+    fn press_j_to_add_attachment_row(
+        component: &mut IssueDetailComponent,
+        dispatcher: &Rc<RefCell<Dispatcher>>,
+    ) {
+        for _ in 0..J_PRESSES_TO_ADD_ATTACHMENT_ROW {
+            component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+            component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        }
+    }
+
+    #[test]
+    fn process_event_enter_on_add_attachment_row_returns_add_attachment_requested() {
+        let dispatcher = dispatcher_with_issue_and_journals();
+        let mut component = IssueDetailComponent::new(3);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        press_j_to_add_attachment_row(&mut component, &dispatcher);
+
+        let result = component.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+
+        assert_eq!(
+            result,
+            Some(EventProcessResult::AddAttachmentRequested {
+                issue_id: IssueId::new(3)
+            })
+        );
+    }
+
+    #[test]
+    fn process_event_during_attachment_upload_consumes_enter_and_ctrl_s() {
+        let dispatcher = dispatcher_with_issue_and_journals();
+        let mut component = IssueDetailComponent::new(3);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        press_j_to_add_attachment_row(&mut component, &dispatcher);
+        dispatcher
+            .borrow_mut()
+            .dispatch(crate::stores::AttachmentAction::StartUpload {
+                issue_id: IssueId::new(3),
+                filename: "a.png".to_string(),
+            });
+        dispatcher.borrow_mut().consume_action();
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        // 追加中の行が増えたため、追加行へ移る。
+        component.process_event(key_event(KeyCode::Char('j')), dispatcher.clone());
+
+        let enter = component.process_event(key_event(KeyCode::Enter), dispatcher.clone());
+        let ctrl_s = component.process_event(ctrl_s_event(), dispatcher.clone());
+
+        assert_eq!(enter, Some(EventProcessResult::Handled));
+        assert_eq!(ctrl_s, Some(EventProcessResult::Handled));
+    }
+
     #[test]
     fn process_event_e_on_journals_list_notes_returns_edit_journal_requested() {
         let dispatcher = dispatcher_with_issue_and_journals();
@@ -335,6 +396,7 @@ enum FocusedComponent {
     Header,
     Property,
     Body,
+    AttachmentsList,
     ChildrenList,
     JournalsList,
 }
@@ -344,6 +406,7 @@ pub struct IssueDetailComponent {
     header: HeaderComponent,
     property: PropertyComponent,
     body: BodyComponent,
+    attachments_list: AttachmentsListComponent,
     children_list: ChildrenListComponent,
     journals_list: JournalsListComponent,
     widget_state: IssueDetailWidgetState,
@@ -362,6 +425,7 @@ impl IssueDetailComponent {
             header: HeaderComponent::new(issue_id),
             property: PropertyComponent::new(issue_id),
             body: BodyComponent::new(issue_id),
+            attachments_list: AttachmentsListComponent::new(issue_id),
             children_list: ChildrenListComponent::new(issue_id),
             journals_list: JournalsListComponent::new(issue_id),
             widget_state: IssueDetailWidgetState::new(),
@@ -390,6 +454,7 @@ impl IssueDetailComponent {
                     store.store().try_get_issue_state(self.id),
                     Some(IssueState::Uploading)
                 ) || store.store().has_uploading_journal(self.id)
+                    || store.store().try_get_attachment_upload(self.id).is_some()
                 {
                     return Some(EventProcessResult::Handled);
                 }
@@ -525,9 +590,9 @@ impl IssueDetailComponent {
                     }
                     Some(BodyEventProcessResult::CursorLeavedFromBelow { .. }) => {
                         self.body.focus_event(BodyFocusEvent::Unfocused);
-                        self.focused_component = FocusedComponent::ChildrenList;
-                        self.children_list
-                            .focus_event(ChildrenListFocusEvent::CursorEnteredFromAbove);
+                        self.focused_component = FocusedComponent::AttachmentsList;
+                        self.attachments_list
+                            .focus_event(AttachmentsListFocusEvent::CursorEnteredFromAbove);
                         return Some(EventProcessResult::Handled);
                     }
                     Some(BodyEventProcessResult::EditRequested { id, body }) => {
@@ -539,15 +604,49 @@ impl IssueDetailComponent {
                     None => {}
                 }
             }
+            FocusedComponent::AttachmentsList => {
+                let result = self.attachments_list.process_event(&event);
+                match result {
+                    Some(AttachmentsListEventProcessResult::CursorLeavedFromAbove) => {
+                        self.attachments_list
+                            .focus_event(AttachmentsListFocusEvent::Unfocused);
+                        self.focused_component = FocusedComponent::Body;
+                        self.body
+                            .focus_event(BodyFocusEvent::CursorEnteredFromBelow { x: 0 });
+                        return Some(EventProcessResult::Handled);
+                    }
+                    Some(AttachmentsListEventProcessResult::CursorLeavedFromBelow) => {
+                        self.attachments_list
+                            .focus_event(AttachmentsListFocusEvent::Unfocused);
+                        self.focused_component = FocusedComponent::ChildrenList;
+                        self.children_list
+                            .focus_event(ChildrenListFocusEvent::CursorEnteredFromAbove);
+                        return Some(EventProcessResult::Handled);
+                    }
+                    Some(AttachmentsListEventProcessResult::AddRequested) => {
+                        // 保存中は追加行が無効なので、押下を消費するだけにする
+                        if !self.attachments_list.can_add(dispatcher.borrow().store()) {
+                            return Some(EventProcessResult::Handled);
+                        }
+                        return Some(EventProcessResult::AddAttachmentRequested {
+                            issue_id: self.id,
+                        });
+                    }
+                    Some(AttachmentsListEventProcessResult::Handled) => {
+                        return Some(EventProcessResult::Handled);
+                    }
+                    None => {}
+                }
+            }
             FocusedComponent::ChildrenList => {
                 let result = self.children_list.process_event(&event);
                 match result {
                     Some(ChildrenListEventProcessResult::CursorLeavedFromAbove) => {
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::Unfocused);
-                        self.focused_component = FocusedComponent::Body;
-                        self.body
-                            .focus_event(BodyFocusEvent::CursorEnteredFromBelow { x: 0 });
+                        self.focused_component = FocusedComponent::AttachmentsList;
+                        self.attachments_list
+                            .focus_event(AttachmentsListFocusEvent::CursorEnteredFromBelow);
                         return Some(EventProcessResult::Handled);
                     }
                     Some(ChildrenListEventProcessResult::CursorLeavedFromBelow) => {
@@ -653,6 +752,7 @@ impl IssueDetailComponent {
         self.header.update(store, self.width);
         self.property.update(self.width);
         self.body.update(issue.description(), self.width);
+        self.attachments_list.update(store);
         self.children_list.update(store);
 
         let entries = store.get_remote_journals(self.id);
@@ -681,6 +781,7 @@ impl IssueDetailComponent {
             self.header.create_widget(store),
             self.property.create_widget(store),
             self.body.create_widget(),
+            self.attachments_list.create_widget(store),
             self.children_list.create_widget(store),
             self.journals_list.create_widget(store),
             &self.widget_state,
@@ -719,6 +820,11 @@ impl IssueDetailComponent {
             return self.body.get_cursor_position() + offset;
         }
         offset.y += self.body.line_count(self.width) as i32 + 1;
+
+        if self.focused_component == FocusedComponent::AttachmentsList {
+            return self.attachments_list.get_cursor_position() + offset;
+        }
+        offset.y += self.attachments_list.line_count(store) as i32;
 
         if self.focused_component == FocusedComponent::ChildrenList {
             return self.children_list.get_cursor_position() + offset;

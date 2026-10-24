@@ -31,7 +31,7 @@ use crate::entities::{
     TimeEntityActivity, Tracker, User,
 };
 use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId};
-use crate::test_support::sample_issue_aggregate;
+use crate::test_support::{sample_issue_aggregate, usecase_clients};
 use crate::vos::{self, IssueId, IssueStatusId, JournalId};
 
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, widgets::Widget};
@@ -75,7 +75,7 @@ fn start_request<C>(
 ) where
     C: RedmineClient + Send + Sync + 'static,
 {
-    if let Some(task) = start_usecase(request, dispatcher, client) {
+    if let Some(task) = start_usecase(request, dispatcher, usecase_clients(client)) {
         spawner.spawn(task);
     }
 }
@@ -480,6 +480,23 @@ impl RedmineClient for IssueUploadClient {
     }
 
     async fn get_categories(&self) -> std::result::Result<Vec<Category>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn upload_file(
+        &self,
+        _: &str,
+        _: Vec<u8>,
+    ) -> Result<crate::vos::UploadToken, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn attach_upload(
+        &self,
+        _: IssueId,
+        _: &crate::vos::UploadToken,
+        _: &str,
+    ) -> Result<(), RedmineClientError> {
         unreachable!()
     }
 
@@ -988,7 +1005,7 @@ fn route_completions_with_follow_ups<C>(
             app,
             dispatcher.clone(),
             spawner,
-            client.clone(),
+            usecase_clients(client.clone()),
             Rect::new(0, 0, 80, 24),
         );
     }
@@ -1315,6 +1332,23 @@ impl RedmineClient for FailingClient {
         Err(self.unauthorized())
     }
 
+    async fn upload_file(
+        &self,
+        _: &str,
+        _: Vec<u8>,
+    ) -> Result<crate::vos::UploadToken, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn attach_upload(
+        &self,
+        _: IssueId,
+        _: &crate::vos::UploadToken,
+        _: &str,
+    ) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
     async fn get_issue_statuses(
         &self,
     ) -> std::result::Result<Vec<IssueStatus>, RedmineClientError> {
@@ -1521,7 +1555,7 @@ async fn run_accepts_completion_actions_then_ticks_updates_draws_and_reads_input
         &mut host,
         &RunnerEditor,
         &spawner,
-        Arc::new(FailingClient),
+        usecase_clients(Arc::new(FailingClient)),
         dispatcher,
     )
     .await;
@@ -1570,7 +1604,7 @@ async fn run_starts_completion_requests_after_consuming_the_completion_actions()
         &mut host,
         &RunnerEditor,
         &spawner,
-        Arc::new(FailingClient),
+        usecase_clients(Arc::new(FailingClient)),
         dispatcher.clone(),
     )
     .await;
@@ -1603,7 +1637,7 @@ fn drain_requests_does_not_start_a_second_fetch_of_the_same_issue() {
         &mut app,
         dispatcher.clone(),
         &spawner,
-        Arc::new(FailingClient),
+        usecase_clients(Arc::new(FailingClient)),
         Rect::new(0, 0, 80, 24),
     );
 
@@ -1658,7 +1692,7 @@ async fn run_starts_startup_and_input_requests_before_drawing() {
         &mut host,
         &RunnerEditor,
         &spawner,
-        Arc::new(FailingClient),
+        usecase_clients(Arc::new(FailingClient)),
         dispatcher,
     )
     .await;
@@ -1698,7 +1732,7 @@ fn component_requests_start_usecases_before_the_editor() {
         &mut app,
         dispatcher,
         &spawner,
-        Arc::new(FailingClient),
+        usecase_clients(Arc::new(FailingClient)),
         &RunnerEditor,
         &mut editor_session,
         &mut host,
@@ -1766,7 +1800,7 @@ fn continuing_an_issue_conflict_does_not_reopen_the_conflict_popup() {
             &mut app,
             dispatcher.clone(),
             &spawner,
-            client.clone(),
+            usecase_clients(client.clone()),
             &RunnerEditor,
             &mut editor_session,
             &mut host,
@@ -1834,6 +1868,23 @@ impl RedmineClient for GatedUploadClient {
         unreachable!()
     }
 
+    async fn upload_file(
+        &self,
+        _: &str,
+        _: Vec<u8>,
+    ) -> Result<crate::vos::UploadToken, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn attach_upload(
+        &self,
+        _: IssueId,
+        _: &crate::vos::UploadToken,
+        _: &str,
+    ) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
     async fn get_issue_statuses(
         &self,
     ) -> std::result::Result<Vec<IssueStatus>, RedmineClientError> {
@@ -1896,7 +1947,7 @@ fn issue_upload_applies_the_put_before_starting_the_confirmation_fetch() {
         &mut app,
         dispatcher.clone(),
         &spawner,
-        client.clone(),
+        usecase_clients(client.clone()),
         area,
     );
     accept_completion(&spawner, dispatcher.clone(), &mut app, &mut requests);
@@ -1905,7 +1956,7 @@ fn issue_upload_applies_the_put_before_starting_the_confirmation_fetch() {
         &mut app,
         dispatcher.clone(),
         &spawner,
-        client.clone(),
+        usecase_clients(client.clone()),
         area,
     );
 
@@ -1931,7 +1982,7 @@ fn issue_upload_applies_the_put_before_starting_the_confirmation_fetch() {
         &mut app,
         dispatcher.clone(),
         &spawner,
-        client.clone(),
+        usecase_clients(client.clone()),
         area,
     );
     let deadline = Instant::now() + Duration::from_secs(2);

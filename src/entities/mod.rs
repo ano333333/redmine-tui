@@ -1,3 +1,4 @@
+pub mod attachment;
 pub mod category;
 pub mod issue;
 pub mod issue_aggregate;
@@ -12,6 +13,7 @@ pub mod time_entity_activity;
 pub mod tracker;
 pub mod user;
 
+pub use attachment::Attachment;
 pub use category::Category;
 pub use issue::{Issue, ProjectIssuesPage};
 pub use issue_aggregate::IssueAggregate;

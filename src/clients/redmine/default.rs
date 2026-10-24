@@ -12,9 +12,10 @@ use crate::entities::{
 };
 use crate::vos::{
     CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalId, PriorityId, ProjectId,
-    TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    TargetVersionId, TimeEntityActivityId, TrackerId, UploadToken, UserId,
 };
 
+mod attachment_conversion;
 mod journal_conversion;
 mod journal_detail_conversion;
 mod named_entity;
@@ -103,6 +104,44 @@ impl DefaultRedmineClient {
         Ok(())
     }
 
+    async fn post_bytes_json<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+        content: Vec<u8>,
+    ) -> Result<T, RedmineClientError> {
+        let method = "POST";
+        let url = format!("{}{}", self.host_url, path);
+        let response = self
+            .http_client
+            .post(&url)
+            .query(query)
+            .header("X-Redmine-API-Key", &self.access_token)
+            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+            .body(content)
+            .send()
+            .await
+            .map_err(map_request_error)?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let response_body = response.text().await.unwrap_or_else(|error| {
+                format!("failed to read Redmine error response body: {error}")
+            });
+            return map_response_status(
+                status,
+                RedmineHttpError {
+                    method: method.to_string(),
+                    url,
+                    status_code: status.as_u16(),
+                    response_body,
+                },
+            );
+        }
+
+        response.json().await.map_err(map_response_body_error)
+    }
+
     async fn get_paginated<R>(&self, path: &str) -> Result<Vec<R::Item>, RedmineClientError>
     where
         R: DeserializeOwned + PaginatedResponse,
@@ -144,7 +183,9 @@ impl RedmineClient for DefaultRedmineClient {
 
     async fn get_issue(&self, id: IssueId) -> Result<FetchedIssue, RedmineClientError> {
         let mut response: IssueResponse = self
-            .get_json(&format!("/issues/{id}.json?include=children,journals"))
+            .get_json(&format!(
+                "/issues/{id}.json?include=children,journals,attachments"
+            ))
             .await?;
 
         // Issue変換でresponse.issue全体を消費するため、子一覧を先に分離する。
@@ -196,6 +237,37 @@ impl RedmineClient for DefaultRedmineClient {
             &UpdateIssueNotesRequest {
                 issue: UpdateIssueNotes {
                     notes: notes.to_string(),
+                },
+            },
+        )
+        .await
+    }
+
+    async fn upload_file(
+        &self,
+        filename: &str,
+        content: Vec<u8>,
+    ) -> Result<UploadToken, RedmineClientError> {
+        let response: UploadResponse = self
+            .post_bytes_json("/uploads.json", &[("filename", filename)], content)
+            .await?;
+        Ok(UploadToken::new(response.upload.token))
+    }
+
+    async fn attach_upload(
+        &self,
+        issue_id: IssueId,
+        token: &UploadToken,
+        filename: &str,
+    ) -> Result<(), RedmineClientError> {
+        self.put_empty(
+            &format!("/issues/{}.json", issue_id.get()),
+            &AttachUploadRequest {
+                issue: AttachUpload {
+                    uploads: vec![IssueUpload {
+                        token: token.as_str().to_string(),
+                        filename: filename.to_string(),
+                    }],
                 },
             },
         )
@@ -328,7 +400,8 @@ fn map_response_status<T>(
         400 => Err(RedmineClientError::BadRequest { context }),
         401 => Err(RedmineClientError::Unauthorized { context }),
         403 | 404 => Err(RedmineClientError::NotFound { context }),
-        422 => Err(RedmineClientError::UnprocessableEntity { context }),
+        // ファイル送信では、Redmineの前段のproxyがサイズや形式を413・415で拒否することがある。
+        413 | 415 | 422 => Err(RedmineClientError::UnprocessableEntity { context }),
         500..=599 => Err(RedmineClientError::InternalServerError { context }),
         _ => panic!(
             "unexpected Redmine response status: {} for {} {} with body: {}",
@@ -637,6 +710,32 @@ impl From<RedmineProjectIssue> for Issue {
     }
 }
 
+#[derive(Deserialize)]
+struct UploadResponse {
+    upload: RedmineUpload,
+}
+
+#[derive(Deserialize)]
+struct RedmineUpload {
+    token: String,
+}
+
+#[derive(Serialize)]
+struct AttachUploadRequest {
+    issue: AttachUpload,
+}
+
+#[derive(Serialize)]
+struct AttachUpload {
+    uploads: Vec<IssueUpload>,
+}
+
+#[derive(Serialize)]
+struct IssueUpload {
+    token: String,
+    filename: String,
+}
+
 #[derive(Serialize)]
 struct UpdateJournalRequest {
     journal: UpdateJournal,
@@ -791,6 +890,8 @@ struct RedmineIssue {
     children: Vec<RedmineChild>,
     #[serde(default)]
     journals: Vec<journal_conversion::RedmineJournal>,
+    #[serde(default)]
+    attachments: Vec<attachment_conversion::RedmineAttachment>,
 }
 
 impl TryFrom<RedmineIssue> for IssueAggregate {
@@ -802,6 +903,11 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
             .journals
             .into_iter()
             .map(|journal| journal_conversion::convert_journal(issue_id, journal))
+            .collect::<Result<Vec<_>, RedmineClientError>>()?;
+        let attachments = value
+            .attachments
+            .into_iter()
+            .map(attachment_conversion::convert_attachment)
             .collect::<Result<Vec<_>, RedmineClientError>>()?;
         let issue = Issue {
             id: issue_id,
@@ -831,6 +937,7 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
             category_id: value.category.map(|category| CategoryId::new(category.id)),
             parent_id: value.parent.map(|parent| IssueId::new(parent.id)),
             journals,
+            attachments,
             issue,
         })
     }

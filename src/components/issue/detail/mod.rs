@@ -1,3 +1,4 @@
+pub mod attachments_list;
 pub mod body;
 pub mod children_list;
 pub mod component;

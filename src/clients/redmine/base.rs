@@ -11,7 +11,7 @@ use chrono::{DateTime, Local};
 use crate::vos::issue_property_diff::fold_property_diffs;
 use crate::vos::{
     CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, PriorityId, ProjectId,
-    TargetVersionId, TrackerId, UserId,
+    TargetVersionId, TrackerId, UploadToken, UserId,
 };
 
 pub(crate) const PROJECT_ISSUES_PAGE_LIMIT: usize = 50;
@@ -109,6 +109,23 @@ pub trait RedmineClient {
         &self,
         issue_id: IssueId,
         notes: &str,
+    ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
+    /// ファイル本体をRedmineへ送り、Issueへ紐付けるためのtokenを返す。
+    ///
+    /// 送ったファイルは、[`Self::attach_upload`]で紐付けるまでどのIssueにも属さない。
+    fn upload_file(
+        &self,
+        filename: &str,
+        content: Vec<u8>,
+    ) -> impl std::future::Future<Output = Result<UploadToken, RedmineClientError>> + Send;
+    /// `upload_file`で送ったファイルを、`filename`の名前でIssueに添付する。
+    ///
+    /// Issue属性とnotesは送信しない。
+    fn attach_upload(
+        &self,
+        issue_id: IssueId,
+        token: &UploadToken,
+        filename: &str,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
     fn get_issue_statuses(
         &self,

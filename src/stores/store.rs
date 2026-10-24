@@ -2,6 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use std::num::NonZeroUsize;
 
+use super::issue_attachments::{AttachmentAction, AttachmentUpload};
 use super::issue_journals::JournalAction;
 use super::issue_store::{IssueAction, IssueFetchState, IssueState, IssueStore};
 use super::journal_state::{
@@ -93,6 +94,7 @@ impl Store {
             } => self.issue_store.complete_fetch(id, issue, children),
             Action::ProjectIssues(action) => self.project_issues_store.consume_action(action),
             Action::Journal(action) => self.issue_store.consume_journal_action(action),
+            Action::Attachment(action) => self.issue_store.consume_attachment_action(action),
             Action::Notice(action) => self.notice_store.consume_action(action),
             Action::SyncUsers { users } => {
                 self.users = users.into_iter().map(|user| (user.id, user)).collect();
@@ -275,6 +277,13 @@ impl Store {
         self.issue_store.has_uploading_journal(issue_id)
     }
 
+    pub fn try_get_attachment_upload(
+        &self,
+        issue_id: impl Into<IssueId>,
+    ) -> Option<&AttachmentUpload> {
+        self.issue_store.try_get_attachment_upload(issue_id)
+    }
+
     /// Issueに登録されているRemote Journalを返す。
     ///
     /// # Panics
@@ -440,6 +449,7 @@ pub enum Action {
         time_entity_activities: Vec<TimeEntityActivity>,
     },
     Journal(JournalAction),
+    Attachment(AttachmentAction),
     Notice(NoticeAction),
 }
 
@@ -458,6 +468,12 @@ impl From<ProjectIssuesAction> for Action {
 impl From<JournalAction> for Action {
     fn from(action: JournalAction) -> Self {
         Self::Journal(action)
+    }
+}
+
+impl From<AttachmentAction> for Action {
+    fn from(action: AttachmentAction) -> Self {
+        Self::Attachment(action)
     }
 }
 

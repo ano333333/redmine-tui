@@ -59,3 +59,21 @@ fn panics_on_unexpected_response_status() {
         http_error(418, "http://localhost:8080"),
     );
 }
+
+#[test]
+fn rejected_upload_statuses_map_to_unprocessable_entity() {
+    for status in [
+        StatusCode::PAYLOAD_TOO_LARGE,
+        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+    ] {
+        let error = expect_error(
+            map_response_status::<()>(status, http_error(status.as_u16(), "http://localhost:8080")),
+            "rejected upload was accepted",
+        );
+
+        assert!(
+            matches!(error, RedmineClientError::UnprocessableEntity { .. }),
+            "unexpected error for {status}: {error:?}"
+        );
+    }
+}

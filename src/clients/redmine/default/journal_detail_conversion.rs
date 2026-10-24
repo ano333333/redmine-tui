@@ -1,9 +1,12 @@
-//! RedmineのJournal detail JSONで表されるIssue属性をdomain型へ変換する。
+//! RedmineのJournal detail JSONで表されるIssue属性と添付ファイルの変更をdomain型へ変換する。
 
 use serde::Deserialize;
 
 use crate::clients::redmine::RedmineClientError;
-use crate::vos::{IssueStatusId, JournalDetailAttr, PriorityId, ProjectId, TrackerId, UserId};
+use crate::vos::{
+    AttachmentId, IssueStatusId, JournalDetail, JournalDetailAttachment,
+    JournalDetailAttachmentChange, JournalDetailAttr, PriorityId, ProjectId, TrackerId, UserId,
+};
 
 use super::value_conversion;
 
@@ -19,21 +22,53 @@ pub(super) struct RedmineJournalDetail {
     pub(super) new_value: Option<String>,
 }
 
-/// Journal detail DTOを、対応するIssue属性の変更内容へ変換する。
+/// Journal detail DTOを、対応する変更内容へ変換する。
 ///
-/// `property`が`attr`でないdetailは、このクライアントの変換対象外として正常に
-/// 読み飛ばし、`Ok(None)`を返す。`attr`のうち対応する属性は`Ok(Some(_))`へ変換し、
+/// `property`が`attr`と`attachment`以外のdetailは、このクライアントの変換対象外として
+/// 正常に読み飛ばし、`Ok(None)`を返す。
+pub(super) fn try_into_domain(
+    detail: RedmineJournalDetail,
+) -> Result<Option<JournalDetail>, RedmineClientError> {
+    match detail.property.as_str() {
+        "attr" => convert_attr(detail).map(|attr| Some(JournalDetail::Attr(attr))),
+        "attachment" => {
+            convert_attachment(detail).map(|attachment| Some(JournalDetail::Attachment(attachment)))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Redmineは追加を変更後だけに、削除を変更前だけにファイル名を持つdetailで表す。
+///
+/// 添付ファイルIDが数値でない場合と、ファイル名が変更前と変更後の両方にあるか
+/// どちらにもない場合は[`RedmineClientError::Client`]を返す。空文字のファイル名は
+/// 値がないものとして扱う。
+fn convert_attachment(
+    detail: RedmineJournalDetail,
+) -> Result<JournalDetailAttachment, RedmineClientError> {
+    let id = AttachmentId::new(parse_id_value(&detail.name, &detail.name)?);
+    let old = detail.old_value.filter(|filename| !filename.is_empty());
+    let new = detail.new_value.filter(|filename| !filename.is_empty());
+    let change = match (old, new) {
+        (None, Some(filename)) => JournalDetailAttachmentChange::Added { filename },
+        (Some(filename), None) => JournalDetailAttachmentChange::Deleted { filename },
+        (old, new) => {
+            return Err(RedmineClientError::Client {
+                reason: format!(
+                    "unexpected Redmine attachment journal detail '{}': old {old:?}, new {new:?}",
+                    detail.name
+                ),
+            });
+        }
+    };
+    Ok(JournalDetailAttachment { id, change })
+}
+
 /// 未対応の属性名、またはID属性に数値以外の値が含まれる場合は
 /// [`RedmineClientError::Client`]を返す。日付形式が不正な場合、予定工数が整数でないか
 /// `u16`の範囲外の場合、非公開フラグが`0` / `1` / `false` / `true`以外の場合、
 /// 進捗率の値が欠落している場合も同じエラーを返す。
-pub(super) fn try_into_domain(
-    detail: RedmineJournalDetail,
-) -> Result<Option<JournalDetailAttr>, RedmineClientError> {
-    if detail.property != "attr" {
-        return Ok(None);
-    }
-
+fn convert_attr(detail: RedmineJournalDetail) -> Result<JournalDetailAttr, RedmineClientError> {
     let old_value = detail.old_value.unwrap_or_default();
     let new_value = detail.new_value.unwrap_or_default();
 
@@ -119,7 +154,7 @@ pub(super) fn try_into_domain(
         }
     };
 
-    Ok(Some(attr))
+    Ok(attr)
 }
 
 fn parse_id_value(name: &str, value: &str) -> Result<u16, RedmineClientError> {

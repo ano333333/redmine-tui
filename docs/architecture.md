@@ -19,6 +19,7 @@
   - `redmine/base.rs` は `RedmineClient` trait を定義し、 Redmine との通信のインターフェースを定義する。`redmine/default.rs` は `DefaultRedmineClient`（実 HTTP 実装）を定義する。
   - Issue 属性の保存は `IssueUpdate`（編集した属性だけを持つ更新要求）で渡す。送信しない属性は `None`、値の解除は `Some(None)` で表し、API が要求する項目の省略や空文字への変換は HTTP 実装が担う。
   - `redmine/demo/` は `DemoRedmineClient`（実 HTTP を行わず fixture を埋め込む memory mock）を定義する。
+  - `local_file/` は、添付ファイルとして送るローカルファイルを読む `LocalFileClient` trait を定義する。native 実装はファイルシステムから読み、Web デモ実装はどのパスにも埋め込みのサンプル画像を返す。
 - `src/components/`
   - TUI の画面部品を置く。
   - `app.rs` は全体 component と popup stack を統括する。
@@ -92,7 +93,7 @@ flowchart TD
 
 `usecases` は `components` に依存しない。
 Component は usecase の関数を呼んだり（例: `app.rs` が `issue_popup_options` を呼ぶ）、`UsecaseRequest` を作ったりするが、逆方向の依存は発生させない。Redmine の usecase は Component から呼ばず、`UsecaseRequest` で `runner` に起動を要求する。
-同様に `clients` は `stores` にも `usecases` にも依存せず、`RedmineClient` trait と HTTP 実装（`DefaultRedmineClient`）、`DemoRedmineClient` を提供する。`DemoRedmineClient` の fixture は `src/libs/yaml.rs` の parser を使うため `clients` から `libs` への依存がある。
+同様に `clients` は `stores` にも `usecases` にも依存せず、`RedmineClient` trait と HTTP 実装（`DefaultRedmineClient`）、`DemoRedmineClient`、`LocalFileClient` trait とその実装を提供する。Usecase が使う client は `UsecaseClients` にまとめ、起動処理が組み立てて `runner` に渡す。`DemoRedmineClient` の fixture は `src/libs/yaml.rs` の parser を使うため `clients` から `libs` への依存がある。
 
 ## Flux を参考にした構成
 
@@ -110,7 +111,7 @@ Store の更新は原則として Dispatcher を介して行う。
 - 親 `Store` は Issue と Journal の状態と更新処理を非公開の `IssueStore` に委譲する。Journal 本体は `IssueAggregate::journals` が所有し、`IssueStore` は取得済み Issue ごとに全 Journal の `RemoteJournalState`、0 件または 1 件の Local Journal、取得結果から消えた編集中 Journal の退避データ（DeletedJournal）を持つ。Journal の操作は Issue が取得済みの場合だけ受理する。
 - Issue 詳細の取得結果は `Action::IssueFetchSucceeded` 1件で Issue、Journal、子一覧を反映する。`IssueStore` は Journal の所有関係と重複を検査してから登録し、一部だけを反映した状態を作らない。
 - `IssueAggregate` は親 Issue の ID だけを持ち、子 Issue の ID 一覧は持たない。子一覧は詳細取得で得た `IssueChild`（ID・トラッカー・題名・再帰的な子一覧）として `IssueStore` が Issue ごとに保持する。子の詳細を取得済みなら、表示には `IssueView` の値を使う。
-- Issue 属性の状態（Synced / Edited / Uploading）は Journal の編集と下書きを含まない。Issue 属性の状態が変わっても Journal の作業は引き継ぐ。同じ Issue の upload は Issue 属性と Journal を合わせて1件に限り、`IssueStore` が検査する。
+- Issue 属性の状態（Synced / Edited / Uploading）は Journal の編集と下書きを含まない。Issue 属性の状態が変わっても Journal の作業は引き継ぐ。同じ Issue の upload は Issue 属性、Journal、添付ファイルの追加を合わせて1件に限り、`IssueStore` が検査する。
 - Component と usecase は `IssueStore` を直接参照せず、親 `Store` の Issue getter を通して entity、同期状態、diff、競合情報を取得する。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。
@@ -121,7 +122,7 @@ Store は、失敗または Action の不受理に見える分岐を以下に区
 
 - 異常系: 自プロセスの制御破綻を示す状態機械違反。`panic!` で即座に停止する。異常系を `Result` で呼び出し元へ返すのは、Flux を参考にした一方向データフローでは dispatch 時点と consume 時点が分離しておりエラーを返す先がないため採用しない。
 - 準異常系: 外部プロセスや外部データ起因の復帰可能な失敗。message を Action に載せ、状態復帰と notice によるユーザー通知を行う。失敗後の再試行に必要な状態がある場合は、失敗 Action によって対象の状態機械を再試行可能な状態へ戻し、message を状態の一部として保持する。
-- stale completion: 重複を許した非同期要求の追い越し。request ID の一致判定で破棄し、暗黙の状態判定では破棄しない。現時点でこれに該当するのは `ProjectIssuesStore` のみ。`IssueAction` と `JournalAction` は重複を事前条件で排除するため、想定した状態以外へ着弾した完了は stale completion として捨てず異常系として拒否する。
+- stale completion: 重複を許した非同期要求の追い越し。request ID の一致判定で破棄し、暗黙の状態判定では破棄しない。現時点でこれに該当するのは `ProjectIssuesStore` のみ。`IssueAction`、`JournalAction`、`AttachmentAction` は重複を事前条件で排除するため、想定した状態以外へ着弾した完了は stale completion として捨てず異常系として拒否する。
 - マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。取得した Journal を取り込む際に、未送信の編集差分を取得値で置き換えないことがこれにあたる。編集中の Journal は本体だけを取得値に更新して `diff.before` を残し、サーバーの notes が `after` と同じなら Synced にする。notes の競合はその Journal を保存するときの取得で判定する。upload 中の Journal は取得値で上書きしない。取得結果から消えた編集中の Journal は元の ID と編集後の notes で退避し、同じ ID が再び現れたらサーバーの notes からの編集として戻す。退避した Journal は利用者が個別に新規投稿するか破棄する。
 - 冪等 no-op: 同じ `NoticeId` の再追加など、Action 自体が冪等であることを契約として持つ正常な no-op。stale completion とマージ戦略は同じ no-op の見た目になりやすいため独立して扱う。
 

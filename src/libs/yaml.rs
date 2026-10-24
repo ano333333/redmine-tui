@@ -3,12 +3,13 @@
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use yaml_rust::{Yaml, YamlLoader};
 
+use crate::entities::{Attachment, Issue, IssueAggregate, Journal};
 use crate::entities::{
     Category, IssueStatus, Priority, Project, TargetVersion, TimeEntityActivity, Tracker, User,
 };
-use crate::entities::{Issue, IssueAggregate, Journal};
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId,
+    AttachmentId, CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalDetail,
+    JournalDetailAttachment, JournalDetailAttachmentChange, JournalDetailAttr, JournalId,
     PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
@@ -106,9 +107,65 @@ fn parse_journal_yaml_value(id: JournalId, issue_id: IssueId, yaml: &Yaml) -> Jo
     }
 }
 
+/// fixture内のIDまたは所属Issueが要求と異なる場合は、fixtureの不整合としてpanicする。
+///
+/// fixtureはファイル本体を持たないため、サイズは呼び出し側が渡す。ダウンロード先は、
+/// Redmineと同じ形のパスを作る。
+pub fn parse_attachment(
+    id: AttachmentId,
+    issue_id: IssueId,
+    yaml: &str,
+    filesize: u64,
+) -> Attachment {
+    let yaml = parse_yaml(yaml);
+    let parsed_id = as_u16(&yaml, "id");
+    assert_eq!(
+        parsed_id,
+        id.get(),
+        "attachment id mismatch: {} != {}",
+        parsed_id,
+        id
+    );
+    let parsed_issue_id = as_u16(&yaml, "issue_id");
+    assert_eq!(
+        parsed_issue_id,
+        issue_id.get(),
+        "attachment owner mismatch: {} != {}",
+        parsed_issue_id,
+        issue_id
+    );
+    let filename = as_string(&yaml, "filename");
+    Attachment {
+        id,
+        filesize,
+        content_type: yaml["content_type"].as_str().map(str::to_string),
+        description: yaml["description"].as_str().unwrap_or_default().to_string(),
+        content_url: format!("/attachments/download/{}/{}", id, filename),
+        author: as_string(&yaml, "author"),
+        created_on: as_local_datetime(&yaml, "created_on"),
+        filename,
+    }
+}
+
 pub fn parse_journal_detail_yaml(yaml: &yaml_rust::Yaml) -> JournalDetail {
     match as_string(yaml, "type").as_str() {
         "attr" => JournalDetail::Attr(parse_journal_detail_attr_yaml(yaml)),
+        "attachment" => JournalDetail::Attachment(JournalDetailAttachment {
+            id: AttachmentId::new(as_u16(yaml, "name")),
+            // Redmineの変換と同じく、空文字のファイル名は値がないものとして扱う。
+            change: match (
+                yaml["old"].as_str().filter(|filename| !filename.is_empty()),
+                yaml["new"].as_str().filter(|filename| !filename.is_empty()),
+            ) {
+                (None, Some(filename)) => JournalDetailAttachmentChange::Added {
+                    filename: filename.to_string(),
+                },
+                (Some(filename), None) => JournalDetailAttachmentChange::Deleted {
+                    filename: filename.to_string(),
+                },
+                _ => panic!("attachment detail must have exactly one of old or new"),
+            },
+        }),
         detail_type => panic!("unsupported journal detail type: {}", detail_type),
     }
 }
@@ -236,6 +293,7 @@ pub fn parse_issue(id: IssueId, yaml: &str) -> IssueAggregate {
         parent_id,
         // Journalは別のfixtureファイルで管理しており、Issueのfixtureには含めない。
         journals: vec![],
+        attachments: vec![],
     }
 }
 
@@ -321,11 +379,14 @@ pub fn parse_time_entity_activities(yaml: &str) -> Vec<TimeEntityActivity> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_categories, parse_issue, parse_issue_statuses, parse_journal, parse_priorities,
-        parse_projects, parse_target_versions, parse_time_entity_activities, parse_trackers,
-        parse_users,
+        parse_categories, parse_issue, parse_issue_statuses, parse_journal,
+        parse_journal_detail_yaml, parse_priorities, parse_projects, parse_target_versions,
+        parse_time_entity_activities, parse_trackers, parse_users, parse_yaml,
     };
-    use crate::vos::{IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId};
+    use crate::vos::{
+        AttachmentId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttachmentChange,
+        JournalDetailAttr, JournalId,
+    };
 
     #[test]
     fn parse_master_fixtures_preserves_order_and_values() {
@@ -421,6 +482,37 @@ mod tests {
             JournalId::new(1),
             IssueId::new(4),
             include_str!("../../datas/journals/1.yml"),
+        );
+    }
+
+    #[test]
+    fn parse_journal_detail_reads_added_attachment() {
+        let yaml = parse_yaml("type: attachment\nname: 1\nnew: sample.png");
+
+        let JournalDetail::Attachment(attachment) = parse_journal_detail_yaml(&yaml) else {
+            panic!("attachment detail was not parsed");
+        };
+        assert_eq!(attachment.id, AttachmentId::new(1));
+        assert_eq!(
+            attachment.change,
+            JournalDetailAttachmentChange::Added {
+                filename: "sample.png".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn parse_journal_detail_treats_an_empty_filename_as_no_value() {
+        let yaml = parse_yaml("type: attachment\nname: 1\nold: sample.png\nnew: ''");
+
+        let JournalDetail::Attachment(attachment) = parse_journal_detail_yaml(&yaml) else {
+            panic!("attachment detail was not parsed");
+        };
+        assert_eq!(
+            attachment.change,
+            JournalDetailAttachmentChange::Deleted {
+                filename: "sample.png".to_string()
+            }
         );
     }
 

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Local};
 
-use crate::entities::IssueAggregate;
+use crate::entities::{Attachment, IssueAggregate};
 use crate::vos::{
     CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
     TrackerId, UserId,
@@ -113,6 +113,10 @@ impl<'a> IssueView<'a> {
 
     pub fn parent_id(&self) -> Option<IssueId> {
         self.base.parent_id
+    }
+
+    pub fn attachments(&self) -> &'a [Attachment] {
+        &self.base.attachments
     }
 }
 

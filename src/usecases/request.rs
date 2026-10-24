@@ -1,18 +1,20 @@
 use std::cell::RefCell;
 use std::num::NonZeroUsize;
+use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
 
+use crate::clients::local_file::LocalFileClient;
 use crate::clients::redmine::RedmineClient;
 use crate::stores::Dispatcher;
-use crate::usecases::UsecaseTask;
 use crate::usecases::redmine::{
-    cancel_issue_upload, cancel_remote_journal_upload, confirm_issue_upload, continue_issue_upload,
-    continue_remote_journal_upload, fetch_issue, fetch_project_issues_page, put_issue_upload,
-    retry_issue_upload_confirmation, start_deleted_journal_upload, start_issue_upload,
-    start_local_journal_upload, start_remote_journal_upload,
+    cancel_issue_upload, cancel_remote_journal_upload, confirm_attachment_upload,
+    confirm_issue_upload, continue_issue_upload, continue_remote_journal_upload, fetch_issue,
+    fetch_project_issues_page, put_attachment_upload, put_issue_upload,
+    retry_issue_upload_confirmation, start_attachment_upload, start_deleted_journal_upload,
+    start_issue_upload, start_local_journal_upload, start_remote_journal_upload,
 };
-use crate::vos::{IssueId, IssuePropertyDiff, JournalId, ProjectId};
+use crate::usecases::{UsecaseClients, UsecaseTask};
+use crate::vos::{IssueId, IssuePropertyDiff, JournalId, ProjectId, UploadToken};
 
 /// runnerに起動を依頼するRedmine Usecase。1つのvariantが1つのUsecaseに対応する。
 #[derive(Clone, Debug, PartialEq)]
@@ -67,19 +69,34 @@ pub enum UsecaseRequest {
         issue_id: IssueId,
         original_id: JournalId,
     },
+    StartAttachmentUpload {
+        issue_id: IssueId,
+        filename: String,
+        path: PathBuf,
+    },
+    PutAttachmentUpload {
+        issue_id: IssueId,
+        token: UploadToken,
+        filename: String,
+    },
+    ConfirmAttachmentUpload {
+        issue_id: IssueId,
+    },
 }
 
 /// `request`に対応するUsecaseを起動し、非同期の処理があればそのtaskを返す。
 ///
 /// 起動時の同期Actionは`dispatcher`へ積むだけで消費しない。
-pub fn start_usecase<C>(
+pub fn start_usecase<C, F>(
     request: UsecaseRequest,
     dispatcher: Rc<RefCell<Dispatcher>>,
-    client: Arc<C>,
+    clients: UsecaseClients<C, F>,
 ) -> Option<UsecaseTask>
 where
     C: RedmineClient + Send + Sync + 'static,
+    F: LocalFileClient + Send + Sync + 'static,
 {
+    let client = clients.redmine.clone();
     match request {
         UsecaseRequest::FetchIssue { id, with_parent } => {
             fetch_issue(dispatcher, client, id, with_parent)
@@ -128,6 +145,19 @@ where
             issue_id,
             original_id,
         } => start_deleted_journal_upload(dispatcher, client, issue_id, original_id),
+        UsecaseRequest::StartAttachmentUpload {
+            issue_id,
+            filename,
+            path,
+        } => start_attachment_upload(dispatcher, clients, issue_id, filename, path),
+        UsecaseRequest::PutAttachmentUpload {
+            issue_id,
+            token,
+            filename,
+        } => put_attachment_upload(dispatcher, client, issue_id, token, filename),
+        UsecaseRequest::ConfirmAttachmentUpload { issue_id } => {
+            confirm_attachment_upload(dispatcher, client, issue_id)
+        }
     }
 }
 
@@ -148,7 +178,9 @@ mod tests {
         Action, DeletedJournalState, Dispatcher, IssueAction, IssueFetchState, IssueState,
         JournalAction, LocalJournalState, ProjectIssuesPageState, RemoteJournalState,
     };
-    use crate::test_support::{complete_usecase, local_datetime, sample_issue_aggregate};
+    use crate::test_support::{
+        complete_usecase, local_datetime, sample_issue_aggregate, usecase_clients,
+    };
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crate::vos::{IssueId, IssuePropertyDiff, IssueStatusId, JournalId, ProjectId};
 
@@ -205,6 +237,23 @@ mod tests {
         }
 
         async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn upload_file(
+            &self,
+            _: &str,
+            _: Vec<u8>,
+        ) -> Result<crate::vos::UploadToken, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn attach_upload(
+            &self,
+            _: IssueId,
+            _: &crate::vos::UploadToken,
+            _: &str,
+        ) -> Result<(), RedmineClientError> {
             unreachable!()
         }
 
@@ -276,7 +325,11 @@ mod tests {
 
     /// 要求からUsecaseを起動し、起動時の同期Actionを消費する。起動したかを返す。
     fn start(request: UsecaseRequest, dispatcher: &Rc<RefCell<Dispatcher>>) -> bool {
-        let task = start_usecase(request, dispatcher.clone(), RecordingClient::new(issue()));
+        let task = start_usecase(
+            request,
+            dispatcher.clone(),
+            usecase_clients(RecordingClient::new(issue())),
+        );
         while dispatcher.borrow().consume_actinos_len() > 0 {
             dispatcher.borrow_mut().consume_action();
         }
@@ -414,7 +467,7 @@ mod tests {
                 })],
             },
             dispatcher.clone(),
-            client,
+            usecase_clients(client),
         );
         dispatcher.borrow_mut().consume_action();
 
@@ -466,7 +519,7 @@ mod tests {
                 })],
             },
             uploading_dispatcher(),
-            client.clone(),
+            usecase_clients(client.clone()),
         ))
         .await;
 
@@ -516,7 +569,7 @@ mod tests {
         let actions = complete_usecase(start_usecase(
             UsecaseRequest::ConfirmIssueUpload { id: ISSUE_ID },
             uploading_dispatcher(),
-            RecordingClient::new(issue()),
+            usecase_clients(RecordingClient::new(issue())),
         ))
         .await;
 
@@ -618,7 +671,7 @@ mod tests {
                 resolved_notes: "resolved notes".to_string(),
             },
             dispatcher,
-            client.clone(),
+            usecase_clients(client.clone()),
         ))
         .await;
 

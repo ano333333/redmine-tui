@@ -7,17 +7,34 @@ use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use insta::assert_snapshot;
 use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
+use crate::clients::local_file::{LocalFileClient, LocalFileError};
 use crate::clients::redmine::RedmineClient;
 use crate::entities::{
     Category, Issue, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::stores::{Action, Dispatcher, Store};
-use crate::usecases::{UsecaseRequest, UsecaseTask, start_usecase};
+use crate::usecases::{UsecaseClients, UsecaseRequest, UsecaseTask, start_usecase};
 use crate::vos::{
     CategoryId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, PriorityId,
     ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
+
+/// ローカルファイルを読まないUsecaseのテストで、`UsecaseClients`を埋めるためのclient。
+pub struct UnusedLocalFileClient;
+
+impl LocalFileClient for UnusedLocalFileClient {
+    async fn read_file(&self, _: &std::path::Path, _: u64) -> Result<Vec<u8>, LocalFileError> {
+        unreachable!("this test does not read local files")
+    }
+}
+
+pub fn usecase_clients<C>(redmine: Arc<C>) -> UsecaseClients<C, UnusedLocalFileClient> {
+    UsecaseClients {
+        redmine,
+        local_file: Arc::new(UnusedLocalFileClient),
+    }
+}
 
 /// 起動したUsecaseを完了まで進め、完了Actionを返す。起動しなかった場合はpanicする。
 pub async fn complete_usecase(task: Option<UsecaseTask>) -> Vec<Action> {
@@ -27,16 +44,17 @@ pub async fn complete_usecase(task: Option<UsecaseTask>) -> Vec<Action> {
 /// `request`と、その後続要求を完了まで順に進める。
 ///
 /// runnerと同じく、起動時のActionと完了Actionを消費してから次の要求を起動する。
-pub async fn run_usecases<C>(
+pub async fn run_usecases<C, F>(
     request: UsecaseRequest,
     dispatcher: Rc<RefCell<Dispatcher>>,
-    client: Arc<C>,
+    clients: UsecaseClients<C, F>,
 ) where
     C: RedmineClient + Send + Sync + 'static,
+    F: LocalFileClient + Send + Sync + 'static,
 {
     let mut requests = VecDeque::from([request]);
     while let Some(request) = requests.pop_front() {
-        let task = start_usecase(request, dispatcher.clone(), client.clone());
+        let task = start_usecase(request, dispatcher.clone(), clients.clone());
         consume_all(&dispatcher);
         let Some(task) = task else {
             continue;
@@ -264,6 +282,7 @@ pub fn sample_issue_aggregate(
         category_id: Some(CategoryId::new(1)),
         parent_id: None,
         journals: vec![],
+        attachments: vec![],
     }
 }
 
@@ -335,6 +354,7 @@ pub fn sample_open_child_issue() -> IssueAggregate {
         category_id: Some(CategoryId::new(1)),
         parent_id: Some(IssueId::new(3)),
         journals: vec![],
+        attachments: vec![],
     }
 }
 
@@ -362,6 +382,7 @@ pub fn sample_closed_child_issue() -> IssueAggregate {
         category_id: Some(CategoryId::new(1)),
         parent_id: Some(IssueId::new(3)),
         journals: vec![],
+        attachments: vec![],
     }
 }
 
@@ -391,6 +412,7 @@ pub fn sample_parent_issue() -> IssueAggregate {
         category_id: Some(CategoryId::new(1)),
         parent_id: None,
         journals: vec![],
+        attachments: vec![],
     }
 }
 

@@ -31,6 +31,7 @@ seed_sql="$(cargo xtask seed-redmine --dry-run)"
 assert_contains .cargo/config.toml 'xtask = "run --package xtask --"'
 
 assert_contains docker/redmine/fresh_test_data.sql "DELETE FROM issues;"
+assert_contains docker/redmine/fresh_test_data.sql "DELETE FROM attachments;"
 assert_contains docker/redmine/fresh_test_data.sql "ALTER TABLE issues AUTO_INCREMENT = 1;"
 
 if [[ "$seed_sql" != *"INSERT INTO issues"* ]]; then
@@ -40,6 +41,11 @@ fi
 
 if [[ "$seed_sql" != *"INSERT INTO journals"* ]]; then
   echo "expected seed SQL to insert journals" >&2
+  exit 1
+fi
+
+if [[ "$seed_sql" != *"INSERT INTO attachments"* ]]; then
+  echo "expected seed SQL to insert attachments" >&2
   exit 1
 fi
 
