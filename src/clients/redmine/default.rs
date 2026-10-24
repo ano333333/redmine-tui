@@ -15,6 +15,7 @@ use crate::vos::{
     TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
+mod attachment_conversion;
 mod journal_conversion;
 mod journal_detail_conversion;
 mod named_entity;
@@ -144,7 +145,9 @@ impl RedmineClient for DefaultRedmineClient {
 
     async fn get_issue(&self, id: IssueId) -> Result<FetchedIssue, RedmineClientError> {
         let mut response: IssueResponse = self
-            .get_json(&format!("/issues/{id}.json?include=children,journals"))
+            .get_json(&format!(
+                "/issues/{id}.json?include=children,journals,attachments"
+            ))
             .await?;
 
         // Issue変換でresponse.issue全体を消費するため、子一覧を先に分離する。
@@ -791,6 +794,8 @@ struct RedmineIssue {
     children: Vec<RedmineChild>,
     #[serde(default)]
     journals: Vec<journal_conversion::RedmineJournal>,
+    #[serde(default)]
+    attachments: Vec<attachment_conversion::RedmineAttachment>,
 }
 
 impl TryFrom<RedmineIssue> for IssueAggregate {
@@ -802,6 +807,11 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
             .journals
             .into_iter()
             .map(|journal| journal_conversion::convert_journal(issue_id, journal))
+            .collect::<Result<Vec<_>, RedmineClientError>>()?;
+        let attachments = value
+            .attachments
+            .into_iter()
+            .map(attachment_conversion::convert_attachment)
             .collect::<Result<Vec<_>, RedmineClientError>>()?;
         let issue = Issue {
             id: issue_id,
@@ -831,7 +841,7 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
             category_id: value.category.map(|category| CategoryId::new(category.id)),
             parent_id: value.parent.map(|parent| IssueId::new(parent.id)),
             journals,
-            attachments: vec![],
+            attachments,
             issue,
         })
     }
