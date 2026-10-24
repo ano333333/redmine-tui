@@ -25,6 +25,7 @@ use std::{
 };
 
 use crate::clients::redmine::base::FetchedIssue;
+use crate::clients::redmine::fake::FakeRedmineClient;
 use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError, RedmineHttpError};
 use crate::entities::{
     Category, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
@@ -414,7 +415,7 @@ impl IssueUploadClient {
     }
 }
 
-impl RedmineClient for IssueUploadClient {
+impl FakeRedmineClient for IssueUploadClient {
     async fn get_issue(&self, _: IssueId) -> std::result::Result<FetchedIssue, RedmineClientError> {
         *self.get_requests.lock().unwrap() += 1;
         let mut failures_remaining = self.get_failures_remaining.lock().unwrap();
@@ -479,41 +480,6 @@ impl RedmineClient for IssueUploadClient {
         self.update_issue_notes_result.clone()
     }
 
-    async fn get_categories(&self) -> std::result::Result<Vec<Category>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn upload_file(
-        &self,
-        _: &str,
-        _: Vec<u8>,
-    ) -> Result<crate::vos::UploadToken, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn attach_upload(
-        &self,
-        _: IssueId,
-        _: &crate::vos::UploadToken,
-        _: &str,
-    ) -> Result<(), RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_issue_statuses(
-        &self,
-    ) -> std::result::Result<Vec<IssueStatus>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_priorities(&self) -> std::result::Result<Vec<Priority>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_projects(&self) -> std::result::Result<Vec<Project>, RedmineClientError> {
-        unreachable!()
-    }
-
     async fn get_project_issues(
         &self,
         _: crate::vos::ProjectId,
@@ -525,26 +491,6 @@ impl RedmineClient for IssueUploadClient {
             offset: 0,
             limit: 50,
         })
-    }
-
-    async fn get_target_versions(
-        &self,
-    ) -> std::result::Result<Vec<TargetVersion>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_time_entity_activities(
-        &self,
-    ) -> std::result::Result<Vec<TimeEntityActivity>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_trackers(&self) -> std::result::Result<Vec<Tracker>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_users(&self) -> std::result::Result<Vec<User>, RedmineClientError> {
-        unreachable!()
     }
 }
 
@@ -1299,7 +1245,7 @@ impl FailingClient {
     }
 }
 
-impl RedmineClient for FailingClient {
+impl FakeRedmineClient for FailingClient {
     async fn get_categories(&self) -> std::result::Result<Vec<Category>, RedmineClientError> {
         Err(self.unauthorized())
     }
@@ -1330,23 +1276,6 @@ impl RedmineClient for FailingClient {
         _: &str,
     ) -> std::result::Result<(), RedmineClientError> {
         Err(self.unauthorized())
-    }
-
-    async fn upload_file(
-        &self,
-        _: &str,
-        _: Vec<u8>,
-    ) -> Result<crate::vos::UploadToken, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn attach_upload(
-        &self,
-        _: IssueId,
-        _: &crate::vos::UploadToken,
-        _: &str,
-    ) -> Result<(), RedmineClientError> {
-        unreachable!()
     }
 
     async fn get_issue_statuses(
@@ -1825,7 +1754,7 @@ impl GatedUploadClient {
     }
 }
 
-impl RedmineClient for GatedUploadClient {
+impl FakeRedmineClient for GatedUploadClient {
     async fn get_issue(&self, _: IssueId) -> std::result::Result<FetchedIssue, RedmineClientError> {
         let previous = self
             .get_requests
@@ -1846,85 +1775,6 @@ impl RedmineClient for GatedUploadClient {
     ) -> std::result::Result<(), RedmineClientError> {
         self.put_gate.acquire().await.unwrap().forget();
         Ok(())
-    }
-
-    async fn update_journal_notes(
-        &self,
-        _: JournalId,
-        _: &str,
-    ) -> std::result::Result<(), RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn update_issue_notes(
-        &self,
-        _: IssueId,
-        _: &str,
-    ) -> std::result::Result<(), RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_categories(&self) -> std::result::Result<Vec<Category>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn upload_file(
-        &self,
-        _: &str,
-        _: Vec<u8>,
-    ) -> Result<crate::vos::UploadToken, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn attach_upload(
-        &self,
-        _: IssueId,
-        _: &crate::vos::UploadToken,
-        _: &str,
-    ) -> Result<(), RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_issue_statuses(
-        &self,
-    ) -> std::result::Result<Vec<IssueStatus>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_priorities(&self) -> std::result::Result<Vec<Priority>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_projects(&self) -> std::result::Result<Vec<Project>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_project_issues(
-        &self,
-        _: crate::vos::ProjectId,
-        _: std::num::NonZeroUsize,
-    ) -> std::result::Result<crate::entities::ProjectIssuesPage, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_target_versions(
-        &self,
-    ) -> std::result::Result<Vec<TargetVersion>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_time_entity_activities(
-        &self,
-    ) -> std::result::Result<Vec<TimeEntityActivity>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_trackers(&self) -> std::result::Result<Vec<Tracker>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_users(&self) -> std::result::Result<Vec<User>, RedmineClientError> {
-        unreachable!()
     }
 }
 
