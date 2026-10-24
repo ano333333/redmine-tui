@@ -17,7 +17,11 @@ const UNKNOWN_DISPLAY: &str = "(不明)";
 fn resolve_journal_details(details: &[JournalDetail], store: &Store) -> Vec<ResolvedJournalDetail> {
     details
         .iter()
-        .map(|JournalDetail::Attr(attr)| resolve_attr(attr, store))
+        .filter_map(|detail| match detail {
+            JournalDetail::Attr(attr) => Some(resolve_attr(attr, store)),
+            // FIXME: 添付ファイルの追加・削除の履歴を表示する。
+            JournalDetail::Attachment(_) => None,
+        })
         .collect()
 }
 

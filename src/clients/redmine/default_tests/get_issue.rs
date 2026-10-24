@@ -30,7 +30,6 @@ fn get_issue_skips_unsupported_journal_detail_properties() {
                         "details": [
                             {"property": "attr", "name": "status_id", "old_value": "1", "new_value": "2"},
                             {"property": "cf_1", "name": "custom1", "old_value": null, "new_value": "custom value"},
-                            {"property": "attachment", "name": "file.txt"},
                             {"property": "relation", "name": "43", "relation_type": "child"}
                         ]
                     }

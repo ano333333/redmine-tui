@@ -8,5 +8,7 @@ pub use id::{
     ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 pub use issue_property_diff::IssuePropertyDiff;
-pub use journal_detail::{JournalDetail, JournalDetailAttr};
+pub use journal_detail::{
+    JournalDetail, JournalDetailAttachment, JournalDetailAttachmentChange, JournalDetailAttr,
+};
 pub use journal_notes_diff::JournalNotesDiff;

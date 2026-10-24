@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::clients::redmine::RedmineClientError;
 use crate::entities::Journal;
-use crate::vos::{IssueId, JournalDetail, JournalId};
+use crate::vos::{IssueId, JournalId};
 
 use super::journal_detail_conversion::{RedmineJournalDetail, try_into_domain};
 use super::value_conversion;
@@ -47,15 +47,14 @@ pub(super) fn convert_journal(
         .as_deref()
         .map(value_conversion::parse_datetime)
         .transpose()?;
-    // `attr`以外のpropertyは変換対象外を表すNoneとなるため、Journalには含めない。
+    // 変換対象外のpropertyはNoneとなるため、Journalには含めない。
     let details = journal
         .details
         .into_iter()
         .map(try_into_domain)
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
-        .filter_map(|attr| attr)
-        .map(JournalDetail::Attr)
+        .flatten()
         .collect();
 
     Ok(Journal {

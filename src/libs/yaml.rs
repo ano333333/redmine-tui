@@ -9,8 +9,8 @@ use crate::entities::{
 };
 use crate::vos::{
     AttachmentId, CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalDetail,
-    JournalDetailAttr, JournalId, PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId,
-    TrackerId, UserId,
+    JournalDetailAttachment, JournalDetailAttachmentChange, JournalDetailAttr, JournalId,
+    PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
 
 fn parse_yaml(yaml: &str) -> Yaml {
@@ -150,6 +150,18 @@ pub fn parse_attachment(
 pub fn parse_journal_detail_yaml(yaml: &yaml_rust::Yaml) -> JournalDetail {
     match as_string(yaml, "type").as_str() {
         "attr" => JournalDetail::Attr(parse_journal_detail_attr_yaml(yaml)),
+        "attachment" => JournalDetail::Attachment(JournalDetailAttachment {
+            id: AttachmentId::new(as_u16(yaml, "name")),
+            change: match (yaml["old"].as_str(), yaml["new"].as_str()) {
+                (None, Some(filename)) => JournalDetailAttachmentChange::Added {
+                    filename: filename.to_string(),
+                },
+                (Some(filename), None) => JournalDetailAttachmentChange::Deleted {
+                    filename: filename.to_string(),
+                },
+                _ => panic!("attachment detail must have exactly one of old or new"),
+            },
+        }),
         detail_type => panic!("unsupported journal detail type: {}", detail_type),
     }
 }
@@ -363,11 +375,14 @@ pub fn parse_time_entity_activities(yaml: &str) -> Vec<TimeEntityActivity> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_categories, parse_issue, parse_issue_statuses, parse_journal, parse_priorities,
-        parse_projects, parse_target_versions, parse_time_entity_activities, parse_trackers,
-        parse_users,
+        parse_categories, parse_issue, parse_issue_statuses, parse_journal,
+        parse_journal_detail_yaml, parse_priorities, parse_projects, parse_target_versions,
+        parse_time_entity_activities, parse_trackers, parse_users, parse_yaml,
     };
-    use crate::vos::{IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId};
+    use crate::vos::{
+        AttachmentId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttachmentChange,
+        JournalDetailAttr, JournalId,
+    };
 
     #[test]
     fn parse_master_fixtures_preserves_order_and_values() {
@@ -463,6 +478,22 @@ mod tests {
             JournalId::new(1),
             IssueId::new(4),
             include_str!("../../datas/journals/1.yml"),
+        );
+    }
+
+    #[test]
+    fn parse_journal_detail_reads_added_attachment() {
+        let yaml = parse_yaml("type: attachment\nname: 1\nnew: sample.png");
+
+        let JournalDetail::Attachment(attachment) = parse_journal_detail_yaml(&yaml) else {
+            panic!("attachment detail was not parsed");
+        };
+        assert_eq!(attachment.id, AttachmentId::new(1));
+        assert_eq!(
+            attachment.change,
+            JournalDetailAttachmentChange::Added {
+                filename: "sample.png".to_string()
+            }
         );
     }
 

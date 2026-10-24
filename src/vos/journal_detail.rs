@@ -1,7 +1,8 @@
 use chrono::{DateTime, Local};
 
 use crate::vos::id::{
-    CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
+    AttachmentId, CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId,
+    TrackerId, UserId,
 };
 
 #[derive(Clone, Debug)]
@@ -78,9 +79,21 @@ pub enum JournalDetailAttr {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JournalDetailAttachmentChange {
+    Added { filename: String },
+    Deleted { filename: String },
+}
+
+#[derive(Clone, Debug)]
+pub struct JournalDetailAttachment {
+    pub id: AttachmentId,
+    pub change: JournalDetailAttachmentChange,
+}
+
 #[derive(Clone, Debug)]
 pub enum JournalDetail {
     Attr(JournalDetailAttr),
-    // FIXME:
-    // カスタムフィールド(cf)、添付ファイル(attachment)、リレーション(relation)用のstructの追加
+    Attachment(JournalDetailAttachment),
+    // FIXME: カスタムフィールド(cf)、リレーション(relation)のvariantを追加する。
 }
