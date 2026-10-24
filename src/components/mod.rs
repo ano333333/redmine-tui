@@ -1,4 +1,5 @@
 pub mod app;
+pub mod attachment_input_popup;
 pub mod date_picker_popup;
 pub mod issue;
 #[allow(dead_code)]
