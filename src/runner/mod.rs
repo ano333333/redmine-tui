@@ -1,14 +1,14 @@
 //! native版とWeb版でapplication lifecycleを共有するrunner。
 
-use std::{cell::RefCell, collections::VecDeque, io, rc::Rc, sync::Arc, time::Duration};
+use std::{cell::RefCell, collections::VecDeque, io, rc::Rc, time::Duration};
 
 use crate::{
-    clients::redmine::RedmineClient,
+    clients::{local_file::LocalFileClient, redmine::RedmineClient},
     components::{AppComponent, RequestSink},
     platform::{editor::TextEditor, host::PlatformHost, runtime::BackgroundSpawner},
     stores::Dispatcher,
     trace_dbg,
-    usecases::UsecaseOutput,
+    usecases::{UsecaseClients, UsecaseOutput},
 };
 
 pub(crate) mod effect;
@@ -31,11 +31,11 @@ pub(crate) enum RunError {
     Input(io::Error),
 }
 
-pub(crate) async fn run<H, E, S, C>(
+pub(crate) async fn run<H, E, S, C, F>(
     host: &mut H,
     editor: &E,
     spawner: &S,
-    client: Arc<C>,
+    clients: UsecaseClients<C, F>,
     dispatcher: Rc<RefCell<Dispatcher>>,
 ) -> Result<(), RunError>
 where
@@ -43,6 +43,7 @@ where
     E: TextEditor,
     S: BackgroundSpawner<Output = UsecaseOutput>,
     C: RedmineClient + Send + Sync + 'static,
+    F: LocalFileClient + Send + Sync + 'static,
 {
     let mut editor_session: Option<EditorSession<'_>> = None;
     let mut requests = VecDeque::new();
@@ -56,7 +57,7 @@ where
         &mut app_component,
         dispatcher.clone(),
         spawner,
-        client.clone(),
+        clients.clone(),
         editor,
         &mut editor_session,
         host,
@@ -122,7 +123,7 @@ where
             &mut app_component,
             dispatcher.clone(),
             spawner,
-            client.clone(),
+            clients.clone(),
             host.area(),
         );
         if let Err(error) = host.draw(|frame| draw(frame, &app_component, dispatcher.clone())) {
@@ -139,7 +140,7 @@ where
                     &mut app_component,
                     dispatcher.clone(),
                     spawner,
-                    client.clone(),
+                    clients.clone(),
                     editor,
                     &mut editor_session,
                     host,

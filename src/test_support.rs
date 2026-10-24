@@ -7,17 +7,34 @@ use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use insta::assert_snapshot;
 use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
+use crate::clients::local_file::{LocalFileClient, LocalFileError};
 use crate::clients::redmine::RedmineClient;
 use crate::entities::{
     Category, Issue, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::stores::{Action, Dispatcher, Store};
-use crate::usecases::{UsecaseRequest, UsecaseTask, start_usecase};
+use crate::usecases::{UsecaseClients, UsecaseRequest, UsecaseTask, start_usecase};
 use crate::vos::{
     CategoryId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, PriorityId,
     ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
 };
+
+/// ローカルファイルを読まないUsecaseのテストで、`UsecaseClients`を埋めるためのclient。
+pub struct UnusedLocalFileClient;
+
+impl LocalFileClient for UnusedLocalFileClient {
+    async fn read_file(&self, _: &std::path::Path) -> Result<Vec<u8>, LocalFileError> {
+        unreachable!("this test does not read local files")
+    }
+}
+
+pub fn usecase_clients<C>(redmine: Arc<C>) -> UsecaseClients<C, UnusedLocalFileClient> {
+    UsecaseClients {
+        redmine,
+        local_file: Arc::new(UnusedLocalFileClient),
+    }
+}
 
 /// 起動したUsecaseを完了まで進め、完了Actionを返す。起動しなかった場合はpanicする。
 pub async fn complete_usecase(task: Option<UsecaseTask>) -> Vec<Action> {
@@ -36,7 +53,7 @@ pub async fn run_usecases<C>(
 {
     let mut requests = VecDeque::from([request]);
     while let Some(request) = requests.pop_front() {
-        let task = start_usecase(request, dispatcher.clone(), client.clone());
+        let task = start_usecase(request, dispatcher.clone(), usecase_clients(client.clone()));
         consume_all(&dispatcher);
         let Some(task) = task else {
             continue;

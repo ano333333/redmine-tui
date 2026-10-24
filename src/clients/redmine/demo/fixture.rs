@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::clients::local_file::demo::SAMPLE_IMAGE;
 use crate::entities::{
     Attachment, Category, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
     TimeEntityActivity, Tracker, User,
@@ -38,15 +39,12 @@ const ISSUES: &[(IssueId, &str, &[(JournalId, &str)])] = &[
     ),
     (IssueId::new(4), fixture!("issues/4.yml"), &[]),
 ];
-// Webデモのwasmを小さくするため、seedの`sample.png`ではなく縮小版の大きさを使う。
+// Webデモで実際に読めるのは縮小版のため、seedの`sample.png`ではなく縮小版の大きさを使う。
 const ATTACHMENTS: &[(AttachmentId, IssueId, &str, &[u8])] = &[(
     AttachmentId::new(1),
     IssueId::new(4),
     fixture!("attachments/1.yml"),
-    include_bytes!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/datas/attachment_files/sample_web.png"
-    )),
+    SAMPLE_IMAGE,
 )];
 
 pub struct DemoFixtureState {

@@ -10,7 +10,7 @@ use ratzilla::{
 use wasm_bindgen_futures::spawn_local;
 
 use crate::{
-    clients::redmine::demo::DemoRedmineClient,
+    clients::{local_file::demo::DemoLocalFileClient, redmine::demo::DemoRedmineClient},
     platform::{
         editor::web::WebTextEditor,
         host::web::{WebBackend, WebPlatformHost},
@@ -18,7 +18,7 @@ use crate::{
     },
     runner::{RunError, lifecycle::consume_initial_actions, run as run_app},
     stores::Dispatcher,
-    usecases::redmine::load_initial_entities,
+    usecases::{UsecaseClients, redmine::load_initial_entities},
 };
 
 fn report(message: impl AsRef<str>) {
@@ -60,7 +60,11 @@ pub(crate) fn run() {
             }
         };
         consume_initial_actions(dispatcher.clone(), actions);
-        if let Err(error) = run_app(&mut host, &editor, &spawner, client, dispatcher).await {
+        let clients = UsecaseClients {
+            redmine: client,
+            local_file: Arc::new(DemoLocalFileClient),
+        };
+        if let Err(error) = run_app(&mut host, &editor, &spawner, clients, dispatcher).await {
             match error {
                 RunError::WorkerPanicked(message) => {
                     report(format!("worker task panicked: {message}"))
