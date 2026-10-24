@@ -95,6 +95,9 @@ fn put_attachment_file(
     let mut child = command
         .arg("exec")
         .arg("-T")
+        // rootで作ると、Redmineがupload時に同じ年のディレクトリへ書き込めなくなる。
+        .arg("--user")
+        .arg("redmine")
         .arg("redmine")
         .arg("sh")
         .arg("-c")
