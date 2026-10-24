@@ -64,7 +64,11 @@ fn coverage_envs() -> Result<Vec<(String, String)>, String> {
     profile_file.1 = profile_file.1.replacen("%p", "%c%p", 1);
 
     // Linuxのcontinuous modeはカウンタの再配置を有効にしたbuildでしか動かない。
-    let mut rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
+    // show-envが`RUSTFLAGS`で計測を有効にする場合も、その値を残して追記する。
+    let mut rustflags = match envs.iter().position(|(key, _)| key == "RUSTFLAGS") {
+        Some(index) => envs.remove(index).1,
+        None => std::env::var("RUSTFLAGS").unwrap_or_default(),
+    };
     if !rustflags.is_empty() {
         rustflags.push(' ');
     }
