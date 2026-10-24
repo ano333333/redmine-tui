@@ -349,7 +349,7 @@ mod tests {
         }
 
         fn journals_list_widget(&self) -> JournalsListWidget<'_> {
-            let details = vec![ResolvedJournalDetail {
+            let details = vec![ResolvedJournalDetail::Attr {
                 field_label: "担当者",
                 old_display: "(なし)".to_string(),
                 new_display: "bob".to_string(),

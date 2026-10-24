@@ -17,10 +17,11 @@ const UNKNOWN_DISPLAY: &str = "(不明)";
 fn resolve_journal_details(details: &[JournalDetail], store: &Store) -> Vec<ResolvedJournalDetail> {
     details
         .iter()
-        .filter_map(|detail| match detail {
-            JournalDetail::Attr(attr) => Some(resolve_attr(attr, store)),
-            // FIXME: 添付ファイルの追加・削除の履歴を表示する。
-            JournalDetail::Attachment(_) => None,
+        .map(|detail| match detail {
+            JournalDetail::Attr(attr) => resolve_attr(attr, store),
+            JournalDetail::Attachment(attachment) => {
+                ResolvedJournalDetail::Attachment(attachment.change.clone())
+            }
         })
         .collect()
 }
@@ -119,7 +120,7 @@ fn resolve_attr(attr: &JournalDetailAttr, store: &Store) -> ResolvedJournalDetai
             ("非公開", format_bool(*old), format_bool(*new))
         }
     };
-    ResolvedJournalDetail {
+    ResolvedJournalDetail::Attr {
         field_label,
         old_display,
         new_display,
@@ -587,21 +588,36 @@ mod tests {
 
         let details = resolve_journal_details(&journal.details, &store);
 
-        assert_eq!(details[0].field_label, "ステータス");
+        let [
+            ResolvedJournalDetail::Attr {
+                field_label: first_label,
+                old_display: first_old,
+                new_display: first_new,
+            },
+            ResolvedJournalDetail::Attr {
+                field_label: second_label,
+                old_display: second_old,
+                new_display: second_new,
+            },
+        ] = details.as_slice()
+        else {
+            panic!("status details were not resolved as attributes");
+        };
+        assert_eq!(*first_label, "ステータス");
         assert_eq!(
-            details[0].old_display,
+            *first_old,
             store
                 .get_issue_status(IssueStatusId::new(1))
                 .unwrap()
                 .name
                 .clone()
         );
-        assert_eq!(details[0].new_display, UNKNOWN_DISPLAY);
+        assert_eq!(first_new, UNKNOWN_DISPLAY);
 
-        assert_eq!(details[1].field_label, "ステータス");
-        assert_eq!(details[1].old_display, UNKNOWN_DISPLAY);
+        assert_eq!(*second_label, "ステータス");
+        assert_eq!(second_old, UNKNOWN_DISPLAY);
         assert_eq!(
-            details[1].new_display,
+            *second_new,
             store
                 .get_issue_status(IssueStatusId::new(2))
                 .unwrap()

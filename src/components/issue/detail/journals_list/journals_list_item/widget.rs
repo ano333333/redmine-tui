@@ -9,6 +9,7 @@ use ratatui::text::Text;
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use crate::stores::{LocalJournalState, RemoteJournalState};
+use crate::vos::JournalDetailAttachmentChange;
 
 use crate::widgets::gutter::{GUTTER_WIDTH, Gutter, indented_area};
 use crate::widgets::theme::FOCUS_BG;
@@ -18,11 +19,14 @@ const UPDATED_ON_NONE_DISPLAY: &str = "(不明)";
 /// 縦線を引かない末尾の余白行。次のJournalとの区切りになる。
 const GUTTER_TRAILING_LINES: u16 = 1;
 
-/// JournalDetailAttrをStoreで解決した、表示用の値。WidgetはStoreを知らない。
-pub struct ResolvedJournalDetail {
-    pub field_label: &'static str,
-    pub old_display: String,
-    pub new_display: String,
+/// JournalDetailをStoreで解決した、表示用の値。WidgetはStoreを知らない。
+pub enum ResolvedJournalDetail {
+    Attr {
+        field_label: &'static str,
+        old_display: String,
+        new_display: String,
+    },
+    Attachment(JournalDetailAttachmentChange),
 }
 
 /// Remote Journalの永続entityとローカルの編集状態を描画用に統合した参照。
@@ -201,17 +205,35 @@ fn create_property_paragraph(
     };
     let mut lines = vec![title, Line::from("")];
     for detail in details {
-        let line = Line::from(vec![
-            Span::from("  ・ "),
-            Span::from(detail.field_label).bold(),
-            Span::from(" を "),
-            Span::from(detail.old_display.clone()).italic(),
-            Span::from(" から "),
-            Span::from(detail.new_display.clone()).italic(),
-            Span::from(" に変更"),
-        ])
-        .gray();
-        lines.push(line);
+        let spans = match detail {
+            ResolvedJournalDetail::Attr {
+                field_label,
+                old_display,
+                new_display,
+            } => vec![
+                Span::from("  ・ "),
+                Span::from(*field_label).bold(),
+                Span::from(" を "),
+                Span::from(old_display.clone()).italic(),
+                Span::from(" から "),
+                Span::from(new_display.clone()).italic(),
+                Span::from(" に変更"),
+            ],
+            ResolvedJournalDetail::Attachment(change) => {
+                let (filename, action) = match change {
+                    JournalDetailAttachmentChange::Added { filename } => (filename, " を追加"),
+                    JournalDetailAttachmentChange::Deleted { filename } => (filename, " を削除"),
+                };
+                vec![
+                    Span::from("  ・ "),
+                    Span::from("ファイル").bold(),
+                    Span::from(" "),
+                    Span::from(filename.clone()).italic(),
+                    Span::from(action),
+                ]
+            }
+        };
+        lines.push(Line::from(spans).gray());
     }
     lines.push(Line::from(""));
     Paragraph::new(Text::from(lines))
@@ -305,7 +327,7 @@ mod tests {
     }
 
     fn assigned_to_detail(old: Option<&str>, new: Option<&str>) -> ResolvedJournalDetail {
-        ResolvedJournalDetail {
+        ResolvedJournalDetail::Attr {
             field_label: "担当者",
             old_display: old.map(str::to_string).unwrap_or("(なし)".to_string()),
             new_display: new.map(str::to_string).unwrap_or("(なし)".to_string()),
@@ -313,7 +335,7 @@ mod tests {
     }
 
     fn status_detail(old: &str, new: &str) -> ResolvedJournalDetail {
-        ResolvedJournalDetail {
+        ResolvedJournalDetail::Attr {
             field_label: "ステータス",
             old_display: old.to_string(),
             new_display: new.to_string(),
@@ -377,6 +399,32 @@ mod tests {
         let line_count = widget.line_count(width);
 
         render_snapshot("journal_item_expected_layout", width, line_count, widget);
+    }
+
+    #[test]
+    fn snapshot_journal_item_with_attachment_details() {
+        let user = "alice".to_string();
+        let updated_on = local_datetime("2026-01-15T00:00:00+09:00");
+        let details = vec![
+            ResolvedJournalDetail::Attachment(JournalDetailAttachmentChange::Added {
+                filename: "sample.png".to_string(),
+            }),
+            ResolvedJournalDetail::Attachment(JournalDetailAttachmentChange::Deleted {
+                filename: "old.log".to_string(),
+            }),
+        ];
+        let notes = "".to_string();
+        let width = 40;
+
+        let mut state = JournalItemWidgetState::new();
+        state.update(width, &user, Some(&updated_on), &notes);
+
+        let journal = create_journal(user, updated_on, &notes);
+        let view = view_of(&journal, &notes, "");
+        let widget = JournalItemWidget::new(view, details, &state, false);
+        let line_count = widget.line_count(width);
+
+        render_snapshot("journal_item_attachment_details", width, line_count, widget);
     }
 
     #[test]

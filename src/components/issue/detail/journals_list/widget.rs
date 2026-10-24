@@ -127,7 +127,7 @@ mod tests {
     }
 
     fn assigned_to_detail() -> ResolvedJournalDetail {
-        ResolvedJournalDetail {
+        ResolvedJournalDetail::Attr {
             field_label: "担当者",
             old_display: "(なし)".to_string(),
             new_display: "bob".to_string(),
@@ -135,7 +135,7 @@ mod tests {
     }
 
     fn status_detail() -> ResolvedJournalDetail {
-        ResolvedJournalDetail {
+        ResolvedJournalDetail::Attr {
             field_label: "ステータス",
             old_display: "新規".to_string(),
             new_display: "進行中".to_string(),
