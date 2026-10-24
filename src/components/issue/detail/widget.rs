@@ -7,6 +7,7 @@ use ratatui::widgets::{Paragraph, Widget};
 use crate::widgets::theme::{ACCENT, SECTION_BAR};
 use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
 
+use super::attachments_list::widget::AttachmentsListWidget;
 use super::body::widget::BodyWidget;
 use super::children_list::widget::ChildrenListWidget;
 use super::header::widget::HeaderWidget;
@@ -98,6 +99,7 @@ pub struct IssueDetailWidget<'a> {
     header: HeaderWidget<'a>,
     property: PropertyWidget<'a>,
     body: BodyWidget<'a>,
+    attachments_list: AttachmentsListWidget<'a>,
     children_list: ChildrenListWidget<'a>,
     journals_list: JournalsListWidget<'a>,
     state: &'a IssueDetailWidgetState,
@@ -124,6 +126,7 @@ impl<'a> Widget for IssueDetailWidget<'a> {
 
         let property_line_count = self.property.line_count(width) as u16;
         let body_line_count = self.body.line_count(width) as u16;
+        let attachments_line_count = self.attachments_list.line_count();
         let children_line_count = self.children_list.line_count();
         let journals_line_count = self.journals_list.line_count(width);
 
@@ -131,6 +134,7 @@ impl<'a> Widget for IssueDetailWidget<'a> {
         scroll_widget.render_widget(SectionHeader::new("説明"), SectionHeader::LINE_COUNT);
         scroll_widget.render_widget(self.body, body_line_count);
         scroll_widget.render_widget(Paragraph::new(""), 1);
+        scroll_widget.render_widget(self.attachments_list, attachments_line_count);
         scroll_widget.render_widget(self.children_list, children_line_count);
         scroll_widget.render_widget(SectionHeader::new("履歴"), SectionHeader::LINE_COUNT);
         scroll_widget.render_widget(self.journals_list, journals_line_count);
@@ -175,6 +179,7 @@ impl<'a> IssueDetailWidget<'a> {
         header: HeaderWidget<'a>,
         property: PropertyWidget<'a>,
         body: BodyWidget<'a>,
+        attachments_list: AttachmentsListWidget<'a>,
         children_list: ChildrenListWidget<'a>,
         journals_list: JournalsListWidget<'a>,
         state: &'a IssueDetailWidgetState,
@@ -183,6 +188,7 @@ impl<'a> IssueDetailWidget<'a> {
             header,
             property,
             body,
+            attachments_list,
             children_list,
             journals_list,
             state,
@@ -291,6 +297,7 @@ mod tests {
                 self.header_widget(),
                 self.property_widget(),
                 self.body_widget(),
+                AttachmentsListWidget::new(vec![], None),
                 self.children_list_widget(),
                 self.journals_list_widget(),
                 state,

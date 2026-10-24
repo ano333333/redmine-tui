@@ -11,8 +11,8 @@ use crate::support::{
 const J_PRESSES_TO_PRIORITY: usize = 7;
 // propertyの左列8行を越える9回目で本文の先頭に入る。
 const J_PRESSES_TO_BODY: usize = 9;
-const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 47;
-const J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON: usize = 85;
+const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 48;
+const J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON: usize = 86;
 
 const ISSUE_3_WITH_JOURNALS: &str = "/issues/3.json?include=journals";
 

@@ -7,10 +7,10 @@ use crate::support::{
 // Issue 3の詳細でheaderから下へ移るjの回数。幅120の端末で、seedのIssue 3とJournal 1〜3を表示した状態で数えた。
 // propertyの左列8行を越える9回目で本文の先頭に入る。
 const J_PRESSES_TO_BODY: usize = 9;
-// 本文35行、子Issue一覧2行、Journal 1のdetail 1行を越えた先がJournal 1のnotes。
-const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 47;
+// 本文35行、添付ファイルの追加行1行、子Issue一覧2行、Journal 1のdetail 1行を越えた先がJournal 1のnotes。
+const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 48;
 // Journal 3のnotesの後にあるLocal Journal作成ボタン。
-const J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON: usize = 85;
+const J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON: usize = 86;
 
 fn open_issue_3_and_move_down(
     editor: &FakeEditor,

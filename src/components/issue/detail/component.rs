@@ -9,6 +9,9 @@ use crate::platform::input::{InputEvent, KeyCode};
 use crate::stores::{Dispatcher, IssueState, Store};
 use crate::vos::{IssueId, JournalId};
 
+use super::attachments_list::AttachmentsListComponent;
+use super::attachments_list::EventProcessResult as AttachmentsListEventProcessResult;
+use super::attachments_list::FocusEvent as AttachmentsListFocusEvent;
 use super::body::BodyComponent;
 use super::body::EventProcessResult as BodyEventProcessResult;
 use super::body::FocusEvent as BodyFocusEvent;
@@ -148,9 +151,10 @@ mod tests {
         );
     }
 
-    /// Property(2カラム時の左カラム8行) -> Body -> ChildrenList -> JournalsList(先頭Journalのdetail)
-    /// の順にフォーカスを送り、JournalsList内の1件目JournalのNotes位置に到達させる
-    const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 47;
+    /// Property(2カラム時の左カラム8行) -> Body -> AttachmentsList(追加行) -> ChildrenList
+    /// -> JournalsList(先頭Journalのdetail)の順にフォーカスを送り、JournalsList内の1件目Journalの
+    /// Notes位置に到達させる
+    const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 48;
 
     fn dispatcher_with_issue_and_journals() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = dispatcher();
@@ -335,6 +339,7 @@ enum FocusedComponent {
     Header,
     Property,
     Body,
+    AttachmentsList,
     ChildrenList,
     JournalsList,
 }
@@ -344,6 +349,7 @@ pub struct IssueDetailComponent {
     header: HeaderComponent,
     property: PropertyComponent,
     body: BodyComponent,
+    attachments_list: AttachmentsListComponent,
     children_list: ChildrenListComponent,
     journals_list: JournalsListComponent,
     widget_state: IssueDetailWidgetState,
@@ -362,6 +368,7 @@ impl IssueDetailComponent {
             header: HeaderComponent::new(issue_id),
             property: PropertyComponent::new(issue_id),
             body: BodyComponent::new(issue_id),
+            attachments_list: AttachmentsListComponent::new(issue_id),
             children_list: ChildrenListComponent::new(issue_id),
             journals_list: JournalsListComponent::new(issue_id),
             widget_state: IssueDetailWidgetState::new(),
@@ -525,9 +532,9 @@ impl IssueDetailComponent {
                     }
                     Some(BodyEventProcessResult::CursorLeavedFromBelow { .. }) => {
                         self.body.focus_event(BodyFocusEvent::Unfocused);
-                        self.focused_component = FocusedComponent::ChildrenList;
-                        self.children_list
-                            .focus_event(ChildrenListFocusEvent::CursorEnteredFromAbove);
+                        self.focused_component = FocusedComponent::AttachmentsList;
+                        self.attachments_list
+                            .focus_event(AttachmentsListFocusEvent::CursorEnteredFromAbove);
                         return Some(EventProcessResult::Handled);
                     }
                     Some(BodyEventProcessResult::EditRequested { id, body }) => {
@@ -539,15 +546,40 @@ impl IssueDetailComponent {
                     None => {}
                 }
             }
+            FocusedComponent::AttachmentsList => {
+                let result = self.attachments_list.process_event(&event);
+                match result {
+                    Some(AttachmentsListEventProcessResult::CursorLeavedFromAbove) => {
+                        self.attachments_list
+                            .focus_event(AttachmentsListFocusEvent::Unfocused);
+                        self.focused_component = FocusedComponent::Body;
+                        self.body
+                            .focus_event(BodyFocusEvent::CursorEnteredFromBelow { x: 0 });
+                        return Some(EventProcessResult::Handled);
+                    }
+                    Some(AttachmentsListEventProcessResult::CursorLeavedFromBelow) => {
+                        self.attachments_list
+                            .focus_event(AttachmentsListFocusEvent::Unfocused);
+                        self.focused_component = FocusedComponent::ChildrenList;
+                        self.children_list
+                            .focus_event(ChildrenListFocusEvent::CursorEnteredFromAbove);
+                        return Some(EventProcessResult::Handled);
+                    }
+                    Some(AttachmentsListEventProcessResult::Handled) => {
+                        return Some(EventProcessResult::Handled);
+                    }
+                    None => {}
+                }
+            }
             FocusedComponent::ChildrenList => {
                 let result = self.children_list.process_event(&event);
                 match result {
                     Some(ChildrenListEventProcessResult::CursorLeavedFromAbove) => {
                         self.children_list
                             .focus_event(ChildrenListFocusEvent::Unfocused);
-                        self.focused_component = FocusedComponent::Body;
-                        self.body
-                            .focus_event(BodyFocusEvent::CursorEnteredFromBelow { x: 0 });
+                        self.focused_component = FocusedComponent::AttachmentsList;
+                        self.attachments_list
+                            .focus_event(AttachmentsListFocusEvent::CursorEnteredFromBelow);
                         return Some(EventProcessResult::Handled);
                     }
                     Some(ChildrenListEventProcessResult::CursorLeavedFromBelow) => {
@@ -653,6 +685,7 @@ impl IssueDetailComponent {
         self.header.update(store, self.width);
         self.property.update(self.width);
         self.body.update(issue.description(), self.width);
+        self.attachments_list.update(store);
         self.children_list.update(store);
 
         let entries = store.get_remote_journals(self.id);
@@ -681,6 +714,7 @@ impl IssueDetailComponent {
             self.header.create_widget(store),
             self.property.create_widget(store),
             self.body.create_widget(),
+            self.attachments_list.create_widget(store),
             self.children_list.create_widget(store),
             self.journals_list.create_widget(store),
             &self.widget_state,
@@ -719,6 +753,11 @@ impl IssueDetailComponent {
             return self.body.get_cursor_position() + offset;
         }
         offset.y += self.body.line_count(self.width) as i32 + 1;
+
+        if self.focused_component == FocusedComponent::AttachmentsList {
+            return self.attachments_list.get_cursor_position() + offset;
+        }
+        offset.y += self.attachments_list.line_count(store) as i32;
 
         if self.focused_component == FocusedComponent::ChildrenList {
             return self.children_list.get_cursor_position() + offset;
