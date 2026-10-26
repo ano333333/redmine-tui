@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 17 — 添付画像のダウンロードと表示用データの保持</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0f1117;
+        color: #d0d4e8;
+        font:
+          15px/1.75 system-ui,
+          "Noto Sans JP",
+          sans-serif;
+      }
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+      nav {
+        position: sticky;
+        top: 0;
+        width: 240px;
+        height: 100vh;
+        padding: 28px 20px;
+        background: #1a1d27;
+        border-right: 1px solid #2e3350;
+      }
+      nav a {
+        display: block;
+        padding: 5px 0;
+        color: #8ba3f5;
+        text-decoration: none;
+        font-size: 13px;
+      }
+      main {
+        max-width: 980px;
+        padding: 52px 64px;
+      }
+      h1,
+      h2,
+      h3 {
+        color: #e8eaf6;
+      }
+      h1 {
+        font-size: 27px;
+        line-height: 1.25;
+      }
+      h2 {
+        margin-top: 44px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #2e3350;
+        font-size: 19px;
+      }
+      h3 {
+        margin-top: 28px;
+        font-size: 16px;
+      }
+      code,
+      pre {
+        font-family: "JetBrains Mono", monospace;
+      }
+      code {
+        color: #8ba3f5;
+      }
+      pre {
+        overflow: auto;
+        padding: 16px 18px;
+        background: #13151f;
+        border: 1px solid #2a2e45;
+        border-radius: 8px;
+        color: #d0d4e8;
+      }
+      .status {
+        display: inline-block;
+        padding: 3px 10px;
+        border: 1px solid #2a7a50;
+        border-radius: 20px;
+        color: #4caf8a;
+      }
+      li {
+        margin: 5px 0;
+      }
+      @media (max-width: 820px) {
+        .layout {
+          display: block;
+        }
+        nav {
+          position: static;
+          width: auto;
+          height: auto;
+        }
+        main {
+          padding: 32px 22px;
+        }
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 9px 12px;
+        border: 1px solid #2e3350;
+        text-align: left;
+      }
+      th {
+        background: #1a1d27;
+      }
+      main {
+        min-width: 0;
+      }
+      nav {
+        flex-shrink: 0;
+        overflow-y: auto;
+      }
+      a {
+        color: #8ba3f5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <strong>ADR 17</strong><a href="#status">Status</a
+        ><a href="#context">Context</a><a href="#decision">Decision</a
+        ><a href="#rationale">Rationale</a
+        ><a href="#consequences">Consequences</a
+        ><a href="#alternatives-considered">Alternatives Considered</a
+        ><a href="#future-work">Future Work</a
+        ><a href="#references">References</a>
+        <hr />
+        <a href="014.html">ADR 14</a><a href="015.html">ADR 15</a
+        ><a href="016.html">ADR 16</a
+        ><a href="../architecture.html">Architecture</a>
+      </nav>
+      <main>
+        <h1>17. 添付画像のダウンロードと表示用データの保持</h1>
+        <h2 id="status">Status</h2>
+        <p>Accepted</p>
+        <h2 id="context">Context</h2>
+        <p>
+          <a href="016.html">ADR 16</a
+          >で、Issueの添付ファイルのメタデータを<code>IssueAggregate</code>に持たせた。添付ファイルの中身を取得して保持する場所は、画像表示を実装するときに決めるとした。次は、本文とJournalのnotesに埋め込まれた画像を、<code>ratatui-image</code>でterminal内に表示する。
+        </p>
+        <p>画像の表示には、次の制約がある。</p>
+        <ul>
+          <li>
+            terminalがKitty graphics
+            protocolに対応するかを、確実に知る方法がない。<code>ratatui-image</code>の<code>Picker::from_query_stdio</code>は、環境変数とterminalへの問い合わせで推測する。しかし、環境変数は起動元のterminalから引き継がれ、実際のterminalと食い違うことがある（WezTermから起動したKittyでは、WezTermと判定されてKittyを使わない）。また、問い合わせに応答しないterminalでは、応答を待つスレッドが後から入力したキーを読み取ってしまう。
+          </li>
+          <li>
+            表示はKitty graphics
+            protocolだけを対象にする。Sixelは行単位で切り取れないため、スクロール中に上下が欠けた画像を正しく描けない。Halfblocksは解像度が低く、背景色で描くためfocus表示とも両立しない。Webデモは対象外とする。
+          </li>
+          <li>
+            利用者が画像表示を無効にできる必要がある。表示できるterminalでも、通信量や描画の重さを避けたい場合がある。
+          </li>
+          <li>
+            画像を表示するには、ダウンロード、decode、縮小、Kitty
+            protocolへのencodeが必要である。どれもUIスレッドで行うと操作が止まる。<a
+              href="../architecture.html"
+              >docs/architecture.md</a
+            >は、Componentの<code>update</code>から要求を発行することを禁止しているため、<code>update</code>で画像が必要だと分かってもUsecaseを起動できない。
+          </li>
+        </ul>
+        <p>Redmine APIでは、画像の取得に次の経路がある。</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>API</th>
+                <th>内容</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GET /attachments/download/:id</code></td>
+                <td>原画像。サイズに上限はない</td>
+              </tr>
+              <tr>
+                <td><code>GET /attachments/thumbnail/:id(/:size)</code></td>
+                <td>
+                  サムネイル。<code>size</code>は50px単位に切り上げられ、最大800pxになる。サーバーでImageMagickが使えない場合は<code
+                    >404</code
+                  >
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Issue詳細の<code>attachments</code>には、サムネイルを作れる添付ファイルにだけ<code>thumbnail_url</code>が入る。
+        </p>
+        <p>
+          Issueを取得するGETは、初回取得のほかに、Issue属性の保存前GETと確認GET、Journal保存後のGET、添付ファイル追加の確認GETがある。どのGETも、取得結果で<code>IssueAggregate</code>を置き換える。他の利用者が追加した添付ファイルは、どのGETで初めて現れるか分からない。
+        </p>
+        <h2 id="decision">Decision</h2>
+        <h3>設定ファイルを起動時に読み込む</h3>
+        <p>
+          native版は、起動時に<code>$XDG_CONFIG_HOME/redmine-tui/config.toml</code>を読み込む。<code>XDG_CONFIG_HOME</code>が未設定なら<code>~/.config</code>を使う。この規則はLinuxとmacOSで共通とする。
+        </p>
+        <pre><code class="language-toml">[image]
+enable = true</code></pre>
+        <p>
+          ファイルがない場合や<code>[image]</code>がない場合は、画像表示を無効として扱う。ファイルはあるのに、TOMLとして読めない場合や値の型が違う場合は、Redmine接続設定の誤りと同じく、起動を中止してエラーを表示する。読み込み処理は<code>src/platform/</code>に置き、Webデモでは使わない。
+        </p>
+        <h3>画像表示の可否を設定Storeに置く</h3>
+        <p>
+          設定値をまとめる<code>SettingsStore</code>を<code>Store</code>に加える。画像表示の可否は、次の2値で持つ。
+        </p>
+        <pre><code class="language-rust">pub enum ImageDisplay {
+    Disabled,
+    Enabled { encoder: TerminalImageEncoder },
+}</code></pre>
+        <p>
+          画像表示の可否は、設定ファイルの値だけで決める。terminalへは問い合わせず、環境変数も見ない。<code
+            >enable = true</code
+          >なら、Kitty graphics
+          protocolに対応したterminalで動いているものとして<code>Enabled</code>にする。非対応のterminalで有効にした場合は、表示が崩れる。描画は失敗として検出できないため、利用者の設定に任せる。
+        </p>
+        <p>
+          画像のセル数を求めるには、フォントのピクセルサイズが必要である。起動処理は、<code>ratatui::init()</code>の後、runnerを始める前に、terminalのピクセル数とセル数（ioctlの<code>TIOCGWINSZ</code>）からフォントのピクセルサイズを求める。ピクセル数を得られないterminalでは<code>Disabled</code>にする。結果は初期Actionで<code>SettingsStore</code>に反映する。Webデモは常に<code>Disabled</code>とする。
+        </p>
+        <p>
+          <code>Picker</code
+          >は、求めたフォントのピクセルサイズで作り、protocolをKittyに固定する。問い合わせをしないため、Kittyの圧縮（<code>o=z</code>）は使わず、画像を圧縮せずに送る。<code>Picker</code>は画像の前処理に必要なので、<code>Picker</code>を包んだ<code>TerminalImageEncoder</code>を<code>Enabled</code>の中にだけ持たせる。<code>Disabled</code>のときは、画像に関するUsecaseは起動時に何もせず終わる。
+        </p>
+        <p>
+          個々の画像の取得、decode、encodeに失敗したときは、その画像だけを代わりの文字で表示する。
+        </p>
+        <p>
+          <code>ratatui-image</code
+          >は、依存する<code>rustix</code>がwasm32に対応しないため、Webデモではbuildできない。そこで、<code>ratatui-image</code>と<code>image</code>はnative版だけの依存とし、<code>src/stores/terminal_image.rs</code>の型で包む。native版の<code>TerminalImageEncoder</code>は<code>Picker</code>を、前処理の結果の<code>PreparedImage</code>はdecode済みの画像とKitty
+          protocolを持つ。Webデモでは、どちらも値を作れない空のenumにする。cfgによる分岐はこのファイルに閉じ、Store、Usecase、Componentには書かない。
+        </p>
+        <h3>画像を取得元ごとのキーで持つ</h3>
+        <p>
+          表示する画像の状態を<code>ImageStore</code>で持つ。<code>ImageStore</code>は、画像の取得元を表す<code>ImageKey</code>ごとに状態を持ち、添付ファイルに固有の情報は持たない。同じ添付ファイルでも、サムネイルと原画像は別の画像として扱う。
+        </p>
+        <pre><code class="language-rust">pub enum ImageKey {
+    AttachmentThumbnail { id: AttachmentId, size: u32 },
+    AttachmentOriginal { id: AttachmentId },
+}
+
+pub enum ImageState {
+    Loading,
+    Preparing { path: PathBuf },
+    Ready(PreparedImage),
+    Failed { reason: String },
+}</code></pre>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>状態</th>
+                <th>処理</th>
+                <th>成功時</th>
+                <th>失敗時</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>Loading</code></td>
+                <td>画像を取得し、一時ディレクトリへ書き込む</td>
+                <td>
+                  <code>Preparing</code
+                  >へ進み、ファイルのパスを載せた後続要求を返す
+                </td>
+                <td><code>Failed</code>にする</td>
+              </tr>
+              <tr>
+                <td><code>Preparing</code></td>
+                <td>
+                  一時ファイルを読んでdecodeし、必要なら縮小して、表示用のKitty
+                  protocolへencodeする
+                </td>
+                <td><code>Ready</code>へ進み、前処理の結果を保持する</td>
+                <td><code>Failed</code>にする</td>
+              </tr>
+              <tr>
+                <td><code>Ready</code></td>
+                <td>なし</td>
+                <td>-</td>
+                <td>-</td>
+              </tr>
+              <tr>
+                <td><code>Failed</code></td>
+                <td>なし</td>
+                <td>-</td>
+                <td>-</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          状態がない画像と<code>Failed</code>の画像だけが、読み込みを始められる。<code>Ready</code>の画像は起動中ずっと残す。
+        </p>
+        <p>
+          添付ファイルの表示にどの<code>ImageKey</code>を使うかは、<code>IssueStore</code>が<code>AttachmentId</code>ごとに持つ。添付ファイルの追加状態と同じく、Issueのentryとは別のMapとし、Issueを取得し直しても引き継ぐ。対応と画像の状態を同時に変える更新は、2つのStoreをまたぐ<code>AttachmentImageAction</code>1件で行う。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th>更新</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>Start</code></td>
+                <td>対応を登録し、その画像の読み込みを始める</td>
+              </tr>
+              <tr>
+                <td><code>FallBackToOriginal</code></td>
+                <td>
+                  サムネイルを<code>Failed</code>にし、原画像の読み込みを始めて、対応を原画像へ切り替える
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          各段階は別のUsecaseとし、<code>UsecaseRequest</code>のvariantを1つずつ割り当てる。前の段階の完了は、状態を進めるActionと、次の段階の<code>UsecaseRequest</code>を返す。<a
+            href="014.html"
+            >ADR 14</a
+          >の「1リクエストの結果を1つのActionで反映し、完了Actionを適用してから後続へ進む」と、<a
+            href="015.html"
+            >ADR 15</a
+          >の後続要求に従う。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>要求</th>
+                <th>処理</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <code
+                    >DownloadAttachmentImage { attachment_id, thumbnailable
+                    }</code
+                  >
+                </td>
+                <td>
+                  読み込みを始め、<code>thumbnailable</code>ならサムネイルを、そうでなければ原画像を取得する
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>DownloadAttachmentOriginal { attachment_id }</code>
+                </td>
+                <td>
+                  サムネイルを取得できなかった添付ファイルの原画像を取得する
+                </td>
+              </tr>
+              <tr>
+                <td><code>PrepareImage { key, path }</code></td>
+                <td>一時ファイルの画像を前処理する。取得元を問わない</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <code>Ready</code
+          >の<code>PreparedImage</code>には、表示に必要な前処理を済ませた値を持たせる。
+        </p>
+        <ul>
+          <li>decode済みの画像</li>
+          <li>
+            その画像を元の解像度で表示する大きさでencodeしたKitty protocol
+          </li>
+        </ul>
+        <p>セル単位の大きさは、Kitty protocolから求める。</p>
+        <p>
+          表示する幅がこの大きさより狭いときは、表示側で縮小してencodeし直し、元の画像と幅ごとに結果を保持する。性能に問題があれば、別の段階のUsecaseに切り出す。
+        </p>
+        <h3>Issue詳細GETの完了でダウンロードを要求する</h3>
+        <p>
+          <code>IssueAggregate</code
+          >を置き換えるGETの完了は、どれも画像の添付ファイルのダウンロードを後続要求として返す。画像かどうかは、<code>content_type</code>が<code>image/</code>で始まるかで判定する。ただし<code>image/svg+xml</code>は、<code
+            >image</code
+          >
+          crateでdecodeできないため除く。対象は初回取得、Issue属性の保存前GETと確認GET、Journal保存後のGET、添付ファイル追加の確認GETである。保存前GETで競合を検出した場合、Journalの退避、確認GETに失敗して保存前GETの値で完了する場合も、<code>IssueAggregate</code>を置き換えるため対象に含める。後続要求の組み立ては、これらのUsecaseで共通の処理にする。
+        </p>
+        <p>
+          完了のFutureはStoreを参照できないため、後続要求は対象を絞らずに返す。ダウンロードのUsecaseは、起動時に<code>SettingsStore</code>と<code>ImageStore</code>を見て、次の場合だけ始める。
+        </p>
+        <ul>
+          <li><code>ImageDisplay</code>が<code>Enabled</code>である。</li>
+          <li>
+            その添付ファイルに対応する画像がないか、対応する画像が<code>Failed</code>である。
+          </li>
+        </ul>
+        <p>
+          本文やnotesから参照されているかは判定しない。参照の解釈は表示側の責務であり、記法の違いもある。Issueに添付された画像はすべて取得する。
+        </p>
+        <h3>サムネイルを優先し、取れなければ原画像を取得する</h3>
+        <p>
+          まず<code>GET /attachments/thumbnail/:id/:size</code
+          >でサムネイルを取得する。<code>size</code>はUsecaseの定数とし、初期値はRedmineの上限の800pxとする。サムネイルのGETが失敗したら、<code
+            >GET /attachments/download/:id</code
+          >で原画像を取得する。<code>404</code>に限らず、どの失敗でも原画像の取得へ進む。サムネイルがない理由が、サーバーにImageMagickがないためか、生成に失敗したためかを、clientからは区別できないためである。<code>thumbnail_url</code>がない添付ファイルは、サムネイルを試さずに原画像の取得から始める。
+        </p>
+        <p>
+          原画像は大きさに上限がない。そこで、原画像の取得にはバイト数の上限を設け、上限を超えたら<code>Failed</code>にする。上限はUsecaseの定数とし、サムネイルは4
+          MiB、原画像と前処理で読むファイルは20
+          MiBとする。<code>Preparing</code>では、画像の長辺が800pxを超えていたら、800pxまで縮小してからencodeする。サムネイルの<code>size</code>もこの値に合わせる。これにより、<code>Ready</code>に置く画像の大きさは、どちらの経路でも同じ範囲に収まる。
+        </p>
+        <p>
+          URLは、<code>thumbnail_url</code>や<code>content_url</code>の値ではなく、HTTP実装が接続先と添付ファイルIDから組み立てる。これらのURLはRedmineのホスト名の設定に基づいており、proxyやcontainer越しの接続では、clientから届かないことがある。<code>Attachment</code>には、<code>thumbnail_url</code>があったかどうかを<code
+            >thumbnailable: bool</code
+          >として持たせる。
+        </p>
+        <p>
+          <code>RedmineClient</code
+          >に、サムネイルのバイト列を取得するメソッドと、原画像のバイト列を取得するメソッドを加える。どちらも、応答が上限のバイト数を超える場合は、全体を読まずにエラーにする。
+        </p>
+        <h3>一時ファイルはLocalFileClientが管理する</h3>
+        <p>
+          <code>LocalFileClient</code
+          >に、一時ディレクトリへバイト列を書き込み、書き込んだパスを返すメソッドを加える。native版の起動処理は、<code>std::env::temp_dir()</code>の下へ<code>redmine-tui-&lt;プロセスID&gt;-&lt;UUID&gt;</code>のディレクトリを権限<code>0700</code>で作り、終了時に削除する。他のユーザーが同じ名前を先に作っていても使わないよう、推測できない名前で新しく作る。ディレクトリは画像表示の可否にかかわらず作る。macOSの<code>$TMPDIR</code>も<code>temp_dir()</code>で解決する。
+        </p>
+        <p>
+          ファイル名は<code>ImageKey</code>から作り（<code>attachment-&lt;ID&gt;-thumbnail-&lt;size&gt;</code>、<code>attachment-&lt;ID&gt;-original</code>）、Redmine上のファイル名は使わない。ファイル名にパス区切りや<code>..</code>が含まれても、一時ディレクトリの外に書き込まないようにするためである。clientも、ディレクトリを含む名前を拒否する。
+        </p>
+        <h3>各段階でリトライしない</h3>
+        <p>
+          どの段階で失敗しても、その段階を再試行しない。サムネイルのGETの失敗だけは、原画像の取得という別の段階へ進む。それ以外の失敗では、状態を<code>Failed</code>にして失敗理由を残す。一時ファイルへの書き込みに失敗した場合は、原画像を取っても同じく失敗するため、サムネイルの段階でも<code>Failed</code>にする。表示に使う画像が<code>Failed</code>の添付ファイルは、次にIssue詳細GETが完了したときに、サムネイルの取得からやり直す。画像の取得や前処理の失敗は通知せず、表示側で代わりの表示にする。
+        </p>
+        <h2 id="rationale">Rationale</h2>
+        <p>
+          画像表示の可否と<code>Picker</code>をStoreに置くと、Usecaseは起動時にStoreを見るだけで判定できる。起動処理から各Usecaseへ引数で配る必要がない。可否の判定は起動時の1か所で行うため、Usecaseと表示側で食い違わない。
+        </p>
+        <p>
+          可否を設定ファイルの値だけで決めるのは、terminalの判別に確実な方法がなく、推測のための例外処理が増えるためである。どのterminalで使うかは利用者が知っているため、設定で選んでもらう。
+        </p>
+        <p>
+          前処理の結果をStoreに置くのは、decodeとencodeをUIスレッドの外で済ませるためである。ADR
+          16はStoreを画面の状態だけに保つため、添付ファイルの中身を置かないとした。この判断は送信用のファイルを対象にしたもので、表示用の画像は画面に必要な状態そのものである。そのため、Issueの状態とは分けて<code>ImageStore</code>に置く。
+        </p>
+        <p>
+          <code>ImageStore</code
+          >を取得元ごとのキーで持つのは、今後、本文のmermaidのコードブロックを画像にして表示するときにも、同じStoreと前処理を使うためである。添付ファイルとサムネイル・原画像の区別を<code>ImageStore</code>の状態に持たせると、添付ファイル以外の画像を足せない。取得元に固有の情報はキーと、対応を持つ側に置く。
+        </p>
+        <p>
+          <code>ratatui-image</code
+          >の型を包むのは、Webデモでbuildできない依存とcfgの分岐を1つのファイルに閉じるためである。Storeは包んだ型を通して<code>ratatui-image</code>と<code>image</code>に依存する。Kitty
+          protocolを外から組み立てる公開APIがないため、Storeを標準の型だけにするには、Kittyへの送信を自前で実装するか、encodeを表示側で行う必要がある。
+        </p>
+        <p>
+          ダウンロードと前処理を分けると、どちらで失敗したかがStoreの状態から分かる。前処理をやり直すときに、再びダウンロードせずに済む。一時ファイルを経由するのは、この2つの段階の間でバイト列をStoreやActionに載せないためである。
+        </p>
+        <p>
+          サムネイルを優先するのは、decodeとencodeの時間、メモリ、通信量を一定の範囲に収めるためである。原画像は数MBの写真を含み、前処理の時間が読めない。一方、サーバーにImageMagickがない環境では、サムネイルを一切取得できない。原画像へのフォールバックがあれば、そうした環境でも画像を表示できる。原画像の経路では、バイト数の上限で通信量を抑え、<code>Preparing</code>での縮小で画像の大きさをサムネイルと同じ範囲に収める。
+        </p>
+        <p>
+          サムネイルと原画像を別の画像として扱い、別のUsecaseで取得するのは、どちらのGETで失敗したかをStoreに残すためである。1つのUsecaseの中で続けて試すと、ADR
+          14の1リクエスト1状態に反する。
+        </p>
+        <p>
+          GETの完了ごとに対象を絞らずに要求すると、他の利用者が追加した添付ファイルも、どのGETで現れても取得できる。重複の判定はダウンロードの開始時に行うため、取得済みの画像を再び取得しない。
+        </p>
+        <h2 id="consequences">Consequences</h2>
+        <ul>
+          <li>
+            <code>Cargo.toml</code
+            >に<code>ratatui-image</code>、<code>image</code>、<code>toml</code>を追加する。いずれもnative版だけの依存とする。<code>ratatui-image</code>は<code
+              >default-features = false</code
+            >とし、<code>crossterm</code>と<code>image-defaults</code>だけを有効にする。<code>libchafa</code>には依存しない。LinuxとmacOSでは、<code>ratatui-image</code>がrustix経由でterminalを操作するため、FFIは不要である。
+          </li>
+          <li>
+            <code>Store</code
+            >に<code>SettingsStore</code>と<code>ImageStore</code>を加え、<code>Action</code>に<code>Settings</code>、<code>Image</code>、<code>AttachmentImage</code>のvariantを加える。<code>IssueStore</code>は、添付ファイルと<code>ImageKey</code>の対応を持つ。
+          </li>
+          <li>
+            Storeは<code>terminal_image.rs</code>の包んだ型を通して、<code>ratatui-image</code>と<code>image</code>の型に依存する。
+          </li>
+          <li>
+            <code>UsecaseRequest</code
+            >に<code>DownloadAttachmentImage</code>、<code>DownloadAttachmentOriginal</code>、<code>PrepareImage</code>を加える。
+          </li>
+          <li>
+            <code>RedmineClient</code
+            >にサムネイルと原画像の取得メソッドを加えるため、HTTP実装、Demo
+            client、テスト用のClientを更新する。両方の応答と、サムネイルを作れないときの応答を、Redmine
+            clientテストで確認する。テスト用のRedmine
+            containerでImageMagickが使えるかも確認する。
+          </li>
+          <li>
+            ImageMagickのないサーバーでは<code>thumbnail_url</code>が返らないため、サムネイルのGETは行わない。<code>thumbnail_url</code>があるのにサムネイルの生成や通信に失敗した場合だけ、画像1件につきGETが1回増える。
+          </li>
+          <li>
+            <code>LocalFileClient</code
+            >に一時ファイルの書き込みを加えるため、native実装とdemo実装を更新する。demo実装は、画像表示が常に無効なので呼ばれない。
+          </li>
+          <li>
+            <code>Attachment</code
+            >に<code>thumbnailable</code>を加えるため、HTTP実装、Demo
+            client、fixture変換、テストデータの組み立てを更新する。fixtureを変える場合は、seeder、SQL、整合性テストへの影響も確認する。
+          </li>
+          <li>
+            Issue詳細GETを行うUsecaseはすべて、完了時にダウンロードの後続要求を返す。
+          </li>
+          <li>
+            起動処理は、Redmineの初期読み込みと<code>ratatui::init()</code>を済ませてから、terminalのピクセル数でフォントのピクセルサイズを求め、設定Storeを初期化する。
+          </li>
+          <li>
+            Kitty graphics
+            protocolに対応しないterminalで画像表示を有効にすると、表示が崩れる。READMEで、対応したterminalでだけ有効にするよう案内する。
+          </li>
+          <li>
+            画像を圧縮せずに送るため、送るデータは圧縮した場合より大きくなる。送るのは画像ごとに1回だけである。
+          </li>
+          <li>
+            <code>ImageStore</code
+            >の画像は、起動中は削除しない。多数の画像を持つIssueを多く開くと、メモリ使用量が増える。
+          </li>
+          <li>SVGの添付ファイルは画像として表示しない。</li>
+          <li>
+            一時ディレクトリは、画像表示が無効でも起動のたびに作って削除する。
+          </li>
+          <li>
+            <code>Failed</code
+            >の理由には、Redmineが返したエラーページの本文がそのまま入ることがある。表示するときは短くする必要がある。
+          </li>
+          <li>
+            外部エディタから戻った後に、Kitty側に送信済みの画像が残っているかは確認していない。
+          </li>
+          <li>
+            <code>docs/architecture.md</code
+            >に、<code>SettingsStore</code>、<code>ImageStore</code>、一時ファイル、<code>terminal_image.rs</code>の扱いを追記する。
+          </li>
+          <li>スクロール中の画像の描画は、この決定の対象外とする。</li>
+        </ul>
+        <h2 id="alternatives-considered">Alternatives Considered</h2>
+        <ul>
+          <li>
+            画像表示の可否を、起動処理から<code>UsecaseClients</code>や各Componentへ引数で渡す:
+            表示側とUsecaseの両方へ配る経路が必要になるため採用しない。
+          </li>
+          <li>
+            <code>Picker::from_query_stdio</code
+            >でterminalへ問い合わせ、Kittyと判定したときだけ有効にする:
+            引き継いだ環境変数でKittyを誤って除外し、応答しないterminalではキー入力を奪われるため採用しない。
+          </li>
+          <li>
+            <code>ImageDisplay</code
+            >に<code>Picker</code>を直接持たせ、使う場所ごとにcfgで分岐する:
+            Store、Usecase、Componentの各所にcfgが散らばるため採用しない。
+          </li>
+          <li>
+            <code>ImageStore</code
+            >を<code>AttachmentId</code>ごとに持ち、サムネイル取得中・原画像取得中を状態で区別する:
+            添付ファイル以外の取得元（mermaidのコードブロックなど）の画像を同じStoreで扱えないため採用しない。
+          </li>
+          <li>
+            Storeを標準の型だけに依存させ、Kittyへの送信とplaceholderの描画を自前で実装する:
+            Storeは<code>ratatui-image</code>から切り離せるが、Kitty
+            protocolの実装とテストが必要になるため、今は採用しない。
+          </li>
+          <li>
+            Storeを標準の型だけに依存させ、Kittyへのencodeを表示側で行う:
+            UIスレッドでzlibとbase64の変換を行うことになり、<code>Picker</code>を表示側へ渡す経路も別に必要になるため採用しない。
+          </li>
+          <li>
+            前処理をComponentの<code>update</code>で行う:
+            decodeとencodeでUIスレッドが止まるため採用しない。
+          </li>
+          <li>
+            ダウンロードと前処理を1つのUsecaseで続けて行う:
+            どこまで成功したかをStoreに残せず、ADR 14とADR
+            15の方針に反するため採用しない。
+          </li>
+          <li>
+            一時ファイルを使わず、ダウンロードしたバイト列をActionで運ぶ:
+            前処理をやり直すたびに再取得が必要になり、大きなバイト列がActionとStoreを経由するため採用しない。
+          </li>
+          <li>
+            本文やnotesから参照されている画像だけを取得する:
+            Usecaseが表示側の記法を解釈することになるため採用しない。
+          </li>
+          <li>
+            原画像だけを取得する:
+            前処理の時間と通信量が、すべての画像で原画像の大きさに左右されるため採用しない。
+          </li>
+          <li>
+            サムネイルだけを取得する:
+            ImageMagickのないサーバーでは画像を一切表示できないため採用しない。
+          </li>
+          <li>
+            サムネイルの<code>404</code>のときだけ原画像へ進む:
+            通信の失敗とサムネイルの生成失敗とで扱いが分かれ、生成失敗が<code>404</code>以外で返る場合に表示できないため採用しない。
+          </li>
+          <li>
+            <code>thumbnail_url</code>の値をそのまま使う:
+            proxyやcontainer越しの接続で、clientから届かないURLになることがあるため採用しない。
+          </li>
+          <li>
+            Sixelにも対応する:
+            スクロール中に上下が欠けた画像を描けないため採用しない。
+          </li>
+        </ul>
+        <h2 id="future-work">Future Work</h2>
+        <ul>
+          <li>
+            表示する幅に合わせた縮小とencodeを、性能を測ったうえで別の段階のUsecaseに切り出すか決める。
+          </li>
+          <li>
+            terminalへKittyの圧縮（<code>o=z</code>）に対応するかを問い合わせ、対応していれば圧縮して送るように切り替える。問い合わせは画像表示を有効にしたときだけ行い、応答しないterminalでキー入力を奪わない方法を取る。
+          </li>
+          <li>
+            iTerm2のInline Images
+            Protocolでも描けるようにする。WezTermやiTerm2で画像を表示できる。設定ファイルでprotocolを選べるようにし、スクロール中に上下が欠ける画像は、行ごとに分けた画像（<code>ratatui-image</code>の<code>SlicedProtocol::Sliced</code>）で描く。
+          </li>
+          <li><code>ImageStore</code>から使わなくなった画像を削除する。</li>
+          <li>
+            取得した画像をキャッシュする。今は一時ディレクトリに置いて終了時に削除するため、起動のたびに取得し直す。起動をまたいで再利用するキャッシュを設け、その動作をE2Eで確かめる。今のE2Eは、仮想端末がピクセル単位の大きさを返さず画像表示が無効になるため、画像の取得と一時ファイルを確かめていない。
+          </li>
+          <li>外部エディタから戻った後のKitty画像の再送。</li>
+          <li>設定ファイルに画像表示以外の項目を加える。</li>
+          <li>
+            本文のmermaidのコードブロックを画像にして、<code>ImageStore</code>で扱う。
+          </li>
+          <li>
+            Storeを標準の型だけに依存させるかを、表示側の実装を踏まえて見直す。
+          </li>
+        </ul>
+        <h2 id="references">References</h2>
+        <ul>
+          <li>
+            <a href="https://crates.io/crates/ratatui-image/11.1.0"
+              >ratatui-image 11.1.0</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders"
+              >Kitty graphics protocol: Unicode placeholders</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/redmine/redmine/blob/6.1-stable/app/helpers/attachments_helper.rb"
+              >Redmine 6.1:
+              AttachmentsHelper#render_api_attachment_attributes</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://github.com/redmine/redmine/blob/6.1-stable/app/models/attachment.rb"
+              >Redmine 6.1: Attachment#thumbnail</a
+            >
+          </li>
+        </ul>
+      </main>
+    </div>
+  </body>
+</html>
