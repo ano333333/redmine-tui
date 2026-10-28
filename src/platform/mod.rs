@@ -1,3 +1,5 @@
+#[cfg(feature = "native")]
+pub(crate) mod app_config;
 pub mod editor;
 pub mod host;
 pub mod input;

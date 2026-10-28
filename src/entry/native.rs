@@ -4,6 +4,7 @@ use std::{cell::RefCell, process::ExitCode, rc::Rc, sync::Arc};
 
 use crate::{
     clients::{local_file::native::NativeLocalFileClient, redmine::DefaultRedmineClient},
+    platform::app_config::app_config_from_env,
     platform::editor::native::NativeTextEditor,
     platform::host::native::{NativePlatformHost, install_panic_hook},
     platform::redmine_config::redmine_connection_config_from_env,
@@ -35,6 +36,13 @@ pub(crate) fn run() -> ExitCode {
         Ok(config) => config,
         Err(reason) => {
             eprintln!("failed to read Redmine connection environment: {reason}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let _app_config = match app_config_from_env() {
+        Ok(config) => config,
+        Err(reason) => {
+            eprintln!("failed to read config file: {reason}");
             return ExitCode::FAILURE;
         }
     };
