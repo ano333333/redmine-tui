@@ -500,6 +500,23 @@ impl RedmineClient for IssueUploadClient {
         unreachable!()
     }
 
+    async fn get_attachment_thumbnail(
+        &self,
+        _: crate::vos::AttachmentId,
+        _: u32,
+        _: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_attachment_content(
+        &self,
+        _: crate::vos::AttachmentId,
+        _: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        unreachable!()
+    }
+
     async fn get_issue_statuses(
         &self,
     ) -> std::result::Result<Vec<IssueStatus>, RedmineClientError> {
@@ -1349,6 +1366,23 @@ impl RedmineClient for FailingClient {
         unreachable!()
     }
 
+    async fn get_attachment_thumbnail(
+        &self,
+        _: crate::vos::AttachmentId,
+        _: u32,
+        _: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_attachment_content(
+        &self,
+        _: crate::vos::AttachmentId,
+        _: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        unreachable!()
+    }
+
     async fn get_issue_statuses(
         &self,
     ) -> std::result::Result<Vec<IssueStatus>, RedmineClientError> {
@@ -1882,6 +1916,23 @@ impl RedmineClient for GatedUploadClient {
         _: &crate::vos::UploadToken,
         _: &str,
     ) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_attachment_thumbnail(
+        &self,
+        _: crate::vos::AttachmentId,
+        _: u32,
+        _: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_attachment_content(
+        &self,
+        _: crate::vos::AttachmentId,
+        _: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
         unreachable!()
     }
 

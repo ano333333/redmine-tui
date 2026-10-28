@@ -277,6 +277,23 @@ mod tests {
             unreachable!()
         }
 
+        async fn get_attachment_thumbnail(
+            &self,
+            _: crate::vos::AttachmentId,
+            _: u32,
+            _: u64,
+        ) -> Result<Vec<u8>, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn get_attachment_content(
+            &self,
+            _: crate::vos::AttachmentId,
+            _: u64,
+        ) -> Result<Vec<u8>, RedmineClientError> {
+            unreachable!()
+        }
+
         async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
             unreachable!()
         }

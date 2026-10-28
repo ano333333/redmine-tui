@@ -346,6 +346,26 @@ impl RedmineClient for DemoRedmineClient {
         async move { result }
     }
 
+    // Webデモは画像を表示しないため、添付ファイルの中身は返さない。
+    fn get_attachment_thumbnail(
+        &self,
+        id: AttachmentId,
+        size: u32,
+        _: u64,
+    ) -> impl std::future::Future<Output = Result<Vec<u8>, RedmineClientError>> + Send {
+        let error = Self::not_found("GET", format!("/attachments/thumbnail/{}/{size}", id.get()));
+        async move { Err(error) }
+    }
+
+    fn get_attachment_content(
+        &self,
+        id: AttachmentId,
+        _: u64,
+    ) -> impl std::future::Future<Output = Result<Vec<u8>, RedmineClientError>> + Send {
+        let error = Self::not_found("GET", format!("/attachments/download/{}", id.get()));
+        async move { Err(error) }
+    }
+
     fn get_issue_statuses(
         &self,
     ) -> impl std::future::Future<Output = Result<Vec<IssueStatus>, RedmineClientError>> + Send
