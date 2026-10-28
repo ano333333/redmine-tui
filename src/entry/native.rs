@@ -9,8 +9,9 @@ use crate::{
     platform::host::native::{NativePlatformHost, install_panic_hook},
     platform::redmine_config::redmine_connection_config_from_env,
     platform::runtime::tokio_spawner::TokioBackgroundSpawner,
+    platform::terminal_image::detect_image_display,
     runner::{RunError, lifecycle::consume_initial_actions, run as run_app},
-    stores::Dispatcher,
+    stores::{Dispatcher, SettingsAction},
     trace_dbg,
     usecases::{UsecaseClients, redmine::load_initial_entities},
 };
@@ -39,7 +40,7 @@ pub(crate) fn run() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let _app_config = match app_config_from_env() {
+    let app_config = match app_config_from_env() {
         Ok(config) => config,
         Err(reason) => {
             eprintln!("failed to read config file: {reason}");
@@ -67,6 +68,11 @@ pub(crate) fn run() -> ExitCode {
     let mut host = NativePlatformHost::new(ratatui::init());
     // runのFutureが保持するeditor sessionを先に破棄し、以降のどのreturnでもterminalを復帰する。
     let _terminal_restore = TerminalRestoreGuard;
+    let image_display = detect_image_display(app_config.image_enabled);
+    consume_initial_actions(
+        dispatcher.clone(),
+        vec![SettingsAction::SetImageDisplay(image_display).into()],
+    );
     let editor = NativeTextEditor::from_environment();
     let clients = UsecaseClients {
         redmine: client,
