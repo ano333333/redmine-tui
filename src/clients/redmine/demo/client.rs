@@ -305,6 +305,7 @@ impl RedmineClient for DemoRedmineClient {
                             "/attachments/download/{}/{filename}",
                             upload.id.get()
                         ),
+                        thumbnailable: false,
                         author: user.clone(),
                         created_on: now,
                     });

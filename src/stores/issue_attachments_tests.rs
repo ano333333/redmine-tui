@@ -33,6 +33,7 @@ fn attachment(id: u16, filename: &str) -> Attachment {
         content_type: Some("image/png".to_string()),
         description: String::new(),
         content_url: format!("/attachments/download/{id}/{filename}"),
+        thumbnailable: false,
         author: "admin".to_string(),
         created_on: local_datetime("2026-09-11T00:00:00+09:00"),
     }

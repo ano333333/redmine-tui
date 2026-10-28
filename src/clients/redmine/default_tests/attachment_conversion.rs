@@ -13,6 +13,7 @@ fn sample_attachment() -> RedmineAttachment {
         content_type: Some("image/png".to_string()),
         description: Some("screenshot".to_string()),
         content_url: "http://localhost:3000/attachments/download/12/sample.png".to_string(),
+        thumbnail_url: Some("http://localhost:3000/attachments/thumbnail/12".to_string()),
         author: RedmineAttachmentAuthor {
             name: "Taro Yamada".to_string(),
         },
@@ -37,6 +38,7 @@ fn valid_redmine_attachment_is_converted() {
         attachment.content_url,
         "http://localhost:3000/attachments/download/12/sample.png"
     );
+    assert!(attachment.thumbnailable);
     assert_eq!(attachment.author, "Taro Yamada");
     assert_eq!(attachment.created_on, expected_created_on);
 }
@@ -49,6 +51,16 @@ fn empty_content_type_is_converted_to_none() {
     let attachment = convert_attachment(attachment).expect("conversion failed");
 
     assert_eq!(attachment.content_type, None);
+}
+
+#[test]
+fn missing_thumbnail_url_is_converted_to_not_thumbnailable() {
+    let mut attachment = sample_attachment();
+    attachment.thumbnail_url = None;
+
+    let attachment = convert_attachment(attachment).expect("conversion failed");
+
+    assert!(!attachment.thumbnailable);
 }
 
 #[test]

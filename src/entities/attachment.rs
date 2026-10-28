@@ -11,6 +11,8 @@ pub struct Attachment {
     pub content_type: Option<String>,
     pub description: String,
     pub content_url: String,
+    /// Redmineがサムネイルを作れる添付ファイルか。Issue詳細の`thumbnail_url`の有無で決まる。
+    pub thumbnailable: bool,
     pub author: String,
     pub created_on: DateTime<Local>,
 }

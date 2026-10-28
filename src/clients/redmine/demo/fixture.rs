@@ -99,6 +99,8 @@ impl DemoFixtureState {
                         *issue_id,
                         fixture,
                         file.len() as u64,
+                        // Demo clientはサムネイルを返さない。
+                        false,
                     ));
                 attachments
             },

@@ -160,6 +160,7 @@ async fn assert_get_issue_returns_seeded_attachment(
     assert_eq!(attachment.filesize, 1_471_702);
     assert_eq!(attachment.content_type.as_deref(), Some("image/png"));
     assert_eq!(attachment.description, "サンプル画像");
+    assert!(attachment.thumbnailable);
     assert_eq!(attachment.author, "user1 Fixture");
     assert_eq!(
         attachment.created_on,
