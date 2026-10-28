@@ -3,7 +3,10 @@
 use std::{cell::RefCell, process::ExitCode, rc::Rc, sync::Arc};
 
 use crate::{
-    clients::{local_file::native::NativeLocalFileClient, redmine::DefaultRedmineClient},
+    clients::{
+        local_file::native::{NativeLocalFileClient, NativeTempDir},
+        redmine::DefaultRedmineClient,
+    },
     platform::app_config::app_config_from_env,
     platform::editor::native::NativeTextEditor,
     platform::host::native::{NativePlatformHost, install_panic_hook},
@@ -47,6 +50,13 @@ pub(crate) fn run() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let temp_dir = match NativeTempDir::create() {
+        Ok(temp_dir) => temp_dir,
+        Err(error) => {
+            eprintln!("failed to create a temporary directory: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
     let client = Arc::new(DefaultRedmineClient::new(
         config.host_url,
         config.access_token,
@@ -76,7 +86,7 @@ pub(crate) fn run() -> ExitCode {
     let editor = NativeTextEditor::from_environment();
     let clients = UsecaseClients {
         redmine: client,
-        local_file: Arc::new(NativeLocalFileClient),
+        local_file: Arc::new(NativeLocalFileClient::new(&temp_dir)),
     };
     match spawner.block_on(run_app(&mut host, &editor, &spawner, clients, dispatcher)) {
         Ok(()) => ExitCode::SUCCESS,

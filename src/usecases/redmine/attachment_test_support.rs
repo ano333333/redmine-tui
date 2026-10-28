@@ -169,4 +169,8 @@ impl LocalFileClient for StubLocalFileClient {
             .push((path.to_path_buf(), max_len));
         self.result.clone()
     }
+
+    async fn write_temp_file(&self, _: &str, _: Vec<u8>) -> Result<PathBuf, LocalFileError> {
+        unreachable!("attachment upload does not write temporary files")
+    }
 }

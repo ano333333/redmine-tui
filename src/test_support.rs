@@ -27,6 +27,14 @@ impl LocalFileClient for UnusedLocalFileClient {
     async fn read_file(&self, _: &std::path::Path, _: u64) -> Result<Vec<u8>, LocalFileError> {
         unreachable!("this test does not read local files")
     }
+
+    async fn write_temp_file(
+        &self,
+        _: &str,
+        _: Vec<u8>,
+    ) -> Result<std::path::PathBuf, LocalFileError> {
+        unreachable!("this test does not write local files")
+    }
 }
 
 pub fn usecase_clients<C>(redmine: Arc<C>) -> UsecaseClients<C, UnusedLocalFileClient> {
