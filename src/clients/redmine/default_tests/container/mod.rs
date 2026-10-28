@@ -1,4 +1,5 @@
 mod attach_upload;
+mod get_attachment_content;
 mod get_categories;
 mod get_issue;
 mod get_project_issues;
