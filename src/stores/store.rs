@@ -12,6 +12,7 @@ use super::notice_store::{Notice, NoticeAction, NoticeStore};
 use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
+use super::settings_store::{ImageDisplay, SettingsAction, SettingsStore};
 use crate::entities::{
     Category, Issue, IssueAggregate, IssueChild, IssueStatus, IssueView, Priority, Project,
     TargetVersion, TimeEntityActivity, Tracker, User,
@@ -57,6 +58,7 @@ pub struct Store {
     issue_store: IssueStore,
     project_issues_store: ProjectIssuesStore,
     notice_store: NoticeStore,
+    settings_store: SettingsStore,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
     priorities: HashMap<PriorityId, Priority>,
@@ -73,6 +75,7 @@ impl Store {
             issue_store: IssueStore::new(),
             project_issues_store: ProjectIssuesStore::new(),
             notice_store: NoticeStore::new(),
+            settings_store: SettingsStore::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
             priorities: HashMap::new(),
@@ -96,6 +99,7 @@ impl Store {
             Action::Journal(action) => self.issue_store.consume_journal_action(action),
             Action::Attachment(action) => self.issue_store.consume_attachment_action(action),
             Action::Notice(action) => self.notice_store.consume_action(action),
+            Action::Settings(action) => self.settings_store.consume_action(action),
             Action::SyncUsers { users } => {
                 self.users = users.into_iter().map(|user| (user.id, user)).collect();
             }
@@ -404,6 +408,10 @@ impl Store {
         self.notice_store.notices()
     }
 
+    pub fn get_image_display(&self) -> &ImageDisplay {
+        self.settings_store.image_display()
+    }
+
     /// 前回更新からの経過時間を内部状態へ累積する。
     ///
     /// この更新で表示期限ちょうどに達したnoticeも破棄する。
@@ -451,6 +459,7 @@ pub enum Action {
     Journal(JournalAction),
     Attachment(AttachmentAction),
     Notice(NoticeAction),
+    Settings(SettingsAction),
 }
 
 impl From<IssueAction> for Action {
@@ -480,6 +489,12 @@ impl From<AttachmentAction> for Action {
 impl From<NoticeAction> for Action {
     fn from(action: NoticeAction) -> Self {
         Self::Notice(action)
+    }
+}
+
+impl From<SettingsAction> for Action {
+    fn from(action: SettingsAction) -> Self {
+        Self::Settings(action)
     }
 }
 
