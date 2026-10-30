@@ -12,6 +12,7 @@ use super::journals_list_item::JournalsListItemComponent;
 use super::local_journal_item::EventProcessResult as LocalEventProcessResult;
 use super::local_journal_item::LocalJournalItemComponent;
 use super::widget::JournalsListWidget;
+use crate::components::issue::detail::markdown_view::MarkdownImages;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// RemoteとLocalを同じ一覧でfocusするための、component内だけで使うidentity。
@@ -246,12 +247,31 @@ impl JournalsListComponent {
         }
     }
 
+    #[cfg(test)]
     pub fn update(
         &mut self,
         entries: &[RemoteJournalView<'_>],
         deleted_entries: &[DeletedJournalEntry],
         local_entry: Option<&LocalJournalEntry>,
         width: u16,
+    ) -> Option<EventProcessResult> {
+        self.update_with_images(
+            entries,
+            deleted_entries,
+            local_entry,
+            width,
+            &MarkdownImages::none(),
+        )
+    }
+
+    /// notesの単独の画像の段落は、`images`で読み込んだ画像を表示する。
+    pub fn update_with_images(
+        &mut self,
+        entries: &[RemoteJournalView<'_>],
+        deleted_entries: &[DeletedJournalEntry],
+        local_entry: Option<&LocalJournalEntry>,
+        width: u16,
+        images: &MarkdownImages,
     ) -> Option<EventProcessResult> {
         self.width = width;
         // Store同期でfocus対象が消えた場合も、同じ表示位置または新しい末尾から操作を継続する。
@@ -267,7 +287,7 @@ impl JournalsListComponent {
                 self.items
                     .push(JournalsListItemComponent::new(self.issue_id, journal_id));
             }
-            self.items[index].update(entry, width);
+            self.items[index].update_with_images(entry, width, images);
         }
 
         self.items.truncate(entries.len());
@@ -280,7 +300,7 @@ impl JournalsListComponent {
                     .position(|component| component.original_id == entry.original_id)
                     .map(|index| previous_deleted_items.remove(index))
                     .unwrap_or_else(|| DeletedJournalItemComponent::new(entry.original_id));
-                component.update(entry, width);
+                component.update_with_images(entry, width, images);
                 component
             })
             .collect();
@@ -289,7 +309,7 @@ impl JournalsListComponent {
                 .local_item
                 .take()
                 .unwrap_or_else(LocalJournalItemComponent::new);
-            component.update(entry, width);
+            component.update_with_images(entry, width, images);
             component
         });
         if let Some(focused_item) = self.focused_item

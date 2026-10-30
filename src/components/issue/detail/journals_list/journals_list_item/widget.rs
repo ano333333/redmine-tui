@@ -1,13 +1,14 @@
 use std::cmp::min;
-use std::hash::{DefaultHasher, Hash, Hasher};
 
-use chrono::{DateTime, Local};
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::prelude::{Line, Span, Stylize};
 use ratatui::text::Text;
-use ratatui::widgets::{Paragraph, Widget, Wrap};
+use ratatui::widgets::{Paragraph, Widget};
 
+use crate::components::issue::detail::markdown_view::{
+    MarkdownImagePlacement, MarkdownImages, MarkdownView,
+};
 use crate::stores::{LocalJournalState, RemoteJournalState};
 use crate::vos::JournalDetailAttachmentChange;
 
@@ -78,32 +79,40 @@ pub fn local_state_marker(state: &LocalJournalState) -> &'static str {
 }
 
 pub struct JournalItemWidgetState {
-    comment_buffer: Buffer,
-    hash: u64,
+    comment: MarkdownView,
 }
 
 impl JournalItemWidgetState {
     pub fn new() -> Self {
         Self {
-            comment_buffer: Buffer::empty(Rect::new(0, 0, 0, 0)),
-            hash: 0,
+            comment: MarkdownView::new(),
         }
     }
 
-    pub fn update(&mut self, width: u16, _: &str, _: Option<&DateTime<Local>>, notes: &str) {
-        let mut hasher = DefaultHasher::new();
-        notes.hash(&mut hasher);
-        let hash = hasher.finish();
+    #[cfg(test)]
+    pub fn update(
+        &mut self,
+        width: u16,
+        _: &str,
+        _: Option<&chrono::DateTime<chrono::Local>>,
+        notes: &str,
+    ) {
+        self.update_with_images(width, notes, &MarkdownImages::none());
+    }
 
-        let comment_width = width.saturating_sub(GUTTER_WIDTH);
-        if self.comment_buffer.area.width != comment_width || self.hash != hash {
-            self.comment_buffer = render_comment_in_buffer(comment_width, notes);
-            self.hash = hash;
-        }
+    /// notesの単独の画像の段落は、`images`で読み込んだ画像を表示し、表示できなければ代わりの文字にする。
+    pub fn update_with_images(&mut self, width: u16, notes: &str, images: &MarkdownImages) {
+        let notes = if notes.is_empty() {
+            EMPTY_NOTES_PLACEHOLDER
+        } else {
+            notes
+        };
+        self.comment
+            .update(width.saturating_sub(GUTTER_WIDTH), notes, images);
     }
 
     pub fn comment_line_count(&self) -> u16 {
-        self.comment_buffer.area.height
+        self.comment.line_count()
     }
 }
 
@@ -142,7 +151,7 @@ impl<'a> Widget for JournalItemWidget<'a> {
             property.render(property_area, buf);
         }
 
-        let buf_src = &self.comment_state.comment_buffer;
+        let buf_src = self.comment_state.comment.buffer();
         let comment_y = content.y.saturating_add(property_height);
         let comment_height = content
             .height
@@ -192,6 +201,23 @@ impl<'a> JournalItemWidget<'a> {
 
     pub fn line_count(&self, _: u16) -> u16 {
         1 + 1 + self.details.len() as u16 + 1 + self.comment_state.comment_line_count() + 1
+    }
+
+    /// Widgetの左上から見たnotesの画像の位置。画像の行は空けて描くため、呼び出し側が画面へ直接描く。
+    pub fn images(&self) -> Vec<MarkdownImagePlacement> {
+        let comment_y = self.details.len() as u16 + 3;
+        self.comment_state
+            .comment
+            .images()
+            .iter()
+            .map(|placement| MarkdownImagePlacement {
+                position: Position::new(
+                    placement.position.x + GUTTER_WIDTH,
+                    placement.position.y + comment_y,
+                ),
+                image: placement.image.clone(),
+            })
+            .collect()
     }
 }
 
@@ -275,20 +301,6 @@ impl<'a> From<LocalJournalItemView<'a>> for JournalItemView<'a> {
     fn from(view: LocalJournalItemView<'a>) -> Self {
         Self::Local(view)
     }
-}
-
-fn render_comment_in_buffer(width: u16, body: &str) -> Buffer {
-    let body = if body.is_empty() {
-        EMPTY_NOTES_PLACEHOLDER
-    } else {
-        body
-    };
-    let body = Paragraph::new(tui_markdown::from_str(body)).wrap(Wrap { trim: true });
-    let body_line_count = body.line_count(width) as u16;
-    let area = Rect::new(0, 0, width, body_line_count);
-    let mut buffer = Buffer::empty(area);
-    body.render(area, &mut buffer);
-    buffer
 }
 
 #[cfg(test)]

@@ -145,7 +145,15 @@ impl<'a> Widget for IssueDetailWidget<'a> {
         scroll_widget.render_widget(self.attachments_list, attachments_line_count);
         scroll_widget.render_widget(self.children_list, children_line_count);
         scroll_widget.render_widget(SectionHeader::new("履歴"), SectionHeader::LINE_COUNT);
+        let journals_y = scroll_widget.next_widget_y();
+        let journal_images = self.journals_list.images(width);
         scroll_widget.render_widget(self.journals_list, journals_line_count);
+        for placement in journal_images {
+            scroll_widget.render_image(
+                Position::new(placement.position.x, journals_y + placement.position.y),
+                placement.image,
+            );
+        }
 
         scroll_widget.render(scroll_area, buf);
     }

@@ -10,6 +10,7 @@ use super::focus_state::FocusState;
 use super::widget::RemoteJournalItemView;
 use super::widget::{ResolvedJournalDetail, display_notes, state_marker};
 use super::{JournalItemWidget, JournalItemWidgetState};
+use crate::components::issue::detail::markdown_view::MarkdownImages;
 
 const NONE_DISPLAY: &str = "(なし)";
 const UNKNOWN_DISPLAY: &str = "(不明)";
@@ -219,18 +220,24 @@ impl JournalsListItemComponent {
         self.focus_state.focus_event(event);
     }
 
+    #[cfg(test)]
     pub fn update(&mut self, entry: &RemoteJournalView<'_>, width: u16) {
+        self.update_with_images(entry, width, &MarkdownImages::none());
+    }
+
+    pub fn update_with_images(
+        &mut self,
+        entry: &RemoteJournalView<'_>,
+        width: u16,
+        images: &MarkdownImages,
+    ) {
         let journal = entry.journal;
         let notes = display_notes(&journal.notes, &entry.state).to_owned();
         self.notes = notes;
         self.state = entry.state.clone();
         self.detail_count = journal.details.len();
-        self.widget_state.update(
-            width,
-            &journal.user,
-            journal.updated_on.as_ref(),
-            &self.notes,
-        );
+        self.widget_state
+            .update_with_images(width, &self.notes, images);
         self.comment_line_count = self.widget_state.comment_line_count();
         self.focus_state.update(
             width,

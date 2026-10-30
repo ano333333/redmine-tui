@@ -59,6 +59,46 @@ pub struct MarkdownView {
     images: Vec<MarkdownImagePlacement>,
     /// 幅に合わせて縮小した画像。`update`のたびにencodeし直さないよう、元の画像と幅ごとに残す。
     fitted: Vec<FittedImage>,
+    /// 前回描いたときの入力。同じなら描き直さない。
+    rendered: Option<RenderedInput>,
+}
+
+#[derive(PartialEq)]
+struct RenderedInput {
+    width: u16,
+    markdown: String,
+    images: Vec<ImageInput>,
+}
+
+/// 画像の段落の表示に関わる状態。読み込みが進んだら描き直す。
+enum ImageInput {
+    Ready(PreparedImage),
+    Loading,
+    Failed,
+    Unavailable,
+}
+
+impl PartialEq for ImageInput {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Ready(image), Self::Ready(other)) => image.ptr_eq(other),
+            (Self::Loading, Self::Loading)
+            | (Self::Failed, Self::Failed)
+            | (Self::Unavailable, Self::Unavailable) => true,
+            _ => false,
+        }
+    }
+}
+
+impl From<&AttachmentImageView> for ImageInput {
+    fn from(view: &AttachmentImageView) -> Self {
+        match view {
+            AttachmentImageView::Ready(image) => Self::Ready(image.clone()),
+            AttachmentImageView::Loading => Self::Loading,
+            AttachmentImageView::Failed => Self::Failed,
+            AttachmentImageView::Unavailable => Self::Unavailable,
+        }
+    }
 }
 
 struct FittedImage {
@@ -73,33 +113,60 @@ impl MarkdownView {
             buffer: Buffer::empty(Rect::new(0, 0, 0, 0)),
             images: Vec::new(),
             fitted: Vec::new(),
+            rendered: None,
         }
     }
 
     pub fn update(&mut self, width: u16, markdown: &str, images: &MarkdownImages) {
+        let blocks: Vec<(MarkdownBlock, Option<AttachmentImageView>)> =
+            split_image_blocks(markdown)
+                .into_iter()
+                .map(|block| {
+                    let view = match &block {
+                        MarkdownBlock::Image { dest, .. } => Some(images.resolve(dest)),
+                        MarkdownBlock::Text(_) => None,
+                    };
+                    (block, view)
+                })
+                .collect();
+        let input = RenderedInput {
+            width,
+            markdown: markdown.to_string(),
+            images: blocks
+                .iter()
+                .filter_map(|(_, view)| view.as_ref().map(ImageInput::from))
+                .collect(),
+        };
+        if self.rendered.as_ref() == Some(&input) {
+            return;
+        }
+        self.rendered = Some(input);
+
         let encoder = images.encoder();
         let mut fitted = Vec::new();
         let mut parts: Vec<Part> = Vec::new();
-        for block in split_image_blocks(markdown) {
-            let part = match block {
-                MarkdownBlock::Text(text) => Part::Text(tui_markdown::from_str(text)),
-                MarkdownBlock::Image { dest, source, .. } => match images.resolve(&dest) {
-                    AttachmentImageView::Ready(image) => {
-                        match encoder
-                            .and_then(|encoder| self.fit(encoder, &image, width, &mut fitted))
-                        {
-                            Some(image) => Part::Image(image),
-                            None => Part::Text(fallback(source, Some(FAILED_SUFFIX))),
+        for (block, view) in blocks {
+            let part = match (block, view) {
+                (MarkdownBlock::Text(text), _) => Part::Text(tui_markdown::from_str(text)),
+                (MarkdownBlock::Image { source, .. }, view) => {
+                    match view.unwrap_or(AttachmentImageView::Unavailable) {
+                        AttachmentImageView::Ready(image) => {
+                            match encoder
+                                .and_then(|encoder| self.fit(encoder, &image, width, &mut fitted))
+                            {
+                                Some(image) => Part::Image(image),
+                                None => Part::Text(fallback(source, Some(FAILED_SUFFIX))),
+                            }
                         }
+                        AttachmentImageView::Loading => {
+                            Part::Text(fallback(source, Some(LOADING_SUFFIX)))
+                        }
+                        AttachmentImageView::Failed => {
+                            Part::Text(fallback(source, Some(FAILED_SUFFIX)))
+                        }
+                        AttachmentImageView::Unavailable => Part::Text(fallback(source, None)),
                     }
-                    AttachmentImageView::Loading => {
-                        Part::Text(fallback(source, Some(LOADING_SUFFIX)))
-                    }
-                    AttachmentImageView::Failed => {
-                        Part::Text(fallback(source, Some(FAILED_SUFFIX)))
-                    }
-                    AttachmentImageView::Unavailable => Part::Text(fallback(source, None)),
-                },
+                }
             };
             parts.push(part);
         }

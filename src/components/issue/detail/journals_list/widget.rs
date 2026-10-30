@@ -1,7 +1,7 @@
 use ratatui::buffer::Buffer;
 use std::cmp::min;
 
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Widget};
@@ -10,6 +10,7 @@ use crate::widgets::gutter::GUTTER_WIDTH;
 use crate::widgets::theme::{ACCENT, MUTED};
 
 use super::journals_list_item::JournalItemWidget;
+use crate::components::issue::detail::markdown_view::MarkdownImagePlacement;
 
 const CREATE_BUTTON_WIDTH: u16 = 12;
 const CREATE_BUTTON_HEIGHT: u16 = 3;
@@ -39,6 +40,25 @@ impl<'a> JournalsListWidget<'a> {
             .map(|widget| widget.line_count(width))
             .sum::<u16>()
             + 3
+    }
+
+    /// Widgetの左上から見たnotesの画像の位置。画像の行は空けて描くため、呼び出し側が画面へ直接描く。
+    pub fn images(&self, width: u16) -> Vec<MarkdownImagePlacement> {
+        let mut y = 0;
+        let mut images = Vec::new();
+        for widget in &self.widgets {
+            images.extend(
+                widget
+                    .images()
+                    .into_iter()
+                    .map(|placement| MarkdownImagePlacement {
+                        position: Position::new(placement.position.x, placement.position.y + y),
+                        image: placement.image,
+                    }),
+            );
+            y += widget.line_count(width);
+        }
+        images
     }
 }
 

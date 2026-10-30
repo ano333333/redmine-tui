@@ -131,8 +131,11 @@ mod tests {
         dispatcher
     }
 
-    #[test]
-    fn snapshot_issue_detail_draws_a_ready_image_in_the_body() {
+    /// `sample.png`を添付ファイルとして持ち、その画像（テスト用のencoderで3x2セル）を読み込み済みのIssue 3。
+    fn dispatcher_with_ready_image(
+        description: &str,
+        journals: Vec<crate::entities::Journal>,
+    ) -> Rc<RefCell<Dispatcher>> {
         use std::path::PathBuf;
 
         use crate::stores::{
@@ -143,7 +146,8 @@ mod tests {
 
         let dispatcher = dispatcher();
         let mut issue = crate::test_support::sample_parent_issue();
-        issue.issue.description = "before\n\n![](sample.png)\n\nafter".to_string();
+        issue.issue.description = description.to_string();
+        issue.journals = journals;
         let mut attachment = sample_attachment(1, Some("image/png"), false);
         attachment.filename = "sample.png".to_string();
         issue.attachments = vec![attachment];
@@ -151,7 +155,7 @@ mod tests {
         let key = ImageKey::AttachmentOriginal {
             id: AttachmentId::new(1),
         };
-        for action in [
+        let actions: [crate::stores::Action; 4] = [
             SettingsAction::SetImageDisplay(ImageDisplay::Enabled {
                 encoder: test_image_encoder(),
             })
@@ -166,26 +170,64 @@ mod tests {
                 path: PathBuf::from("/tmp/image"),
             }
             .into(),
-            // halfblocksのフォントは10x20pxのため、3x2セルになる。
             ImageAction::Prepared {
                 key,
                 image: sample_prepared_image(30, 40),
             }
             .into(),
-        ] {
-            let action: crate::stores::Action = action;
+        ];
+        for action in actions {
             dispatcher.borrow_mut().dispatch(action);
             dispatcher.borrow_mut().consume_action();
         }
-        let mut component = IssueDetailComponent::new(3);
-        component.update(dispatcher.clone(), dispatcher.borrow().store(), (40, 30));
+        dispatcher
+    }
 
+    fn render_issue_detail_snapshot(name: &str, dispatcher: &Rc<RefCell<Dispatcher>>, height: u16) {
+        let mut component = IssueDetailComponent::new(3);
+        component.update(
+            dispatcher.clone(),
+            dispatcher.borrow().store(),
+            (40, height),
+        );
         let store = dispatcher.borrow();
         crate::test_support::render_snapshot(
-            "issue_detail_draws_a_ready_image_in_the_body",
+            name,
             40,
-            30,
+            height,
             component.create_widget(store.store()),
+        );
+    }
+
+    #[test]
+    fn snapshot_issue_detail_draws_a_ready_image_in_the_body() {
+        let dispatcher = dispatcher_with_ready_image("before\n\n![](sample.png)\n\nafter", vec![]);
+
+        render_issue_detail_snapshot(
+            "issue_detail_draws_a_ready_image_in_the_body",
+            &dispatcher,
+            30,
+        );
+    }
+
+    #[test]
+    fn snapshot_issue_detail_draws_a_ready_image_in_journal_notes() {
+        let journal = crate::entities::Journal {
+            id: JournalId::new(1),
+            issue_id: IssueId::new(3),
+            user: "alice".to_string(),
+            updated_on: Some(crate::test_support::local_datetime(
+                "2026-02-10T00:00:00+09:00",
+            )),
+            details: vec![],
+            notes: "see below\n\n![](sample.png)".to_string(),
+        };
+        let dispatcher = dispatcher_with_ready_image("", vec![journal]);
+
+        render_issue_detail_snapshot(
+            "issue_detail_draws_a_ready_image_in_journal_notes",
+            &dispatcher,
+            48,
         );
     }
 
@@ -819,11 +861,12 @@ impl IssueDetailComponent {
         self.children_list.update(store);
 
         let entries = store.get_remote_journals(self.id);
-        self.journals_list.update(
+        self.journals_list.update_with_images(
             &entries,
             store.get_deleted_journals(self.id),
             store.try_get_local_journal(self.id),
             self.width,
+            &MarkdownImages::new(store, issue.attachments()),
         );
 
         self.widget_state.update(
