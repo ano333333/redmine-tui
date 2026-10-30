@@ -24,6 +24,7 @@ use super::header::HeaderComponent;
 use super::journals_list::EventProcessResult as JournalsListEventProcessResult;
 use super::journals_list::FocusEvent as JournalsListFocusEvent;
 use super::journals_list::JournalsListComponent;
+use super::markdown_view::MarkdownImages;
 use super::property::EventProcessResult as PropertyEventProcessResult;
 use super::property::FocusEvent as PropertyFocusTransitionEvent;
 use super::property::PropertyComponent;
@@ -128,6 +129,64 @@ mod tests {
             crate::test_support::sample_parent_issue(),
         );
         dispatcher
+    }
+
+    #[test]
+    fn snapshot_issue_detail_draws_a_ready_image_in_the_body() {
+        use std::path::PathBuf;
+
+        use crate::stores::{
+            AttachmentImageAction, ImageAction, ImageDisplay, ImageKey, SettingsAction,
+        };
+        use crate::test_support::{sample_attachment, sample_prepared_image, test_image_encoder};
+        use crate::vos::AttachmentId;
+
+        let dispatcher = dispatcher();
+        let mut issue = crate::test_support::sample_parent_issue();
+        issue.issue.description = "before\n\n![](sample.png)\n\nafter".to_string();
+        let mut attachment = sample_attachment(1, Some("image/png"), false);
+        attachment.filename = "sample.png".to_string();
+        issue.attachments = vec![attachment];
+        crate::test_support::dispatch_loaded_issue(&mut dispatcher.borrow_mut(), issue);
+        let key = ImageKey::AttachmentOriginal {
+            id: AttachmentId::new(1),
+        };
+        for action in [
+            SettingsAction::SetImageDisplay(ImageDisplay::Enabled {
+                encoder: test_image_encoder(),
+            })
+            .into(),
+            AttachmentImageAction::Start {
+                attachment_id: AttachmentId::new(1),
+                key,
+            }
+            .into(),
+            ImageAction::Loaded {
+                key,
+                path: PathBuf::from("/tmp/image"),
+            }
+            .into(),
+            // halfblocksのフォントは10x20pxのため、3x2セルになる。
+            ImageAction::Prepared {
+                key,
+                image: sample_prepared_image(30, 40),
+            }
+            .into(),
+        ] {
+            let action: crate::stores::Action = action;
+            dispatcher.borrow_mut().dispatch(action);
+            dispatcher.borrow_mut().consume_action();
+        }
+        let mut component = IssueDetailComponent::new(3);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (40, 30));
+
+        let store = dispatcher.borrow();
+        crate::test_support::render_snapshot(
+            "issue_detail_draws_a_ready_image_in_the_body",
+            40,
+            30,
+            component.create_widget(store.store()),
+        );
     }
 
     #[test]
@@ -751,7 +810,11 @@ impl IssueDetailComponent {
         let (issue, _) = store.get_issue(self.id);
         self.header.update(store, self.width);
         self.property.update(self.width);
-        self.body.update(issue.description(), self.width);
+        self.body.update(
+            issue.description(),
+            self.width,
+            &MarkdownImages::new(store, issue.attachments()),
+        );
         self.attachments_list.update(store);
         self.children_list.update(store);
 

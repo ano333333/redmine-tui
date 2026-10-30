@@ -82,6 +82,11 @@ impl<'a> VerticalScrollWidget<'a> {
         }
     }
 
+    /// 次に`render_widget`で渡すWidgetが始まる、仮想バッファのy座標。
+    pub fn next_widget_y(&self) -> u16 {
+        self.line_count_sum
+    }
+
     /// 全てのWidgetの仮想バッファから見た`(x, y)`に画像を置く。
     ///
     /// 画像は子Widgetの中では描かず、`render`で文字を転写した後にクライアントへ直接描く。

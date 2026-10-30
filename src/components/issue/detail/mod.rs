@@ -5,6 +5,7 @@ pub mod children_list;
 pub mod component;
 pub mod header;
 pub mod journals_list;
+pub mod markdown_view;
 pub mod property;
 pub mod widget;
 

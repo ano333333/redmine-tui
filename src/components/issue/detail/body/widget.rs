@@ -1,8 +1,10 @@
 use std::cmp::min;
 
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::widgets::{Paragraph, Widget, Wrap};
+use ratatui::layout::{Position, Rect};
+use ratatui::widgets::Widget;
+
+use super::super::markdown_view::{MarkdownImagePlacement, MarkdownImages, MarkdownView};
 
 use crate::widgets::gutter::{GUTTER_WIDTH, Gutter, indented_area};
 use crate::widgets::theme::FOCUS_BG;
@@ -11,23 +13,24 @@ use crate::widgets::theme::FOCUS_BG;
 const GUTTER_TRAILING_LINES: u16 = 1;
 
 pub struct BodyWidgetState {
-    buffer: Buffer,
+    view: MarkdownView,
 }
 
 impl BodyWidgetState {
     pub fn new() -> Self {
         Self {
-            buffer: Buffer::empty(Rect::new(0, 0, 0, 0)),
+            view: MarkdownView::new(),
         }
     }
 
     pub fn render(&self, area: Rect, buf: &mut Buffer, focused: bool) {
-        let width = min(self.buffer.area.width, area.width);
-        let height = min(self.buffer.area.height, area.height);
+        let source = self.view.buffer();
+        let width = min(source.area.width, area.width);
+        let height = min(source.area.height, area.height);
 
         for y in 0..height {
             for x in 0..width {
-                let Some(src_cell) = self.buffer.cell((x, y)).cloned() else {
+                let Some(src_cell) = source.cell((x, y)).cloned() else {
                     continue;
                 };
                 let dst_x = area.x + x;
@@ -55,20 +58,31 @@ impl BodyWidgetState {
 
     /// 末尾の余白行を含まない、本文そのものの行数。
     pub fn text_line_count(&self) -> usize {
-        self.buffer.area.height as usize
+        self.view.line_count() as usize
     }
 
+    #[cfg(test)]
     pub fn update(&mut self, width: u16, body: &str) {
-        // 本文は縦線の字下げを除いた幅で描く
-        self.buffer = Self::render_in_buffer(body, width.saturating_sub(GUTTER_WIDTH));
+        self.update_with_images(width, body, &MarkdownImages::none());
     }
 
-    fn render_in_buffer(body: &str, width: u16) -> Buffer {
-        let paragraph = Paragraph::new(tui_markdown::from_str(body)).wrap(Wrap { trim: true });
-        let area = Rect::new(0, 0, width, paragraph.line_count(width) as u16);
-        let mut buffer = Buffer::empty(area);
-        paragraph.render(area, &mut buffer);
-        buffer
+    /// 単独の画像の段落は、`images`で読み込んだ画像を表示し、表示できなければ代わりの文字にする。
+    pub fn update_with_images(&mut self, width: u16, body: &str, images: &MarkdownImages) {
+        // 本文は縦線の字下げを除いた幅で描く
+        self.view
+            .update(width.saturating_sub(GUTTER_WIDTH), body, images);
+    }
+
+    /// Widgetの左上から見た画像の位置。
+    pub fn images(&self) -> Vec<MarkdownImagePlacement> {
+        self.view
+            .images()
+            .iter()
+            .map(|placement| MarkdownImagePlacement {
+                position: Position::new(placement.position.x + GUTTER_WIDTH, placement.position.y),
+                image: placement.image.clone(),
+            })
+            .collect()
     }
 }
 
@@ -99,6 +113,11 @@ impl<'a> BodyWidget<'a> {
     }
     pub fn line_count(&self, width: u16) -> usize {
         self.state.line_count(width)
+    }
+
+    /// Widgetの左上から見た画像の位置。画像の行は空けて描くため、呼び出し側が画面へ直接描く。
+    pub fn images(&self) -> Vec<MarkdownImagePlacement> {
+        self.state.images()
     }
 }
 

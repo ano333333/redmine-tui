@@ -129,6 +129,11 @@ impl PreparedImage {
         self.protocol.size()
     }
 
+    /// `other`と同じ前処理の結果を共有しているかを返す。
+    pub fn ptr_eq(&self, other: &PreparedImage) -> bool {
+        Arc::ptr_eq(&self.protocol, &other.protocol)
+    }
+
     /// `area`の左上から`(x, y)`の位置に画像を描き、`area`の外にはみ出す部分は描かない。
     ///
     /// `y`は負でもよく、上が欠けた画像を描ける。Kittyの画像データは最初に描いたときに1回だけ送るため、
@@ -165,6 +170,10 @@ impl PreparedImage {
     }
 
     pub fn size(&self) -> Size {
+        match *self {}
+    }
+
+    pub fn ptr_eq(&self, _: &PreparedImage) -> bool {
         match *self {}
     }
 
