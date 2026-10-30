@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use super::attachment_image_requests;
 use crate::clients::redmine::base::FetchedIssue;
 use crate::clients::redmine::{IssueUpdate, RedmineClient};
 use crate::stores::{Action, Dispatcher, IssueAction, IssueState, NoticeAction, NoticeId};
@@ -63,16 +64,19 @@ where
         Ok(fetched) => fetched,
         Err(message) => return issue_upload_failure_actions(id, message).into(),
     };
+    let image_requests = attachment_image_requests(&preflight.aggregate);
     if let Err(conflicts) = preflight.aggregate.with_property_diffs(&diffs) {
-        return vec![
-            IssueAction::UploadConflictsDetected {
-                server_issue: preflight.aggregate,
-                conflicts,
-                children: preflight.children,
-            }
-            .into(),
-        ]
-        .into();
+        return UsecaseOutput {
+            actions: vec![
+                IssueAction::UploadConflictsDetected {
+                    server_issue: preflight.aggregate,
+                    conflicts,
+                    children: preflight.children,
+                }
+                .into(),
+            ],
+            requests: image_requests,
+        };
     }
     UsecaseOutput {
         actions: vec![
@@ -83,7 +87,10 @@ where
             }
             .into(),
         ],
-        requests: vec![UsecaseRequest::PutIssueUpload { id, diffs }],
+        requests: [UsecaseRequest::PutIssueUpload { id, diffs }]
+            .into_iter()
+            .chain(image_requests)
+            .collect(),
     }
 }
 
@@ -163,13 +170,18 @@ where
 {
     Box::pin(async move {
         let actions = match fetch_issue_for_upload(client.as_ref(), id).await {
-            Ok(confirmed) => vec![
-                IssueAction::UploadSucceeded {
-                    issue: confirmed.aggregate,
-                    children: confirmed.children,
-                }
-                .into(),
-            ],
+            Ok(confirmed) => {
+                return UsecaseOutput {
+                    requests: attachment_image_requests(&confirmed.aggregate),
+                    actions: vec![
+                        IssueAction::UploadSucceeded {
+                            issue: confirmed.aggregate,
+                            children: confirmed.children,
+                        }
+                        .into(),
+                    ],
+                };
+            }
             Err(reason) => vec![
                 NoticeAction::Push {
                     id: NoticeId::new(),
@@ -239,9 +251,9 @@ mod tests {
         Category, IssueAggregate, IssueChild, IssueStatus, Priority, Project, ProjectIssuesPage,
         TargetVersion, TimeEntityActivity, Tracker, User,
     };
-    use crate::test_support::sample_issue_aggregate;
+    use crate::test_support::{sample_attachment, sample_issue_aggregate};
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
-    use crate::vos::{IssueStatusId, JournalId, ProjectId, TrackerId};
+    use crate::vos::{AttachmentId, IssueStatusId, JournalId, ProjectId, TrackerId};
 
     use super::*;
 
@@ -470,6 +482,69 @@ mod tests {
             }]
         );
         assert!(client.updates.lock().unwrap().is_empty());
+    }
+
+    fn fetched_with_image(description: &str) -> FetchedIssue {
+        let mut fetched = fetched(description, "child");
+        fetched.aggregate.attachments = vec![sample_attachment(5, Some("image/png"), true)];
+        fetched
+    }
+
+    fn image_request() -> UsecaseRequest {
+        UsecaseRequest::DownloadAttachmentImage {
+            attachment_id: AttachmentId::new(5),
+            thumbnailable: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn preflight_requests_images_after_the_put() {
+        let client = Arc::new(StubClient::new(
+            vec![Ok(fetched_with_image("server"))],
+            Ok(()),
+        ));
+
+        let output = preflight_issue_upload(client, ISSUE_ID, description_diff()).await;
+
+        assert_eq!(
+            output.requests,
+            vec![
+                UsecaseRequest::PutIssueUpload {
+                    id: ISSUE_ID,
+                    diffs: description_diff(),
+                },
+                image_request(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_property_conflict_requests_images_without_putting() {
+        let client = Arc::new(StubClient::new(
+            vec![Ok(fetched_with_image("changed on server"))],
+            Ok(()),
+        ));
+
+        let output = preflight_issue_upload(client, ISSUE_ID, description_diff()).await;
+
+        assert_eq!(output.requests, vec![image_request()]);
+    }
+
+    #[tokio::test]
+    async fn a_confirmation_requests_images() {
+        let client = Arc::new(StubClient::new(
+            vec![Ok(fetched_with_image("confirmed"))],
+            Ok(()),
+        ));
+
+        let output = complete(confirm_issue_upload(
+            uploading_dispatcher(),
+            client,
+            ISSUE_ID,
+        ))
+        .await;
+
+        assert_eq!(output.requests, vec![image_request()]);
     }
 
     #[tokio::test]
