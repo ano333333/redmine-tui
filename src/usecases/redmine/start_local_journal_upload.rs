@@ -2,11 +2,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use super::attachment_image_requests;
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{
     Action, Dispatcher, IssueState, JournalAction, LocalJournalState, NoticeAction, NoticeId,
 };
-use crate::usecases::UsecaseTask;
+use crate::usecases::{UsecaseOutput, UsecaseTask};
 use crate::vos::{EntityIdValue, IssueId};
 
 fn local_journal_put_failure_actions(issue_id: IssueId, message: String) -> Vec<Action> {
@@ -79,26 +80,24 @@ where
         .dispatch(JournalAction::StartLocalUpload { issue_id });
 
     Some(Box::pin(async move {
-        upload_local_journal(client.as_ref(), issue_id, notes)
-            .await
-            .into()
+        upload_local_journal(client.as_ref(), issue_id, notes).await
     }))
 }
 
 // FIXME: PUTと確認GETを1つのFutureで続けて実行し、結果を最後に1つのActionで反映している。
 // PUT成功をStoreへ確定してからGETを始められず、確認GETだけを再試行する経路もない。
 // リクエストごとに完了Actionを適用して次のリクエストへ進む実行方式を導入して分割する。
-async fn upload_local_journal<C>(client: &C, issue_id: IssueId, notes: String) -> Vec<Action>
+async fn upload_local_journal<C>(client: &C, issue_id: IssueId, notes: String) -> UsecaseOutput
 where
     C: RedmineClient + Send + Sync + 'static,
 {
     if let Err(error) = client.update_issue_notes(issue_id, &notes).await {
-        return local_journal_put_failure_actions(issue_id, error.to_string());
+        return local_journal_put_failure_actions(issue_id, error.to_string()).into();
     }
     let fetched = match client.get_issue(issue_id).await {
         Ok(fetched) => fetched,
         Err(error) => {
-            return local_journal_fetch_failure_actions(issue_id, error.to_string());
+            return local_journal_fetch_failure_actions(issue_id, error.to_string()).into();
         }
     };
     // 別Issueのレスポンスを確認結果として扱うと、他Issueのjournalを根拠に完了させてしまうため、
@@ -111,15 +110,19 @@ where
                 issue_id.get(),
                 fetched.aggregate.issue.id.get()
             ),
-        );
+        )
+        .into();
     }
-    vec![
-        JournalAction::CompleteLocalUploadWithFetched {
-            issue: fetched.aggregate,
-            children: fetched.children,
-        }
-        .into(),
-    ]
+    UsecaseOutput {
+        requests: attachment_image_requests(&fetched.aggregate),
+        actions: vec![
+            JournalAction::CompleteLocalUploadWithFetched {
+                issue: fetched.aggregate,
+                children: fetched.children,
+            }
+            .into(),
+        ],
+    }
 }
 
 #[cfg(test)]
@@ -129,13 +132,14 @@ mod tests {
     use crate::clients::redmine::RedmineClientError;
     use crate::clients::redmine::base::FetchedIssue;
     use crate::entities::{
-        Category, IssueStatus, Journal, Priority, Project, ProjectIssuesPage, TargetVersion,
-        TimeEntityActivity, Tracker, User,
+        Attachment, Category, IssueStatus, Journal, Priority, Project, ProjectIssuesPage,
+        TargetVersion, TimeEntityActivity, Tracker, User,
     };
     use crate::stores::{IssueAction, JournalUploadFailure};
     use crate::test_support::complete_usecase;
-    use crate::test_support::{local_datetime, sample_issue_aggregate};
-    use crate::vos::{IssueStatusId, JournalId, ProjectId};
+    use crate::test_support::{local_datetime, sample_attachment, sample_issue_aggregate};
+    use crate::usecases::UsecaseRequest;
+    use crate::vos::{AttachmentId, IssueStatusId, JournalId, ProjectId};
 
     use super::*;
 
@@ -156,6 +160,7 @@ mod tests {
         result: Result<(), RedmineClientError>,
         get_result: Result<u16, RedmineClientError>,
         journals: Vec<Journal>,
+        attachments: Vec<Attachment>,
         request: Mutex<Option<(IssueId, String)>>,
         get_requests: Mutex<Vec<IssueId>>,
     }
@@ -166,6 +171,7 @@ mod tests {
                 result: Ok(()),
                 get_result: Ok(1),
                 journals: vec![],
+                attachments: vec![],
                 request: Mutex::new(None),
                 get_requests: Mutex::new(Vec::new()),
             }
@@ -228,6 +234,7 @@ mod tests {
                 0,
             );
             aggregate.journals = self.journals.clone();
+            aggregate.attachments = self.attachments.clone();
             Ok(FetchedIssue {
                 aggregate,
                 children: vec![],
@@ -432,6 +439,26 @@ mod tests {
         dispatcher.borrow_mut().consume_action();
 
         assert_start_panics(dispatcher);
+    }
+
+    #[tokio::test]
+    async fn completion_requests_images_of_the_fetched_issue() {
+        let client = Arc::new(StubClient {
+            attachments: vec![sample_attachment(5, Some("image/png"), true)],
+            ..StubClient::succeeds()
+        });
+
+        let output = start_local_journal_upload(local_only_dispatcher(), client, ISSUE_ID)
+            .expect("upload should start")
+            .await;
+
+        assert_eq!(
+            output.requests,
+            vec![UsecaseRequest::DownloadAttachmentImage {
+                attachment_id: AttachmentId::new(5),
+                thumbnailable: true,
+            }]
+        );
     }
 
     #[tokio::test]

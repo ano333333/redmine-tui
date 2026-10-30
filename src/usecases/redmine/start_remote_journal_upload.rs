@@ -2,11 +2,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use super::attachment_image_requests;
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{
     Action, Dispatcher, IssueState, JournalAction, NoticeAction, NoticeId, RemoteJournalState,
 };
-use crate::usecases::UsecaseTask;
+use crate::usecases::{UsecaseOutput, UsecaseTask};
 use crate::vos::{EntityIdValue, IssueId, JournalId};
 
 use super::resolve_remote_journal_upload::{
@@ -96,7 +97,6 @@ where
             &diff.after,
         )
         .await
-        .into()
     }))
 }
 
@@ -114,7 +114,7 @@ pub(super) async fn upload_remote_journal_action<C>(
     journal_id: JournalId,
     before: &str,
     after: &str,
-) -> Vec<Action>
+) -> UsecaseOutput
 where
     C: RedmineClient + Send + Sync + 'static,
 {
@@ -125,12 +125,15 @@ where
                 issue_id,
                 journal_id,
                 mismatched_issue_message(issue_id, fetched.aggregate.issue.id),
-            );
+            )
+            .into();
         }
         Err(error) => {
-            return remote_journal_upload_failure_actions(issue_id, journal_id, error.to_string());
+            return remote_journal_upload_failure_actions(issue_id, journal_id, error.to_string())
+                .into();
         }
     };
+    let preflight_image_requests = attachment_image_requests(&preflight.aggregate);
     let Some(server_notes) = preflight
         .aggregate
         .journals
@@ -138,54 +141,67 @@ where
         .find(|journal| journal.id == journal_id)
         .map(|journal| journal.notes.clone())
     else {
-        return vec![
-            JournalAction::EvacuateMissingRemoteUpload {
-                journal_id,
-                notes: after.to_string(),
-                issue: preflight.aggregate,
-                children: preflight.children,
-            }
-            .into(),
-        ];
+        return UsecaseOutput {
+            actions: vec![
+                JournalAction::EvacuateMissingRemoteUpload {
+                    journal_id,
+                    notes: after.to_string(),
+                    issue: preflight.aggregate,
+                    children: preflight.children,
+                }
+                .into(),
+            ],
+            requests: preflight_image_requests,
+        };
     };
     match resolve_remote_journal_upload(before, after, &server_notes) {
         // 同じ編集内容が既にサーバーへ反映されていれば、重複PUTせず正常完了として収束させる。
         RemoteJournalUploadResolution::AlreadyApplied => {
-            return vec![
-                JournalAction::CompleteRemoteUpload {
-                    journal_id,
-                    issue: preflight.aggregate,
-                    children: preflight.children,
-                }
-                .into(),
-            ];
+            return UsecaseOutput {
+                actions: vec![
+                    JournalAction::CompleteRemoteUpload {
+                        journal_id,
+                        issue: preflight.aggregate,
+                        children: preflight.children,
+                    }
+                    .into(),
+                ],
+                requests: preflight_image_requests,
+            };
         }
         RemoteJournalUploadResolution::Conflict => {
-            return vec![
-                JournalAction::DetectRemoteUploadConflict {
-                    journal_id,
-                    issue: preflight.aggregate,
-                    children: preflight.children,
-                }
-                .into(),
-            ];
+            return UsecaseOutput {
+                actions: vec![
+                    JournalAction::DetectRemoteUploadConflict {
+                        journal_id,
+                        issue: preflight.aggregate,
+                        children: preflight.children,
+                    }
+                    .into(),
+                ],
+                requests: preflight_image_requests,
+            };
         }
         RemoteJournalUploadResolution::Upload => {}
     }
     if let Err(error) = client.update_journal_notes(journal_id, after).await {
-        return remote_journal_upload_failure_actions(issue_id, journal_id, error.to_string());
+        return remote_journal_upload_failure_actions(issue_id, journal_id, error.to_string())
+            .into();
     }
 
     let reason = match client.get_issue(issue_id).await {
         Ok(confirmed) if confirmed.aggregate.issue.id == issue_id => {
-            return vec![
-                JournalAction::CompleteRemoteUpload {
-                    journal_id,
-                    issue: confirmed.aggregate,
-                    children: confirmed.children,
-                }
-                .into(),
-            ];
+            return UsecaseOutput {
+                requests: attachment_image_requests(&confirmed.aggregate),
+                actions: vec![
+                    JournalAction::CompleteRemoteUpload {
+                        journal_id,
+                        issue: confirmed.aggregate,
+                        children: confirmed.children,
+                    }
+                    .into(),
+                ],
+            };
         }
         Ok(confirmed) => mismatched_issue_message(issue_id, confirmed.aggregate.issue.id),
         Err(error) => error.to_string(),
@@ -198,21 +214,24 @@ where
         .find(|journal| journal.id == journal_id)
         .expect("the target was found in the preflight fetch")
         .notes = after.to_string();
-    vec![
-        NoticeAction::Push {
-            id: NoticeId::new(),
-            message: format!(
-                "Journal #{journal_id}を保存しましたが、確認の取得に失敗しました: {reason}"
-            ),
-        }
-        .into(),
-        JournalAction::CompleteRemoteUpload {
-            journal_id,
-            issue: preflight.aggregate,
-            children: preflight.children,
-        }
-        .into(),
-    ]
+    UsecaseOutput {
+        actions: vec![
+            NoticeAction::Push {
+                id: NoticeId::new(),
+                message: format!(
+                    "Journal #{journal_id}を保存しましたが、確認の取得に失敗しました: {reason}"
+                ),
+            }
+            .into(),
+            JournalAction::CompleteRemoteUpload {
+                journal_id,
+                issue: preflight.aggregate,
+                children: preflight.children,
+            }
+            .into(),
+        ],
+        requests: preflight_image_requests,
+    }
 }
 
 fn mismatched_issue_message(requested: IssueId, returned: IssueId) -> String {
@@ -241,8 +260,9 @@ pub(super) mod tests {
         JournalAction, NoticeAction, RemoteJournalState,
     };
     use crate::test_support::complete_usecase;
-    use crate::test_support::{local_datetime, sample_issue_aggregate};
-    use crate::vos::{IssueId, IssueStatusId, JournalId, TrackerId};
+    use crate::test_support::{local_datetime, sample_attachment, sample_issue_aggregate};
+    use crate::usecases::UsecaseRequest;
+    use crate::vos::{AttachmentId, IssueId, IssueStatusId, JournalId, TrackerId};
 
     use super::*;
 
@@ -630,7 +650,8 @@ pub(super) mod tests {
             "remote notes",
             "edited notes",
         )
-        .await;
+        .await
+        .actions;
 
         let [
             _,
@@ -654,7 +675,8 @@ pub(super) mod tests {
             "remote notes",
             "edited notes",
         )
-        .await;
+        .await
+        .actions;
 
         let [
             Action::Journal(JournalAction::EvacuateMissingRemoteUpload {
@@ -690,7 +712,8 @@ pub(super) mod tests {
             "remote notes",
             "edited notes",
         )
-        .await;
+        .await
+        .actions;
 
         let [
             Action::Journal(JournalAction::CompleteRemoteUpload {
@@ -722,7 +745,8 @@ pub(super) mod tests {
             "remote notes",
             "edited notes",
         )
-        .await;
+        .await
+        .actions;
 
         let [
             Action::Journal(JournalAction::DetectRemoteUploadConflict {
@@ -738,6 +762,66 @@ pub(super) mod tests {
         assert_eq!(issue.journals[0].notes, "server notes");
         assert_eq!(children[0].subject, "fetched");
         assert!(client.put_notes.lock().unwrap().is_empty());
+    }
+
+    fn with_image(mut fetched: FetchedIssue, attachment_id: u16) -> FetchedIssue {
+        fetched.aggregate.attachments =
+            vec![sample_attachment(attachment_id, Some("image/png"), true)];
+        fetched
+    }
+
+    fn image_request(attachment_id: u16) -> UsecaseRequest {
+        UsecaseRequest::DownloadAttachmentImage {
+            attachment_id: AttachmentId::new(attachment_id),
+            thumbnailable: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_confirmed_upload_requests_images_of_the_confirmed_issue() {
+        let client = StubClient::new(
+            vec![
+                Ok(with_image(fetched(vec![journal()], "before put"), 5)),
+                Ok(with_image(
+                    fetched(vec![journal_with_notes("edited notes")], "after put"),
+                    6,
+                )),
+            ],
+            Ok(()),
+        );
+
+        let output = upload_remote_journal_action(
+            &client,
+            ISSUE_ID,
+            JOURNAL_ID,
+            "remote notes",
+            "edited notes",
+        )
+        .await;
+
+        assert_eq!(output.requests, vec![image_request(6)]);
+    }
+
+    #[tokio::test]
+    async fn a_failed_confirmation_requests_images_of_the_preflight_issue() {
+        let client = StubClient::new(
+            vec![
+                Ok(with_image(fetched(vec![journal()], "before put"), 5)),
+                Err(offline()),
+            ],
+            Ok(()),
+        );
+
+        let output = upload_remote_journal_action(
+            &client,
+            ISSUE_ID,
+            JOURNAL_ID,
+            "remote notes",
+            "edited notes",
+        )
+        .await;
+
+        assert_eq!(output.requests, vec![image_request(5)]);
     }
 
     #[tokio::test]
@@ -760,7 +844,8 @@ pub(super) mod tests {
             "remote notes",
             "edited notes",
         )
-        .await;
+        .await
+        .actions;
 
         let [
             Action::Journal(JournalAction::CompleteRemoteUpload {
@@ -791,7 +876,8 @@ pub(super) mod tests {
             "remote notes",
             "edited notes",
         )
-        .await;
+        .await
+        .actions;
 
         let [
             _,
@@ -817,7 +903,8 @@ pub(super) mod tests {
             "remote notes",
             "edited notes",
         )
-        .await;
+        .await
+        .actions;
 
         let [
             Action::Notice(NoticeAction::Push { message, .. }),
