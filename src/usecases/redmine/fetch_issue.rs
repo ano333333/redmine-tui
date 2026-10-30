@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use super::attachment_image_requests;
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{Action, Dispatcher, IssueAction, IssueFetchState};
 use crate::usecases::{UsecaseOutput, UsecaseRequest, UsecaseTask};
@@ -49,13 +50,17 @@ where
                             id: parent_id,
                             with_parent: false,
                         });
+                let requests = parent_request
+                    .into_iter()
+                    .chain(attachment_image_requests(&fetched.aggregate))
+                    .collect();
                 return UsecaseOutput {
                     actions: vec![Action::IssueFetchSucceeded {
                         id,
                         issue: fetched.aggregate,
                         children: fetched.children,
                     }],
-                    requests: parent_request.into_iter().collect(),
+                    requests,
                 };
             }
             // 応答IDの不一致はサーバー側の外部データ異常のため、Storeでpanicさせず取得失敗にする。
@@ -95,9 +100,9 @@ mod tests {
         TimeEntityActivity, Tracker, User,
     };
     use crate::stores::{Action, Dispatcher, IssueAction, IssueFetchState, IssueState};
-    use crate::test_support::{local_datetime, sample_issue_aggregate};
+    use crate::test_support::{local_datetime, sample_attachment, sample_issue_aggregate};
     use crate::usecases::UsecaseRequest;
-    use crate::vos::{IssueId, IssueStatusId, JournalId};
+    use crate::vos::{AttachmentId, IssueId, IssueStatusId, JournalId};
 
     use super::fetch_issue;
 
@@ -160,6 +165,35 @@ mod tests {
                 id: IssueId::new(3),
                 with_parent: false,
             }]
+        );
+    }
+
+    #[tokio::test]
+    async fn requests_images_of_attachments_after_the_parent() {
+        let mut child = issue(42);
+        child.parent_id = Some(IssueId::new(3));
+        child.attachments = vec![
+            sample_attachment(1, Some("image/png"), true),
+            sample_attachment(2, Some("text/plain"), false),
+        ];
+        let client = Arc::new(StubClient::succeeds(child));
+
+        let output = fetch_issue(dispatcher(), client, IssueId::new(42), true)
+            .expect("unregistered issue should start fetching")
+            .await;
+
+        assert_eq!(
+            output.requests,
+            vec![
+                UsecaseRequest::FetchIssue {
+                    id: IssueId::new(3),
+                    with_parent: false,
+                },
+                UsecaseRequest::DownloadAttachmentImage {
+                    attachment_id: AttachmentId::new(1),
+                    thumbnailable: true,
+                },
+            ]
         );
     }
 

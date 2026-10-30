@@ -4,6 +4,7 @@ use std::rc::Rc;
 use super::download_attachment_original::{load_attachment_original, write_image};
 use crate::clients::local_file::LocalFileClient;
 use crate::clients::redmine::RedmineClient;
+use crate::entities::IssueAggregate;
 use crate::stores::{AttachmentImageAction, Dispatcher, ImageDisplay, ImageKey, ImageState};
 use crate::usecases::image::IMAGE_MAX_SIDE;
 use crate::usecases::{UsecaseClients, UsecaseOutput, UsecaseRequest, UsecaseTask};
@@ -13,6 +14,32 @@ use crate::vos::AttachmentId;
 const THUMBNAIL_SIZE: u32 = IMAGE_MAX_SIDE;
 /// サムネイルとして受け取るバイト数の上限。
 const THUMBNAIL_MAX_BYTES: u64 = 4 * 1024 * 1024;
+
+/// SVGは`image` crateでdecodeできないため、画像の添付ファイルとして扱わない。
+const SVG_CONTENT_TYPE: &str = "image/svg+xml";
+
+/// Issue詳細の取得結果に含まれる画像の添付ファイルについて、表示に使う画像の取得要求を返す。
+///
+/// 完了したtaskからはStoreを参照できないため、取得済みかどうかでは絞らない。
+/// 取得済みの画像は、[`download_attachment_image`]が起動時に除く。
+pub(super) fn attachment_image_requests(issue: &IssueAggregate) -> Vec<UsecaseRequest> {
+    issue
+        .attachments
+        .iter()
+        .filter(|attachment| {
+            attachment
+                .content_type
+                .as_deref()
+                .is_some_and(|content_type| {
+                    content_type.starts_with("image/") && content_type != SVG_CONTENT_TYPE
+                })
+        })
+        .map(|attachment| UsecaseRequest::DownloadAttachmentImage {
+            attachment_id: attachment.id,
+            thumbnailable: attachment.thumbnailable,
+        })
+        .collect()
+}
 
 /// 添付ファイルの表示に使う画像を取得し、一時ファイルへ書き込む。
 ///
@@ -85,7 +112,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::stores::{Action, ImageAction};
-    use crate::test_support::run_usecases;
+    use crate::test_support::{run_usecases, sample_attachment, sample_issue_aggregate};
 
     use super::super::image_test_support::{
         ImageStubClient, StubTempFileClient, TEMP_DIR, image_enabled_dispatcher, offline,
@@ -132,6 +159,25 @@ mod tests {
             dispatcher.borrow_mut().dispatch(action);
             dispatcher.borrow_mut().consume_action();
         }
+    }
+
+    #[test]
+    fn only_image_attachments_are_requested() {
+        let mut issue = sample_issue_aggregate(1, "subject", 1.into(), None, None, None, 0);
+        issue.attachments = vec![
+            sample_attachment(1, Some("image/png"), true),
+            sample_attachment(2, Some("image/svg+xml"), false),
+            sample_attachment(3, Some("application/pdf"), true),
+            sample_attachment(4, None, false),
+        ];
+
+        assert_eq!(
+            attachment_image_requests(&issue),
+            vec![UsecaseRequest::DownloadAttachmentImage {
+                attachment_id: AttachmentId::new(1),
+                thumbnailable: true,
+            }]
+        );
     }
 
     #[tokio::test]

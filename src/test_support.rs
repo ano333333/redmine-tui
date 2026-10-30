@@ -11,8 +11,8 @@ use crate::clients::local_file::{LocalFileClient, LocalFileError};
 use crate::clients::redmine::base::FetchedIssue;
 use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError};
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
-    ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
+    Attachment, Category, Issue, IssueAggregate, IssueChild, IssueStatus, Journal, Priority,
+    Project, ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::stores::{Action, Dispatcher, Store};
 use crate::usecases::{UsecaseClients, UsecaseRequest, UsecaseTask, start_usecase};
@@ -35,6 +35,21 @@ impl LocalFileClient for UnusedLocalFileClient {
         _: Vec<u8>,
     ) -> Result<std::path::PathBuf, LocalFileError> {
         unreachable!("this test does not write local files")
+    }
+}
+
+/// `id`の添付ファイルを、指定したContent-Typeとサムネイルの可否で組み立てる。
+pub fn sample_attachment(id: u16, content_type: Option<&str>, thumbnailable: bool) -> Attachment {
+    Attachment {
+        id: AttachmentId::new(id),
+        filename: format!("file{id}"),
+        filesize: 1,
+        content_type: content_type.map(str::to_string),
+        description: String::new(),
+        content_url: format!("/attachments/download/{id}/file{id}"),
+        thumbnailable,
+        author: "admin".to_string(),
+        created_on: local_datetime("2026-09-11T00:00:00+09:00"),
     }
 }
 

@@ -25,6 +25,7 @@ pub use cancel_remote_journal_upload::cancel_remote_journal_upload;
 pub use confirm_attachment_upload::confirm_attachment_upload;
 pub use continue_issue_upload::continue_issue_upload;
 pub use continue_remote_journal_upload::continue_remote_journal_upload;
+use download_attachment_image::attachment_image_requests;
 pub use download_attachment_image::download_attachment_image;
 pub use download_attachment_original::download_attachment_original;
 pub use fetch_issue::fetch_issue;
