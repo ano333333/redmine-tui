@@ -7,9 +7,17 @@ use std::sync::Arc;
 use image::DynamicImage;
 #[cfg(feature = "native")]
 use image::imageops::FilterType;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
 use ratatui::layout::Size;
 #[cfg(feature = "native")]
-use ratatui_image::{Resize, picker::Picker, sliced::SlicedProtocol};
+use ratatui::widgets::Widget;
+#[cfg(feature = "native")]
+use ratatui_image::{
+    Resize,
+    picker::Picker,
+    sliced::{SignedPosition, SlicedImage, SlicedProtocol},
+};
 
 /// 画像をdecodeするときに確保するメモリの上限。4000x3000px程度の写真（RGBA 8bitで約48 MiB）は扱える。
 #[cfg(feature = "native")]
@@ -120,6 +128,18 @@ impl PreparedImage {
     pub fn size(&self) -> Size {
         self.protocol.size()
     }
+
+    /// `area`の左上から`(x, y)`の位置に画像を描き、`area`の外にはみ出す部分は描かない。
+    ///
+    /// `y`は負でもよく、上が欠けた画像を描ける。Kittyの画像データは最初に描いたときに1回だけ送るため、
+    /// 画面に出ない一時的なBufferには描かない。
+    pub fn render(&self, area: Rect, buf: &mut Buffer, x: i16, y: i16) {
+        // ratatui-imageは、`x`が`area`の幅を超えると描く幅の計算が桁あふれする。
+        if i32::from(x) > i32::from(area.width) {
+            return;
+        }
+        SlicedImage::new(&self.protocol, SignedPosition { x, y }).render(area, buf);
+    }
 }
 
 #[cfg(feature = "native")]
@@ -145,6 +165,10 @@ impl PreparedImage {
     }
 
     pub fn size(&self) -> Size {
+        match *self {}
+    }
+
+    pub fn render(&self, _: Rect, _: &mut Buffer, _: i16, _: i16) {
         match *self {}
     }
 }
