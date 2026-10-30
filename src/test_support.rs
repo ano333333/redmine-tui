@@ -14,7 +14,7 @@ use crate::entities::{
     Attachment, Category, Issue, IssueAggregate, IssueChild, IssueStatus, Journal, Priority,
     Project, ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
 };
-use crate::stores::{Action, Dispatcher, Store};
+use crate::stores::{Action, Dispatcher, PreparedImage, Store, TerminalImageEncoder};
 use crate::usecases::{UsecaseClients, UsecaseRequest, UsecaseTask, start_usecase};
 use crate::vos::{
     AttachmentId, CategoryId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId,
@@ -36,6 +36,35 @@ impl LocalFileClient for UnusedLocalFileClient {
     ) -> Result<std::path::PathBuf, LocalFileError> {
         unreachable!("this test does not write local files")
     }
+}
+
+/// 透明な`width`x`height`pxのPNG。
+pub fn sample_png(width: u32, height: u32) -> Vec<u8> {
+    let mut content = Vec::new();
+    image::DynamicImage::new_rgba8(width, height)
+        .write_to(
+            &mut std::io::Cursor::new(&mut content),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+    content
+}
+
+/// [`test_image_encoder`]で前処理した、透明な`width`x`height`pxの画像。
+pub fn sample_prepared_image(width: u32, height: u32) -> PreparedImage {
+    test_image_encoder()
+        .prepare(&sample_png(width, height), u32::MAX)
+        .unwrap()
+}
+
+/// テスト用に、フォントを10x20pxとして画像を変換するencoder。
+///
+/// アプリはKittyで描くが、テストではratatui-imageのhalfblocksを便宜的に使う。halfblocksなら
+/// terminalへ問い合わせずにフォントサイズが決まるため、画像のセル数を期待値として固定できる。
+/// Kittyで変換すると、乱数で決まる画像IDが文字色に入り、セルは見えない文字になる。そのため
+/// snapshotが毎回変わり、画像を描いた位置も読み取れない。
+pub fn test_image_encoder() -> TerminalImageEncoder {
+    TerminalImageEncoder::new(ratatui_image::picker::Picker::halfblocks())
 }
 
 /// `id`の添付ファイルを、指定したContent-Typeとサムネイルの可否で組み立てる。

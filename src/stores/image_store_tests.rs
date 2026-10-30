@@ -1,11 +1,7 @@
 use std::path::PathBuf;
 
-use image::DynamicImage;
-use ratatui::layout::Size;
-use ratatui_image::Resize;
-use ratatui_image::picker::Picker;
-
 use super::{AttachmentImageAction, ImageAction, ImageKey, ImageState, PreparedImage, Store};
+use crate::test_support::sample_prepared_image;
 use crate::vos::AttachmentId;
 
 const ATTACHMENT_ID: AttachmentId = AttachmentId::new(1);
@@ -16,11 +12,7 @@ const THUMBNAIL: ImageKey = ImageKey::AttachmentThumbnail {
 const ORIGINAL: ImageKey = ImageKey::AttachmentOriginal { id: ATTACHMENT_ID };
 
 fn prepared_image() -> PreparedImage {
-    let image = DynamicImage::new_rgba8(8, 16);
-    let protocol = Picker::halfblocks()
-        .new_protocol(image.clone(), Size::new(1, 1), Resize::Fit(None))
-        .unwrap();
-    PreparedImage::new(image, protocol)
+    sample_prepared_image(8, 16)
 }
 
 fn temp_path() -> PathBuf {

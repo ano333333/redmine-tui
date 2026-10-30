@@ -1,12 +1,15 @@
 //! terminalへの画像表示に使う値を、native版だけが依存する`ratatui-image`から切り離す。
 
 #[cfg(feature = "native")]
+use std::sync::Arc;
+
+#[cfg(feature = "native")]
 use image::DynamicImage;
 #[cfg(feature = "native")]
 use image::imageops::FilterType;
 use ratatui::layout::Size;
 #[cfg(feature = "native")]
-use ratatui_image::{Resize, picker::Picker, protocol::Protocol};
+use ratatui_image::{Resize, picker::Picker, sliced::SlicedProtocol};
 
 /// 画像をdecodeするときに確保するメモリの上限。4000x3000px程度の写真（RGBA 8bitで約48 MiB）は扱える。
 #[cfg(feature = "native")]
@@ -38,16 +41,40 @@ impl TerminalImageEncoder {
         } else {
             image
         };
+        self.encode(image)
+    }
+
+    /// `image`の幅が`max_width`セルを超えていれば、比率を保って`max_width`セルに収まるよう縮小してencodeし直す。
+    ///
+    /// 収まる場合は、encodeし直さずに`image`を返す。
+    pub fn fit_width(
+        &self,
+        image: &PreparedImage,
+        max_width: u16,
+    ) -> Result<PreparedImage, String> {
+        if image.size().width <= max_width {
+            return Ok(image.clone());
+        }
+        let max_pixels = u32::from(max_width) * u32::from(self.0.font_size().width);
+        let resized = image
+            .image
+            .resize(max_pixels, image.image.height(), FilterType::Triangle);
+        self.encode(resized)
+    }
+
+    fn encode(&self, image: DynamicImage) -> Result<PreparedImage, String> {
         let font_size = self.0.font_size();
         let size = Size::new(
             cells(image.width(), font_size.width),
             cells(image.height(), font_size.height),
         );
-        let protocol = self
-            .0
-            .new_protocol(image.clone(), size, Resize::Fit(None))
-            .map_err(|error| error.to_string())?;
-        Ok(PreparedImage::new(image, protocol))
+        let protocol =
+            SlicedProtocol::new_with_resize(&self.0, image.clone(), size, Resize::Fit(None))
+                .map_err(|error| error.to_string())?;
+        Ok(PreparedImage {
+            image: Arc::new(image),
+            protocol: Arc::new(protocol),
+        })
     }
 }
 
@@ -61,6 +88,10 @@ impl TerminalImageEncoder {
     pub fn prepare(&self, _: &[u8], _: u32) -> Result<PreparedImage, String> {
         match *self {}
     }
+
+    pub fn fit_width(&self, _: &PreparedImage, _: u16) -> Result<PreparedImage, String> {
+        match *self {}
+    }
 }
 
 /// Webデモは画像を表示しないため、値を作れない型にする。
@@ -69,26 +100,23 @@ impl TerminalImageEncoder {
 pub enum TerminalImageEncoder {}
 
 /// 前処理を済ませ、terminalへ表示できる状態の画像。
+///
+/// Kittyの送信列は大きいため、cloneしても複製せず共有する。
 #[cfg(feature = "native")]
 #[derive(Clone)]
 pub struct PreparedImage {
-    image: DynamicImage,
-    protocol: Protocol,
+    image: Arc<DynamicImage>,
+    protocol: Arc<SlicedProtocol>,
 }
 
 #[cfg(feature = "native")]
 impl PreparedImage {
-    /// `protocol`は、`image`を元の解像度で表示する大きさでencodeしたものを渡す。
-    pub(super) fn new(image: DynamicImage, protocol: Protocol) -> Self {
-        Self { image, protocol }
-    }
-
     /// 前処理後の画像のピクセル数を`(幅, 高さ)`で返す。
     pub fn pixel_size(&self) -> (u32, u32) {
         (self.image.width(), self.image.height())
     }
 
-    /// 元の解像度で表示したときのセル数を返す。
+    /// 表示したときのセル数を返す。
     pub fn size(&self) -> Size {
         self.protocol.size()
     }
@@ -118,5 +146,34 @@ impl PreparedImage {
 
     pub fn size(&self) -> Size {
         match *self {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::layout::Size;
+
+    use crate::test_support::{sample_prepared_image, test_image_encoder};
+
+    // テスト用のencoderのフォントは10x20pxのため、100x40pxは10x2セルになる。
+
+    #[test]
+    fn image_narrower_than_the_width_is_kept() {
+        let image = sample_prepared_image(100, 40);
+
+        let fitted = test_image_encoder().fit_width(&image, 10).unwrap();
+
+        assert_eq!(fitted.size(), Size::new(10, 2));
+        assert_eq!(fitted.pixel_size(), (100, 40));
+    }
+
+    #[test]
+    fn image_wider_than_the_width_is_shrunk_keeping_its_ratio() {
+        let image = sample_prepared_image(100, 40);
+
+        let fitted = test_image_encoder().fit_width(&image, 5).unwrap();
+
+        assert_eq!(fitted.pixel_size(), (50, 20));
+        assert_eq!(fitted.size(), Size::new(5, 1));
     }
 }
