@@ -5,11 +5,12 @@ use super::download_attachment_original::{load_attachment_original, write_image}
 use crate::clients::local_file::LocalFileClient;
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{AttachmentImageAction, Dispatcher, ImageDisplay, ImageKey, ImageState};
+use crate::usecases::image::IMAGE_MAX_SIDE;
 use crate::usecases::{UsecaseClients, UsecaseOutput, UsecaseRequest, UsecaseTask};
 use crate::vos::AttachmentId;
 
-/// 取得するサムネイルの大きさ。Redmineが返せる最大の800pxにする。
-pub(crate) const THUMBNAIL_SIZE: u32 = 800;
+/// 取得するサムネイルの大きさ。前処理で縮小しなくて済むよう、前処理後の長辺の上限に合わせる。
+const THUMBNAIL_SIZE: u32 = IMAGE_MAX_SIDE;
 /// サムネイルとして受け取るバイト数の上限。
 const THUMBNAIL_MAX_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -88,6 +89,7 @@ mod tests {
 
     use super::super::image_test_support::{
         ImageStubClient, StubTempFileClient, TEMP_DIR, image_enabled_dispatcher, offline,
+        original_png, thumbnail_png,
     };
     use super::*;
 
@@ -153,9 +155,15 @@ mod tests {
         );
         assert_eq!(
             *clients.local_file.writes.lock().unwrap(),
-            vec![("attachment-1-thumbnail-800".to_string(), vec![1])]
+            vec![("attachment-1-thumbnail-800".to_string(), thumbnail_png())]
         );
-        assert!(output.requests.is_empty());
+        assert_eq!(
+            output.requests,
+            vec![UsecaseRequest::PrepareImage {
+                key: THUMBNAIL,
+                path: Path::new(TEMP_DIR).join("attachment-1-thumbnail-800"),
+            }]
+        );
         assert!(matches!(
             output.actions.as_slice(),
             [Action::Image(ImageAction::Loaded { key, path })]
@@ -218,7 +226,7 @@ mod tests {
         assert!(clients.redmine.thumbnail_gets.lock().unwrap().is_empty());
         assert_eq!(
             *clients.local_file.writes.lock().unwrap(),
-            vec![("attachment-1-original".to_string(), vec![2])]
+            vec![("attachment-1-original".to_string(), original_png())]
         );
         assert!(matches!(
             output.actions.as_slice(),
@@ -227,7 +235,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fallback_request_loads_the_original() {
+    async fn fallback_request_prepares_the_original() {
         let dispatcher = Rc::new(RefCell::new(image_enabled_dispatcher()));
         let mut redmine = ImageStubClient::new();
         redmine.thumbnail_result = Err(offline());
@@ -251,8 +259,7 @@ mod tests {
         );
         assert!(matches!(
             store.try_get_image(ORIGINAL),
-            Some(ImageState::Preparing { path })
-                if path == &Path::new(TEMP_DIR).join("attachment-1-original")
+            Some(ImageState::Ready(image)) if image.pixel_size() == (16, 16)
         ));
     }
 

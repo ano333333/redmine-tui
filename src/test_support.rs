@@ -8,16 +8,17 @@ use insta::assert_snapshot;
 use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
 use crate::clients::local_file::{LocalFileClient, LocalFileError};
-use crate::clients::redmine::RedmineClient;
+use crate::clients::redmine::base::FetchedIssue;
+use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError};
 use crate::entities::{
     Category, Issue, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
-    TargetVersion, TimeEntityActivity, Tracker, User,
+    ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::stores::{Action, Dispatcher, Store};
 use crate::usecases::{UsecaseClients, UsecaseRequest, UsecaseTask, start_usecase};
 use crate::vos::{
-    CategoryId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, PriorityId,
-    ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    AttachmentId, CategoryId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId,
+    PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UploadToken, UserId,
 };
 
 /// ローカルファイルを読まないUsecaseのテストで、`UsecaseClients`を埋めるためのclient。
@@ -34,6 +35,99 @@ impl LocalFileClient for UnusedLocalFileClient {
         _: Vec<u8>,
     ) -> Result<std::path::PathBuf, LocalFileError> {
         unreachable!("this test does not write local files")
+    }
+}
+
+/// Redmineへ接続しないUsecaseのテストで、`UsecaseClients`を埋めるためのclient。
+pub struct UnusedRedmineClient;
+
+impl RedmineClient for UnusedRedmineClient {
+    async fn get_attachment_thumbnail(
+        &self,
+        _: AttachmentId,
+        _: u32,
+        _: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_attachment_content(
+        &self,
+        _: AttachmentId,
+        _: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn update_issue(&self, _: IssueId, _: &IssueUpdate) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn update_journal_notes(&self, _: JournalId, _: &str) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn update_issue_notes(&self, _: IssueId, _: &str) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn upload_file(&self, _: &str, _: Vec<u8>) -> Result<UploadToken, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn attach_upload(
+        &self,
+        _: IssueId,
+        _: &UploadToken,
+        _: &str,
+    ) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_priorities(&self) -> Result<Vec<Priority>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_projects(&self) -> Result<Vec<Project>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_project_issues(
+        &self,
+        _: ProjectId,
+        _: std::num::NonZeroUsize,
+    ) -> Result<ProjectIssuesPage, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_target_versions(&self) -> Result<Vec<TargetVersion>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_time_entity_activities(
+        &self,
+    ) -> Result<Vec<TimeEntityActivity>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_trackers(&self) -> Result<Vec<Tracker>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_users(&self) -> Result<Vec<User>, RedmineClientError> {
+        unreachable!()
     }
 }
 

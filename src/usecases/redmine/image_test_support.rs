@@ -1,8 +1,10 @@
 //! 画像を取得する各段階のテストで共有するstub。
 
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use image::{DynamicImage, ImageFormat};
 use ratatui_image::picker::Picker;
 
 use crate::clients::local_file::{LocalFileClient, LocalFileError};
@@ -21,6 +23,24 @@ pub(super) fn offline() -> RedmineClientError {
     RedmineClientError::Network {
         reason: "offline".to_string(),
     }
+}
+
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut content = Vec::new();
+    DynamicImage::new_rgba8(width, height)
+        .write_to(&mut Cursor::new(&mut content), ImageFormat::Png)
+        .unwrap();
+    content
+}
+
+/// `ImageStubClient`が既定で返すサムネイル。
+pub(super) fn thumbnail_png() -> Vec<u8> {
+    png(8, 8)
+}
+
+/// `ImageStubClient`が既定で返す原画像。サムネイルと区別できる大きさにする。
+pub(super) fn original_png() -> Vec<u8> {
+    png(16, 16)
 }
 
 pub(super) fn image_enabled_dispatcher() -> Dispatcher {
@@ -43,8 +63,8 @@ pub(super) struct ImageStubClient {
 impl ImageStubClient {
     pub(super) fn new() -> Self {
         Self {
-            thumbnail_result: Ok(vec![1]),
-            content_result: Ok(vec![2]),
+            thumbnail_result: Ok(thumbnail_png()),
+            content_result: Ok(original_png()),
             thumbnail_gets: Mutex::new(Vec::new()),
             content_gets: Mutex::new(Vec::new()),
         }
@@ -146,7 +166,7 @@ impl RedmineClient for ImageStubClient {
     }
 }
 
-/// 一時ファイルを`TEMP_DIR`の下に書いたことにして、書き込んだ内容を記録する。
+/// 一時ファイルを`TEMP_DIR`の下に書いたことにして、書き込んだ内容を記録する。書き込んだファイルは読み込める。
 pub(super) struct StubTempFileClient {
     pub(super) fails: bool,
     pub(super) writes: Mutex<Vec<(String, Vec<u8>)>>,
@@ -162,8 +182,14 @@ impl StubTempFileClient {
 }
 
 impl LocalFileClient for StubTempFileClient {
-    async fn read_file(&self, _: &Path, _: u64) -> Result<Vec<u8>, LocalFileError> {
-        unreachable!("image download does not read local files")
+    async fn read_file(&self, path: &Path, _: u64) -> Result<Vec<u8>, LocalFileError> {
+        let writes = self.writes.lock().unwrap();
+        let (_, content) = writes
+            .iter()
+            .rev()
+            .find(|(file_name, _)| Path::new(TEMP_DIR).join(file_name) == path)
+            .unwrap_or_else(|| panic!("{} was not written", path.display()));
+        Ok(content.clone())
     }
 
     async fn write_temp_file(

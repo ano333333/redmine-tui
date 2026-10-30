@@ -4,11 +4,12 @@ use std::rc::Rc;
 use crate::clients::local_file::LocalFileClient;
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{Dispatcher, ImageAction, ImageKey, ImageState};
-use crate::usecases::{UsecaseClients, UsecaseOutput, UsecaseTask};
+use crate::usecases::image::IMAGE_FILE_MAX_BYTES;
+use crate::usecases::{UsecaseClients, UsecaseOutput, UsecaseRequest, UsecaseTask};
 use crate::vos::AttachmentId;
 
-/// 原画像として受け取るバイト数の上限。原画像は大きさに上限がないため、前処理の時間とメモリを抑える。
-const ORIGINAL_MAX_BYTES: u64 = 20 * 1024 * 1024;
+/// 原画像として受け取るバイト数の上限。原画像は大きさに上限がないため、前処理できる大きさに抑える。
+const ORIGINAL_MAX_BYTES: u64 = IMAGE_FILE_MAX_BYTES;
 
 /// サムネイルを取得できなかった添付ファイルの原画像を取得し、一時ファイルへ書き込む。
 ///
@@ -67,23 +68,35 @@ where
     }
 }
 
-/// 取得した画像を一時ファイルへ書き込む。
+/// 取得した画像を一時ファイルへ書き込み、前処理の後続要求を返す。
 pub(super) async fn write_image<F: LocalFileClient>(
     local_file: &F,
     key: ImageKey,
     content: Vec<u8>,
 ) -> UsecaseOutput {
-    let action = match local_file
+    match local_file
         .write_temp_file(&temp_file_name(key), content)
         .await
     {
-        Ok(path) => ImageAction::Loaded { key, path },
-        Err(error) => ImageAction::Fail {
-            key,
-            reason: format!("failed to write {}: {}", error.path.display(), error.reason),
+        Ok(path) => UsecaseOutput {
+            actions: vec![
+                ImageAction::Loaded {
+                    key,
+                    path: path.clone(),
+                }
+                .into(),
+            ],
+            requests: vec![UsecaseRequest::PrepareImage { key, path }],
         },
-    };
-    vec![action.into()].into()
+        Err(error) => vec![
+            ImageAction::Fail {
+                key,
+                reason: format!("failed to write {}: {}", error.path.display(), error.reason),
+            }
+            .into(),
+        ]
+        .into(),
+    }
 }
 
 /// Redmine上のファイル名は使わず、画像の取得元だけから一時ファイルの名前を作る。
@@ -103,6 +116,7 @@ mod tests {
 
     use super::super::image_test_support::{
         ImageStubClient, StubTempFileClient, TEMP_DIR, image_enabled_dispatcher, offline,
+        original_png,
     };
     use super::*;
 
@@ -153,7 +167,14 @@ mod tests {
         );
         assert_eq!(
             *clients.local_file.writes.lock().unwrap(),
-            vec![("attachment-1-original".to_string(), vec![2])]
+            vec![("attachment-1-original".to_string(), original_png())]
+        );
+        assert_eq!(
+            output.requests,
+            vec![UsecaseRequest::PrepareImage {
+                key: ORIGINAL,
+                path: Path::new(TEMP_DIR).join("attachment-1-original"),
+            }]
         );
         assert!(matches!(
             output.actions.as_slice(),

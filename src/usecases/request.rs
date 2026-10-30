@@ -6,6 +6,8 @@ use std::rc::Rc;
 use crate::clients::local_file::LocalFileClient;
 use crate::clients::redmine::RedmineClient;
 use crate::stores::Dispatcher;
+use crate::stores::ImageKey;
+use crate::usecases::image::prepare_image;
 use crate::usecases::redmine::{
     cancel_issue_upload, cancel_remote_journal_upload, confirm_attachment_upload,
     confirm_issue_upload, continue_issue_upload, continue_remote_journal_upload,
@@ -88,6 +90,11 @@ pub enum UsecaseRequest {
         attachment_id: AttachmentId,
         thumbnailable: bool,
     },
+    /// 一時ファイルへ書き込んだ画像を読み、表示用に前処理する。
+    PrepareImage {
+        key: ImageKey,
+        path: PathBuf,
+    },
     /// サムネイルを取得できなかった添付ファイルの原画像を取得する。
     DownloadAttachmentOriginal {
         attachment_id: AttachmentId,
@@ -168,6 +175,7 @@ where
         UsecaseRequest::ConfirmAttachmentUpload { issue_id } => {
             confirm_attachment_upload(dispatcher, client, issue_id)
         }
+        UsecaseRequest::PrepareImage { key, path } => prepare_image(dispatcher, clients, key, path),
         UsecaseRequest::DownloadAttachmentImage {
             attachment_id,
             thumbnailable,
