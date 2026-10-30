@@ -1264,7 +1264,7 @@ mod tests {
 
         assert!(sql.contains("INSERT INTO attachments"));
         assert!(sql.contains(
-            "(1, 4, 'Issue', 'sample.png', '260205000000_sample.png', 1471702, 'image/png', '4da0fb3a9cbea6d0a5a41fa4f4f063a9c769e0326cc6ab5dbf80b9a8a3543ed7', 0, 1001, '2026-02-05 00:00:00', 'サンプル画像', '2026/02')"
+            "(1, 3, 'Issue', 'sample.png', '260205000000_sample.png', 1471702, 'image/png', '4da0fb3a9cbea6d0a5a41fa4f4f063a9c769e0326cc6ab5dbf80b9a8a3543ed7', 0, 1001, '2026-02-05 00:00:00', 'サンプル画像', '2026/02')"
         ));
     }
 

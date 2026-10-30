@@ -7,10 +7,11 @@ use crate::support::{
 // Issue 3の詳細でheaderから下へ移るjの回数。幅120の端末で、seedのIssue 3とJournal 1〜3を表示した状態で数えた。
 // propertyの左列8行を越える9回目で本文の先頭に入る。
 const J_PRESSES_TO_BODY: usize = 9;
-// 本文35行、添付ファイルの追加行1行、子Issue一覧2行、Journal 1のdetail 1行を越えた先がJournal 1のnotes。
-const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 48;
+// 本文37行（末尾の画像は代わりの文字1行と、その前の空行1行）、添付ファイル1行と追加行1行、
+// 子Issue一覧2行、Journal 1のdetail 1行を越えた先がJournal 1のnotes。
+const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 51;
 // Journal 3のnotesの後にあるLocal Journal作成ボタン。
-const J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON: usize = 86;
+const J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON: usize = 89;
 
 fn open_issue_3_and_move_down(
     editor: &FakeEditor,
@@ -38,9 +39,9 @@ fn editing_the_issue_body_shows_the_edited_body() {
     let initial_text = editor.finish_editing(&mut session);
 
     // Then editorには元の本文が渡され、詳細に編集後の本文が表示される
-    // seedのIssue 3の本文は見出しで始まり、引用で終わるMarkdownである。
+    // seedのIssue 3の本文は見出しで始まり、添付ファイルの画像で終わるMarkdownである。
     assert!(initial_text.starts_with("### h3"));
-    assert!(initial_text.ends_with("> citation"));
+    assert!(initial_text.ends_with("![](sample.png)"));
     wait_for_text(&mut session, "edited body marker");
 }
 

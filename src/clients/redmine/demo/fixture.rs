@@ -42,7 +42,7 @@ const ISSUES: &[(IssueId, &str, &[(JournalId, &str)])] = &[
 // Webデモで実際に読めるのは縮小版のため、seedの`sample.png`ではなく縮小版の大きさを使う。
 const ATTACHMENTS: &[(AttachmentId, IssueId, &str, &[u8])] = &[(
     AttachmentId::new(1),
-    IssueId::new(4),
+    IssueId::new(3),
     fixture!("attachments/1.yml"),
     SAMPLE_IMAGE,
 )];
@@ -182,9 +182,9 @@ mod tests {
         let embedded_attachments: BTreeSet<_> =
             ATTACHMENTS.iter().map(|(id, _, _, _)| id.get()).collect();
         assert_eq!(embedded_attachments, files("datas/attachments"));
-        let issue_4_attachments = &state.attachments[&crate::vos::IssueId::new(4)];
+        let issue_3_attachments = &state.attachments[&crate::vos::IssueId::new(3)];
         assert_eq!(
-            issue_4_attachments
+            issue_3_attachments
                 .iter()
                 .map(|attachment| attachment.filename.as_str())
                 .collect::<Vec<_>>(),

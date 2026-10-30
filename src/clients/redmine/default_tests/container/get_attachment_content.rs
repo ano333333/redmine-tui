@@ -4,7 +4,7 @@ use super::integration_support::{
 use crate::clients::redmine::{RedmineClient, RedmineClientError};
 use crate::vos::AttachmentId;
 
-/// seedの添付ファイル1は、Issue 4に添付した`datas/attachment_files/sample.png`である。
+/// seedの添付ファイル1は、Issue 3に添付した`datas/attachment_files/sample.png`である。
 const SAMPLE_PNG: &[u8] = include_bytes!("../../../../../datas/attachment_files/sample.png");
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 const MAX_LEN: u64 = 16 * 1024 * 1024;

@@ -32,7 +32,10 @@ async fn assert_get_issue_200(base_url: &str) -> Result<(), Box<dyn std::error::
         issue.issue.subject,
         "issue1(長ああああああああああああああああああああああああああああああああああああいタイトル)"
     );
-    assert_eq!(issue.issue.description, SAMPLE_MARKDOWN);
+    assert_eq!(
+        issue.issue.description,
+        format!("{SAMPLE_MARKDOWN}\n\n![](sample.png)")
+    );
     assert_eq!(issue.issue.status_id.get(), 3);
     assert_eq!(issue.author_id.get(), 1001);
     assert_eq!(issue.created_on, local_datetime("2026-02-04T00:00:00Z"));
@@ -140,14 +143,14 @@ async fn assert_get_issue_returns_parent_and_grandchildren(
     Ok(())
 }
 
-/// seedのIssue 4は、`datas/attachment_files/sample.png`を添付ファイルとして持つ。
+/// seedのIssue 3は、`datas/attachment_files/sample.png`を添付ファイルとして持ち、説明でその画像を参照する。
 async fn assert_get_issue_returns_seeded_attachment(
     base_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let fetched = authenticated_client(base_url)
-        .get_issue(IssueId::new(4))
+        .get_issue(IssueId::new(3))
         .await
-        .map_err(|error| test_error(format!("get_issue(4) returned {error:?}")))?;
+        .map_err(|error| test_error(format!("get_issue(3) returned {error:?}")))?;
 
     let [attachment] = fetched.aggregate.attachments.as_slice() else {
         return Err(test_error(format!(

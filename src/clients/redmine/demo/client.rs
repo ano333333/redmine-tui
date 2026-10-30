@@ -653,7 +653,7 @@ mod tests {
         let [attachment] = issue.aggregate.attachments.as_slice() else {
             panic!("expected one attachment");
         };
-        // seedのIssue 4が添付ファイル1を持つため、次のIDは2になる。
+        // seedのIssue 3が添付ファイル1を持つため、次のIDは2になる。
         assert_eq!(attachment.id, AttachmentId::new(2));
         assert_eq!(attachment.filename, "note.png");
         assert_eq!(attachment.filesize, 10);
@@ -809,7 +809,11 @@ mod tests {
                 .iter()
                 .map(|attachment| (attachment.filename.as_str(), attachment.filesize))
                 .collect::<Vec<_>>(),
-            vec![("picked.png", SAMPLE_IMAGE.len() as u64)]
+            // seedのIssue 3は添付ファイル1を持つため、追加した添付ファイルはその後ろに並ぶ。
+            vec![
+                ("sample.png", SAMPLE_IMAGE.len() as u64),
+                ("picked.png", SAMPLE_IMAGE.len() as u64)
+            ]
         );
     }
 
