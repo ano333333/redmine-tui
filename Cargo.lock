@@ -3023,6 +3023,7 @@ dependencies = [
  "crossterm",
  "directories",
  "futures",
+ "image",
  "insta",
  "lazy_static",
  "ratatui",
