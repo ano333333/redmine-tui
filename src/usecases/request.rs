@@ -8,13 +8,14 @@ use crate::clients::redmine::RedmineClient;
 use crate::stores::Dispatcher;
 use crate::usecases::redmine::{
     cancel_issue_upload, cancel_remote_journal_upload, confirm_attachment_upload,
-    confirm_issue_upload, continue_issue_upload, continue_remote_journal_upload, fetch_issue,
-    fetch_project_issues_page, put_attachment_upload, put_issue_upload,
-    retry_issue_upload_confirmation, start_attachment_upload, start_deleted_journal_upload,
-    start_issue_upload, start_local_journal_upload, start_remote_journal_upload,
+    confirm_issue_upload, continue_issue_upload, continue_remote_journal_upload,
+    download_attachment_original, fetch_issue, fetch_project_issues_page, put_attachment_upload,
+    put_issue_upload, retry_issue_upload_confirmation, start_attachment_upload,
+    start_deleted_journal_upload, start_issue_upload, start_local_journal_upload,
+    start_remote_journal_upload,
 };
 use crate::usecases::{UsecaseClients, UsecaseTask};
-use crate::vos::{IssueId, IssuePropertyDiff, JournalId, ProjectId, UploadToken};
+use crate::vos::{AttachmentId, IssueId, IssuePropertyDiff, JournalId, ProjectId, UploadToken};
 
 /// runnerに起動を依頼するRedmine Usecase。1つのvariantが1つのUsecaseに対応する。
 #[derive(Clone, Debug, PartialEq)]
@@ -81,6 +82,10 @@ pub enum UsecaseRequest {
     },
     ConfirmAttachmentUpload {
         issue_id: IssueId,
+    },
+    /// サムネイルを取得できなかった添付ファイルの原画像を取得する。
+    DownloadAttachmentOriginal {
+        attachment_id: AttachmentId,
     },
 }
 
@@ -157,6 +162,9 @@ where
         } => put_attachment_upload(dispatcher, client, issue_id, token, filename),
         UsecaseRequest::ConfirmAttachmentUpload { issue_id } => {
             confirm_attachment_upload(dispatcher, client, issue_id)
+        }
+        UsecaseRequest::DownloadAttachmentOriginal { attachment_id } => {
+            download_attachment_original(dispatcher, clients, attachment_id)
         }
     }
 }
