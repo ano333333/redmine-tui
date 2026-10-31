@@ -24,6 +24,8 @@ fn adding_a_local_file_attaches_it_to_the_issue() {
     for _ in 0..J_PRESSES_TO_ADD_ATTACHMENT_ROW {
         session.press_key("j").expect("failed to press j");
     }
+    // 本文の最後でseedの添付画像を参照している。画像表示を有効にしていないため、代わりの文字で表示される。
+    wait_for_text(&mut session, "[img] sample.png");
 
     // When Enterで開いたpopupに、送る名前と読み込むパスを入力して確定する
     session.press_key("Enter").expect("failed to press Enter");
