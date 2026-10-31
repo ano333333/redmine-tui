@@ -11,6 +11,7 @@
   - native/Web の起動処理を置く。
 - `src/stores/`
   - `store.rs` は、子 Store ・子 Action の統合を行う。外部からはこのファイルからエクスポートされる Store と Action を公開インターフェースとして用いる。
+  - `terminal_image.rs` は、terminal への画像表示に使う `ratatui-image` と `image` の型を包む。native 版だけがこれらに依存し、Web デモでは値を作れない型にする。
 - `src/usecases/`
   - アプリ固有の操作を置く。Store・Client の情報統合、および同期的な Dispatch や非同期タスクによる Action の形成を担う。
   - 非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期の処理は `Option<UsecaseTask>` として返却する形が基本形である。`UsecaseTask` は完了 Action を `UsecaseOutput` に入れて返す Future で、非同期の処理がない場合は `None` を返す。完了後に別の Usecase を起動するときは、Future の中で起動せず、`UsecaseOutput::requests` に後続の `UsecaseRequest` を入れて返す。`Store` を直接書き換えず、`Dispatcher::dispatch` を介して Action を積む。`runner` が `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で起動し、完了 Action を Dispatcher へ戻す。
@@ -19,7 +20,7 @@
   - `redmine/base.rs` は `RedmineClient` trait を定義し、 Redmine との通信のインターフェースを定義する。`redmine/default.rs` は `DefaultRedmineClient`（実 HTTP 実装）を定義する。
   - Issue 属性の保存は `IssueUpdate`（編集した属性だけを持つ更新要求）で渡す。送信しない属性は `None`、値の解除は `Some(None)` で表し、API が要求する項目の省略や空文字への変換は HTTP 実装が担う。
   - `redmine/demo/` は `DemoRedmineClient`（実 HTTP を行わず fixture を埋め込む memory mock）を定義する。
-  - `local_file/` は、添付ファイルとして送るローカルファイルを読む `LocalFileClient` trait を定義する。native 実装はファイルシステムから読み、Web デモ実装はどのパスにも埋め込みのサンプル画像を返す。
+  - `local_file/` は、添付ファイルとして送るローカルファイルを読み、取得した画像を一時ファイルへ書く `LocalFileClient` trait を定義する。native 実装はファイルシステムから読み、起動処理が作るプロセスごとの一時ディレクトリ（`NativeTempDir`、終了時に削除）へ書く。Web デモ実装はどのパスにも埋め込みのサンプル画像を返し、一時ファイルは書かない。
 - `src/components/`
   - TUI の画面部品を置く。
   - `app.rs` は全体 component と popup stack を統括する。
@@ -28,6 +29,7 @@
 - `src/platform/`
   - native/Web の platform adapter を置く。
   - input（`InputEvent`）、runtime（`BackgroundSpawner`）、host（`PlatformHost`）、editor（`TextEditor`）の各 port。
+  - native 版の起動時に読む設定ファイル（`app_config`）と、その値から決める画像表示の可否（`terminal_image`）。
 - `src/runner/`
   - native/Web で共有する application lifecycle を置く。
 - `src/entities/`
@@ -113,6 +115,8 @@ Store の更新は原則として Dispatcher を介して行う。
 - `IssueAggregate` は親 Issue の ID だけを持ち、子 Issue の ID 一覧は持たない。子一覧は詳細取得で得た `IssueChild`（ID・トラッカー・題名・再帰的な子一覧）として `IssueStore` が Issue ごとに保持する。子の詳細を取得済みなら、表示には `IssueView` の値を使う。
 - Issue 属性の状態（Synced / Edited / Uploading）は Journal の編集と下書きを含まない。Issue 属性の状態が変わっても Journal の作業は引き継ぐ。同じ Issue の upload は Issue 属性、Journal、添付ファイルの追加を合わせて1件に限り、`IssueStore` が検査する。
 - Component と usecase は `IssueStore` を直接参照せず、親 `Store` の Issue getter を通して entity、同期状態、diff、競合情報を取得する。
+- `SettingsStore` は、画像表示の可否（`ImageDisplay`）など、起動時に決めた設定を持つ。
+- `ImageStore` は表示する画像を、取得元を表す `ImageKey` ごとに `Loading` / `Preparing` / `Ready` / `Failed` で持ち、添付ファイルなどの取得元に固有の情報は持たない。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。
 - editor 起動、Redmine への非同期取得・保存などの外部副作用は、Component が `RequestSink` に要求を書き、`runner` 側で実行する。`RequestSink` は `runner` が `&mut` で貸すもので、受け取るのは `AppComponent` の `new`・`process_event`・`handle_key_event` と、`IssueSelectPopupComponent` の `new`・`process_event` だけである。`update` と `render` は受け取らないため、update からは要求を発行できない。要求を Component のフィールドに溜めて後で書くことも禁止する。Redmine の Usecase は `UsecaseRequest` で要求する。`runner` は `start_usecase` で Usecase を起動し、返された `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で spawn して、完了 Action を Dispatcher に戻す。`runner` は要求を queue に積み、1件起動するたびに update する。Component 生成と入力に由来する要求は、その処理の直後、update の前に起動し、その後に editor を起動する。completion の後続要求は、その completion の Action を消費した update の後に起動する。そのため Usecase の起動条件は、それまでの要求と completion を反映した Store で判定できる。
@@ -375,19 +379,21 @@ flowchart TD
     action --> store
 ```
 
-| port    | native          | Web                       |
-| ------- | --------------- | ------------------------- |
-| 入力    | crossterm       | Ratzilla `DomBackend`     |
-| Runtime | Tokio           | `spawn_local`             |
-| Redmine | HTTP            | memory mock               |
-| Editor  | external editor | textarea                  |
-| Logging | file            | browser console           |
-| Cursor  | terminal cursor | cursor位置のセルをreverse |
+| port         | native                                | Web                       |
+| ------------ | ------------------------------------- | ------------------------- |
+| 入力         | crossterm                             | Ratzilla `DomBackend`     |
+| Runtime      | Tokio                                 | `spawn_local`             |
+| Redmine      | HTTP                                  | memory mock               |
+| Editor       | external editor                       | textarea                  |
+| Logging      | file                                  | browser console           |
+| Cursor       | terminal cursor                       | cursor位置のセルをreverse |
+| 画像表示     | Kitty graphics protocol（設定で有効） | 常に無効                  |
+| 一時ファイル | プロセスごとの一時ディレクトリ        | 書かない                  |
 
 ### 実装上の規則
 
 - Componentはcrosstermではなく`src/platform/input/`の`InputEvent`を受け取る。
-- 共通層（components・widgets・stores・usecases・entities・vos）はcrossterm、Ratzilla、DOM、Tokio、filesystem、process、HTTP実装へ直接依存しない。
+- 共通層（components・widgets・stores・usecases・entities・vos）はcrossterm、Ratzilla、DOM、Tokio、filesystem、process、HTTP実装へ直接依存しない。wasm32 でbuildできない `ratatui-image` は、`stores/terminal_image.rs` の包む型からだけ使う。
 - 外部副作用は`RequestSink`への要求としてrunnerに渡し、runnerがplatformのportで実行する（runtime handle や executor 固有型を Component、Store、Client に渡さない）。
 - `InteractionMode::Editing`中はComponentへの入力配送を止める。
 
