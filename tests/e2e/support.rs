@@ -51,6 +51,19 @@ pub fn spawn_app_with_config(name: &str, config: &str) -> PtySession {
         .expect("failed to start redmine-tui in a PTY")
 }
 
+/// 一時ディレクトリを`temp_root`の下に作るよう、`TMPDIR`を指定して起動する。
+pub fn spawn_app_with_temp_root(temp_root: &Path) -> PtySession {
+    PtySessionBuilder::new(env!("CARGO_BIN_EXE_redmine-tui-draft"))
+        .size(TERMINAL_WIDTH, TERMINAL_HEIGHT)
+        .env("REDMINE_URL", required_env(BASE_URL_ENV))
+        .env("REDMINE_API_KEY", API_KEY)
+        .env("XDG_CONFIG_HOME", empty_config_home())
+        .env("TMPDIR", temp_root.display().to_string())
+        .workdir(repo_root())
+        .spawn()
+        .expect("failed to start redmine-tui in a PTY")
+}
+
 /// editorとして起動されると、渡されたファイルの元の内容を記録し、指定の文字列で置き換えて終了する。
 pub struct FakeEditor {
     script: PathBuf,

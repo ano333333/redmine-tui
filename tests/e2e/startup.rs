@@ -1,6 +1,8 @@
+use std::path::{Path, PathBuf};
+
 use crate::support::{
     press_keys, reseed_redmine, spawn_app, spawn_app_with_api_key, spawn_app_with_config,
-    wait_for_exit, wait_for_text,
+    spawn_app_with_temp_root, wait_for_exit, wait_for_text,
 };
 
 // Scenario: 起動するとIssue選択popupにprojectとIssueが表示される
@@ -81,4 +83,44 @@ fn image_display_without_the_terminal_pixel_size_shows_a_notice() {
     wait_for_text(&mut session, "terminalのピクセル単位");
     wait_for_text(&mut session, "issue2");
     session.press_key("q").expect("failed to close the popup");
+}
+
+// Scenario: 取得した画像を置く一時ディレクトリは、起動中だけ作られ、終了すると削除される
+#[test]
+fn the_temporary_directory_exists_only_while_the_app_runs() {
+    // Given 一時ディレクトリの置き場所として、空のディレクトリを使う
+    reseed_redmine();
+    let temp_root =
+        PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("temporary_directory_lifecycle");
+    let _ = std::fs::remove_dir_all(&temp_root);
+    std::fs::create_dir_all(&temp_root).expect("failed to create the temporary root");
+
+    // When 起動する
+    let mut session = spawn_app_with_temp_root(&temp_root);
+    wait_for_text(&mut session, "issue2");
+
+    // Then 起動中は、プロセスごとの一時ディレクトリが1つある
+    let entries = directory_names(&temp_root);
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert!(entries[0].starts_with("redmine-tui-"), "{entries:?}");
+
+    // When popupを閉じ、もう一度qを押して終了する
+    press_keys(&mut session, &["q", "q"]);
+    assert!(wait_for_exit(&mut session));
+
+    // Then 一時ディレクトリは削除されている
+    assert_eq!(directory_names(&temp_root), Vec::<String>::new());
+}
+
+fn directory_names(path: &Path) -> Vec<String> {
+    std::fs::read_dir(path)
+        .expect("failed to read the temporary root")
+        .map(|entry| {
+            entry
+                .expect("failed to read a directory entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect()
 }
