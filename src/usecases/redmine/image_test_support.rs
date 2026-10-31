@@ -1,11 +1,7 @@
 //! 画像を取得する各段階のテストで共有するstub。
 
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-
-use image::{DynamicImage, ImageFormat};
-use ratatui_image::picker::Picker;
 
 use crate::clients::local_file::{LocalFileClient, LocalFileError};
 use crate::clients::redmine::base::FetchedIssue;
@@ -14,7 +10,8 @@ use crate::entities::{
     Category, IssueStatus, Priority, Project, ProjectIssuesPage, TargetVersion, TimeEntityActivity,
     Tracker, User,
 };
-use crate::stores::{Dispatcher, ImageDisplay, SettingsAction, TerminalImageEncoder};
+use crate::stores::{Dispatcher, ImageDisplay, SettingsAction};
+use crate::test_support::{sample_png, test_image_encoder};
 use crate::vos::{AttachmentId, IssueId, JournalId, ProjectId, UploadToken};
 
 pub(super) const TEMP_DIR: &str = "/tmp/redmine-tui-test";
@@ -25,28 +22,20 @@ pub(super) fn offline() -> RedmineClientError {
     }
 }
 
-fn png(width: u32, height: u32) -> Vec<u8> {
-    let mut content = Vec::new();
-    DynamicImage::new_rgba8(width, height)
-        .write_to(&mut Cursor::new(&mut content), ImageFormat::Png)
-        .unwrap();
-    content
-}
-
 /// `ImageStubClient`が既定で返すサムネイル。
 pub(super) fn thumbnail_png() -> Vec<u8> {
-    png(8, 8)
+    sample_png(8, 8)
 }
 
 /// `ImageStubClient`が既定で返す原画像。サムネイルと区別できる大きさにする。
 pub(super) fn original_png() -> Vec<u8> {
-    png(16, 16)
+    sample_png(16, 16)
 }
 
 pub(super) fn image_enabled_dispatcher() -> Dispatcher {
     let mut dispatcher = Dispatcher::new();
     dispatcher.dispatch(SettingsAction::SetImageDisplay(ImageDisplay::Enabled {
-        encoder: TerminalImageEncoder::new(Picker::halfblocks()),
+        encoder: test_image_encoder(),
     }));
     dispatcher.consume_action();
     dispatcher

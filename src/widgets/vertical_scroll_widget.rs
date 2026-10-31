@@ -250,10 +250,9 @@ mod tests {
     use ratatui::widgets::Paragraph;
 
     use super::*;
-    use ratatui_image::picker::{Picker, ProtocolType};
-
-    use crate::stores::TerminalImageEncoder;
-    use crate::test_support::{render_snapshot, sample_png, sample_prepared_image};
+    use crate::test_support::{
+        render_snapshot, sample_png, sample_prepared_image, test_kitty_image_encoder,
+    };
 
     #[test]
     fn calc_cursor_area_position_without_scroll() {
@@ -440,9 +439,7 @@ mod tests {
 
     #[test]
     fn kitty_image_cut_at_the_top_sends_its_data_in_the_first_visible_cell() {
-        let mut picker = Picker::halfblocks();
-        picker.set_protocol_type(ProtocolType::Kitty);
-        let image = TerminalImageEncoder::new(picker)
+        let image = test_kitty_image_encoder()
             .prepare(&sample_png(30, 40), u32::MAX)
             .unwrap();
         let mut state = VerticalScrollWidgetState::new();

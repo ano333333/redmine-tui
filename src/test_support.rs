@@ -67,6 +67,15 @@ pub fn test_image_encoder() -> TerminalImageEncoder {
     TerminalImageEncoder::new(ratatui_image::picker::Picker::halfblocks())
 }
 
+/// [`test_image_encoder`]と同じフォントで、Kitty graphics protocolへ変換するencoder。
+///
+/// 画像IDが乱数で決まるため、snapshotではなく、セルに入る制御シーケンスを確かめるテストで使う。
+pub fn test_kitty_image_encoder() -> TerminalImageEncoder {
+    let mut picker = ratatui_image::picker::Picker::halfblocks();
+    picker.set_protocol_type(ratatui_image::picker::ProtocolType::Kitty);
+    TerminalImageEncoder::new(picker)
+}
+
 /// `id`の添付ファイルを、指定したContent-Typeとサムネイルの可否で組み立てる。
 pub fn sample_attachment(id: u16, content_type: Option<&str>, thumbnailable: bool) -> Attachment {
     Attachment {

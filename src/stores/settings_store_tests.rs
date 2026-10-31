@@ -1,6 +1,5 @@
-use ratatui_image::picker::Picker;
-
-use super::{ImageDisplay, SettingsAction, Store, TerminalImageEncoder};
+use super::{ImageDisplay, SettingsAction, Store};
+use crate::test_support::test_image_encoder;
 
 #[test]
 fn image_display_is_disabled_initially() {
@@ -12,7 +11,7 @@ fn image_display_is_disabled_initially() {
 #[test]
 fn set_image_display_replaces_image_display() {
     let mut store = Store::new();
-    let encoder = TerminalImageEncoder::new(Picker::halfblocks());
+    let encoder = test_image_encoder();
 
     store.consume_action(SettingsAction::SetImageDisplay(ImageDisplay::Enabled { encoder }).into());
 

@@ -62,18 +62,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
     use std::path::Path;
     use std::sync::{Arc, Mutex};
 
-    use image::{DynamicImage, ImageFormat};
     use ratatui::layout::Size;
-    use ratatui_image::picker::Picker;
 
     use super::*;
     use crate::clients::local_file::LocalFileError;
-    use crate::stores::{Action, SettingsAction, TerminalImageEncoder};
-    use crate::test_support::UnusedRedmineClient;
+    use crate::stores::{Action, SettingsAction};
+    use crate::test_support::{UnusedRedmineClient, sample_png, test_image_encoder};
 
     const KEY: ImageKey = ImageKey::AttachmentOriginal {
         id: crate::vos::AttachmentId::new(1),
@@ -99,19 +96,11 @@ mod tests {
         }
     }
 
-    fn png(width: u32, height: u32) -> Vec<u8> {
-        let mut content = Vec::new();
-        DynamicImage::new_rgba8(width, height)
-            .write_to(&mut Cursor::new(&mut content), ImageFormat::Png)
-            .unwrap();
-        content
-    }
-
     /// 画像表示を有効にし、`KEY`の画像が`PATH`を前処理する状態を作る。
     fn preparing_dispatcher() -> Rc<RefCell<Dispatcher>> {
         let mut dispatcher = Dispatcher::new();
         dispatcher.dispatch(SettingsAction::SetImageDisplay(ImageDisplay::Enabled {
-            encoder: TerminalImageEncoder::new(Picker::halfblocks()),
+            encoder: test_image_encoder(),
         }));
         dispatcher.dispatch(ImageAction::Start { key: KEY });
         dispatcher.dispatch(ImageAction::Loaded {
@@ -150,7 +139,7 @@ mod tests {
 
     #[tokio::test]
     async fn small_image_is_prepared_at_its_original_size() {
-        let clients = clients(Ok(png(16, 32)));
+        let clients = clients(Ok(sample_png(16, 32)));
 
         let actions = prepare(&clients).await;
 
@@ -158,7 +147,7 @@ mod tests {
             *clients.local_file.reads.lock().unwrap(),
             vec![(PathBuf::from(PATH), 20_971_520)]
         );
-        // Picker::halfblocksのフォントは10x20pxのため、16x32pxは2x2セルになる。
+        // テスト用のencoderのフォントは10x20pxのため、16x32pxは2x2セルになる。
         assert!(matches!(
             actions.as_slice(),
             [Action::Image(ImageAction::Prepared { key, image })]
@@ -168,7 +157,7 @@ mod tests {
 
     #[tokio::test]
     async fn image_longer_than_the_limit_is_shrunk() {
-        let clients = clients(Ok(png(1600, 400)));
+        let clients = clients(Ok(sample_png(1600, 400)));
 
         let actions = prepare(&clients).await;
 
@@ -213,7 +202,7 @@ mod tests {
     fn preparing_an_image_that_is_not_loaded_panics() {
         prepare_image(
             Rc::new(RefCell::new(Dispatcher::new())),
-            clients(Ok(png(1, 1))),
+            clients(Ok(sample_png(1, 1))),
             KEY,
             PathBuf::from(PATH),
         );
