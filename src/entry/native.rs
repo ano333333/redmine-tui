@@ -14,7 +14,7 @@ use crate::{
     platform::runtime::tokio_spawner::TokioBackgroundSpawner,
     platform::terminal_image::image_display_from_config,
     runner::{RunError, lifecycle::consume_initial_actions, run as run_app},
-    stores::{Dispatcher, SettingsAction},
+    stores::{Dispatcher, NoticeAction, NoticeId, SettingsAction},
     trace_dbg,
     usecases::{UsecaseClients, redmine::load_initial_entities},
 };
@@ -78,11 +78,22 @@ pub(crate) fn run() -> ExitCode {
     let mut host = NativePlatformHost::new(ratatui::init());
     // runのFutureが保持するeditor sessionを先に破棄し、以降のどのreturnでもterminalを復帰する。
     let _terminal_restore = TerminalRestoreGuard;
-    let image_display = image_display_from_config(app_config.image_enabled);
-    consume_initial_actions(
-        dispatcher.clone(),
-        vec![SettingsAction::SetImageDisplay(image_display).into()],
-    );
+    let image_actions = match image_display_from_config(app_config.image_enabled) {
+        Ok(image_display) => vec![SettingsAction::SetImageDisplay(image_display).into()],
+        Err(reason) => {
+            tracing::warn!(%reason, "image display disabled");
+            vec![
+                NoticeAction::Push {
+                    id: NoticeId::new(),
+                    message: format!(
+                        "terminalのピクセル単位の大きさを取得できないため、画像を表示しません: {reason}"
+                    ),
+                }
+                .into(),
+            ]
+        }
+    };
+    consume_initial_actions(dispatcher.clone(), image_actions);
     let editor = NativeTextEditor::from_environment();
     let clients = UsecaseClients {
         redmine: client,

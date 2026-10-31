@@ -35,6 +35,22 @@ pub fn spawn_app() -> PtySession {
     spawn_app_with_api_key(Some(API_KEY))
 }
 
+/// `config`を設定ファイル（`config.toml`）として起動する。`name`は設定を置くディレクトリの名前にする。
+pub fn spawn_app_with_config(name: &str, config: &str) -> PtySession {
+    let config_home = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    let config_dir = config_home.join("redmine-tui");
+    std::fs::create_dir_all(&config_dir).expect("failed to create the config directory");
+    std::fs::write(config_dir.join("config.toml"), config).expect("failed to write the config");
+    PtySessionBuilder::new(env!("CARGO_BIN_EXE_redmine-tui-draft"))
+        .size(TERMINAL_WIDTH, TERMINAL_HEIGHT)
+        .env("REDMINE_URL", required_env(BASE_URL_ENV))
+        .env("REDMINE_API_KEY", API_KEY)
+        .env("XDG_CONFIG_HOME", config_home.display().to_string())
+        .workdir(repo_root())
+        .spawn()
+        .expect("failed to start redmine-tui in a PTY")
+}
+
 /// editorとして起動されると、渡されたファイルの元の内容を記録し、指定の文字列で置き換えて終了する。
 pub struct FakeEditor {
     script: PathBuf,

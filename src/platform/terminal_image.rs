@@ -9,17 +9,12 @@ use crate::stores::{ImageDisplay, TerminalImageEncoder};
 /// terminalへは問い合わせず、Kitty graphics protocolに対応したterminalで動いているものとして扱う。
 ///
 /// 画像のセル数を求めるため、terminalのピクセル数からフォントのピクセルサイズを求める。
-/// ピクセル数を得られないterminalでは、画像表示を無効にする。
-pub(crate) fn image_display_from_config(image_enabled: bool) -> ImageDisplay {
+/// 画像表示が有効なのにピクセル数を得られない場合は、利用者へ伝える理由を返す。
+pub(crate) fn image_display_from_config(image_enabled: bool) -> Result<ImageDisplay, String> {
     if !image_enabled {
-        return ImageDisplay::Disabled;
+        return Ok(ImageDisplay::Disabled);
     }
-    let Some(font_size) = font_size() else {
-        tracing::warn!(
-            "image display disabled because the terminal does not report its pixel size"
-        );
-        return ImageDisplay::Disabled;
-    };
+    let font_size = font_size()?;
     // terminalへ問い合わせる`Picker::from_query_stdio`の代わりに、求めたフォントサイズで作る。
     #[allow(deprecated)]
     let mut picker = Picker::from_fontsize(font_size);
@@ -29,19 +24,19 @@ pub(crate) fn image_display_from_config(image_enabled: bool) -> ImageDisplay {
         height = font_size.height,
         "image display enabled with the kitty graphics protocol"
     );
-    ImageDisplay::Enabled {
+    Ok(ImageDisplay::Enabled {
         encoder: TerminalImageEncoder::new(picker),
-    }
+    })
 }
 
-fn font_size() -> Option<FontSize> {
-    let size = window_size().ok()?;
+fn font_size() -> Result<FontSize, String> {
+    let size = window_size().map_err(|error| error.to_string())?;
     if size.width == 0 || size.height == 0 || size.columns == 0 || size.rows == 0 {
-        return None;
+        return Err("the terminal does not report its size in pixels".to_string());
     }
     let (width, height) = (size.width / size.columns, size.height / size.rows);
     if width == 0 || height == 0 {
-        return None;
+        return Err("the terminal reports an invalid size in pixels".to_string());
     }
-    Some(FontSize::new(width, height))
+    Ok(FontSize::new(width, height))
 }

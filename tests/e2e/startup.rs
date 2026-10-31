@@ -1,5 +1,6 @@
 use crate::support::{
-    press_keys, reseed_redmine, spawn_app, spawn_app_with_api_key, wait_for_exit, wait_for_text,
+    press_keys, reseed_redmine, spawn_app, spawn_app_with_api_key, spawn_app_with_config,
+    wait_for_exit, wait_for_text,
 };
 
 // Scenario: 起動するとIssue選択popupにprojectとIssueが表示される
@@ -61,4 +62,23 @@ fn q_on_the_main_screen_exits_the_application() {
 
     // Then アプリが正常終了する
     assert!(wait_for_exit(&mut session));
+}
+
+// Scenario: 画像表示を有効にしても、terminalがピクセル単位の大きさを返さなければ、通知して画像を表示しない
+#[test]
+fn image_display_without_the_terminal_pixel_size_shows_a_notice() {
+    // Given 設定ファイルで画像表示を有効にしている。testtyの仮想端末はピクセル単位の大きさを返さない
+    reseed_redmine();
+
+    // When 起動する
+    let mut session = spawn_app_with_config(
+        "image_display_without_pixel_size",
+        "[image]\nenable = true\n",
+    );
+
+    // Then 画像を表示しないことが通知され、そのまま操作を続けられる
+    // 通知は端末幅の1/3で折り返すため、1行目に収まる部分で待つ。
+    wait_for_text(&mut session, "terminalのピクセル単位");
+    wait_for_text(&mut session, "issue2");
+    session.press_key("q").expect("failed to close the popup");
 }
