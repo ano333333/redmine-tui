@@ -53,7 +53,7 @@ At startup, the app reads `$XDG_CONFIG_HOME/redmine-tui/config.toml` (`~/.config
 enable = true
 ```
 
-- `image.enable`: show attached images in the terminal (optional; defaults to `false`). Images are shown only when the terminal supports the Kitty graphics protocol.
+- `image.enable`: show attached images in the terminal (optional; defaults to `false`). Enable it only in a terminal that supports the Kitty graphics protocol; the app does not check the terminal, and other terminals show broken output. Images are not shown when the terminal does not report its size in pixels.
 
 ## Basic controls
 

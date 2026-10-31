@@ -12,7 +12,7 @@ use crate::{
     platform::host::native::{NativePlatformHost, install_panic_hook},
     platform::redmine_config::redmine_connection_config_from_env,
     platform::runtime::tokio_spawner::TokioBackgroundSpawner,
-    platform::terminal_image::detect_image_display,
+    platform::terminal_image::image_display_from_config,
     runner::{RunError, lifecycle::consume_initial_actions, run as run_app},
     stores::{Dispatcher, SettingsAction},
     trace_dbg,
@@ -78,7 +78,7 @@ pub(crate) fn run() -> ExitCode {
     let mut host = NativePlatformHost::new(ratatui::init());
     // runのFutureが保持するeditor sessionを先に破棄し、以降のどのreturnでもterminalを復帰する。
     let _terminal_restore = TerminalRestoreGuard;
-    let image_display = detect_image_display(app_config.image_enabled);
+    let image_display = image_display_from_config(app_config.image_enabled);
     consume_initial_actions(
         dispatcher.clone(),
         vec![SettingsAction::SetImageDisplay(image_display).into()],

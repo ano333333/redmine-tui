@@ -1,33 +1,47 @@
-//! native版の起動時に、terminalが画像を表示できるかを問い合わせる。
+//! native版の起動時に、設定ファイルの値から画像表示の可否を決める。
 
+use crossterm::terminal::window_size;
+use ratatui_image::FontSize;
 use ratatui_image::picker::{Picker, ProtocolType};
 
 use crate::stores::{ImageDisplay, TerminalImageEncoder};
 
-/// alternate screenに入った後、入力イベントを読み始める前に呼ぶ。
+/// terminalへは問い合わせず、Kitty graphics protocolに対応したterminalで動いているものとして扱う。
 ///
-/// 利用者が画像表示を有効にしていなければ、terminalへ問い合わせない。
-pub(crate) fn detect_image_display(image_enabled: bool) -> ImageDisplay {
+/// 画像のセル数を求めるため、terminalのピクセル数からフォントのピクセルサイズを求める。
+/// ピクセル数を得られないterminalでは、画像表示を無効にする。
+pub(crate) fn image_display_from_config(image_enabled: bool) -> ImageDisplay {
     if !image_enabled {
         return ImageDisplay::Disabled;
     }
-    match Picker::from_query_stdio() {
-        Ok(picker) if picker.protocol_type() == ProtocolType::Kitty => {
-            tracing::info!("image display enabled with the kitty graphics protocol");
-            ImageDisplay::Enabled {
-                encoder: TerminalImageEncoder::new(picker),
-            }
-        }
-        Ok(picker) => {
-            tracing::info!(
-                protocol = ?picker.protocol_type(),
-                "image display disabled because the terminal does not support the kitty graphics protocol"
-            );
-            ImageDisplay::Disabled
-        }
-        Err(error) => {
-            tracing::warn!(%error, "image display disabled because the terminal query failed");
-            ImageDisplay::Disabled
-        }
+    let Some(font_size) = font_size() else {
+        tracing::warn!(
+            "image display disabled because the terminal does not report its pixel size"
+        );
+        return ImageDisplay::Disabled;
+    };
+    // terminalへ問い合わせる`Picker::from_query_stdio`の代わりに、求めたフォントサイズで作る。
+    #[allow(deprecated)]
+    let mut picker = Picker::from_fontsize(font_size);
+    picker.set_protocol_type(ProtocolType::Kitty);
+    tracing::info!(
+        width = font_size.width,
+        height = font_size.height,
+        "image display enabled with the kitty graphics protocol"
+    );
+    ImageDisplay::Enabled {
+        encoder: TerminalImageEncoder::new(picker),
     }
+}
+
+fn font_size() -> Option<FontSize> {
+    let size = window_size().ok()?;
+    if size.width == 0 || size.height == 0 || size.columns == 0 || size.rows == 0 {
+        return None;
+    }
+    let (width, height) = (size.width / size.columns, size.height / size.rows);
+    if width == 0 || height == 0 {
+        return None;
+    }
+    Some(FontSize::new(width, height))
 }
