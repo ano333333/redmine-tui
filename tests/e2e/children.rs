@@ -1,7 +1,7 @@
 use crate::support::{open_issue_from_initial_popup, reseed_redmine, spawn_app, wait_until};
 
 // upload.rsと同じく、幅120の端末でIssue 3を表示した状態で数えた。子一覧はこの直前にあり、画面に入る。
-const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 48;
+const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 51;
 // 子一覧の2件目、Journal一覧の先頭行、Notesへ進む3回を引くと、子一覧の先頭のIssue 1に止まる。
 const J_PRESSES_TO_FIRST_CHILD: usize = J_PRESSES_TO_FIRST_JOURNAL_NOTES - 3;
 

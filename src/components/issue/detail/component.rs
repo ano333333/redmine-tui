@@ -24,6 +24,7 @@ use super::header::HeaderComponent;
 use super::journals_list::EventProcessResult as JournalsListEventProcessResult;
 use super::journals_list::FocusEvent as JournalsListFocusEvent;
 use super::journals_list::JournalsListComponent;
+use super::markdown_view::MarkdownImages;
 use super::property::EventProcessResult as PropertyEventProcessResult;
 use super::property::FocusEvent as PropertyFocusTransitionEvent;
 use super::property::PropertyComponent;
@@ -128,6 +129,106 @@ mod tests {
             crate::test_support::sample_parent_issue(),
         );
         dispatcher
+    }
+
+    /// `sample.png`を添付ファイルとして持ち、その画像（テスト用のencoderで3x2セル）を読み込み済みのIssue 3。
+    fn dispatcher_with_ready_image(
+        description: &str,
+        journals: Vec<crate::entities::Journal>,
+    ) -> Rc<RefCell<Dispatcher>> {
+        use std::path::PathBuf;
+
+        use crate::stores::{
+            AttachmentImageAction, ImageAction, ImageDisplay, ImageKey, SettingsAction,
+        };
+        use crate::test_support::{sample_attachment, sample_prepared_image, test_image_encoder};
+        use crate::vos::AttachmentId;
+
+        let dispatcher = dispatcher();
+        let mut issue = crate::test_support::sample_parent_issue();
+        issue.issue.description = description.to_string();
+        issue.journals = journals;
+        let mut attachment = sample_attachment(1, Some("image/png"), false);
+        attachment.filename = "sample.png".to_string();
+        issue.attachments = vec![attachment];
+        crate::test_support::dispatch_loaded_issue(&mut dispatcher.borrow_mut(), issue);
+        let key = ImageKey::AttachmentOriginal {
+            id: AttachmentId::new(1),
+        };
+        let actions: [crate::stores::Action; 4] = [
+            SettingsAction::SetImageDisplay(ImageDisplay::Enabled {
+                encoder: test_image_encoder(),
+            })
+            .into(),
+            AttachmentImageAction::Start {
+                attachment_id: AttachmentId::new(1),
+                key,
+            }
+            .into(),
+            ImageAction::Loaded {
+                key,
+                path: PathBuf::from("/tmp/image"),
+            }
+            .into(),
+            ImageAction::Prepared {
+                key,
+                image: sample_prepared_image(30, 40),
+            }
+            .into(),
+        ];
+        for action in actions {
+            dispatcher.borrow_mut().dispatch(action);
+            dispatcher.borrow_mut().consume_action();
+        }
+        dispatcher
+    }
+
+    fn render_issue_detail_snapshot(name: &str, dispatcher: &Rc<RefCell<Dispatcher>>, height: u16) {
+        let mut component = IssueDetailComponent::new(3);
+        component.update(
+            dispatcher.clone(),
+            dispatcher.borrow().store(),
+            (40, height),
+        );
+        let store = dispatcher.borrow();
+        crate::test_support::render_snapshot(
+            name,
+            40,
+            height,
+            component.create_widget(store.store()),
+        );
+    }
+
+    #[test]
+    fn snapshot_issue_detail_draws_a_ready_image_in_the_body() {
+        let dispatcher = dispatcher_with_ready_image("before\n\n![](sample.png)\n\nafter", vec![]);
+
+        render_issue_detail_snapshot(
+            "issue_detail_draws_a_ready_image_in_the_body",
+            &dispatcher,
+            30,
+        );
+    }
+
+    #[test]
+    fn snapshot_issue_detail_draws_a_ready_image_in_journal_notes() {
+        let journal = crate::entities::Journal {
+            id: JournalId::new(1),
+            issue_id: IssueId::new(3),
+            user: "alice".to_string(),
+            updated_on: Some(crate::test_support::local_datetime(
+                "2026-02-10T00:00:00+09:00",
+            )),
+            details: vec![],
+            notes: "see below\n\n![](sample.png)".to_string(),
+        };
+        let dispatcher = dispatcher_with_ready_image("", vec![journal]);
+
+        render_issue_detail_snapshot(
+            "issue_detail_draws_a_ready_image_in_journal_notes",
+            &dispatcher,
+            48,
+        );
     }
 
     #[test]
@@ -751,16 +852,21 @@ impl IssueDetailComponent {
         let (issue, _) = store.get_issue(self.id);
         self.header.update(store, self.width);
         self.property.update(self.width);
-        self.body.update(issue.description(), self.width);
+        self.body.update(
+            issue.description(),
+            self.width,
+            &MarkdownImages::new(store, issue.attachments()),
+        );
         self.attachments_list.update(store);
         self.children_list.update(store);
 
         let entries = store.get_remote_journals(self.id);
-        self.journals_list.update(
+        self.journals_list.update_with_images(
             &entries,
             store.get_deleted_journals(self.id),
             store.try_get_local_journal(self.id),
             self.width,
+            &MarkdownImages::new(store, issue.attachments()),
         );
 
         self.widget_state.update(

@@ -1,0 +1,6 @@
+---
+source: src/test_support.rs
+expression: describe_buffer(terminal.backend().buffer())
+---
+area=Rect { x: 0, y: 0, width: 10, height: 1 }
+00: "fifth     " | 0:"f" fg=Reset bg=Reset mod=NONE, 1:"i" fg=Reset bg=Reset mod=NONE, 2:"f" fg=Reset bg=Reset mod=NONE, 3:"t" fg=Reset bg=Reset mod=NONE, 4:"h" fg=Reset bg=Reset mod=NONE

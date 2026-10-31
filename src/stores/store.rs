@@ -2,7 +2,8 @@ use std::collections::{HashMap, VecDeque};
 
 use std::num::NonZeroUsize;
 
-use super::issue_attachments::{AttachmentAction, AttachmentUpload};
+use super::image_store::{ImageAction, ImageKey, ImageState, ImageStore};
+use super::issue_attachments::{AttachmentAction, AttachmentImageAction, AttachmentUpload};
 use super::issue_journals::JournalAction;
 use super::issue_store::{IssueAction, IssueFetchState, IssueState, IssueStore};
 use super::journal_state::{
@@ -12,13 +13,15 @@ use super::notice_store::{Notice, NoticeAction, NoticeStore};
 use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
+use super::settings_store::{ImageDisplay, SettingsAction, SettingsStore};
 use crate::entities::{
     Category, Issue, IssueAggregate, IssueChild, IssueStatus, IssueView, Priority, Project,
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
-    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, JournalNotesDiff, PriorityId,
-    ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    AttachmentId, CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId,
+    JournalNotesDiff, PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId,
+    UserId,
 };
 
 pub struct Dispatcher {
@@ -57,6 +60,8 @@ pub struct Store {
     issue_store: IssueStore,
     project_issues_store: ProjectIssuesStore,
     notice_store: NoticeStore,
+    settings_store: SettingsStore,
+    image_store: ImageStore,
     users: HashMap<UserId, User>,
     issue_statuses: HashMap<IssueStatusId, IssueStatus>,
     priorities: HashMap<PriorityId, Priority>,
@@ -73,6 +78,8 @@ impl Store {
             issue_store: IssueStore::new(),
             project_issues_store: ProjectIssuesStore::new(),
             notice_store: NoticeStore::new(),
+            settings_store: SettingsStore::new(),
+            image_store: ImageStore::new(),
             users: HashMap::new(),
             issue_statuses: HashMap::new(),
             priorities: HashMap::new(),
@@ -96,6 +103,9 @@ impl Store {
             Action::Journal(action) => self.issue_store.consume_journal_action(action),
             Action::Attachment(action) => self.issue_store.consume_attachment_action(action),
             Action::Notice(action) => self.notice_store.consume_action(action),
+            Action::Settings(action) => self.settings_store.consume_action(action),
+            Action::Image(action) => self.image_store.consume_action(action),
+            Action::AttachmentImage(action) => self.consume_attachment_image_action(action),
             Action::SyncUsers { users } => {
                 self.users = users.into_iter().map(|user| (user.id, user)).collect();
             }
@@ -404,6 +414,63 @@ impl Store {
         self.notice_store.notices()
     }
 
+    pub fn get_image_display(&self) -> &ImageDisplay {
+        self.settings_store.image_display()
+    }
+
+    /// 画像の読み込みと前処理の状態を返す。読み込みを始めていない画像は`None`を返す。
+    pub fn try_get_image(&self, key: ImageKey) -> Option<&ImageState> {
+        self.image_store.try_get(key)
+    }
+
+    /// 添付ファイルの表示に使う画像を返す。画像の読み込みを始めていない添付ファイルは`None`を返す。
+    pub fn try_get_attachment_image_key(&self, id: AttachmentId) -> Option<ImageKey> {
+        self.issue_store.try_get_attachment_image_key(id)
+    }
+
+    fn consume_attachment_image_action(&mut self, action: AttachmentImageAction) {
+        match action {
+            AttachmentImageAction::Start { attachment_id, key } => {
+                if let Some(current) = self.issue_store.try_get_attachment_image_key(attachment_id)
+                {
+                    let state = self.image_store.try_get(current);
+                    assert!(
+                        matches!(state, Some(ImageState::Failed { .. })),
+                        "cannot start loading an image of attachment {attachment_id} while {current:?} is {state:?}"
+                    );
+                }
+                self.image_store.consume_action(ImageAction::Start { key });
+                self.issue_store
+                    .set_attachment_image_key(attachment_id, key);
+            }
+            AttachmentImageAction::FallBackToOriginal {
+                attachment_id,
+                reason,
+            } => {
+                let current = self.issue_store.try_get_attachment_image_key(attachment_id);
+                let state = current.and_then(|key| self.image_store.try_get(key));
+                let Some(thumbnail @ ImageKey::AttachmentThumbnail { .. }) = current else {
+                    panic!(
+                        "cannot fall back to the original image of attachment {attachment_id} while it uses {current:?}"
+                    );
+                };
+                assert!(
+                    matches!(state, Some(ImageState::Loading)),
+                    "cannot fall back to the original image of attachment {attachment_id} while {thumbnail:?} is {state:?}"
+                );
+                let original = ImageKey::AttachmentOriginal { id: attachment_id };
+                self.image_store.consume_action(ImageAction::Fail {
+                    key: thumbnail,
+                    reason,
+                });
+                self.image_store
+                    .consume_action(ImageAction::Start { key: original });
+                self.issue_store
+                    .set_attachment_image_key(attachment_id, original);
+            }
+        }
+    }
+
     /// 前回更新からの経過時間を内部状態へ累積する。
     ///
     /// この更新で表示期限ちょうどに達したnoticeも破棄する。
@@ -451,6 +518,9 @@ pub enum Action {
     Journal(JournalAction),
     Attachment(AttachmentAction),
     Notice(NoticeAction),
+    Settings(SettingsAction),
+    Image(ImageAction),
+    AttachmentImage(AttachmentImageAction),
 }
 
 impl From<IssueAction> for Action {
@@ -480,6 +550,24 @@ impl From<AttachmentAction> for Action {
 impl From<NoticeAction> for Action {
     fn from(action: NoticeAction) -> Self {
         Self::Notice(action)
+    }
+}
+
+impl From<SettingsAction> for Action {
+    fn from(action: SettingsAction) -> Self {
+        Self::Settings(action)
+    }
+}
+
+impl From<ImageAction> for Action {
+    fn from(action: ImageAction) -> Self {
+        Self::Image(action)
+    }
+}
+
+impl From<AttachmentImageAction> for Action {
+    fn from(action: AttachmentImageAction) -> Self {
+        Self::AttachmentImage(action)
     }
 }
 

@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use super::image_store::ImageKey;
 use super::issue_attachments::{AttachmentAction, AttachmentUpload, AttachmentUploadStage};
 use super::issue_journals::{IssueJournalStates, JournalAction};
 use super::journal_state::{
@@ -18,8 +19,8 @@ use crate::vos::issue_property_diff::{
     fold_property_diffs,
 };
 use crate::vos::{
-    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, JournalNotesDiff, PriorityId,
-    ProjectId, TargetVersionId, TrackerId, UserId,
+    AttachmentId, CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId,
+    JournalNotesDiff, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -194,6 +195,8 @@ pub(super) struct IssueStore {
     children: HashMap<IssueId, Vec<IssueChild>>,
     /// 取得済みIssueへ追加中の添付ファイル。Issue属性の状態が変わっても引き継ぐよう、entryとは別に持つ。
     attachment_uploads: HashMap<IssueId, AttachmentUpload>,
+    /// 添付ファイルの表示に使う画像。Issueを取得し直しても引き継ぐよう、entryとは別に持つ。
+    attachment_images: HashMap<AttachmentId, ImageKey>,
 }
 
 impl IssueStore {
@@ -202,7 +205,16 @@ impl IssueStore {
             entries: HashMap::new(),
             children: HashMap::new(),
             attachment_uploads: HashMap::new(),
+            attachment_images: HashMap::new(),
         }
+    }
+
+    pub(super) fn try_get_attachment_image_key(&self, id: AttachmentId) -> Option<ImageKey> {
+        self.attachment_images.get(&id).copied()
+    }
+
+    pub(super) fn set_attachment_image_key(&mut self, id: AttachmentId, key: ImageKey) {
+        self.attachment_images.insert(id, key);
     }
 
     pub(super) fn consume_action(&mut self, action: IssueAction) {

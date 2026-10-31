@@ -8,16 +8,17 @@ use insta::assert_snapshot;
 use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Widget};
 
 use crate::clients::local_file::{LocalFileClient, LocalFileError};
-use crate::clients::redmine::RedmineClient;
+use crate::clients::redmine::base::FetchedIssue;
+use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError};
 use crate::entities::{
-    Category, Issue, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
-    TargetVersion, TimeEntityActivity, Tracker, User,
+    Attachment, Category, Issue, IssueAggregate, IssueChild, IssueStatus, Journal, Priority,
+    Project, ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
 };
-use crate::stores::{Action, Dispatcher, Store};
+use crate::stores::{Action, Dispatcher, PreparedImage, Store, TerminalImageEncoder};
 use crate::usecases::{UsecaseClients, UsecaseRequest, UsecaseTask, start_usecase};
 use crate::vos::{
-    CategoryId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId, PriorityId,
-    ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UserId,
+    AttachmentId, CategoryId, IssueId, IssueStatusId, JournalDetail, JournalDetailAttr, JournalId,
+    PriorityId, ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UploadToken, UserId,
 };
 
 /// ローカルファイルを読まないUsecaseのテストで、`UsecaseClients`を埋めるためのclient。
@@ -26,6 +27,160 @@ pub struct UnusedLocalFileClient;
 impl LocalFileClient for UnusedLocalFileClient {
     async fn read_file(&self, _: &std::path::Path, _: u64) -> Result<Vec<u8>, LocalFileError> {
         unreachable!("this test does not read local files")
+    }
+
+    async fn write_temp_file(
+        &self,
+        _: &str,
+        _: Vec<u8>,
+    ) -> Result<std::path::PathBuf, LocalFileError> {
+        unreachable!("this test does not write local files")
+    }
+}
+
+/// 透明な`width`x`height`pxのPNG。
+pub fn sample_png(width: u32, height: u32) -> Vec<u8> {
+    let mut content = Vec::new();
+    image::DynamicImage::new_rgba8(width, height)
+        .write_to(
+            &mut std::io::Cursor::new(&mut content),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+    content
+}
+
+/// [`test_image_encoder`]で前処理した、透明な`width`x`height`pxの画像。
+pub fn sample_prepared_image(width: u32, height: u32) -> PreparedImage {
+    test_image_encoder()
+        .prepare(&sample_png(width, height), u32::MAX)
+        .unwrap()
+}
+
+/// テスト用に、フォントを10x20pxとして画像を変換するencoder。
+///
+/// アプリはKittyで描くが、テストではratatui-imageのhalfblocksを便宜的に使う。halfblocksなら
+/// terminalへ問い合わせずにフォントサイズが決まるため、画像のセル数を期待値として固定できる。
+/// Kittyで変換すると、乱数で決まる画像IDが文字色に入り、セルは見えない文字になる。そのため
+/// snapshotが毎回変わり、画像を描いた位置も読み取れない。
+pub fn test_image_encoder() -> TerminalImageEncoder {
+    TerminalImageEncoder::new(ratatui_image::picker::Picker::halfblocks())
+}
+
+/// [`test_image_encoder`]と同じフォントで、Kitty graphics protocolへ変換するencoder。
+///
+/// 画像IDが乱数で決まるため、snapshotではなく、セルに入る制御シーケンスを確かめるテストで使う。
+pub fn test_kitty_image_encoder() -> TerminalImageEncoder {
+    let mut picker = ratatui_image::picker::Picker::halfblocks();
+    picker.set_protocol_type(ratatui_image::picker::ProtocolType::Kitty);
+    TerminalImageEncoder::new(picker)
+}
+
+/// `id`の添付ファイルを、指定したContent-Typeとサムネイルの可否で組み立てる。
+pub fn sample_attachment(id: u16, content_type: Option<&str>, thumbnailable: bool) -> Attachment {
+    Attachment {
+        id: AttachmentId::new(id),
+        filename: format!("file{id}"),
+        filesize: 1,
+        content_type: content_type.map(str::to_string),
+        description: String::new(),
+        content_url: format!("/attachments/download/{id}/file{id}"),
+        thumbnailable,
+        author: "admin".to_string(),
+        created_on: local_datetime("2026-09-11T00:00:00+09:00"),
+    }
+}
+
+/// Redmineへ接続しないUsecaseのテストで、`UsecaseClients`を埋めるためのclient。
+pub struct UnusedRedmineClient;
+
+impl RedmineClient for UnusedRedmineClient {
+    async fn get_attachment_thumbnail(
+        &self,
+        _: AttachmentId,
+        _: u32,
+        _: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_attachment_content(
+        &self,
+        _: AttachmentId,
+        _: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn update_issue(&self, _: IssueId, _: &IssueUpdate) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn update_journal_notes(&self, _: JournalId, _: &str) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn update_issue_notes(&self, _: IssueId, _: &str) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn upload_file(&self, _: &str, _: Vec<u8>) -> Result<UploadToken, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn attach_upload(
+        &self,
+        _: IssueId,
+        _: &UploadToken,
+        _: &str,
+    ) -> Result<(), RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_priorities(&self) -> Result<Vec<Priority>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_projects(&self) -> Result<Vec<Project>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_project_issues(
+        &self,
+        _: ProjectId,
+        _: std::num::NonZeroUsize,
+    ) -> Result<ProjectIssuesPage, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_target_versions(&self) -> Result<Vec<TargetVersion>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_time_entity_activities(
+        &self,
+    ) -> Result<Vec<TimeEntityActivity>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_trackers(&self) -> Result<Vec<Tracker>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_users(&self) -> Result<Vec<User>, RedmineClientError> {
+        unreachable!()
     }
 }
 

@@ -1,4 +1,5 @@
 pub mod gutter;
+pub mod markdown_blocks;
 pub mod monthly_calendar_widget;
 pub mod theme;
 pub mod toast_widget;

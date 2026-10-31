@@ -44,6 +44,17 @@ For example, connect to a Redmine server on a non-default URL:
 REDMINE_URL=https://redmine.example.com REDMINE_API_KEY=<your-api-key> cargo run
 ```
 
+## Config file
+
+At startup, the app reads `$XDG_CONFIG_HOME/redmine-tui/config.toml` (`~/.config/redmine-tui/config.toml` when `XDG_CONFIG_HOME` is not set). If the file is missing, the defaults are used. If the file cannot be parsed, the app prints an error and exits.
+
+```toml
+[image]
+enable = true
+```
+
+- `image.enable`: show attached images in the terminal (optional; defaults to `false`). Enable it only in a terminal that supports the Kitty graphics protocol; the app does not check the terminal, and other terminals show broken output. When the terminal does not report its size in pixels, the app shows a notice and does not show images.
+
 ## Basic controls
 
 The app is keyboard-driven. The focused panel handles input, and available actions are shown in the interface.

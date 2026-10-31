@@ -44,6 +44,17 @@ REDMINE_API_KEY=<your-api-key> cargo run
 REDMINE_URL=https://redmine.example.com REDMINE_API_KEY=<your-api-key> cargo run
 ```
 
+## 設定ファイル
+
+起動時に `$XDG_CONFIG_HOME/redmine-tui/config.toml`（`XDG_CONFIG_HOME` が未設定なら `~/.config/redmine-tui/config.toml`）を読み込みます。ファイルがなければ既定値を使います。ファイルを読み込めない場合は、エラーを表示して終了します。
+
+```toml
+[image]
+enable = true
+```
+
+- `image.enable`: 添付画像を terminal 内に表示する（任意。既定値は `false`）。Kitty graphics protocol に対応した terminal でだけ有効にしてください。アプリは terminal を確かめないため、非対応の terminal では表示が崩れます。terminal がピクセル単位の大きさを返さない場合は、通知を表示し、画像を表示しません。
+
 ## 基本操作
 
 キーボードで操作します。フォーカス中の領域に応じて入力の動作が変わり、実行できる操作は画面内に表示されます。

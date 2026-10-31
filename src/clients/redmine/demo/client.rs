@@ -305,6 +305,7 @@ impl RedmineClient for DemoRedmineClient {
                             "/attachments/download/{}/{filename}",
                             upload.id.get()
                         ),
+                        thumbnailable: false,
                         author: user.clone(),
                         created_on: now,
                     });
@@ -343,6 +344,26 @@ impl RedmineClient for DemoRedmineClient {
             }
         };
         async move { result }
+    }
+
+    // Webデモは画像を表示しないため、添付ファイルの中身は返さない。
+    fn get_attachment_thumbnail(
+        &self,
+        id: AttachmentId,
+        size: u32,
+        _: u64,
+    ) -> impl std::future::Future<Output = Result<Vec<u8>, RedmineClientError>> + Send {
+        let error = Self::not_found("GET", format!("/attachments/thumbnail/{}/{size}", id.get()));
+        async move { Err(error) }
+    }
+
+    fn get_attachment_content(
+        &self,
+        id: AttachmentId,
+        _: u64,
+    ) -> impl std::future::Future<Output = Result<Vec<u8>, RedmineClientError>> + Send {
+        let error = Self::not_found("GET", format!("/attachments/download/{}", id.get()));
+        async move { Err(error) }
     }
 
     fn get_issue_statuses(
@@ -632,7 +653,7 @@ mod tests {
         let [attachment] = issue.aggregate.attachments.as_slice() else {
             panic!("expected one attachment");
         };
-        // seedのIssue 4が添付ファイル1を持つため、次のIDは2になる。
+        // seedのIssue 3が添付ファイル1を持つため、次のIDは2になる。
         assert_eq!(attachment.id, AttachmentId::new(2));
         assert_eq!(attachment.filename, "note.png");
         assert_eq!(attachment.filesize, 10);
@@ -788,7 +809,11 @@ mod tests {
                 .iter()
                 .map(|attachment| (attachment.filename.as_str(), attachment.filesize))
                 .collect::<Vec<_>>(),
-            vec![("picked.png", SAMPLE_IMAGE.len() as u64)]
+            // seedのIssue 3は添付ファイル1を持つため、追加した添付ファイルはその後ろに並ぶ。
+            vec![
+                ("sample.png", SAMPLE_IMAGE.len() as u64),
+                ("picked.png", SAMPLE_IMAGE.len() as u64)
+            ]
         );
     }
 

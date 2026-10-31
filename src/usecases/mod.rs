@@ -1,4 +1,5 @@
 mod clients;
+pub mod image;
 pub mod issue_popup_options;
 pub mod redmine;
 mod request;

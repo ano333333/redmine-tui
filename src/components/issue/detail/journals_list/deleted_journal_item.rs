@@ -7,6 +7,7 @@ use crate::vos::JournalId;
 use super::journals_list_item::focus_state;
 use super::journals_list_item::focus_state::{FocusEvent, FocusState};
 use super::journals_list_item::{JournalItemWidget, JournalItemWidgetState, LocalJournalItemView};
+use crate::components::issue::detail::markdown_view::MarkdownImages;
 
 pub enum EventProcessResult {
     CursorLeavedFromBelow { x: u16 },
@@ -43,7 +44,17 @@ impl DeletedJournalItemComponent {
         }
     }
 
+    #[cfg(test)]
     pub fn update(&mut self, entry: &DeletedJournalEntry, width: u16) {
+        self.update_with_images(entry, width, &MarkdownImages::none());
+    }
+
+    pub fn update_with_images(
+        &mut self,
+        entry: &DeletedJournalEntry,
+        width: u16,
+        images: &MarkdownImages,
+    ) {
         self.notes.clone_from(&entry.notes);
         self.pending = matches!(entry.state, DeletedJournalState::Pending { .. });
         self.state_marker = if self.pending {
@@ -52,7 +63,7 @@ impl DeletedJournalItemComponent {
             format!("(deleted #{}) (uploading)", entry.original_id)
         };
         self.widget_state
-            .update(width, "", Some(&chrono::Local::now()), &self.notes);
+            .update_with_images(width, &self.notes, images);
         self.comment_line_count = self.widget_state.comment_line_count();
         self.focus_state
             .update(width, 0, self.comment_line_count, !self.pending);

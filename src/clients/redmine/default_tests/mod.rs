@@ -4,6 +4,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::clients::redmine::{RedmineClientError, RedmineHttpError};
 
+mod attachment_content;
 mod attachment_conversion;
 mod attachment_upload;
 #[cfg(feature = "container-tests")]

@@ -1,7 +1,8 @@
-//! 添付ファイルとして送るローカルファイルの読み込みを、platform固有の実装から分離する。
+//! 添付ファイルとして送るローカルファイルの読み込みと、取得した添付ファイルの一時保存を、
+//! platform固有の実装から分離する。
 
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[cfg(any(feature = "web-demo", test))]
 pub mod demo;
@@ -28,11 +29,36 @@ pub trait LocalFileClient {
         path: &Path,
         max_len: u64,
     ) -> impl std::future::Future<Output = Result<Vec<u8>, LocalFileError>> + Send;
+    /// 一時ディレクトリに`file_name`で`content`を書き込み、書き込んだファイルのパスを返す。
+    ///
+    /// 同じ名前のファイルがあれば置き換える。`file_name`がパス区切りや`..`を含む場合は、
+    /// 一時ディレクトリの外に書き込まないよう`LocalFileError`を返す。
+    fn write_temp_file(
+        &self,
+        file_name: &str,
+        content: Vec<u8>,
+    ) -> impl std::future::Future<Output = Result<PathBuf, LocalFileError>> + Send;
 }
 
 pub(crate) fn too_large(path: &Path, max_len: u64) -> LocalFileError {
     LocalFileError {
         path: path.to_path_buf(),
         reason: format!("the file exceeds the upload limit of {max_len} bytes"),
+    }
+}
+
+/// `file_name`が、ディレクトリを含まない1つのファイル名かを返す。
+pub(crate) fn is_plain_file_name(file_name: &str) -> bool {
+    let mut components = Path::new(file_name).components();
+    matches!(
+        (components.next(), components.next()),
+        (Some(Component::Normal(_)), None)
+    )
+}
+
+pub(crate) fn invalid_file_name(file_name: &str) -> LocalFileError {
+    LocalFileError {
+        path: PathBuf::from(file_name),
+        reason: "the temporary file name must not contain a directory".to_string(),
     }
 }

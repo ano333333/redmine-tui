@@ -90,6 +90,23 @@ impl RedmineClient for AttachmentStubClient {
         unreachable!()
     }
 
+    async fn get_attachment_thumbnail(
+        &self,
+        _: crate::vos::AttachmentId,
+        _: u32,
+        _: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        unreachable!()
+    }
+
+    async fn get_attachment_content(
+        &self,
+        _: crate::vos::AttachmentId,
+        _: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        unreachable!()
+    }
+
     async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
         unreachable!()
     }
@@ -151,5 +168,9 @@ impl LocalFileClient for StubLocalFileClient {
             .unwrap()
             .push((path.to_path_buf(), max_len));
         self.result.clone()
+    }
+
+    async fn write_temp_file(&self, _: &str, _: Vec<u8>) -> Result<PathBuf, LocalFileError> {
+        unreachable!("attachment upload does not write temporary files")
     }
 }

@@ -4,6 +4,8 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect, Size};
 use ratatui::widgets::Widget;
 
+use crate::stores::PreparedImage;
+
 pub struct VerticalScrollWidgetState {
     /// 全てのWidgetを含む仮想バッファを考えた時、どのyからクライアントに転写するか
     offset_y: u16,
@@ -59,6 +61,14 @@ pub struct VerticalScrollWidget<'a> {
     state: &'a VerticalScrollWidgetState,
     buffer: Buffer,
     line_count_sum: u16,
+    images: Vec<ImagePlacement>,
+}
+
+/// 仮想バッファ上の画像の位置。
+struct ImagePlacement {
+    x: u16,
+    y: u16,
+    image: PreparedImage,
 }
 
 impl<'a> VerticalScrollWidget<'a> {
@@ -68,7 +78,26 @@ impl<'a> VerticalScrollWidget<'a> {
             state,
             buffer,
             line_count_sum: 0,
+            images: Vec::new(),
         }
+    }
+
+    /// 次に`render_widget`で渡すWidgetが始まる、仮想バッファのy座標。
+    pub fn next_widget_y(&self) -> u16 {
+        self.line_count_sum
+    }
+
+    /// 全てのWidgetの仮想バッファから見た`(x, y)`に画像を置く。
+    ///
+    /// 画像は子Widgetの中では描かず、`render`で文字を転写した後にクライアントへ直接描く。
+    /// 子Widgetを描く一時的なBufferに画像を描くと、Kittyの画像データを入れたセルが
+    /// 画面に出ないまま捨てられることがあるためである。子Widgetは画像の行を空けておく。
+    pub fn render_image(&mut self, position: Position, image: PreparedImage) {
+        self.images.push(ImagePlacement {
+            x: position.x,
+            y: position.y,
+            image,
+        });
     }
 
     /// `VerticalScrollWidget::render`の前に、スクロール対象の子 Widget に対し上から順に呼び出す。
@@ -197,6 +226,21 @@ impl<'a> Widget for VerticalScrollWidget<'a> {
                 }
             }
         }
+
+        let client_area = Rect::new(area.x, area.y, width, height);
+        for placement in &self.images {
+            let y = i32::from(placement.y) - i32::from(self.state.offset_y);
+            let image_height = i32::from(placement.image.size().height);
+            if y >= i32::from(height) || y + image_height <= 0 {
+                continue;
+            }
+            placement.image.render(
+                client_area,
+                buf,
+                i16::try_from(placement.x).unwrap_or(i16::MAX),
+                i16::try_from(y).unwrap_or(i16::MIN),
+            );
+        }
     }
 }
 
@@ -206,7 +250,9 @@ mod tests {
     use ratatui::widgets::Paragraph;
 
     use super::*;
-    use crate::test_support::render_snapshot;
+    use crate::test_support::{
+        render_snapshot, sample_png, sample_prepared_image, test_kitty_image_encoder,
+    };
 
     #[test]
     fn calc_cursor_area_position_without_scroll() {
@@ -336,6 +382,93 @@ mod tests {
             "vertical_scroll_when_cursor_moves_up_inside_visible_area",
             10,
             3,
+            widget,
+        );
+    }
+
+    /// 3行目から2行分を空け、その位置に3x2セルの画像を置く。
+    fn build_scroll_widget_with_image(
+        state: &VerticalScrollWidgetState,
+        height: u16,
+    ) -> VerticalScrollWidget<'_> {
+        let mut widget = VerticalScrollWidget::new(state, Size::new(10, height));
+        widget.render_widget(Paragraph::new("first\nsecond"), 2);
+        widget.render_widget(Paragraph::new(""), 2);
+        widget.render_widget(Paragraph::new("fifth"), 1);
+        widget.render_image(Position::new(1, 2), sample_prepared_image(30, 40));
+        widget
+    }
+
+    #[test]
+    fn snapshot_vertical_scroll_draws_a_visible_image() {
+        let mut state = VerticalScrollWidgetState::new();
+        state.update(Position { x: 0, y: 0 }, 5);
+
+        let widget = build_scroll_widget_with_image(&state, 5);
+        render_snapshot("vertical_scroll_draws_a_visible_image", 10, 5, widget);
+    }
+
+    #[test]
+    fn snapshot_vertical_scroll_draws_the_bottom_of_an_image_cut_at_the_top() {
+        let mut state = VerticalScrollWidgetState::new();
+        state.update(Position { x: 0, y: 4 }, 2);
+        assert_eq!(state.offset_y(), 3);
+
+        let widget = build_scroll_widget_with_image(&state, 2);
+        render_snapshot(
+            "vertical_scroll_draws_the_bottom_of_an_image_cut_at_the_top",
+            10,
+            2,
+            widget,
+        );
+    }
+
+    #[test]
+    fn snapshot_vertical_scroll_draws_the_top_of_an_image_cut_at_the_bottom() {
+        let mut state = VerticalScrollWidgetState::new();
+        state.update(Position { x: 0, y: 0 }, 3);
+
+        let widget = build_scroll_widget_with_image(&state, 3);
+        render_snapshot(
+            "vertical_scroll_draws_the_top_of_an_image_cut_at_the_bottom",
+            10,
+            3,
+            widget,
+        );
+    }
+
+    #[test]
+    fn kitty_image_cut_at_the_top_sends_its_data_in_the_first_visible_cell() {
+        let image = test_kitty_image_encoder()
+            .prepare(&sample_png(30, 40), u32::MAX)
+            .unwrap();
+        let mut state = VerticalScrollWidgetState::new();
+        state.update(Position { x: 0, y: 4 }, 2);
+        let mut widget = VerticalScrollWidget::new(&state, Size::new(10, 2));
+        widget.render_widget(Paragraph::new(""), 5);
+        widget.render_image(Position::new(1, 2), image);
+        let mut buf = Buffer::empty(Rect::new(0, 0, 10, 2));
+
+        widget.render(buf.area, &mut buf);
+
+        // Kittyの画像データの送信列（tmux内ではpassthroughで包まれる`_G`のAPC）とplaceholderが、
+        // 画面に出る左上のセルに入る。
+        let symbol = buf[(1, 0)].symbol();
+        assert!(symbol.contains("_G"));
+        assert!(symbol.contains('\u{10EEEE}'));
+    }
+
+    #[test]
+    fn snapshot_vertical_scroll_skips_an_image_above_the_visible_area() {
+        let mut state = VerticalScrollWidgetState::new();
+        state.update(Position { x: 0, y: 4 }, 1);
+        assert_eq!(state.offset_y(), 4);
+
+        let widget = build_scroll_widget_with_image(&state, 1);
+        render_snapshot(
+            "vertical_scroll_skips_an_image_above_the_visible_area",
+            10,
+            1,
             widget,
         );
     }

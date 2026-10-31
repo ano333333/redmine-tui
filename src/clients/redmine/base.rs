@@ -10,8 +10,8 @@ use chrono::{DateTime, Local};
 
 use crate::vos::issue_property_diff::fold_property_diffs;
 use crate::vos::{
-    CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, PriorityId, ProjectId,
-    TargetVersionId, TrackerId, UploadToken, UserId,
+    AttachmentId, CategoryId, IssueId, IssuePropertyDiff, IssueStatusId, JournalId, PriorityId,
+    ProjectId, TargetVersionId, TrackerId, UploadToken, UserId,
 };
 
 pub(crate) const PROJECT_ISSUES_PAGE_LIMIT: usize = 50;
@@ -127,6 +127,23 @@ pub trait RedmineClient {
         token: &UploadToken,
         filename: &str,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
+    /// 添付ファイルのサムネイルを取得する。Redmineは`size`を50px単位に切り上げ、800pxを上限とする。
+    ///
+    /// 応答が`max_len`バイトを超える場合は、全体を読まずにエラーを返す。
+    fn get_attachment_thumbnail(
+        &self,
+        id: AttachmentId,
+        size: u32,
+        max_len: u64,
+    ) -> impl std::future::Future<Output = Result<Vec<u8>, RedmineClientError>> + Send;
+    /// 添付ファイルの本体を取得する。
+    ///
+    /// 応答が`max_len`バイトを超える場合は、全体を読まずにエラーを返す。
+    fn get_attachment_content(
+        &self,
+        id: AttachmentId,
+        max_len: u64,
+    ) -> impl std::future::Future<Output = Result<Vec<u8>, RedmineClientError>> + Send;
     fn get_issue_statuses(
         &self,
     ) -> impl std::future::Future<Output = Result<Vec<IssueStatus>, RedmineClientError>> + Send;

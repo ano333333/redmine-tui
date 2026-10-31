@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{AttachmentAction, AttachmentUploadStage, Dispatcher, NoticeAction, NoticeId};
-use crate::usecases::UsecaseTask;
+use crate::usecases::{UsecaseOutput, UsecaseTask};
 use crate::vos::IssueId;
 
+use super::attachment_image_requests;
 use super::upload_issue::fetch_issue_for_upload;
 
 /// 添付ファイルを紐付けたIssueを取得し直し、添付ファイルと追加を記録したJournalを取り込む。
@@ -37,13 +38,18 @@ where
     );
     Some(Box::pin(async move {
         let actions = match fetch_issue_for_upload(client.as_ref(), issue_id).await {
-            Ok(confirmed) => vec![
-                AttachmentAction::ConfirmSucceeded {
-                    issue: confirmed.aggregate,
-                    children: confirmed.children,
-                }
-                .into(),
-            ],
+            Ok(confirmed) => {
+                return UsecaseOutput {
+                    requests: attachment_image_requests(&confirmed.aggregate),
+                    actions: vec![
+                        AttachmentAction::ConfirmSucceeded {
+                            issue: confirmed.aggregate,
+                            children: confirmed.children,
+                        }
+                        .into(),
+                    ],
+                };
+            }
             Err(reason) => vec![
                 NoticeAction::Push {
                     id: NoticeId::new(),
@@ -64,7 +70,11 @@ mod tests {
     use crate::clients::redmine::base::FetchedIssue;
     use crate::entities::IssueAggregate;
     use crate::stores::{Action, AttachmentAction, NoticeAction};
-    use crate::test_support::{complete_usecase, dispatch_loaded_issue, sample_issue_aggregate};
+    use crate::test_support::{
+        complete_usecase, dispatch_loaded_issue, sample_attachment, sample_issue_aggregate,
+    };
+    use crate::usecases::UsecaseRequest;
+    use crate::vos::AttachmentId;
 
     use super::super::attachment_test_support::{AttachmentStubClient, offline};
     use super::*;
@@ -119,6 +129,28 @@ mod tests {
             [Action::Attachment(AttachmentAction::ConfirmSucceeded { issue, .. })]
                 if issue.issue.id == ISSUE_ID
         ));
+    }
+
+    #[tokio::test]
+    async fn fetched_issue_requests_images_including_the_added_attachment() {
+        let mut confirmed = issue(1);
+        confirmed.attachments = vec![sample_attachment(5, Some("image/png"), true)];
+        let client = client_returning(Ok(FetchedIssue {
+            aggregate: confirmed,
+            children: vec![],
+        }));
+
+        let output = confirm_attachment_upload(confirming_dispatcher(), client, ISSUE_ID)
+            .expect("confirmation should start")
+            .await;
+
+        assert_eq!(
+            output.requests,
+            vec![UsecaseRequest::DownloadAttachmentImage {
+                attachment_id: AttachmentId::new(5),
+                thumbnailable: true,
+            }]
+        );
     }
 
     #[tokio::test]

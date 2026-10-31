@@ -2,11 +2,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use super::attachment_image_requests;
 use crate::clients::redmine::RedmineClient;
 use crate::stores::{
-    Action, DeletedJournalState, Dispatcher, IssueState, JournalAction, NoticeAction, NoticeId,
+    DeletedJournalState, Dispatcher, IssueState, JournalAction, NoticeAction, NoticeId,
 };
-use crate::usecases::UsecaseTask;
+use crate::usecases::{UsecaseOutput, UsecaseTask};
 use crate::vos::{EntityIdValue, IssueId, JournalId};
 
 /// 取得結果から消えて退避したJournalを、新規Journalとして投稿し始める。
@@ -56,9 +57,7 @@ where
         });
 
     Some(Box::pin(async move {
-        upload_deleted_journal(client.as_ref(), issue_id, original_id, notes)
-            .await
-            .into()
+        upload_deleted_journal(client.as_ref(), issue_id, original_id, notes).await
     }))
 }
 
@@ -70,7 +69,7 @@ async fn upload_deleted_journal<C>(
     issue_id: IssueId,
     original_id: JournalId,
     notes: String,
-) -> Vec<Action>
+) -> UsecaseOutput
 where
     C: RedmineClient + Send + Sync + 'static,
 {
@@ -88,18 +87,22 @@ where
                 message,
             }
             .into(),
-        ];
+        ]
+        .into();
     }
     let reason = match client.get_issue(issue_id).await {
         Ok(fetched) if fetched.aggregate.issue.id == issue_id => {
-            return vec![
-                JournalAction::CompleteDeletedUploadWithFetched {
-                    original_id,
-                    issue: fetched.aggregate,
-                    children: fetched.children,
-                }
-                .into(),
-            ];
+            return UsecaseOutput {
+                requests: attachment_image_requests(&fetched.aggregate),
+                actions: vec![
+                    JournalAction::CompleteDeletedUploadWithFetched {
+                        original_id,
+                        issue: fetched.aggregate,
+                        children: fetched.children,
+                    }
+                    .into(),
+                ],
+            };
         }
         // 別Issueのレスポンスを確認結果として扱うと、他Issueのjournalを根拠に完了させてしまうため、
         // 取得失敗と同じ扱いにする。
@@ -125,6 +128,7 @@ where
         }
         .into(),
     ]
+    .into()
 }
 
 #[cfg(test)]
@@ -135,12 +139,13 @@ mod tests {
     use crate::clients::redmine::RedmineClientError;
     use crate::clients::redmine::base::FetchedIssue;
     use crate::entities::{
-        Category, IssueStatus, Journal, Priority, Project, ProjectIssuesPage, TargetVersion,
-        TimeEntityActivity, Tracker, User,
+        Attachment, Category, IssueStatus, Journal, Priority, Project, ProjectIssuesPage,
+        TargetVersion, TimeEntityActivity, Tracker, User,
     };
-    use crate::stores::{IssueAction, JournalUploadFailure};
-    use crate::test_support::{local_datetime, sample_issue_aggregate};
-    use crate::vos::{IssueStatusId, ProjectId};
+    use crate::stores::{Action, IssueAction, JournalUploadFailure};
+    use crate::test_support::{local_datetime, sample_attachment, sample_issue_aggregate};
+    use crate::usecases::UsecaseRequest;
+    use crate::vos::{AttachmentId, IssueStatusId, ProjectId};
 
     use super::*;
 
@@ -162,6 +167,7 @@ mod tests {
         result: Result<(), RedmineClientError>,
         get_result: Result<u16, RedmineClientError>,
         journals: Vec<Journal>,
+        attachments: Vec<Attachment>,
         request: Mutex<Option<(IssueId, String)>>,
         get_requests: Mutex<Vec<IssueId>>,
     }
@@ -172,6 +178,7 @@ mod tests {
                 result: Ok(()),
                 get_result: Ok(1),
                 journals: vec![],
+                attachments: vec![],
                 request: Mutex::new(None),
                 get_requests: Mutex::new(Vec::new()),
             }
@@ -234,6 +241,7 @@ mod tests {
                 0,
             );
             aggregate.journals = self.journals.clone();
+            aggregate.attachments = self.attachments.clone();
             Ok(FetchedIssue {
                 aggregate,
                 children: vec![],
@@ -274,6 +282,23 @@ mod tests {
             _: &crate::vos::UploadToken,
             _: &str,
         ) -> Result<(), RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn get_attachment_thumbnail(
+            &self,
+            _: crate::vos::AttachmentId,
+            _: u32,
+            _: u64,
+        ) -> Result<Vec<u8>, RedmineClientError> {
+            unreachable!()
+        }
+
+        async fn get_attachment_content(
+            &self,
+            _: crate::vos::AttachmentId,
+            _: u64,
+        ) -> Result<Vec<u8>, RedmineClientError> {
             unreachable!()
         }
 
@@ -364,6 +389,32 @@ mod tests {
             dispatcher.borrow_mut().dispatch(action);
             dispatcher.borrow_mut().consume_action();
         }
+    }
+
+    #[tokio::test]
+    async fn completion_requests_images_of_the_fetched_issue() {
+        let client = Arc::new(StubClient {
+            attachments: vec![sample_attachment(5, Some("image/png"), true)],
+            ..StubClient::succeeds()
+        });
+
+        let output = {
+            let dispatcher = deleted_dispatcher();
+            let task =
+                start_deleted_journal_upload(dispatcher.clone(), client, ISSUE_ID, ORIGINAL_ID);
+            dispatcher.borrow_mut().consume_action();
+            task
+        }
+        .expect("upload should start")
+        .await;
+
+        assert_eq!(
+            output.requests,
+            vec![UsecaseRequest::DownloadAttachmentImage {
+                attachment_id: AttachmentId::new(5),
+                thumbnailable: true,
+            }]
+        );
     }
 
     #[test]

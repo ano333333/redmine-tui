@@ -49,7 +49,6 @@ where
             &resolved_notes,
         )
         .await
-        .into()
     }))
 }
 

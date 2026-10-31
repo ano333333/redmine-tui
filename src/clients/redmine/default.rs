@@ -11,8 +11,8 @@ use crate::entities::{
     TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
-    CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalId, PriorityId, ProjectId,
-    TargetVersionId, TimeEntityActivityId, TrackerId, UploadToken, UserId,
+    AttachmentId, CategoryId, EntityIdValue, IssueId, IssueStatusId, JournalId, PriorityId,
+    ProjectId, TargetVersionId, TimeEntityActivityId, TrackerId, UploadToken, UserId,
 };
 
 mod attachment_conversion;
@@ -140,6 +140,50 @@ impl DefaultRedmineClient {
         }
 
         response.json().await.map_err(map_response_body_error)
+    }
+
+    async fn get_bytes(&self, path: &str, max_len: u64) -> Result<Vec<u8>, RedmineClientError> {
+        let method = "GET";
+        let url = format!("{}{}", self.host_url, path);
+        let mut response = self
+            .http_client
+            .get(&url)
+            .header("X-Redmine-API-Key", &self.access_token)
+            .send()
+            .await
+            .map_err(map_request_error)?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let response_body = response.text().await.unwrap_or_else(|error| {
+                format!("failed to read Redmine error response body: {error}")
+            });
+            return map_response_status(
+                status,
+                RedmineHttpError {
+                    method: method.to_string(),
+                    url,
+                    status_code: status.as_u16(),
+                    response_body,
+                },
+            );
+        }
+
+        // Content-Lengthがない応答もあるため、読みながら上限を確かめる。
+        if response
+            .content_length()
+            .is_some_and(|length| length > max_len)
+        {
+            return Err(too_large(&url, max_len));
+        }
+        let mut content = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(map_response_body_error)? {
+            if content.len() as u64 + chunk.len() as u64 > max_len {
+                return Err(too_large(&url, max_len));
+            }
+            content.extend_from_slice(&chunk);
+        }
+        Ok(content)
     }
 
     async fn get_paginated<R>(&self, path: &str) -> Result<Vec<R::Item>, RedmineClientError>
@@ -274,6 +318,28 @@ impl RedmineClient for DefaultRedmineClient {
         .await
     }
 
+    async fn get_attachment_thumbnail(
+        &self,
+        id: AttachmentId,
+        size: u32,
+        max_len: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        self.get_bytes(
+            &format!("/attachments/thumbnail/{}/{size}", id.get()),
+            max_len,
+        )
+        .await
+    }
+
+    async fn get_attachment_content(
+        &self,
+        id: AttachmentId,
+        max_len: u64,
+    ) -> Result<Vec<u8>, RedmineClientError> {
+        self.get_bytes(&format!("/attachments/download/{}", id.get()), max_len)
+            .await
+    }
+
     async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
         Ok(self
             .get_json::<IssueStatusesResponse>("/issue_statuses.json")
@@ -403,6 +469,8 @@ fn map_response_status<T>(
         // ファイル送信では、Redmineの前段のproxyがサイズや形式を413・415で拒否することがある。
         413 | 415 | 422 => Err(RedmineClientError::UnprocessableEntity { context }),
         500..=599 => Err(RedmineClientError::InternalServerError { context }),
+        // TODO: 想定外のステータスでpanicせず、`RedmineClientError::Client`を返す。proxyが429や408を返すと、
+        // 画像1枚の取得のような任意の処理でもworkerがpanicし、アプリが終了する。
         _ => panic!(
             "unexpected Redmine response status: {} for {} {} with body: {}",
             status.as_u16(),
@@ -410,6 +478,12 @@ fn map_response_status<T>(
             context.url,
             context.response_body
         ),
+    }
+}
+
+fn too_large(url: &str, max_len: u64) -> RedmineClientError {
+    RedmineClientError::Client {
+        reason: format!("GET {url} returned more than {max_len} bytes"),
     }
 }
 

@@ -116,6 +116,7 @@ pub fn parse_attachment(
     issue_id: IssueId,
     yaml: &str,
     filesize: u64,
+    thumbnailable: bool,
 ) -> Attachment {
     let yaml = parse_yaml(yaml);
     let parsed_id = as_u16(&yaml, "id");
@@ -141,6 +142,7 @@ pub fn parse_attachment(
         content_type: yaml["content_type"].as_str().map(str::to_string),
         description: yaml["description"].as_str().unwrap_or_default().to_string(),
         content_url: format!("/attachments/download/{}/{}", id, filename),
+        thumbnailable,
         author: as_string(&yaml, "author"),
         created_on: as_local_datetime(&yaml, "created_on"),
         filename,

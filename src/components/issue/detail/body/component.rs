@@ -1,3 +1,4 @@
+use super::super::markdown_view::MarkdownImages;
 use super::focus_state;
 use super::focus_state::FocusState;
 use super::widget::{BodyWidget, BodyWidgetState};
@@ -52,9 +53,10 @@ impl BodyComponent {
         self.focus_state.focus_event(event);
     }
 
-    pub fn update(&mut self, description: &str, width: u16) {
+    pub fn update(&mut self, description: &str, width: u16, images: &MarkdownImages) {
         self.body = description.to_string();
-        self.widget_state.update(width, &self.body);
+        self.widget_state
+            .update_with_images(width, &self.body, images);
         // フォーカスは本文の行だけを対象にする。line_count は末尾の余白行を
         // 含むので、そのまま渡すと空行にカーソルが乗る。
         let height = self.widget_state.text_line_count() as u16;
@@ -110,7 +112,7 @@ mod tests {
 
     fn updated_component(width: u16, body: &str) -> BodyComponent {
         let mut component = BodyComponent::new(ISSUE_ID);
-        component.update(body, width);
+        component.update(body, width, &MarkdownImages::none());
         component
     }
 
@@ -251,12 +253,12 @@ mod tests {
     #[test]
     fn update_to_narrower_width_tracks_line_count_and_current_cursor_clamp() {
         let mut component = BodyComponent::new(ISSUE_ID);
-        component.update(wrapping_body(), WIDE_WIDTH);
+        component.update(wrapping_body(), WIDE_WIDTH, &MarkdownImages::none());
         component.focus_event(FocusEvent::Focused {
             position: Position::new(31, WIDE_LAST_LINE),
         });
 
-        component.update(wrapping_body(), NARROW_WIDTH);
+        component.update(wrapping_body(), NARROW_WIDTH, &MarkdownImages::none());
 
         assert_layout_contract(
             &component,
@@ -279,7 +281,7 @@ mod tests {
             position: Position::new(6, 2),
         });
 
-        component.update(edited_body(), WIDE_WIDTH);
+        component.update(edited_body(), WIDE_WIDTH, &MarkdownImages::none());
         let result = component.process_event(key_event(KeyCode::Char('e')));
 
         match result {

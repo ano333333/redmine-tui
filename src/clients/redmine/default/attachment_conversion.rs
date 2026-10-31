@@ -19,6 +19,8 @@ pub(super) struct RedmineAttachment {
     #[serde(default)]
     pub(super) description: Option<String>,
     pub(super) content_url: String,
+    #[serde(default)]
+    pub(super) thumbnail_url: Option<String>,
     pub(super) author: RedmineAttachmentAuthor,
     pub(super) created_on: String,
 }
@@ -42,6 +44,7 @@ pub(super) fn convert_attachment(
             .filter(|content_type| !content_type.is_empty()),
         description: attachment.description.unwrap_or_default(),
         content_url: attachment.content_url,
+        thumbnailable: attachment.thumbnail_url.is_some(),
         author: attachment.author.name,
         created_on: value_conversion::parse_datetime(&attachment.created_on)?,
     })

@@ -3,13 +3,18 @@
 use std::{cell::RefCell, process::ExitCode, rc::Rc, sync::Arc};
 
 use crate::{
-    clients::{local_file::native::NativeLocalFileClient, redmine::DefaultRedmineClient},
+    clients::{
+        local_file::native::{NativeLocalFileClient, NativeTempDir},
+        redmine::DefaultRedmineClient,
+    },
+    platform::app_config::app_config_from_env,
     platform::editor::native::NativeTextEditor,
     platform::host::native::{NativePlatformHost, install_panic_hook},
     platform::redmine_config::redmine_connection_config_from_env,
     platform::runtime::tokio_spawner::TokioBackgroundSpawner,
+    platform::terminal_image::image_display_from_config,
     runner::{RunError, lifecycle::consume_initial_actions, run as run_app},
-    stores::Dispatcher,
+    stores::{Dispatcher, NoticeAction, NoticeId, SettingsAction},
     trace_dbg,
     usecases::{UsecaseClients, redmine::load_initial_entities},
 };
@@ -38,6 +43,20 @@ pub(crate) fn run() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let app_config = match app_config_from_env() {
+        Ok(config) => config,
+        Err(reason) => {
+            eprintln!("failed to read config file: {reason}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let temp_dir = match NativeTempDir::create() {
+        Ok(temp_dir) => temp_dir,
+        Err(error) => {
+            eprintln!("failed to create a temporary directory: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
     let client = Arc::new(DefaultRedmineClient::new(
         config.host_url,
         config.access_token,
@@ -59,10 +78,26 @@ pub(crate) fn run() -> ExitCode {
     let mut host = NativePlatformHost::new(ratatui::init());
     // runのFutureが保持するeditor sessionを先に破棄し、以降のどのreturnでもterminalを復帰する。
     let _terminal_restore = TerminalRestoreGuard;
+    let image_actions = match image_display_from_config(app_config.image_enabled) {
+        Ok(image_display) => vec![SettingsAction::SetImageDisplay(image_display).into()],
+        Err(reason) => {
+            tracing::warn!(%reason, "image display disabled");
+            vec![
+                NoticeAction::Push {
+                    id: NoticeId::new(),
+                    message: format!(
+                        "terminalのピクセル単位の大きさを取得できないため、画像を表示しません: {reason}"
+                    ),
+                }
+                .into(),
+            ]
+        }
+    };
+    consume_initial_actions(dispatcher.clone(), image_actions);
     let editor = NativeTextEditor::from_environment();
     let clients = UsecaseClients {
         redmine: client,
-        local_file: Arc::new(NativeLocalFileClient),
+        local_file: Arc::new(NativeLocalFileClient::new(&temp_dir)),
     };
     match spawner.block_on(run_app(&mut host, &editor, &spawner, clients, dispatcher)) {
         Ok(()) => ExitCode::SUCCESS,
