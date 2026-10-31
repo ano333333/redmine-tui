@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -89,6 +89,7 @@ impl FakeEditor {
             .size(TERMINAL_WIDTH, TERMINAL_HEIGHT)
             .env("REDMINE_URL", required_env(BASE_URL_ENV))
             .env("REDMINE_API_KEY", API_KEY)
+            .env("XDG_CONFIG_HOME", empty_config_home())
             .env("VISUAL", self.script.display().to_string())
             .env("E2E_EDITOR_CAPTURE", self.capture.display().to_string())
             .env("E2E_EDITOR_TEXT", edited_text)
@@ -109,6 +110,7 @@ pub fn spawn_app_with_api_key(api_key: Option<&str>) -> PtySession {
         .args(args)
         .size(TERMINAL_WIDTH, TERMINAL_HEIGHT)
         .env("REDMINE_URL", required_env(BASE_URL_ENV))
+        .env("XDG_CONFIG_HOME", empty_config_home())
         .workdir(repo_root());
     let builder = match api_key {
         Some(api_key) => builder.env("REDMINE_API_KEY", api_key),
@@ -192,6 +194,15 @@ pub fn wait_for_text(session: &mut PtySession, text: &str) -> String {
             session.capture_frame().all_text()
         ),
     }
+}
+
+/// 実行する人の設定ファイルを読まないよう、設定ファイルのない空のディレクトリを設定の置き場所にする。
+///
+/// 設定によって画像表示の有無が変わると、画面の行数と表示が実行する人ごとに変わる。
+fn empty_config_home() -> String {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("e2e-config-home");
+    std::fs::create_dir_all(&dir).expect("failed to create the empty config directory");
+    dir.display().to_string()
 }
 
 fn required_env(name: &str) -> String {
