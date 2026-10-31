@@ -469,6 +469,8 @@ fn map_response_status<T>(
         // ファイル送信では、Redmineの前段のproxyがサイズや形式を413・415で拒否することがある。
         413 | 415 | 422 => Err(RedmineClientError::UnprocessableEntity { context }),
         500..=599 => Err(RedmineClientError::InternalServerError { context }),
+        // TODO: 想定外のステータスでpanicせず、`RedmineClientError::Client`を返す。proxyが429や408を返すと、
+        // 画像1枚の取得のような任意の処理でもworkerがpanicし、アプリが終了する。
         _ => panic!(
             "unexpected Redmine response status: {} for {} {} with body: {}",
             status.as_u16(),
