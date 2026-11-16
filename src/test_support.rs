@@ -91,98 +91,255 @@ pub fn sample_attachment(id: u32, content_type: Option<&str>, thumbnailable: boo
     }
 }
 
-/// Redmineへ接続しないUsecaseのテストで、`UsecaseClients`を埋めるためのclient。
-pub struct UnusedRedmineClient;
-
-impl RedmineClient for UnusedRedmineClient {
-    async fn get_attachment_thumbnail(
+/// テストで使うAPIだけを実装すれば[`RedmineClient`]になるstub用のtrait。
+///
+/// 実装しなかったメソッドは、テストが想定しないRedmine通信として呼ばれた時点でpanicする。
+pub trait RedmineClientStub {
+    fn get_categories(
         &self,
-        _: AttachmentId,
-        _: u32,
-        _: u64,
-    ) -> Result<Vec<u8>, RedmineClientError> {
-        unreachable!()
+    ) -> impl Future<Output = Result<Vec<Category>, RedmineClientError>> + Send {
+        async { unreachable!("unexpected get_categories") }
     }
 
-    async fn get_attachment_content(
+    fn get_issue(
         &self,
-        _: AttachmentId,
-        _: u64,
-    ) -> Result<Vec<u8>, RedmineClientError> {
-        unreachable!()
+        _: IssueId,
+    ) -> impl Future<Output = Result<FetchedIssue, RedmineClientError>> + Send {
+        async { unreachable!("unexpected get_issue") }
     }
 
-    async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError> {
-        unreachable!()
+    fn update_issue(
+        &self,
+        _: IssueId,
+        _: &IssueUpdate,
+    ) -> impl Future<Output = Result<(), RedmineClientError>> + Send {
+        async { unreachable!("unexpected update_issue") }
     }
 
-    async fn get_issue(&self, _: IssueId) -> Result<FetchedIssue, RedmineClientError> {
-        unreachable!()
+    fn update_journal_notes(
+        &self,
+        _: JournalId,
+        _: &str,
+    ) -> impl Future<Output = Result<(), RedmineClientError>> + Send {
+        async { unreachable!("unexpected update_journal_notes") }
     }
 
-    async fn update_issue(&self, _: IssueId, _: &IssueUpdate) -> Result<(), RedmineClientError> {
-        unreachable!()
+    fn update_issue_notes(
+        &self,
+        _: IssueId,
+        _: &str,
+    ) -> impl Future<Output = Result<(), RedmineClientError>> + Send {
+        async { unreachable!("unexpected update_issue_notes") }
     }
 
-    async fn update_journal_notes(&self, _: JournalId, _: &str) -> Result<(), RedmineClientError> {
-        unreachable!()
+    fn upload_file(
+        &self,
+        _: &str,
+        _: Vec<u8>,
+    ) -> impl Future<Output = Result<UploadToken, RedmineClientError>> + Send {
+        async { unreachable!("unexpected upload_file") }
     }
 
-    async fn update_issue_notes(&self, _: IssueId, _: &str) -> Result<(), RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn upload_file(&self, _: &str, _: Vec<u8>) -> Result<UploadToken, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn attach_upload(
+    fn attach_upload(
         &self,
         _: IssueId,
         _: &UploadToken,
         _: &str,
-    ) -> Result<(), RedmineClientError> {
-        unreachable!()
+    ) -> impl Future<Output = Result<(), RedmineClientError>> + Send {
+        async { unreachable!("unexpected attach_upload") }
     }
 
-    async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
-        unreachable!()
+    fn get_attachment_thumbnail(
+        &self,
+        _: AttachmentId,
+        _: u32,
+        _: u64,
+    ) -> impl Future<Output = Result<Vec<u8>, RedmineClientError>> + Send {
+        async { unreachable!("unexpected get_attachment_thumbnail") }
     }
 
-    async fn get_priorities(&self) -> Result<Vec<Priority>, RedmineClientError> {
-        unreachable!()
+    fn get_attachment_content(
+        &self,
+        _: AttachmentId,
+        _: u64,
+    ) -> impl Future<Output = Result<Vec<u8>, RedmineClientError>> + Send {
+        async { unreachable!("unexpected get_attachment_content") }
     }
 
-    async fn get_projects(&self) -> Result<Vec<Project>, RedmineClientError> {
-        unreachable!()
+    fn get_issue_statuses(
+        &self,
+    ) -> impl Future<Output = Result<Vec<IssueStatus>, RedmineClientError>> + Send {
+        async { unreachable!("unexpected get_issue_statuses") }
     }
 
-    async fn get_project_issues(
+    fn get_priorities(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Priority>, RedmineClientError>> + Send {
+        async { unreachable!("unexpected get_priorities") }
+    }
+
+    fn get_projects(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Project>, RedmineClientError>> + Send {
+        async { unreachable!("unexpected get_projects") }
+    }
+
+    fn get_project_issues(
         &self,
         _: ProjectId,
         _: std::num::NonZeroUsize,
-    ) -> Result<ProjectIssuesPage, RedmineClientError> {
-        unreachable!()
+    ) -> impl Future<Output = Result<ProjectIssuesPage, RedmineClientError>> + Send {
+        async { unreachable!("unexpected get_project_issues") }
     }
 
-    async fn get_target_versions(&self) -> Result<Vec<TargetVersion>, RedmineClientError> {
-        unreachable!()
-    }
-
-    async fn get_time_entity_activities(
+    fn get_target_versions(
         &self,
-    ) -> Result<Vec<TimeEntityActivity>, RedmineClientError> {
-        unreachable!()
+    ) -> impl Future<Output = Result<Vec<TargetVersion>, RedmineClientError>> + Send {
+        async { unreachable!("unexpected get_target_versions") }
     }
 
-    async fn get_trackers(&self) -> Result<Vec<Tracker>, RedmineClientError> {
-        unreachable!()
+    fn get_time_entity_activities(
+        &self,
+    ) -> impl Future<Output = Result<Vec<TimeEntityActivity>, RedmineClientError>> + Send {
+        async { unreachable!("unexpected get_time_entity_activities") }
     }
 
-    async fn get_users(&self) -> Result<Vec<User>, RedmineClientError> {
-        unreachable!()
+    fn get_trackers(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Tracker>, RedmineClientError>> + Send {
+        async { unreachable!("unexpected get_trackers") }
+    }
+
+    fn get_users(&self) -> impl Future<Output = Result<Vec<User>, RedmineClientError>> + Send {
+        async { unreachable!("unexpected get_users") }
     }
 }
+
+impl<T: RedmineClientStub> RedmineClient for T {
+    fn get_categories(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Category>, RedmineClientError>> + Send {
+        RedmineClientStub::get_categories(self)
+    }
+
+    fn get_issue(
+        &self,
+        id: IssueId,
+    ) -> impl Future<Output = Result<FetchedIssue, RedmineClientError>> + Send {
+        RedmineClientStub::get_issue(self, id)
+    }
+
+    fn update_issue(
+        &self,
+        issue_id: IssueId,
+        update: &IssueUpdate,
+    ) -> impl Future<Output = Result<(), RedmineClientError>> + Send {
+        RedmineClientStub::update_issue(self, issue_id, update)
+    }
+
+    fn update_journal_notes(
+        &self,
+        journal_id: JournalId,
+        notes: &str,
+    ) -> impl Future<Output = Result<(), RedmineClientError>> + Send {
+        RedmineClientStub::update_journal_notes(self, journal_id, notes)
+    }
+
+    fn update_issue_notes(
+        &self,
+        issue_id: IssueId,
+        notes: &str,
+    ) -> impl Future<Output = Result<(), RedmineClientError>> + Send {
+        RedmineClientStub::update_issue_notes(self, issue_id, notes)
+    }
+
+    fn upload_file(
+        &self,
+        filename: &str,
+        content: Vec<u8>,
+    ) -> impl Future<Output = Result<UploadToken, RedmineClientError>> + Send {
+        RedmineClientStub::upload_file(self, filename, content)
+    }
+
+    fn attach_upload(
+        &self,
+        issue_id: IssueId,
+        token: &UploadToken,
+        filename: &str,
+    ) -> impl Future<Output = Result<(), RedmineClientError>> + Send {
+        RedmineClientStub::attach_upload(self, issue_id, token, filename)
+    }
+
+    fn get_attachment_thumbnail(
+        &self,
+        id: AttachmentId,
+        size: u32,
+        max_len: u64,
+    ) -> impl Future<Output = Result<Vec<u8>, RedmineClientError>> + Send {
+        RedmineClientStub::get_attachment_thumbnail(self, id, size, max_len)
+    }
+
+    fn get_attachment_content(
+        &self,
+        id: AttachmentId,
+        max_len: u64,
+    ) -> impl Future<Output = Result<Vec<u8>, RedmineClientError>> + Send {
+        RedmineClientStub::get_attachment_content(self, id, max_len)
+    }
+
+    fn get_issue_statuses(
+        &self,
+    ) -> impl Future<Output = Result<Vec<IssueStatus>, RedmineClientError>> + Send {
+        RedmineClientStub::get_issue_statuses(self)
+    }
+
+    fn get_priorities(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Priority>, RedmineClientError>> + Send {
+        RedmineClientStub::get_priorities(self)
+    }
+
+    fn get_projects(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Project>, RedmineClientError>> + Send {
+        RedmineClientStub::get_projects(self)
+    }
+
+    fn get_project_issues(
+        &self,
+        project_id: ProjectId,
+        page: std::num::NonZeroUsize,
+    ) -> impl Future<Output = Result<ProjectIssuesPage, RedmineClientError>> + Send {
+        RedmineClientStub::get_project_issues(self, project_id, page)
+    }
+
+    fn get_target_versions(
+        &self,
+    ) -> impl Future<Output = Result<Vec<TargetVersion>, RedmineClientError>> + Send {
+        RedmineClientStub::get_target_versions(self)
+    }
+
+    fn get_time_entity_activities(
+        &self,
+    ) -> impl Future<Output = Result<Vec<TimeEntityActivity>, RedmineClientError>> + Send {
+        RedmineClientStub::get_time_entity_activities(self)
+    }
+
+    fn get_trackers(
+        &self,
+    ) -> impl Future<Output = Result<Vec<Tracker>, RedmineClientError>> + Send {
+        RedmineClientStub::get_trackers(self)
+    }
+
+    fn get_users(&self) -> impl Future<Output = Result<Vec<User>, RedmineClientError>> + Send {
+        RedmineClientStub::get_users(self)
+    }
+}
+
+/// Redmineへ接続しないUsecaseのテストで、`UsecaseClients`を埋めるためのclient。
+pub struct UnusedRedmineClient;
+
+impl RedmineClientStub for UnusedRedmineClient {}
 
 pub fn usecase_clients<C>(redmine: Arc<C>) -> UsecaseClients<C, UnusedLocalFileClient> {
     UsecaseClients {
