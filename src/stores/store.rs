@@ -639,7 +639,7 @@ mod tests {
         assert_eq!(store.try_get_issue_state(id), Some(IssueState::Uploading));
     }
 
-    fn fetched_journal(id: u16, issue_id: u16) -> Journal {
+    fn fetched_journal(id: u32, issue_id: u32) -> Journal {
         Journal {
             id: JournalId::new(id),
             issue_id: IssueId::new(issue_id),
@@ -650,7 +650,7 @@ mod tests {
         }
     }
 
-    fn fetch_succeeded(id: u16, issue_id: u16, journals: Vec<Journal>) -> Action {
+    fn fetch_succeeded(id: u32, issue_id: u32, journals: Vec<Journal>) -> Action {
         let mut issue = sample_issue_aggregate(issue_id, "fetched", 1.into(), None, None, None, 0);
         issue.journals = journals;
         Action::IssueFetchSucceeded {
@@ -680,7 +680,7 @@ mod tests {
         ));
 
         assert_eq!(store.try_get_issue_state(1), Some(IssueState::Synced));
-        let journal_ids: Vec<u16> = store
+        let journal_ids: Vec<u32> = store
             .get_remote_journals(1)
             .iter()
             .map(|entry| entry.journal.id.get())
@@ -777,7 +777,7 @@ mod tests {
         });
 
         let matched = store.get_target_versions(ProjectId::new(1));
-        let matched_ids: Vec<u16> = matched.iter().map(|version| version.id.get()).collect();
+        let matched_ids: Vec<u32> = matched.iter().map(|version| version.id.get()).collect();
         assert_eq!(matched_ids.len(), 2);
         assert!(matched_ids.contains(&1));
         assert!(matched_ids.contains(&3));
@@ -811,7 +811,7 @@ mod tests {
         });
 
         let matched = store.get_categories(ProjectId::new(1));
-        let matched_ids: Vec<u16> = matched.iter().map(|category| category.id.get()).collect();
+        let matched_ids: Vec<u32> = matched.iter().map(|category| category.id.get()).collect();
         assert_eq!(matched_ids.len(), 2);
         assert!(matched_ids.contains(&1));
         assert!(matched_ids.contains(&3));

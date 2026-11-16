@@ -349,11 +349,11 @@ mod tests {
         dispatcher
     }
 
-    fn issue(id: u16) -> IssueAggregate {
+    fn issue(id: u32) -> IssueAggregate {
         sample_issue_aggregate(id, "subject", IssueStatusId::new(1), None, None, None, 0)
     }
 
-    fn journal(id: u16, issue_id: u16) -> Journal {
+    fn journal(id: u32, issue_id: u32) -> Journal {
         Journal {
             id: JournalId::new(id),
             issue_id: IssueId::new(issue_id),

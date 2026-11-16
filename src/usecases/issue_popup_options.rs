@@ -14,10 +14,10 @@ use crate::vos::{
 ///
 /// 現在値が見つからない場合、及び`current_id`がNoneの場合はfocused_indexを0にする。
 fn build_select_options(
-    mut entries: Vec<(u16, String)>,
-    current_id: Option<u16>,
+    mut entries: Vec<(u32, String)>,
+    current_id: Option<u32>,
     sorted: bool,
-) -> (Vec<(u16, String)>, usize) {
+) -> (Vec<(u32, String)>, usize) {
     if sorted {
         entries.sort_by_key(|(id, _)| *id);
     }
@@ -30,7 +30,7 @@ fn build_select_options(
 /// IssueStatusPopup用のitems/focused_indexを組み立てる。
 // FIXME: workflowで許可された遷移先に絞っていない。Redmineは許可されないstatus_idをエラーなしで
 // 無視するため、ローカルでは変更済みに見えてしまう。
-pub fn build_issue_status_options(store: &Store) -> (Vec<(u16, String)>, usize) {
+pub fn build_issue_status_options(store: &Store) -> (Vec<(u32, String)>, usize) {
     let issue_statuses = store
         .get_issue_statuses()
         .iter()
@@ -42,7 +42,7 @@ pub fn build_issue_status_options(store: &Store) -> (Vec<(u16, String)>, usize) 
 /// TrackerPopup用のitems/focused_indexを組み立てる。
 // FIXME: projectで有効なtrackerに絞っていない。Redmineは使えないtracker_idをエラーなしで
 // 無視するため、ローカルでは変更済みに見えてしまう。
-pub fn build_tracker_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
+pub fn build_tracker_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
     let current_tracker_id = store.get_issue(issue_id).0.tracker_id();
     let trackers = store
         .get_trackers()
@@ -55,7 +55,7 @@ pub fn build_tracker_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, Str
 /// ProjectPopup用のitems/focused_indexを組み立てる。
 // FIXME: add_issues権限のあるprojectに絞っていない。Redmineは移動できないproject_idを
 // エラーなしで無視するため、ローカルでは変更済みに見えてしまう。
-pub fn build_project_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
+pub fn build_project_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
     let current_project_id = store.get_issue(issue_id).0.project_id();
     let projects = store
         .get_projects()
@@ -66,7 +66,7 @@ pub fn build_project_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, Str
 }
 
 /// PriorityPopup用のitems/focused_indexを組み立てる。
-pub fn build_priority_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
+pub fn build_priority_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
     let current_priority_id = store.get_issue(issue_id).0.priority_id();
     let priorities = store
         .get_priorities()
@@ -79,7 +79,7 @@ pub fn build_priority_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, St
 /// AssignedToPopup用のitems/focused_indexを組み立てる。
 // FIXME: projectのassignableなmemberに絞っていない。Redmineはmember以外のassigned_to_idを
 // 422で拒否する。
-pub fn build_assigned_to_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
+pub fn build_assigned_to_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
     let current_assigned_to_id = store.get_issue(issue_id).0.assigned_to_id();
     let users = store
         .get_users()
@@ -93,7 +93,7 @@ pub fn build_assigned_to_options(store: &Store, issue_id: IssueId) -> (Vec<(u16,
 pub fn build_target_version_options(
     store: &Store,
     issue_id: IssueId,
-) -> (Vec<(u16, String)>, usize) {
+) -> (Vec<(u32, String)>, usize) {
     let (issue, _) = store.get_issue(issue_id);
     let current_target_version_id = issue.target_version_id();
     let target_versions = store
@@ -111,17 +111,17 @@ pub fn build_target_version_options(
 /// DoneRatioPopup用のitems/focused_indexを組み立てる。
 ///
 /// 選択肢は0,10,...,100の固定11件。
-pub fn build_done_ratio_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
+pub fn build_done_ratio_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
     let current_done_ratio = store.get_issue(issue_id).0.done_ratio();
     let done_ratios = (0..=100)
         .step_by(10)
         .map(|ratio| (ratio, ratio.to_string()))
         .collect::<Vec<_>>();
-    build_select_options(done_ratios, Some(current_done_ratio), false)
+    build_select_options(done_ratios, Some(u32::from(current_done_ratio)), false)
 }
 
 /// CategoryPopup用のitems/focused_indexを組み立てる。
-pub fn build_category_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, String)>, usize) {
+pub fn build_category_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
     let (issue, _) = store.get_issue(issue_id);
     let current_category_id = issue.category_id();
     let categories = store
@@ -138,7 +138,7 @@ pub fn build_category_options(store: &Store, issue_id: IssueId) -> (Vec<(u16, St
 pub fn issue_status_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
-) -> Box<dyn FnMut(Option<u16>)> {
+) -> Box<dyn FnMut(Option<u32>)> {
     Box::new(move |status_id| {
         if let Some(status_id) = status_id {
             dispatcher.borrow_mut().dispatch(IssueAction::UpdateStatus {
@@ -157,7 +157,7 @@ pub fn issue_status_popup_observer(
 pub fn tracker_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
-) -> Box<dyn FnMut(Option<u16>)> {
+) -> Box<dyn FnMut(Option<u32>)> {
     Box::new(move |tracker_id| {
         if let Some(tracker_id) = tracker_id {
             dispatcher
@@ -180,7 +180,7 @@ pub fn tracker_popup_observer(
 pub fn project_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
-) -> Box<dyn FnMut(Option<u16>)> {
+) -> Box<dyn FnMut(Option<u32>)> {
     Box::new(move |project_id| {
         let Some(project_id) = project_id.map(ProjectId::new) else {
             return;
@@ -209,7 +209,7 @@ pub fn project_popup_observer(
 pub fn priority_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
-) -> Box<dyn FnMut(Option<u16>)> {
+) -> Box<dyn FnMut(Option<u32>)> {
     Box::new(move |priority_id| {
         if let Some(priority_id) = priority_id {
             dispatcher
@@ -226,7 +226,7 @@ pub fn priority_popup_observer(
 pub fn assigned_to_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
-) -> Box<dyn FnMut(Option<u16>)> {
+) -> Box<dyn FnMut(Option<u32>)> {
     Box::new(move |assigned_to_id| {
         dispatcher
             .borrow_mut()
@@ -241,7 +241,7 @@ pub fn assigned_to_popup_observer(
 pub fn target_version_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
-) -> Box<dyn FnMut(Option<u16>)> {
+) -> Box<dyn FnMut(Option<u32>)> {
     Box::new(move |target_version_id| {
         dispatcher
             .borrow_mut()
@@ -258,9 +258,11 @@ pub fn target_version_popup_observer(
 pub fn done_ratio_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
-) -> Box<dyn FnMut(Option<u16>)> {
+) -> Box<dyn FnMut(Option<u32>)> {
     Box::new(move |done_ratio| {
         if let Some(done_ratio) = done_ratio {
+            let done_ratio =
+                u16::try_from(done_ratio).expect("done ratio options are limited to 0..=100");
             dispatcher
                 .borrow_mut()
                 .dispatch(IssueAction::UpdateDoneRatio {
@@ -275,7 +277,7 @@ pub fn done_ratio_popup_observer(
 pub fn category_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
-) -> Box<dyn FnMut(Option<u16>)> {
+) -> Box<dyn FnMut(Option<u32>)> {
     Box::new(move |category_id| {
         dispatcher
             .borrow_mut()

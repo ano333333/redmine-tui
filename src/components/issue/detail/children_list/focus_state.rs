@@ -124,7 +124,7 @@ mod tests {
         InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
     }
 
-    fn ids(values: &[u16]) -> Vec<IssueId> {
+    fn ids(values: &[u32]) -> Vec<IssueId> {
         values.iter().copied().map(Into::into).collect()
     }
 

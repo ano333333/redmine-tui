@@ -8,7 +8,7 @@ use crate::vos::{
 };
 
 /// seedの添付ファイルはID 1だけのため、次にuploadしたファイルのIDは2になる。
-const UPLOADED_ATTACHMENT_ID: u16 = 2;
+const UPLOADED_ATTACHMENT_ID: u32 = 2;
 
 #[test]
 fn attach_upload_contract_against_redmine_container() {

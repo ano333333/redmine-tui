@@ -12,7 +12,7 @@ use super::value_conversion;
 /// RedmineのJournalレスポンスを受け取る中間DTO。
 #[derive(Deserialize)]
 pub(super) struct RedmineJournal {
-    pub(super) id: u16,
+    pub(super) id: u32,
     pub(super) user: RedmineJournalUser,
     pub(super) updated_on: Option<String>,
     pub(super) notes: String,
@@ -27,7 +27,7 @@ pub(super) struct RedmineJournal {
 /// `NamedRedmineEntity`とは独立したDTOとして扱う。
 #[derive(Deserialize)]
 pub(super) struct RedmineJournalUser {
-    pub(super) id: u16,
+    pub(super) id: u32,
     pub(super) name: String,
 }
 

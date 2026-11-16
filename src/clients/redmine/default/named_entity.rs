@@ -8,7 +8,7 @@ use crate::vos::{PriorityId, ProjectId, TrackerId};
 /// レスポンスラッパーが選択したドメイン型へ変換するための中間DTO。
 #[derive(Deserialize)]
 pub(super) struct NamedRedmineEntity {
-    id: u16,
+    id: u32,
     name: String,
 }
 

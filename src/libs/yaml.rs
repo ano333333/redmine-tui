@@ -18,7 +18,11 @@ fn parse_yaml(yaml: &str) -> Yaml {
     yaml_all.iter().next().unwrap().clone()
 }
 
-fn as_u16(yaml: &Yaml, key: &str) -> u16 {
+fn as_integer<T>(yaml: &Yaml, key: &str) -> T
+where
+    T: TryFrom<i64>,
+    T::Error: std::fmt::Debug,
+{
     yaml[key]
         .as_i64()
         .expect(format!("no {}", key).as_str())
@@ -45,7 +49,7 @@ fn as_local_datetime(yaml: &Yaml, key: &str) -> DateTime<Local> {
     Local.from_local_datetime(&naive_datetime).single().unwrap()
 }
 
-fn as_u16_option(yaml: &Yaml, key: &str) -> Option<u16> {
+fn as_u32_option(yaml: &Yaml, key: &str) -> Option<u32> {
     yaml[key].as_i64().map(|i| i.try_into().unwrap())
 }
 
@@ -71,7 +75,7 @@ pub fn parse_journal(id: JournalId, issue_id: IssueId, yaml: &str) -> Journal {
 }
 
 fn parse_journal_yaml_value(id: JournalId, issue_id: IssueId, yaml: &Yaml) -> Journal {
-    let parsed_id = as_u16(&yaml, "id");
+    let parsed_id = as_integer::<u32>(&yaml, "id");
     assert_eq!(
         parsed_id,
         id.get(),
@@ -79,7 +83,7 @@ fn parse_journal_yaml_value(id: JournalId, issue_id: IssueId, yaml: &Yaml) -> Jo
         parsed_id,
         id
     );
-    let parsed_issue_id = as_u16(&yaml, "issue_id");
+    let parsed_issue_id = as_integer::<u32>(&yaml, "issue_id");
     assert_eq!(
         parsed_issue_id,
         issue_id.get(),
@@ -119,7 +123,7 @@ pub fn parse_attachment(
     thumbnailable: bool,
 ) -> Attachment {
     let yaml = parse_yaml(yaml);
-    let parsed_id = as_u16(&yaml, "id");
+    let parsed_id = as_integer::<u32>(&yaml, "id");
     assert_eq!(
         parsed_id,
         id.get(),
@@ -127,7 +131,7 @@ pub fn parse_attachment(
         parsed_id,
         id
     );
-    let parsed_issue_id = as_u16(&yaml, "issue_id");
+    let parsed_issue_id = as_integer::<u32>(&yaml, "issue_id");
     assert_eq!(
         parsed_issue_id,
         issue_id.get(),
@@ -153,7 +157,7 @@ pub fn parse_journal_detail_yaml(yaml: &yaml_rust::Yaml) -> JournalDetail {
     match as_string(yaml, "type").as_str() {
         "attr" => JournalDetail::Attr(parse_journal_detail_attr_yaml(yaml)),
         "attachment" => JournalDetail::Attachment(JournalDetailAttachment {
-            id: AttachmentId::new(as_u16(yaml, "name")),
+            id: AttachmentId::new(as_integer::<u32>(yaml, "name")),
             // Redmineの変換と同じく、空文字のファイル名は値がないものとして扱う。
             change: match (
                 yaml["old"].as_str().filter(|filename| !filename.is_empty()),
@@ -175,16 +179,16 @@ pub fn parse_journal_detail_yaml(yaml: &yaml_rust::Yaml) -> JournalDetail {
 pub fn parse_journal_detail_attr_yaml(yaml: &yaml_rust::Yaml) -> JournalDetailAttr {
     match as_string(yaml, "name").as_str() {
         "status_id" => JournalDetailAttr::StatusId {
-            old: IssueStatusId::new(as_u16(yaml, "old")),
-            new: IssueStatusId::new(as_u16(yaml, "new")),
+            old: IssueStatusId::new(as_integer::<u32>(yaml, "old")),
+            new: IssueStatusId::new(as_integer::<u32>(yaml, "new")),
         },
         "tracker_id" => JournalDetailAttr::TrackerId {
-            old: TrackerId::new(as_u16(yaml, "old")),
-            new: TrackerId::new(as_u16(yaml, "new")),
+            old: TrackerId::new(as_integer::<u32>(yaml, "old")),
+            new: TrackerId::new(as_integer::<u32>(yaml, "new")),
         },
         "project_id" => JournalDetailAttr::ProjectId {
-            old: ProjectId::new(as_u16(yaml, "old")),
-            new: ProjectId::new(as_u16(yaml, "new")),
+            old: ProjectId::new(as_integer::<u32>(yaml, "old")),
+            new: ProjectId::new(as_integer::<u32>(yaml, "new")),
         },
         "subject" => JournalDetailAttr::Subject {
             old: as_string(yaml, "old"),
@@ -195,24 +199,24 @@ pub fn parse_journal_detail_attr_yaml(yaml: &yaml_rust::Yaml) -> JournalDetailAt
             new: as_string(yaml, "new"),
         },
         "category_id" => JournalDetailAttr::CategoryId {
-            old: as_u16_option(yaml, "old").map(CategoryId::new),
-            new: as_u16_option(yaml, "new").map(CategoryId::new),
+            old: as_u32_option(yaml, "old").map(CategoryId::new),
+            new: as_u32_option(yaml, "new").map(CategoryId::new),
         },
         "assigned_to_id" => JournalDetailAttr::AssignedToId {
-            old: as_u16_option(yaml, "old").map(UserId::new),
-            new: as_u16_option(yaml, "new").map(UserId::new),
+            old: as_u32_option(yaml, "old").map(UserId::new),
+            new: as_u32_option(yaml, "new").map(UserId::new),
         },
         "priority_id" => JournalDetailAttr::PriorityId {
-            old: PriorityId::new(as_u16(yaml, "old")),
-            new: PriorityId::new(as_u16(yaml, "new")),
+            old: PriorityId::new(as_integer::<u32>(yaml, "old")),
+            new: PriorityId::new(as_integer::<u32>(yaml, "new")),
         },
         "fixed_version_id" => JournalDetailAttr::FixedVersionId {
-            old: as_u16_option(yaml, "old").map(TargetVersionId::new),
-            new: as_u16_option(yaml, "new").map(TargetVersionId::new),
+            old: as_u32_option(yaml, "old").map(TargetVersionId::new),
+            new: as_u32_option(yaml, "new").map(TargetVersionId::new),
         },
         "author_id" => JournalDetailAttr::AuthorId {
-            old: UserId::new(as_u16(yaml, "old")),
-            new: UserId::new(as_u16(yaml, "new")),
+            old: UserId::new(as_integer::<u32>(yaml, "old")),
+            new: UserId::new(as_integer::<u32>(yaml, "new")),
         },
         "start_date" => JournalDetailAttr::StartDate {
             old: as_local_datetime_option(yaml, "old"),
@@ -223,16 +227,16 @@ pub fn parse_journal_detail_attr_yaml(yaml: &yaml_rust::Yaml) -> JournalDetailAt
             new: as_local_datetime_option(yaml, "new"),
         },
         "done_ratio" => JournalDetailAttr::DoneRatio {
-            old: as_u16(yaml, "old"),
-            new: as_u16(yaml, "new"),
+            old: as_integer::<u16>(yaml, "old"),
+            new: as_integer::<u16>(yaml, "new"),
         },
         "estimated_hours" => JournalDetailAttr::EstimatedHours {
             old: as_f64_option(yaml, "old"),
             new: as_f64_option(yaml, "new"),
         },
         "parent_id" => JournalDetailAttr::ParentId {
-            old: as_u16_option(yaml, "old").map(IssueId::new),
-            new: as_u16_option(yaml, "new").map(IssueId::new),
+            old: as_u32_option(yaml, "old").map(IssueId::new),
+            new: as_u32_option(yaml, "new").map(IssueId::new),
         },
         "is_private" => JournalDetailAttr::IsPrivate {
             old: as_bool(yaml, "old"),
@@ -245,7 +249,7 @@ pub fn parse_journal_detail_attr_yaml(yaml: &yaml_rust::Yaml) -> JournalDetailAt
 /// fixture内のIDが要求IDと異なる場合は、fixtureの不整合としてpanicする。
 pub fn parse_issue(id: IssueId, yaml: &str) -> IssueAggregate {
     let yaml = parse_yaml(yaml);
-    let parsed_id = as_u16(&yaml, "id");
+    let parsed_id = as_integer::<u32>(&yaml, "id");
     assert_eq!(
         parsed_id,
         id.get(),
@@ -254,23 +258,23 @@ pub fn parse_issue(id: IssueId, yaml: &str) -> IssueAggregate {
         id
     );
     let subject = as_string(&yaml, "subject");
-    let author_id = UserId::new(as_u16(&yaml, "author_id"));
+    let author_id = UserId::new(as_integer::<u32>(&yaml, "author_id"));
     let created_on = as_local_datetime(&yaml, "created_on");
     let updated_on = as_local_datetime(&yaml, "updated_on");
-    let project_id = ProjectId::new(as_u16(&yaml, "project_id"));
-    let tracker_id = TrackerId::new(as_u16(&yaml, "tracker_id"));
-    let status_id = IssueStatusId::new(as_u16(&yaml, "status_id"));
-    let priority_id = PriorityId::new(as_u16(&yaml, "priority_id"));
-    let assigned_to_id = as_u16_option(&yaml, "assigned_to_id").map(UserId::new);
-    let target_version_id = as_u16_option(&yaml, "target_version_id").map(TargetVersionId::new);
+    let project_id = ProjectId::new(as_integer::<u32>(&yaml, "project_id"));
+    let tracker_id = TrackerId::new(as_integer::<u32>(&yaml, "tracker_id"));
+    let status_id = IssueStatusId::new(as_integer::<u32>(&yaml, "status_id"));
+    let priority_id = PriorityId::new(as_integer::<u32>(&yaml, "priority_id"));
+    let assigned_to_id = as_u32_option(&yaml, "assigned_to_id").map(UserId::new);
+    let target_version_id = as_u32_option(&yaml, "target_version_id").map(TargetVersionId::new);
     let start_date = as_local_datetime_option(&yaml, "start_date");
     let due_date = as_local_datetime_option(&yaml, "due_date");
-    let done_ratio = as_u16(&yaml, "done_ratio");
+    let done_ratio = as_integer::<u16>(&yaml, "done_ratio");
     let estimated_hours = as_f64_option(&yaml, "estimated_hours");
     let total_spent_hours = as_f64_option(&yaml, "total_spent_hours");
-    let category_id = as_u16_option(&yaml, "category_id").map(CategoryId::new);
+    let category_id = as_u32_option(&yaml, "category_id").map(CategoryId::new);
     let description = as_string(&yaml, "description");
-    let parent_id = as_u16_option(&yaml, "parent_id").map(IssueId::new);
+    let parent_id = as_u32_option(&yaml, "parent_id").map(IssueId::new);
     IssueAggregate {
         issue: Issue {
             id,
@@ -311,7 +315,7 @@ fn parse_master_entries<T>(yaml: &Yaml, key: &str, parse: impl Fn(&Yaml) -> T) -
 pub fn parse_users(yaml: &str) -> Vec<User> {
     let yaml = parse_yaml(yaml);
     parse_master_entries(&yaml, "users", |entry| User {
-        id: UserId::new(as_u16(entry, "id")),
+        id: UserId::new(as_integer::<u32>(entry, "id")),
         name: as_string(entry, "name"),
     })
 }
@@ -319,7 +323,7 @@ pub fn parse_users(yaml: &str) -> Vec<User> {
 pub fn parse_issue_statuses(yaml: &str) -> Vec<IssueStatus> {
     let yaml = parse_yaml(yaml);
     parse_master_entries(&yaml, "issue_statuses", |entry| IssueStatus {
-        id: IssueStatusId::new(as_u16(entry, "id")),
+        id: IssueStatusId::new(as_integer::<u32>(entry, "id")),
         name: as_string(entry, "name"),
         is_closed: as_bool(entry, "is_closed"),
     })
@@ -328,7 +332,7 @@ pub fn parse_issue_statuses(yaml: &str) -> Vec<IssueStatus> {
 pub fn parse_priorities(yaml: &str) -> Vec<Priority> {
     let yaml = parse_yaml(yaml);
     parse_master_entries(&yaml, "priorities", |entry| Priority {
-        id: PriorityId::new(as_u16(entry, "id")),
+        id: PriorityId::new(as_integer::<u32>(entry, "id")),
         name: as_string(entry, "name"),
     })
 }
@@ -336,7 +340,7 @@ pub fn parse_priorities(yaml: &str) -> Vec<Priority> {
 pub fn parse_projects(yaml: &str) -> Vec<Project> {
     let yaml = parse_yaml(yaml);
     parse_master_entries(&yaml, "projects", |entry| Project {
-        id: ProjectId::new(as_u16(entry, "id")),
+        id: ProjectId::new(as_integer::<u32>(entry, "id")),
         name: as_string(entry, "name"),
     })
 }
@@ -344,7 +348,7 @@ pub fn parse_projects(yaml: &str) -> Vec<Project> {
 pub fn parse_trackers(yaml: &str) -> Vec<Tracker> {
     let yaml = parse_yaml(yaml);
     parse_master_entries(&yaml, "trackers", |entry| Tracker {
-        id: TrackerId::new(as_u16(entry, "id")),
+        id: TrackerId::new(as_integer::<u32>(entry, "id")),
         name: as_string(entry, "name"),
     })
 }
@@ -352,18 +356,18 @@ pub fn parse_trackers(yaml: &str) -> Vec<Tracker> {
 pub fn parse_target_versions(yaml: &str) -> Vec<TargetVersion> {
     let yaml = parse_yaml(yaml);
     parse_master_entries(&yaml, "target_versions", |entry| TargetVersion {
-        id: TargetVersionId::new(as_u16(entry, "id")),
+        id: TargetVersionId::new(as_integer::<u32>(entry, "id")),
         name: as_string(entry, "name"),
-        project_id: ProjectId::new(as_u16(entry, "project_id")),
+        project_id: ProjectId::new(as_integer::<u32>(entry, "project_id")),
     })
 }
 
 pub fn parse_categories(yaml: &str) -> Vec<Category> {
     let yaml = parse_yaml(yaml);
     parse_master_entries(&yaml, "categories", |entry| Category {
-        id: CategoryId::new(as_u16(entry, "id")),
+        id: CategoryId::new(as_integer::<u32>(entry, "id")),
         name: as_string(entry, "name"),
-        project_id: ProjectId::new(as_u16(entry, "project_id")),
+        project_id: ProjectId::new(as_integer::<u32>(entry, "project_id")),
     })
 }
 
@@ -371,7 +375,7 @@ pub fn parse_time_entity_activities(yaml: &str) -> Vec<TimeEntityActivity> {
     let yaml = parse_yaml(yaml);
     parse_master_entries(&yaml, "time_entity_activities", |entry| {
         TimeEntityActivity {
-            id: TimeEntityActivityId::new(as_u16(entry, "id")),
+            id: TimeEntityActivityId::new(as_integer::<u32>(entry, "id")),
             name: as_string(entry, "name"),
             is_default: as_bool(entry, "is_default"),
         }

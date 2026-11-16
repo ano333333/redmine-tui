@@ -152,7 +152,7 @@ mod tests {
     const ISSUE_ID: IssueId = IssueId::new(1);
     const ORIGINAL_ID: JournalId = JournalId::new(10);
 
-    fn remote_journal(id: u16, notes: &str) -> Journal {
+    fn remote_journal(id: u32, notes: &str) -> Journal {
         Journal {
             id: JournalId::new(id),
             issue_id: ISSUE_ID,
@@ -165,7 +165,7 @@ mod tests {
 
     struct StubClient {
         result: Result<(), RedmineClientError>,
-        get_result: Result<u16, RedmineClientError>,
+        get_result: Result<u32, RedmineClientError>,
         journals: Vec<Journal>,
         attachments: Vec<Attachment>,
         request: Mutex<Option<(IssueId, String)>>,
@@ -191,7 +191,7 @@ mod tests {
             }
         }
 
-        fn succeeds_with_fetched_issue_id(issue_id: u16, journals: Vec<Journal>) -> Self {
+        fn succeeds_with_fetched_issue_id(issue_id: u32, journals: Vec<Journal>) -> Self {
             Self {
                 get_result: Ok(issue_id),
                 journals,

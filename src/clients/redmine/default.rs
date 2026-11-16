@@ -544,7 +544,7 @@ trait PaginatedResponse {
 
 #[derive(Deserialize)]
 struct RedmineIssueStatus {
-    id: u16,
+    id: u32,
     name: String,
     is_closed: bool,
 }
@@ -561,7 +561,7 @@ impl From<RedmineIssueStatus> for IssueStatus {
 
 #[derive(Deserialize)]
 struct RedmineTimeEntryActivity {
-    id: u16,
+    id: u32,
     name: String,
     is_default: bool,
 }
@@ -578,7 +578,7 @@ impl From<RedmineTimeEntryActivity> for TimeEntityActivity {
 
 #[derive(Deserialize)]
 struct RedmineUser {
-    id: u16,
+    id: u32,
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
@@ -651,14 +651,14 @@ impl PaginatedResponse for ProjectsResponse {
 
 #[derive(Deserialize)]
 struct RedmineIssueCategory {
-    id: u16,
+    id: u32,
     name: String,
     project: RedmineIssueCategoryProject,
 }
 
 #[derive(Deserialize)]
 struct RedmineIssueCategoryProject {
-    id: u16,
+    id: u32,
 }
 
 impl From<RedmineIssueCategory> for Category {
@@ -691,14 +691,14 @@ impl PaginatedResponse for IssueCategoriesResponse {
 
 #[derive(Deserialize)]
 struct RedmineVersion {
-    id: u16,
+    id: u32,
     name: String,
     project: RedmineVersionProject,
 }
 
 #[derive(Deserialize)]
 struct RedmineVersionProject {
-    id: u16,
+    id: u32,
 }
 
 impl From<RedmineVersion> for TargetVersion {
@@ -764,7 +764,7 @@ struct ProjectIssuesResponse {
 
 #[derive(Deserialize)]
 struct RedmineProjectIssue {
-    id: u16,
+    id: u32,
     project: RedmineIdRef,
     subject: String,
     #[serde(default)]
@@ -851,23 +851,23 @@ struct UpdateIssue {
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    project_id: Option<u16>,
+    project_id: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    tracker_id: Option<u16>,
+    tracker_id: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    status_id: Option<u16>,
+    status_id: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    priority_id: Option<u16>,
+    priority_id: Option<u32>,
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "serialize_clearable"
     )]
-    assigned_to_id: Option<Option<u16>>,
+    assigned_to_id: Option<Option<u32>>,
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "serialize_clearable"
     )]
-    fixed_version_id: Option<Option<u16>>,
+    fixed_version_id: Option<Option<u32>>,
     #[serde(
         skip_serializing_if = "Option::is_none",
         serialize_with = "serialize_clearable"
@@ -889,7 +889,7 @@ struct UpdateIssue {
         skip_serializing_if = "Option::is_none",
         serialize_with = "serialize_clearable"
     )]
-    category_id: Option<Option<u16>>,
+    category_id: Option<Option<u32>>,
 }
 
 impl From<&IssueUpdate> for UpdateIssue {
@@ -932,7 +932,7 @@ where
 
 #[derive(Deserialize)]
 struct RedmineIssue {
-    id: u16,
+    id: u32,
     subject: String,
     author: RedmineIdRef,
     created_on: String,
@@ -1019,12 +1019,12 @@ impl TryFrom<RedmineIssue> for IssueAggregate {
 
 #[derive(Deserialize)]
 struct RedmineIdRef {
-    id: u16,
+    id: u32,
 }
 
 #[derive(Deserialize)]
 struct RedmineChild {
-    id: u16,
+    id: u32,
     tracker: RedmineIdRef,
     subject: String,
     #[serde(default)]

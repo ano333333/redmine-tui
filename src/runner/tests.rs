@@ -565,7 +565,7 @@ impl RedmineClient for IssueUploadClient {
     }
 }
 
-fn sample_journal(issue_id: u16) -> Journal {
+fn sample_journal(issue_id: u32) -> Journal {
     Journal {
         id: JournalId::new(1),
         issue_id: IssueId::new(issue_id),
@@ -578,7 +578,7 @@ fn sample_journal(issue_id: u16) -> Journal {
     }
 }
 
-fn start_edited_journal_upload(dispatcher: &mut Dispatcher, issue_id: u16, notes: &str) {
+fn start_edited_journal_upload(dispatcher: &mut Dispatcher, issue_id: u32, notes: &str) {
     let mut issue = sample_issue_aggregate(
         issue_id,
         "subject",
@@ -602,7 +602,7 @@ fn start_edited_journal_upload(dispatcher: &mut Dispatcher, issue_id: u16, notes
 }
 
 /// `start_edited_journal_upload`の編集を保存した後に取得するIssue。
-fn saved_journal_issue(issue_id: u16) -> IssueAggregate {
+fn saved_journal_issue(issue_id: u32) -> IssueAggregate {
     let mut issue = sample_issue_aggregate(
         issue_id,
         "subject",
@@ -778,7 +778,7 @@ fn remote_journal_upload_request_routes_the_failure_completion_to_worker_channel
     ));
 }
 
-fn start_local_journal(dispatcher: &mut Dispatcher, issue_id: u16, notes: &str) {
+fn start_local_journal(dispatcher: &mut Dispatcher, issue_id: u32, notes: &str) {
     let issue = sample_issue_aggregate(
         issue_id,
         "subject",
@@ -1438,7 +1438,7 @@ struct DrawRecord {
     notices: Vec<String>,
     rendered: String,
     pending_actions: usize,
-    loading_project_ids: Vec<u16>,
+    loading_project_ids: Vec<u32>,
 }
 
 struct RunnerHost {

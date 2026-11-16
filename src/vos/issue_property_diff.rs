@@ -208,7 +208,7 @@ mod tests {
         })
     }
 
-    fn status_diff(before: u16, after: u16) -> IssuePropertyDiff {
+    fn status_diff(before: u32, after: u32) -> IssuePropertyDiff {
         IssuePropertyDiff::StatusId(IssueStatusIdDiff {
             before: IssueStatusId::new(before),
             after: IssueStatusId::new(after),

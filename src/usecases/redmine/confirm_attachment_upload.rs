@@ -81,7 +81,7 @@ mod tests {
 
     const ISSUE_ID: IssueId = IssueId::new(1);
 
-    fn issue(id: u16) -> IssueAggregate {
+    fn issue(id: u32) -> IssueAggregate {
         sample_issue_aggregate(id, "subject", 1.into(), None, None, None, 0)
     }
 

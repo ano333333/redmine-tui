@@ -7,10 +7,10 @@ use crate::stores::journal_state::{
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::{EntityIdValue, IssueId, JournalId, JournalNotesDiff};
 
-const ISSUE_ID: u16 = 1;
-const OTHER_ISSUE_ID: u16 = 2;
+const ISSUE_ID: u32 = 1;
+const OTHER_ISSUE_ID: u32 = 2;
 
-fn journal_of(issue_id: u16, journal_id: u16) -> Journal {
+fn journal_of(issue_id: u32, journal_id: u32) -> Journal {
     Journal {
         id: JournalId::new(journal_id),
         issue_id: IssueId::new(issue_id),
@@ -21,24 +21,24 @@ fn journal_of(issue_id: u16, journal_id: u16) -> Journal {
     }
 }
 
-fn journal(journal_id: u16) -> Journal {
+fn journal(journal_id: u32) -> Journal {
     journal_of(ISSUE_ID, journal_id)
 }
 
-fn journal_with_notes(journal_id: u16, notes: &str) -> Journal {
+fn journal_with_notes(journal_id: u32, notes: &str) -> Journal {
     Journal {
         notes: notes.to_string(),
         ..journal(journal_id)
     }
 }
 
-fn issue_with_journals(issue_id: u16, journals: Vec<Journal>) -> IssueAggregate {
+fn issue_with_journals(issue_id: u32, journals: Vec<Journal>) -> IssueAggregate {
     let mut issue = sample_issue_aggregate(issue_id, "issue", 1.into(), None, None, None, 0);
     issue.journals = journals;
     issue
 }
 
-fn store_with(journal_ids: &[u16]) -> Store {
+fn store_with(journal_ids: &[u32]) -> Store {
     let mut store = Store::new();
     crate::test_support::load_issue(
         &mut store,
@@ -51,7 +51,7 @@ fn apply(store: &mut Store, action: JournalAction) {
     store.consume_action(Action::Journal(action));
 }
 
-fn edit_remote(store: &mut Store, journal_id: u16, notes: &str) {
+fn edit_remote(store: &mut Store, journal_id: u32, notes: &str) {
     apply(
         store,
         JournalAction::EditRemoteNotes {
@@ -62,7 +62,7 @@ fn edit_remote(store: &mut Store, journal_id: u16, notes: &str) {
     );
 }
 
-fn start_remote(store: &mut Store, journal_id: u16) {
+fn start_remote(store: &mut Store, journal_id: u32) {
     apply(
         store,
         JournalAction::StartRemoteUpload {
@@ -73,7 +73,7 @@ fn start_remote(store: &mut Store, journal_id: u16) {
 }
 
 /// 現在のJournalのうち対象のnotesだけが`server_notes`に変わった取得結果で、競合を検出する。
-fn detect_conflict(store: &mut Store, journal_id: u16, server_notes: &str) {
+fn detect_conflict(store: &mut Store, journal_id: u32, server_notes: &str) {
     let journals = store
         .get_remote_journals(ISSUE_ID)
         .iter()
@@ -138,29 +138,29 @@ fn start_local(store: &mut Store) {
 }
 
 /// 指定したJournalを"edited notes"へ編集したStore。
-fn edited_store(journal_ids: &[u16], edited_id: u16) -> Store {
+fn edited_store(journal_ids: &[u32], edited_id: u32) -> Store {
     let mut store = store_with(journal_ids);
     edit_remote(&mut store, edited_id, "edited notes");
     store
 }
 
-fn uploading_store(journal_ids: &[u16], uploading_id: u16) -> Store {
+fn uploading_store(journal_ids: &[u32], uploading_id: u32) -> Store {
     let mut store = edited_store(journal_ids, uploading_id);
     start_remote(&mut store, uploading_id);
     store
 }
 
-fn conflicted_store(journal_ids: &[u16], conflicted_id: u16) -> Store {
+fn conflicted_store(journal_ids: &[u32], conflicted_id: u32) -> Store {
     let mut store = uploading_store(journal_ids, conflicted_id);
     detect_conflict(&mut store, conflicted_id, "server notes");
     store
 }
 
-fn state(store: &Store, journal_id: u16) -> RemoteJournalState {
+fn state(store: &Store, journal_id: u32) -> RemoteJournalState {
     store.get_remote_journal(ISSUE_ID, journal_id).state.clone()
 }
 
-fn journal_ids(store: &Store) -> Vec<u16> {
+fn journal_ids(store: &Store) -> Vec<u32> {
     store
         .get_remote_journals(ISSUE_ID)
         .iter()
@@ -400,7 +400,7 @@ fn fetched_journals_replaces_synced_journals_and_keeps_the_fetched_order() {
     assert_eq!(state(&store, 12), RemoteJournalState::Synced);
 }
 
-fn deleted(original_id: u16, notes: &str) -> DeletedJournalEntry {
+fn deleted(original_id: u32, notes: &str) -> DeletedJournalEntry {
     DeletedJournalEntry {
         original_id: JournalId::new(original_id),
         notes: notes.to_string(),
@@ -412,7 +412,7 @@ fn deleted_journals(store: &Store) -> Vec<DeletedJournalEntry> {
     store.get_deleted_journals(ISSUE_ID).to_vec()
 }
 
-fn start_deleted(store: &mut Store, original_id: u16) {
+fn start_deleted(store: &mut Store, original_id: u32) {
     apply(
         store,
         JournalAction::StartDeletedUpload {
@@ -1621,7 +1621,7 @@ remote_action_panics! {
         } => "fetched issue 1 still contains journal 10";
 }
 
-fn child(id: u16, subject: &str) -> IssueChild {
+fn child(id: u32, subject: &str) -> IssueChild {
     IssueChild {
         id: IssueId::new(id),
         tracker_id: 1.into(),

@@ -159,7 +159,7 @@ mod tests {
         })
     }
 
-    fn issue(subject: &str, description: &str, status: u16) -> IssueAggregate {
+    fn issue(subject: &str, description: &str, status: u32) -> IssueAggregate {
         let mut issue =
             sample_issue_aggregate(1, subject, IssueStatusId::new(status), None, None, None, 0);
         issue.issue.description = description.to_string();

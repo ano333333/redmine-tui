@@ -1435,7 +1435,7 @@ fn reverting_one_property_keeps_other_edits_and_the_edit_history() {
     assert_eq!(store.get_issue_property_diffs(IssueId::new(1)).len(), 3);
 }
 
-fn issue_with_description(id: u16, description: &str) -> IssueAggregate {
+fn issue_with_description(id: u32, description: &str) -> IssueAggregate {
     let mut issue = sample_issue_aggregate(id, "subject", 1.into(), None, None, None, 0);
     issue.issue.description = description.to_string();
     issue
