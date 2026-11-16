@@ -77,7 +77,7 @@ pub fn test_kitty_image_encoder() -> TerminalImageEncoder {
 }
 
 /// `id`の添付ファイルを、指定したContent-Typeとサムネイルの可否で組み立てる。
-pub fn sample_attachment(id: u16, content_type: Option<&str>, thumbnailable: bool) -> Attachment {
+pub fn sample_attachment(id: u32, content_type: Option<&str>, thumbnailable: bool) -> Attachment {
     Attachment {
         id: AttachmentId::new(id),
         filename: format!("file{id}"),
@@ -406,10 +406,10 @@ pub fn sample_time_entity_activities() -> Vec<TimeEntityActivity> {
 }
 
 pub fn sample_issue_aggregate(
-    id: u16,
+    id: u32,
     title: &str,
     issue_status_id: IssueStatusId,
-    person_in_charge_id: Option<u16>,
+    person_in_charge_id: Option<u32>,
     start_date: Option<&str>,
     due: Option<&str>,
     progress: u16,
@@ -632,7 +632,7 @@ pub fn dispatch_loaded_issue(dispatcher: &mut Dispatcher, issue: IssueAggregate)
 }
 
 pub fn sample_parent_issue_journals() -> Vec<Journal> {
-    let journal = |id: u16, updated_on, details, notes: &str| Journal {
+    let journal = |id: u32, updated_on, details, notes: &str| Journal {
         id: JournalId::new(id),
         issue_id: IssueId::new(3),
         user: "user1".to_string(),

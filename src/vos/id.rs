@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 
 pub trait EntityIdValue: Copy + Eq {
-    fn get(self) -> u16;
+    fn get(self) -> u32;
 
     fn same_as(self, other: Self) -> bool {
         self == other
@@ -12,12 +12,12 @@ pub trait EntityIdValue: Copy + Eq {
 
 #[derive(Debug)]
 pub struct EntityId<Tag> {
-    value: u16,
+    value: u32,
     _tag: PhantomData<Tag>,
 }
 
 impl<Tag> EntityId<Tag> {
-    pub const fn new(value: u16) -> Self {
+    pub const fn new(value: u32) -> Self {
         Self {
             value,
             _tag: PhantomData,
@@ -26,7 +26,7 @@ impl<Tag> EntityId<Tag> {
 }
 
 impl<Tag> EntityIdValue for EntityId<Tag> {
-    fn get(self) -> u16 {
+    fn get(self) -> u32 {
         self.value
     }
 }
@@ -65,20 +65,20 @@ impl<Tag> Hash for EntityId<Tag> {
     }
 }
 
-impl<Tag> From<u16> for EntityId<Tag> {
-    fn from(value: u16) -> Self {
+impl<Tag> From<u32> for EntityId<Tag> {
+    fn from(value: u32) -> Self {
         Self::new(value)
     }
 }
 
-impl<Tag> From<EntityId<Tag>> for u16 {
+impl<Tag> From<EntityId<Tag>> for u32 {
     fn from(value: EntityId<Tag>) -> Self {
         value.value
     }
 }
 
-impl<Tag> PartialEq<u16> for EntityId<Tag> {
-    fn eq(&self, other: &u16) -> bool {
+impl<Tag> PartialEq<u32> for EntityId<Tag> {
+    fn eq(&self, other: &u32) -> bool {
         self.value == *other
     }
 }

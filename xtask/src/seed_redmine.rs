@@ -9,11 +9,11 @@ use std::process::{Command, Stdio};
 use sha2::{Digest, Sha256};
 use yaml_rust::{Yaml, YamlLoader};
 
-const ACTIVITY_ID_OFFSET: u16 = 10_000;
+const ACTIVITY_ID_OFFSET: u32 = 10_000;
 const REDMINE_FILES_DIR: &str = "/usr/src/redmine/files";
-const REDMINE_TUI_TEST_API_USER_ID: u16 = 1;
+const REDMINE_TUI_TEST_API_USER_ID: u32 = 1;
 /// Redmineが作成する組み込みrole（Non member、Anonymous）のIDと重ならない値にする。
-const FIXTURE_ROLE_ID: u16 = 3;
+const FIXTURE_ROLE_ID: u32 = 3;
 const FIXTURE_ROLE_PERMISSIONS: &str = "---\n- :view_issues\n- :add_issues\n- :edit_issues\n- :add_issue_notes\n- :edit_issue_notes\n- :edit_own_issue_notes\n- :view_time_entries\n- :log_time\n";
 pub(crate) const REDMINE_TUI_TEST_API_KEY: &str = "0123456789abcdef0123456789abcdef01234567";
 
@@ -188,57 +188,57 @@ fn seed_data_sql(seed: &SeedData, reset_sql_path: &Path) -> Result<String, Strin
 
 #[derive(Debug)]
 struct NamedRecord {
-    id: u16,
+    id: u32,
     name: String,
 }
 
 #[derive(Debug)]
 struct ProjectScopedRecord {
-    id: u16,
+    id: u32,
     name: String,
-    project_id: u16,
+    project_id: u32,
 }
 
 #[derive(Debug)]
 struct IssueStatusRecord {
-    id: u16,
+    id: u32,
     name: String,
     is_closed: bool,
 }
 
 #[derive(Debug)]
 struct ActivityRecord {
-    id: u16,
+    id: u32,
     name: String,
     is_default: bool,
 }
 
 #[derive(Debug)]
 struct IssueRecord {
-    id: u16,
+    id: u32,
     subject: String,
-    author_id: u16,
+    author_id: u32,
     created_on: String,
     updated_on: String,
-    project_id: u16,
-    tracker_id: u16,
-    status_id: u16,
-    priority_id: u16,
-    assigned_to_id: Option<u16>,
-    target_version_id: Option<u16>,
+    project_id: u32,
+    tracker_id: u32,
+    status_id: u32,
+    priority_id: u32,
+    assigned_to_id: Option<u32>,
+    target_version_id: Option<u32>,
     start_date: Option<String>,
     due_date: Option<String>,
     done_ratio: u16,
     estimated_hours: Option<f64>,
-    category_id: Option<u16>,
+    category_id: Option<u32>,
     description: String,
-    parent_id: Option<u16>,
+    parent_id: Option<u32>,
 }
 
 #[derive(Debug)]
 struct JournalRecord {
-    id: u16,
-    issue_id: u16,
+    id: u32,
+    issue_id: u32,
     user: String,
     updated_on: String,
     notes: String,
@@ -255,8 +255,8 @@ struct JournalDetailRecord {
 
 #[derive(Debug)]
 struct AttachmentRecord {
-    id: u16,
-    issue_id: u16,
+    id: u32,
+    issue_id: u32,
     filename: String,
     content_type: Option<String>,
     description: String,
@@ -290,7 +290,7 @@ struct SeedData {
     categories: Vec<ProjectScopedRecord>,
     activities: Vec<ActivityRecord>,
     issues: Vec<IssueRecord>,
-    journals: BTreeMap<u16, JournalRecord>,
+    journals: BTreeMap<u32, JournalRecord>,
     attachments: Vec<AttachmentRecord>,
 }
 
@@ -652,11 +652,11 @@ impl SeedData {
                     sql_string(&issue.subject),
                     sql_string(&issue.description),
                     sql_date_option(issue.due_date.as_deref()),
-                    sql_option_u16(issue.category_id),
+                    sql_option_u32(issue.category_id),
                     issue.status_id,
-                    sql_option_u16(issue.assigned_to_id),
+                    sql_option_u32(issue.assigned_to_id),
                     issue.priority_id,
-                    sql_option_u16(issue.target_version_id),
+                    sql_option_u32(issue.target_version_id),
                     db_user_id(issue.author_id),
                     sql_datetime(&issue.created_on),
                     sql_datetime(&issue.updated_on),
@@ -794,8 +794,8 @@ fn load_attachments(dir: &Path, files_dir: &Path) -> Result<Vec<AttachmentRecord
             let yaml = read_yaml(&path)?;
             let file_path = files_dir.join(as_string(&yaml, "file")?);
             Ok(AttachmentRecord {
-                id: as_u16(&yaml, "id")?,
-                issue_id: as_u16(&yaml, "issue_id")?,
+                id: as_integer(&yaml, "id")?,
+                issue_id: as_integer(&yaml, "issue_id")?,
                 filename: as_string(&yaml, "filename")?,
                 content_type: as_string_option(&yaml, "content_type")?,
                 description: as_string_option(&yaml, "description")?.unwrap_or_default(),
@@ -819,9 +819,9 @@ fn load_project_scoped_records(
         .iter()
         .map(|entry| {
             Ok(ProjectScopedRecord {
-                id: as_u16(entry, "id")?,
+                id: as_integer(entry, "id")?,
                 name: as_string(entry, "name")?,
-                project_id: as_u16(entry, "project_id")?,
+                project_id: as_integer(entry, "project_id")?,
             })
         })
         .collect()
@@ -835,7 +835,7 @@ fn load_named_records(path: PathBuf, key: &str) -> Result<Vec<NamedRecord>, Stri
         .iter()
         .map(|entry| {
             Ok(NamedRecord {
-                id: as_u16(entry, "id")?,
+                id: as_integer(entry, "id")?,
                 name: as_string(entry, "name")?,
             })
         })
@@ -850,7 +850,7 @@ fn load_issue_statuses(path: PathBuf) -> Result<Vec<IssueStatusRecord>, String> 
         .iter()
         .map(|entry| {
             Ok(IssueStatusRecord {
-                id: as_u16(entry, "id")?,
+                id: as_integer(entry, "id")?,
                 name: as_string(entry, "name")?,
                 is_closed: as_bool(entry, "is_closed")?,
             })
@@ -866,7 +866,7 @@ fn load_activities(path: PathBuf) -> Result<Vec<ActivityRecord>, String> {
         .iter()
         .map(|entry| {
             Ok(ActivityRecord {
-                id: as_u16(entry, "id")?,
+                id: as_integer(entry, "id")?,
                 name: as_string(entry, "name")?,
                 is_default: as_bool(entry, "is_default")?,
             })
@@ -882,42 +882,42 @@ fn load_issues(dir: &Path) -> Result<Vec<IssueRecord>, String> {
         .map(|path| {
             let yaml = read_yaml(&path)?;
             Ok(IssueRecord {
-                id: as_u16(&yaml, "id")?,
+                id: as_integer(&yaml, "id")?,
                 subject: as_string(&yaml, "subject")?,
-                author_id: as_u16(&yaml, "author_id")?,
+                author_id: as_integer(&yaml, "author_id")?,
                 created_on: as_string(&yaml, "created_on")?,
                 updated_on: as_string(&yaml, "updated_on")?,
-                project_id: as_u16(&yaml, "project_id")?,
-                tracker_id: as_u16(&yaml, "tracker_id")?,
-                status_id: as_u16(&yaml, "status_id")?,
-                priority_id: as_u16(&yaml, "priority_id")?,
-                assigned_to_id: as_u16_option(&yaml, "assigned_to_id")?,
-                target_version_id: as_u16_option(&yaml, "target_version_id")?,
+                project_id: as_integer(&yaml, "project_id")?,
+                tracker_id: as_integer(&yaml, "tracker_id")?,
+                status_id: as_integer(&yaml, "status_id")?,
+                priority_id: as_integer(&yaml, "priority_id")?,
+                assigned_to_id: as_integer_option(&yaml, "assigned_to_id")?,
+                target_version_id: as_integer_option(&yaml, "target_version_id")?,
                 start_date: as_string_option(&yaml, "start_date")?,
                 due_date: as_string_option(&yaml, "due_date")?,
-                done_ratio: as_u16(&yaml, "done_ratio")?,
+                done_ratio: as_integer(&yaml, "done_ratio")?,
                 estimated_hours: as_f64_option(&yaml, "estimated_hours")?,
-                category_id: as_u16_option(&yaml, "category_id")?,
+                category_id: as_integer_option(&yaml, "category_id")?,
                 description: as_string(&yaml, "description")?,
-                parent_id: as_u16_option(&yaml, "parent_id")?,
+                parent_id: as_integer_option(&yaml, "parent_id")?,
             })
         })
         .collect()
 }
 
-fn load_journals(dir: &Path) -> Result<BTreeMap<u16, JournalRecord>, String> {
+fn load_journals(dir: &Path) -> Result<BTreeMap<u32, JournalRecord>, String> {
     let mut paths = numbered_yaml_paths(dir)?;
     paths.sort();
     paths
         .into_iter()
         .map(|path| {
             let yaml = read_yaml(&path)?;
-            let id = as_u16(&yaml, "id")?;
+            let id = as_integer(&yaml, "id")?;
             Ok((
                 id,
                 JournalRecord {
                     id,
-                    issue_id: as_u16(&yaml, "issue_id")?,
+                    issue_id: as_integer(&yaml, "issue_id")?,
                     user: as_string(&yaml, "user")?,
                     updated_on: as_string(&yaml, "updated_on")?,
                     notes: as_string_option(&yaml, "notes")?.unwrap_or_default(),
@@ -950,7 +950,7 @@ fn numbered_yaml_paths(dir: &Path) -> Result<Vec<PathBuf>, String> {
             let id = path
                 .file_stem()
                 .and_then(|stem| stem.to_str())
-                .and_then(|stem| stem.parse::<u16>().ok())
+                .and_then(|stem| stem.parse::<u32>().ok())
                 .ok_or_else(|| format!("expected numbered yaml file in {}", path.display()))?;
             Ok((id, path))
         })
@@ -968,23 +968,26 @@ fn read_yaml(path: &Path) -> Result<Yaml, String> {
         .ok_or_else(|| format!("{} is empty", path.display()))
 }
 
-fn as_u16(yaml: &Yaml, key: &str) -> Result<u16, String> {
+fn as_integer<T: TryFrom<i64>>(yaml: &Yaml, key: &str) -> Result<T, String> {
     yaml[key]
         .as_i64()
         .ok_or_else(|| format!("missing integer field: {key}"))?
         .try_into()
-        .map_err(|_| format!("integer field out of range for u16: {key}"))
+        .map_err(|_| integer_out_of_range::<T>(key))
 }
 
-fn as_u16_option(yaml: &Yaml, key: &str) -> Result<Option<u16>, String> {
+fn as_integer_option<T: TryFrom<i64>>(yaml: &Yaml, key: &str) -> Result<Option<T>, String> {
     yaml[key]
         .as_i64()
-        .map(|value| {
-            value
-                .try_into()
-                .map_err(|_| format!("integer field out of range for u16: {key}"))
-        })
+        .map(|value| value.try_into().map_err(|_| integer_out_of_range::<T>(key)))
         .transpose()
+}
+
+fn integer_out_of_range<T>(key: &str) -> String {
+    format!(
+        "integer field out of range for {}: {key}",
+        std::any::type_name::<T>()
+    )
 }
 
 fn as_f64_option(yaml: &Yaml, key: &str) -> Result<Option<f64>, String> {
@@ -1023,7 +1026,7 @@ fn as_bool(yaml: &Yaml, key: &str) -> Result<bool, String> {
 }
 
 fn issue_tree_updates(issues: &[IssueRecord]) -> Vec<String> {
-    let mut children_by_parent = BTreeMap::<u16, Vec<u16>>::new();
+    let mut children_by_parent = BTreeMap::<u32, Vec<u32>>::new();
     for issue in issues {
         if let Some(parent_id) = issue.parent_id {
             children_by_parent
@@ -1058,10 +1061,10 @@ fn issue_tree_updates(issues: &[IssueRecord]) -> Vec<String> {
 }
 
 fn assign_nested_set(
-    issue_id: u16,
-    parent_id: Option<u16>,
-    root_id: u16,
-    children_by_parent: &BTreeMap<u16, Vec<u16>>,
+    issue_id: u32,
+    parent_id: Option<u32>,
+    root_id: u32,
+    children_by_parent: &BTreeMap<u32, Vec<u32>>,
     cursor: &mut i32,
     updates: &mut Vec<String>,
 ) {
@@ -1084,7 +1087,7 @@ fn assign_nested_set(
 
     updates.push(format!(
         "UPDATE issues SET parent_id = {}, root_id = {}, lft = {}, rgt = {} WHERE id = {};",
-        sql_option_u16(parent_id),
+        sql_option_u32(parent_id),
         root_id,
         lft,
         rgt,
@@ -1122,7 +1125,7 @@ fn sql_string_option(value: Option<&str>) -> String {
     value.map(sql_string).unwrap_or_else(|| "NULL".to_string())
 }
 
-fn sql_option_u16(value: Option<u16>) -> String {
+fn sql_option_u32(value: Option<u32>) -> String {
     value
         .map(|value| value.to_string())
         .unwrap_or_else(|| "NULL".to_string())
@@ -1148,11 +1151,11 @@ fn bool_int(value: bool) -> i32 {
     if value { 1 } else { 0 }
 }
 
-fn db_activity_id(activity_id: u16) -> u16 {
+fn db_activity_id(activity_id: u32) -> u32 {
     ACTIVITY_ID_OFFSET + activity_id
 }
 
-fn db_user_id(user_id: u16) -> u16 {
+fn db_user_id(user_id: u32) -> u32 {
     user_id
 }
 

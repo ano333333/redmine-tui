@@ -129,7 +129,7 @@ mod tests {
 
     const TITLE: Position = Position { x: 4, y: 0 };
     const PARENT: Position = Position { x: 11, y: 1 };
-    const PARENT_ID: u16 = 3;
+    const PARENT_ID: u32 = 3;
 
     fn key_event(code: KeyCode) -> InputEvent {
         InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))

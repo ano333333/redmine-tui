@@ -171,7 +171,7 @@ mod tests {
         d.borrow_mut().consume_action();
     }
 
-    fn component(d: &Rc<RefCell<Dispatcher>>, id: u16) -> IssueComponent {
+    fn component(d: &Rc<RefCell<Dispatcher>>, id: u32) -> IssueComponent {
         let borrow = d.borrow();
         IssueComponent::new(borrow.store(), id)
     }

@@ -1,6 +1,9 @@
 use super::{block_on, mount_get};
 use crate::clients::redmine::{DefaultRedmineClient, RedmineClient};
-use crate::vos::{IssueId, JournalDetail, JournalDetailAttr, JournalId};
+use crate::vos::{
+    AttachmentId, IssueId, JournalDetail, JournalDetailAttachment, JournalDetailAttr, JournalId,
+    UserId,
+};
 
 #[test]
 fn get_issue_skips_unsupported_journal_detail_properties() {
@@ -116,4 +119,76 @@ fn get_issue_requests_and_converts_attachments() {
         .map(|attachment| attachment.filename.as_str())
         .collect();
     assert_eq!(filenames, vec!["first.png", "second.txt"]);
+}
+
+#[test]
+fn get_issue_converts_ids_above_u16_range() {
+    let mock_server = block_on(wiremock::MockServer::start());
+    mount_get(
+        &mock_server,
+        "/issues/70000.json",
+        200,
+        r#"{
+            "issue": {
+                "id": 70000,
+                "subject": "Fix login",
+                "author": {"id": 70001},
+                "created_on": "2026-08-18T12:00:00Z",
+                "updated_on": "2026-08-18T13:00:00Z",
+                "project": {"id": 10},
+                "tracker": {"id": 2},
+                "status": {"id": 1},
+                "priority": {"id": 5},
+                "done_ratio": 30,
+                "parent": {"id": 70002},
+                "attachments": [
+                    {
+                        "id": 70003,
+                        "filename": "first.png",
+                        "filesize": 100,
+                        "content_type": "image/png",
+                        "description": "",
+                        "content_url": "http://redmine.test/attachments/download/70003/first.png",
+                        "author": {"id": 70001, "name": "Taro Yamada"},
+                        "created_on": "2026-08-18T12:30:00Z"
+                    }
+                ],
+                "journals": [
+                    {
+                        "id": 70004,
+                        "user": {"id": 70001, "name": "Taro Yamada"},
+                        "updated_on": "2026-08-18T14:00:00Z",
+                        "notes": "",
+                        "details": [
+                            {"property": "attr", "name": "parent_id", "old_value": null, "new_value": "70002"},
+                            {"property": "attachment", "name": "70003", "old_value": null, "new_value": "first.png"}
+                        ]
+                    }
+                ]
+            }
+        }"#,
+    );
+    let client = DefaultRedmineClient::new(mock_server.uri(), "secret-token");
+
+    let fetched = block_on(client.get_issue(IssueId::new(70000))).unwrap();
+
+    let aggregate = &fetched.aggregate;
+    assert_eq!(aggregate.issue.id, IssueId::new(70000));
+    assert_eq!(aggregate.author_id, UserId::new(70001));
+    assert_eq!(aggregate.parent_id, Some(IssueId::new(70002)));
+    assert_eq!(aggregate.attachments[0].id, AttachmentId::new(70003));
+    let journal = &aggregate.journals[0];
+    assert_eq!(journal.id, JournalId::new(70004));
+    assert_eq!(journal.issue_id, IssueId::new(70000));
+    assert!(matches!(
+        journal.details[0],
+        JournalDetail::Attr(JournalDetailAttr::ParentId {
+            old: None,
+            new: Some(id),
+        }) if id == IssueId::new(70002)
+    ));
+    assert!(matches!(
+        journal.details[1],
+        JournalDetail::Attachment(JournalDetailAttachment { id, .. }) if id == AttachmentId::new(70003)
+    ));
 }

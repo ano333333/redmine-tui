@@ -13,7 +13,7 @@ fn page(value: usize) -> NonZeroUsize {
     NonZeroUsize::new(value).expect("test pages are one-based")
 }
 
-fn issue(issue_id: u16, project_id: u16) -> Issue {
+fn issue(issue_id: u32, project_id: u32) -> Issue {
     Issue {
         id: IssueId::new(issue_id),
         project_id: ProjectId::new(project_id),
@@ -57,7 +57,7 @@ fn succeed(
     request_id: ProjectIssuesRequestId,
     project_id: ProjectId,
     project_page: NonZeroUsize,
-    issue_id: u16,
+    issue_id: u32,
 ) {
     consume(
         store,

@@ -711,10 +711,10 @@ impl<'a> AppComponent<'a> {
     /// SelectBoxPopupComponentを構築し、popup stackへ積む。
     fn push_select_box_popup(
         &mut self,
-        items: &[(u16, String)],
+        items: &[(u32, String)],
         focused_index: usize,
         include_none: bool,
-        observer: Box<dyn FnMut(Option<u16>) + 'a>,
+        observer: Box<dyn FnMut(Option<u32>) + 'a>,
     ) {
         self.popup_components
             .push_back(Rc::new(RefCell::new(PopupComponent::SelectBox(
@@ -1309,7 +1309,7 @@ mod tests {
 
     fn selectable_project_issues_page() -> ProjectIssuesPage {
         ProjectIssuesPage {
-            issues: [1_u16, 3_u16, 42_u16]
+            issues: [1_u32, 3_u32, 42_u32]
                 .into_iter()
                 .map(|id| Issue {
                     id: id.into(),

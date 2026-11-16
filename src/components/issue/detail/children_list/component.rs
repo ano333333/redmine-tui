@@ -128,7 +128,7 @@ mod tests {
     use crate::widgets::gutter::GUTTER_WIDTH;
     use ratatui::layout::Position;
 
-    const ISSUE_ID: u16 = 3;
+    const ISSUE_ID: u32 = 3;
     const WIDTH: u16 = 80;
     const CHILDREN_LIST_LINE_COUNT: u16 = 5;
 
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn child_rows_count_all_descendants_of_each_child() {
-        let grandchild = |id: u16, children: Vec<IssueChild>| IssueChild {
+        let grandchild = |id: u32, children: Vec<IssueChild>| IssueChild {
             id: id.into(),
             tracker_id: 1.into(),
             subject: format!("issue{id}"),

@@ -6,7 +6,7 @@ use crate::clients::redmine::RedmineClient;
 use crate::vos::{EntityIdValue, IssueId};
 
 /// seedのJournalはID 1〜3のため、AUTO_INCREMENTから次に作成されるIDは4になる。
-const CREATED_JOURNAL_ID: u16 = 4;
+const CREATED_JOURNAL_ID: u32 = 4;
 
 #[test]
 fn update_issue_notes_contract_against_redmine_container() {

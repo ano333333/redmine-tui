@@ -764,13 +764,13 @@ pub(super) mod tests {
         assert!(client.put_notes.lock().unwrap().is_empty());
     }
 
-    fn with_image(mut fetched: FetchedIssue, attachment_id: u16) -> FetchedIssue {
+    fn with_image(mut fetched: FetchedIssue, attachment_id: u32) -> FetchedIssue {
         fetched.aggregate.attachments =
             vec![sample_attachment(attachment_id, Some("image/png"), true)];
         fetched
     }
 
-    fn image_request(attachment_id: u16) -> UsecaseRequest {
+    fn image_request(attachment_id: u32) -> UsecaseRequest {
         UsecaseRequest::DownloadAttachmentImage {
             attachment_id: AttachmentId::new(attachment_id),
             thumbnailable: true,

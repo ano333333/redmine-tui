@@ -142,10 +142,10 @@ mod tests {
         let issue_ids: BTreeSet<_> = state.issues.keys().map(|id| id.get()).collect();
         assert_eq!(issue_ids, BTreeSet::from([1, 2, 3, 4]));
         for (issue_id, expected_ids) in [
-            (1, BTreeSet::<u16>::new()),
-            (2, BTreeSet::<u16>::new()),
-            (3, BTreeSet::from([1u16, 2, 3])),
-            (4, BTreeSet::<u16>::new()),
+            (1, BTreeSet::<u32>::new()),
+            (2, BTreeSet::<u32>::new()),
+            (3, BTreeSet::from([1u32, 2, 3])),
+            (4, BTreeSet::<u32>::new()),
         ] {
             let journals = &state.journals[&crate::vos::IssueId::new(issue_id)];
             assert_eq!(
@@ -168,7 +168,7 @@ mod tests {
                         .unwrap()
                         .to_str()
                         .unwrap()
-                        .parse::<u16>()
+                        .parse::<u32>()
                         .unwrap()
                 })
                 .collect::<BTreeSet<_>>()

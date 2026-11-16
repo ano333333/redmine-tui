@@ -11,17 +11,17 @@ pub enum EventProcessResult {
 const NONE_CHOICE_LABEL: &str = "選択なし(None)";
 
 pub struct SelectBoxPopupComponent<'a> {
-    items: Vec<(Option<u16>, String)>,
+    items: Vec<(Option<u32>, String)>,
     focused_index: usize,
-    observer: Box<dyn FnMut(Option<u16>) + 'a>,
+    observer: Box<dyn FnMut(Option<u32>) + 'a>,
 }
 
 impl<'a> SelectBoxPopupComponent<'a> {
     pub fn new(
-        items: &[(u16, String)],
+        items: &[(u32, String)],
         focused_index: usize,
         include_none: bool,
-        observer: Box<dyn FnMut(Option<u16>) + 'a>,
+        observer: Box<dyn FnMut(Option<u32>) + 'a>,
     ) -> Self {
         let mut popup_items = Vec::with_capacity(items.len() + usize::from(include_none));
         if include_none {
@@ -80,7 +80,7 @@ mod tests {
         ))
     }
 
-    fn items() -> Vec<(u16, String)> {
+    fn items() -> Vec<(u32, String)> {
         vec![
             (1, "New".to_string()),
             (2, "Doing".to_string()),
@@ -91,7 +91,7 @@ mod tests {
     fn component_with_observer(
         focused_index: usize,
         include_none: bool,
-        selected_id: Rc<RefCell<Option<Option<u16>>>>,
+        selected_id: Rc<RefCell<Option<Option<u32>>>>,
         selected_dispatcher: Rc<RefCell<Option<Rc<RefCell<Dispatcher>>>>>,
     ) -> SelectBoxPopupComponent<'static> {
         SelectBoxPopupComponent::new(

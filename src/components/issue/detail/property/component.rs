@@ -178,7 +178,7 @@ mod tests {
     /// 縦線の字下げ分を含む。
     const VALUE_X: u16 = GUTTER_WIDTH + PropertyWidget::VALUE_X;
 
-    const ISSUE_ID: u16 = 1;
+    const ISSUE_ID: u32 = 1;
     const WIDTH: u16 = 40;
     /// プロパティの項目数。
     const FIELD_COUNT: u16 = 15;
@@ -508,7 +508,7 @@ mod tests {
     /// `id`のIssueのプロパティ先頭行から`line`行下へフォーカスを移し、`e`を押す。
     fn press_e_on_line(
         dispatcher: Rc<RefCell<Dispatcher>>,
-        id: u16,
+        id: u32,
         line: u16,
     ) -> Option<EventProcessResult> {
         let mut component = PropertyComponent::new(id);

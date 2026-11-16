@@ -7,12 +7,12 @@ use ratatui::widgets::{Block, Borders, Clear, Widget};
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED};
 
 pub struct SelectBoxPopupWidget<'a> {
-    pub items: &'a [(Option<u16>, String)],
+    pub items: &'a [(Option<u32>, String)],
     pub focused_index: usize,
 }
 
 impl<'a> SelectBoxPopupWidget<'a> {
-    pub fn new(items: &'a [(Option<u16>, String)], focused_index: usize) -> Self {
+    pub fn new(items: &'a [(Option<u32>, String)], focused_index: usize) -> Self {
         Self {
             items,
             focused_index,

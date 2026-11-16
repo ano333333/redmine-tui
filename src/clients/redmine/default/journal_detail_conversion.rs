@@ -1,5 +1,8 @@
 //! RedmineのJournal detail JSONで表されるIssue属性と添付ファイルの変更をdomain型へ変換する。
 
+use std::num::ParseIntError;
+use std::str::FromStr;
+
 use serde::Deserialize;
 
 use crate::clients::redmine::RedmineClientError;
@@ -46,7 +49,7 @@ pub(super) fn try_into_domain(
 fn convert_attachment(
     detail: RedmineJournalDetail,
 ) -> Result<JournalDetailAttachment, RedmineClientError> {
-    let id = AttachmentId::new(parse_id_value(&detail.name, &detail.name)?);
+    let id = AttachmentId::new(parse_integer_value(&detail.name, &detail.name)?);
     let old = detail.old_value.filter(|filename| !filename.is_empty());
     let new = detail.new_value.filter(|filename| !filename.is_empty());
     let change = match (old, new) {
@@ -65,25 +68,25 @@ fn convert_attachment(
 }
 
 /// 未対応の属性名、またはID属性に数値以外の値が含まれる場合は
-/// [`RedmineClientError::Client`]を返す。日付形式が不正な場合、予定工数が整数でないか
-/// `u16`の範囲外の場合、非公開フラグが`0` / `1` / `false` / `true`以外の場合、
-/// 進捗率の値が欠落している場合も同じエラーを返す。
+/// [`RedmineClientError::Client`]を返す。日付形式が不正な場合、予定工数が数値でない場合、
+/// ID属性が`u32`の範囲外の場合、進捗率が`u16`の範囲外の場合、非公開フラグが
+/// `0` / `1` / `false` / `true`以外の場合、進捗率の値が欠落している場合も同じエラーを返す。
 fn convert_attr(detail: RedmineJournalDetail) -> Result<JournalDetailAttr, RedmineClientError> {
     let old_value = detail.old_value.unwrap_or_default();
     let new_value = detail.new_value.unwrap_or_default();
 
     let attr = match detail.name.as_str() {
         "status_id" => JournalDetailAttr::StatusId {
-            old: IssueStatusId::new(parse_id_value(&detail.name, &old_value)?),
-            new: IssueStatusId::new(parse_id_value(&detail.name, &new_value)?),
+            old: IssueStatusId::new(parse_integer_value(&detail.name, &old_value)?),
+            new: IssueStatusId::new(parse_integer_value(&detail.name, &new_value)?),
         },
         "tracker_id" => JournalDetailAttr::TrackerId {
-            old: TrackerId::new(parse_id_value(&detail.name, &old_value)?),
-            new: TrackerId::new(parse_id_value(&detail.name, &new_value)?),
+            old: TrackerId::new(parse_integer_value(&detail.name, &old_value)?),
+            new: TrackerId::new(parse_integer_value(&detail.name, &new_value)?),
         },
         "project_id" => JournalDetailAttr::ProjectId {
-            old: ProjectId::new(parse_id_value(&detail.name, &old_value)?),
-            new: ProjectId::new(parse_id_value(&detail.name, &new_value)?),
+            old: ProjectId::new(parse_integer_value(&detail.name, &old_value)?),
+            new: ProjectId::new(parse_integer_value(&detail.name, &new_value)?),
         },
         "subject" => JournalDetailAttr::Subject {
             old: old_value,
@@ -94,12 +97,12 @@ fn convert_attr(detail: RedmineJournalDetail) -> Result<JournalDetailAttr, Redmi
             new: new_value,
         },
         "priority_id" => JournalDetailAttr::PriorityId {
-            old: PriorityId::new(parse_id_value(&detail.name, &old_value)?),
-            new: PriorityId::new(parse_id_value(&detail.name, &new_value)?),
+            old: PriorityId::new(parse_integer_value(&detail.name, &old_value)?),
+            new: PriorityId::new(parse_integer_value(&detail.name, &new_value)?),
         },
         "author_id" => JournalDetailAttr::AuthorId {
-            old: UserId::new(parse_id_value(&detail.name, &old_value)?),
-            new: UserId::new(parse_id_value(&detail.name, &new_value)?),
+            old: UserId::new(parse_integer_value(&detail.name, &old_value)?),
+            new: UserId::new(parse_integer_value(&detail.name, &new_value)?),
         },
         // 未設定を表す欠損値と空文字列は、Optional ID属性ではどちらも`None`として扱う。
         "category_id" => JournalDetailAttr::CategoryId {
@@ -125,8 +128,8 @@ fn convert_attr(detail: RedmineJournalDetail) -> Result<JournalDetailAttr, Redmi
         },
         "done_ratio" => JournalDetailAttr::DoneRatio {
             // 進捗率はOptional属性ではないため、欠損値を`0`として受け入れない。
-            old: parse_id_value(&detail.name, &old_value)?,
-            new: parse_id_value(&detail.name, &new_value)?,
+            old: parse_integer_value(&detail.name, &old_value)?,
+            new: parse_integer_value(&detail.name, &new_value)?,
         },
         "estimated_hours" => JournalDetailAttr::EstimatedHours {
             old: parse_optional_hours(&detail.name, Some(old_value.as_str()))?,
@@ -157,14 +160,16 @@ fn convert_attr(detail: RedmineJournalDetail) -> Result<JournalDetailAttr, Redmi
     Ok(attr)
 }
 
-fn parse_id_value(name: &str, value: &str) -> Result<u16, RedmineClientError> {
-    value
-        .parse::<u16>()
-        .map_err(|error| RedmineClientError::Client {
-            reason: format!(
-                "failed to parse Redmine journal detail attribute '{name}' value '{value}' as u16: {error}"
-            ),
-        })
+fn parse_integer_value<T>(name: &str, value: &str) -> Result<T, RedmineClientError>
+where
+    T: FromStr<Err = ParseIntError>,
+{
+    value.parse::<T>().map_err(|error| RedmineClientError::Client {
+        reason: format!(
+            "failed to parse Redmine journal detail attribute '{name}' value '{value}' as {}: {error}",
+            std::any::type_name::<T>()
+        ),
+    })
 }
 
 /// Optional IDを変換し、欠損値または空文字列は`None`として扱う。
@@ -175,7 +180,7 @@ fn parse_optional_id_value<T>(
     value: Option<&str>,
 ) -> Result<Option<T>, RedmineClientError>
 where
-    T: From<u16>,
+    T: From<u32>,
 {
     let Some(value) = value else {
         return Ok(None);
@@ -184,7 +189,9 @@ where
         return Ok(None);
     }
 
-    parse_id_value(name, value).map(|id| T::from(id)).map(Some)
+    parse_integer_value::<u32>(name, value)
+        .map(|id| T::from(id))
+        .map(Some)
 }
 
 /// Redmineの小数表現を時間として変換し、欠損値または空文字列は`None`として扱う。

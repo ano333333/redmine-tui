@@ -53,13 +53,13 @@ mod tests {
     use crate::test_support::{sample_attachment, sample_prepared_image};
     use crate::vos::AttachmentId;
 
-    fn original(id: u16) -> ImageKey {
+    fn original(id: u32) -> ImageKey {
         ImageKey::AttachmentOriginal {
             id: AttachmentId::new(id),
         }
     }
 
-    fn start(store: &mut Store, id: u16) {
+    fn start(store: &mut Store, id: u32) {
         store.consume_action(
             AttachmentImageAction::Start {
                 attachment_id: AttachmentId::new(id),
@@ -69,7 +69,7 @@ mod tests {
         );
     }
 
-    fn load(store: &mut Store, id: u16) {
+    fn load(store: &mut Store, id: u32) {
         store.consume_action(
             ImageAction::Loaded {
                 key: original(id),
@@ -79,7 +79,7 @@ mod tests {
         );
     }
 
-    fn named(id: u16, filename: &str) -> Attachment {
+    fn named(id: u32, filename: &str) -> Attachment {
         let mut attachment = sample_attachment(id, Some("image/png"), false);
         attachment.filename = filename.to_string();
         attachment

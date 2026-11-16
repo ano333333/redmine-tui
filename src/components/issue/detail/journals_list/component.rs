@@ -515,7 +515,7 @@ mod tests {
         &store.get_remote_journal(1, 1).state
     }
 
-    fn create_journal(id: u16, notes: impl Into<String>) -> Journal {
+    fn create_journal(id: u32, notes: impl Into<String>) -> Journal {
         Journal {
             id: JournalId::new(id),
             issue_id: IssueId::new(1),
@@ -1157,7 +1157,7 @@ mod tests {
         );
     }
 
-    fn deleted_entry(original_id: u16, notes: &str) -> DeletedJournalEntry {
+    fn deleted_entry(original_id: u32, notes: &str) -> DeletedJournalEntry {
         DeletedJournalEntry {
             original_id: JournalId::new(original_id),
             notes: notes.to_string(),

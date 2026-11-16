@@ -160,7 +160,7 @@ pub enum EventProcessResult {
 }
 
 pub struct JournalsListItemComponent {
-    pub id: u16,
+    pub id: u32,
     issue_id: IssueId,
     notes: String,
     state: RemoteJournalState,
@@ -332,7 +332,7 @@ mod tests {
         store
     }
 
-    fn create_journal(id: u16, details: Vec<JournalDetail>, notes: impl Into<String>) -> Journal {
+    fn create_journal(id: u32, details: Vec<JournalDetail>, notes: impl Into<String>) -> Journal {
         Journal {
             id: JournalId::new(id),
             issue_id: IssueId::new(1),
@@ -343,14 +343,14 @@ mod tests {
         }
     }
 
-    fn assigned_to_detail(old: Option<u16>, new: Option<u16>) -> JournalDetail {
+    fn assigned_to_detail(old: Option<u32>, new: Option<u32>) -> JournalDetail {
         JournalDetail::Attr(JournalDetailAttr::AssignedToId {
             old: old.map(UserId::new),
             new: new.map(UserId::new),
         })
     }
 
-    fn status_detail(old: u16, new: u16) -> JournalDetail {
+    fn status_detail(old: u32, new: u32) -> JournalDetail {
         JournalDetail::Attr(JournalDetailAttr::StatusId {
             old: IssueStatusId::new(old),
             new: IssueStatusId::new(new),

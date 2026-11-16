@@ -403,7 +403,7 @@ mod tests {
         store
     }
 
-    fn fetch_page(project_id: u16, number: usize) -> UsecaseRequest {
+    fn fetch_page(project_id: u32, number: usize) -> UsecaseRequest {
         UsecaseRequest::FetchProjectIssuesPage {
             project_id: ProjectId::new(project_id),
             page: page(number),
@@ -416,7 +416,7 @@ mod tests {
 
     fn load_project_page(
         store: &mut Store,
-        project_id: u16,
+        project_id: u32,
         page_number: usize,
         issues: Vec<Issue>,
         total_count: usize,
@@ -447,7 +447,7 @@ mod tests {
         );
     }
 
-    fn project_issue(id: u16, project_id: u16, subject: &str, description: &str) -> Issue {
+    fn project_issue(id: u32, project_id: u32, subject: &str, description: &str) -> Issue {
         Issue {
             id: id.into(),
             project_id: project_id.into(),

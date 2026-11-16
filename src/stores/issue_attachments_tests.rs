@@ -6,9 +6,9 @@ use crate::entities::{Attachment, IssueAggregate, Journal};
 use crate::test_support::{local_datetime, sample_issue_aggregate};
 use crate::vos::{AttachmentId, IssueId, JournalId};
 
-const ISSUE_ID: u16 = 1;
+const ISSUE_ID: u32 = 1;
 
-fn journal(journal_id: u16) -> Journal {
+fn journal(journal_id: u32) -> Journal {
     Journal {
         id: JournalId::new(journal_id),
         issue_id: IssueId::new(ISSUE_ID),
@@ -25,7 +25,7 @@ fn issue(journals: Vec<Journal>) -> IssueAggregate {
     issue
 }
 
-fn attachment(id: u16, filename: &str) -> Attachment {
+fn attachment(id: u32, filename: &str) -> Attachment {
     Attachment {
         id: AttachmentId::new(id),
         filename: filename.to_string(),

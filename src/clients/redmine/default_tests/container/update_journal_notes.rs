@@ -20,7 +20,7 @@ fn update_journal_notes_contract_against_redmine_container() {
 /// seedのIssue 3はJournal 1〜3を持ち、detailを持たないのはJournal 3だけである。
 async fn fetch_issue_3_journal_notes(
     base_url: &str,
-) -> Result<Vec<(u16, String)>, Box<dyn std::error::Error>> {
+) -> Result<Vec<(u32, String)>, Box<dyn std::error::Error>> {
     Ok(authenticated_client(base_url)
         .get_issue(IssueId::new(3))
         .await

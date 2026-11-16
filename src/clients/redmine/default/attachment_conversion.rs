@@ -11,7 +11,7 @@ use super::value_conversion;
 /// Redmineの添付ファイルレスポンスを受け取る中間DTO。
 #[derive(Deserialize)]
 pub(super) struct RedmineAttachment {
-    pub(super) id: u16,
+    pub(super) id: u32,
     pub(super) filename: String,
     pub(super) filesize: u64,
     #[serde(default)]

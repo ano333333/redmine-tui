@@ -88,7 +88,7 @@ mod tests {
     /// BodyWidgetが末尾に空ける、縦線を引かない余白行。
     const GUTTER_TRAILING_LINES: u16 = 1;
 
-    const ISSUE_ID: u16 = 1;
+    const ISSUE_ID: u32 = 1;
     const WIDE_WIDTH: u16 = 32;
     const NARROW_WIDTH: u16 = 16;
     /// 本文は縦線の字下げを除いた幅(WIDE_WIDTH - 2)で折り返す。
