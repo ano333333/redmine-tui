@@ -75,6 +75,9 @@ impl<'a> Widget for ChildrenListWidget<'a> {
             row_area.y += 1;
             row_area.height = row_area.height.saturating_sub(1);
         }
+        if row_area.height > 0 {
+            render_add_row(row_area, buf, focused_index == Some(self.children.len()));
+        }
     }
 }
 
@@ -96,8 +99,8 @@ impl<'a> ChildrenListWidget<'a> {
     }
 
     pub fn line_count(&self) -> u16 {
-        // 見出し2行 + 子チケット + 縦線を引かない末尾の余白1行
-        HEADER_LINES + self.children_num + 1
+        // 見出し2行 + 子チケット + 追加行 + 縦線を引かない末尾の余白1行
+        HEADER_LINES + self.children_num + 1 + GUTTER_TRAILING_LINES
     }
 }
 
@@ -161,6 +164,18 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
         None => create_unloaded_status_widget().render(cols[4], buffer),
     }
 
+    if focused {
+        for x in 0..row.width {
+            if let Some(cell) = buffer.cell_mut((row.x + x, row.y)) {
+                cell.set_bg(FOCUS_BG);
+            }
+        }
+    }
+}
+
+fn render_add_row(area: Rect, buffer: &mut Buffer, focused: bool) {
+    let row = Rect::new(area.x, area.y, area.width, area.height.min(1));
+    Paragraph::new(Line::from("＋ 子チケットを追加").fg(ACCENT)).render(row, buffer);
     if focused {
         for x in 0..row.width {
             if let Some(cell) = buffer.cell_mut((row.x + x, row.y)) {
@@ -272,7 +287,7 @@ mod tests {
         render_snapshot(
             "children_mixed_option_and_status_display",
             64,
-            6,
+            7,
             ChildrenListWidget::new(
                 3,
                 1,
@@ -313,7 +328,7 @@ mod tests {
             ],
             None,
         );
-        assert_eq!(widget.line_count(), 6);
+        assert_eq!(widget.line_count(), 7);
     }
 
     fn loaded_row<'a>(
@@ -336,11 +351,21 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_no_children_shows_only_add_row() {
+        render_snapshot(
+            "children_no_children_display",
+            80,
+            4,
+            ChildrenListWidget::new(0, 0, 0, vec![], Some(0)),
+        );
+    }
+
+    #[test]
     fn snapshot_unloaded_child_shows_only_fetched_id_and_subject() {
         render_snapshot(
             "children_unloaded_child_display",
             80,
-            4,
+            5,
             ChildrenListWidget::new(
                 1,
                 0,
@@ -361,7 +386,7 @@ mod tests {
         render_snapshot(
             "children_child_with_descendants_display",
             80,
-            4,
+            5,
             ChildrenListWidget::new(
                 1,
                 0,

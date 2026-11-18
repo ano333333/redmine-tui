@@ -255,10 +255,10 @@ mod tests {
         );
     }
 
-    /// Property(2カラム時の左カラム8行) -> Body -> AttachmentsList(追加行) -> ChildrenList
+    /// Property(2カラム時の左カラム8行) -> Body -> AttachmentsList(追加行) -> ChildrenList(追加行)
     /// -> JournalsList(先頭Journalのdetail)の順にフォーカスを送り、JournalsList内の1件目Journalの
     /// Notes位置に到達させる
-    const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 48;
+    const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 49;
 
     fn dispatcher_with_issue_and_journals() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = dispatcher();
@@ -407,7 +407,7 @@ mod tests {
     }
 
     /// Property(2カラム時の左カラム8行) -> Body -> AttachmentsList(追加行)の順にフォーカスを送る
-    const J_PRESSES_TO_ADD_ATTACHMENT_ROW: usize = J_PRESSES_TO_FIRST_JOURNAL_NOTES - 4;
+    const J_PRESSES_TO_ADD_ATTACHMENT_ROW: usize = J_PRESSES_TO_FIRST_JOURNAL_NOTES - 5;
 
     fn press_j_to_add_attachment_row(
         component: &mut IssueDetailComponent,
@@ -458,6 +458,46 @@ mod tests {
 
         assert_eq!(enter, Some(EventProcessResult::Handled));
         assert_eq!(ctrl_s, Some(EventProcessResult::Handled));
+    }
+
+    /// 子もJournalもないIssue 2で、Header -> 親Issue -> Property(左カラム8行) -> Body(空の1行)
+    /// -> AttachmentsList(追加行) -> ChildrenList(追加行)の順にフォーカスを送る
+    const J_PRESSES_TO_CHILDLESS_ADD_CHILD_ROW: usize = 12;
+
+    #[test]
+    fn childless_issue_moves_through_add_child_row_to_create_journal_button_and_back() {
+        let dispatcher = dispatcher();
+        crate::test_support::dispatch_loaded_issue(
+            &mut dispatcher.borrow_mut(),
+            crate::test_support::sample_closed_child_issue(),
+        );
+        let mut component = IssueDetailComponent::new(2);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        let mut press = |code: KeyCode| {
+            let result = component.process_event(key_event(code), dispatcher.clone());
+            component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+            result
+        };
+        for _ in 0..J_PRESSES_TO_CHILDLESS_ADD_CHILD_ROW {
+            press(KeyCode::Char('j'));
+        }
+
+        assert_eq!(press(KeyCode::Enter), None);
+        press(KeyCode::Char('j'));
+        assert_eq!(
+            press(KeyCode::Enter),
+            Some(EventProcessResult::CreateLocalJournalRequested {
+                issue_id: IssueId::new(2)
+            })
+        );
+        press(KeyCode::Char('k'));
+        press(KeyCode::Char('k'));
+        assert_eq!(
+            press(KeyCode::Enter),
+            Some(EventProcessResult::AddAttachmentRequested {
+                issue_id: IssueId::new(2)
+            })
+        );
     }
 
     #[test]

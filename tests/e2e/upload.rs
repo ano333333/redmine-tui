@@ -11,10 +11,13 @@ use crate::support::{
 const J_PRESSES_TO_PRIORITY: usize = 7;
 // propertyの左列8行を越える9回目で本文の先頭に入る。
 const J_PRESSES_TO_BODY: usize = 9;
-const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 51;
-const J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON: usize = 89;
+const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 52;
+const J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON: usize = 90;
+// Issue 4は子IssueもJournalも持たないため、子Issueの追加行の次が作成ボタンになる。
+const J_PRESSES_TO_ISSUE_4_CREATE_LOCAL_JOURNAL_BUTTON: usize = 13;
 
 const ISSUE_3_WITH_JOURNALS: &str = "/issues/3.json?include=journals";
+const ISSUE_4_WITH_JOURNALS: &str = "/issues/4.json?include=journals";
 
 fn press_j(session: &mut PtySession, presses: usize) {
     for _ in 0..presses {
@@ -80,12 +83,15 @@ fn ctrl_s_uploads_the_edited_remote_journal_notes() {
 // Scenario: Local Journalをctrl+sでuploadすると、Redmineに新しいJournalとして作成される
 #[test]
 fn ctrl_s_uploads_the_local_journal_as_a_new_journal() {
-    // Given Issue 3にLocal Journalを作成してnotesを書いている
+    // Given 子IssueもJournalもないIssue 4にLocal Journalを作成してnotesを書いている
     let editor = FakeEditor::new("upload_local_journal");
     reseed_redmine();
     let mut session = editor.spawn_app("uploaded local notes");
-    open_issue_from_initial_popup(&mut session, 1);
-    press_j(&mut session, J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON);
+    open_issue_from_initial_popup(&mut session, 0);
+    press_j(
+        &mut session,
+        J_PRESSES_TO_ISSUE_4_CREATE_LOCAL_JOURNAL_BUTTON,
+    );
     session.press_key("Enter").expect("failed to press Enter");
     editor.finish_editing(&mut session);
     wait_for_text(&mut session, "uploaded local notes");
@@ -94,9 +100,9 @@ fn ctrl_s_uploads_the_local_journal_as_a_new_journal() {
     // 最下段は作成ボタンのままなので、1つ上のnotesへ移る。
     press_keys(&mut session, &["j", "k", "ctrl+s"]);
 
-    // Then RedmineのIssue 3に、seedのJournal 1〜3に続くJournal 4として作成される
+    // Then RedmineのIssue 4に、seedのJournal 1〜3に続くJournal 4として作成される
     wait_for_redmine(
-        ISSUE_3_WITH_JOURNALS,
+        ISSUE_4_WITH_JOURNALS,
         "uploading the local journal",
         |issue| journal_notes(issue, 4).as_deref() == Some("uploaded local notes"),
     );
