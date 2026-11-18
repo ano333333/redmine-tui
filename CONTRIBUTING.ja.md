@@ -122,6 +122,13 @@ cargo mutants -j 4 --file src/stores/issue_journals.rs
 
 結果は `mutants.out/` に出力されます。どのテストにも検出されなかった変更は `missed.txt` に記録されます。
 
+結果の集計と前回結果との比較には `cargo xtask mutants-report` を使います。mutant は行番号を除いたファイルと変更内容で照合します。
+
+```sh
+cargo xtask mutants-report mutants.out --previous previous/mutants.out
+```
+
+
 ### Web build とデモ
 
 Web build は wasm32 と Trunk を使います。デモをローカルで起動する場合:

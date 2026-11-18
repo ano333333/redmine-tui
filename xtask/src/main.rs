@@ -3,6 +3,7 @@ use std::process::Command;
 
 mod build_pages;
 mod coverage;
+mod mutants_report;
 mod redmine_container;
 mod seed_redmine;
 
@@ -32,6 +33,7 @@ fn run() -> Result<(), String> {
         "test-e2e" => test_e2e(args.collect()),
         "build-pages" => build_pages::build_pages(args.collect()),
         "coverage" => coverage::coverage(args.collect()),
+        "mutants-report" => mutants_report::mutants_report(args.collect()),
         "--help" | "-h" => {
             println!("{}", usage());
             Ok(())
@@ -103,6 +105,7 @@ pub(crate) fn usage() -> String {
         "  cargo xtask test-e2e",
         "  cargo xtask build-pages --public-url URL",
         "  cargo xtask coverage [cargo llvm-cov report options (default: --html)]",
+        "  cargo xtask mutants-report MUTANTS_OUT_DIR [--previous MUTANTS_OUT_DIR]",
     ]
     .join("\n")
 }

@@ -122,6 +122,13 @@ cargo mutants -j 4 --file src/stores/issue_journals.rs
 
 Results are written to `mutants.out/`. `missed.txt` lists mutants that no test caught.
 
+To summarize a result and compare it with a previous run, use `cargo xtask mutants-report`. Mutants are matched by file and change, ignoring line numbers:
+
+```sh
+cargo xtask mutants-report mutants.out --previous previous/mutants.out
+```
+
+
 ### Web build and demo
 
 The Web build uses wasm32 and Trunk. To run the demo locally:
