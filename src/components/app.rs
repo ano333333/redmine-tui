@@ -1379,7 +1379,7 @@ mod tests {
     /// の順にフォーカスを送り、JournalsList内の1件目JournalのNotes位置に到達させる
     fn focus_first_journal_notes(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) {
         let mut sink = RequestSink::default();
-        for _ in 0..47 {
+        for _ in 0..48 {
             app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone(), &mut sink);
             app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
         }

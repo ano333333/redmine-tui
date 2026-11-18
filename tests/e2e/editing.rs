@@ -8,10 +8,10 @@ use crate::support::{
 // propertyの左列8行を越える9回目で本文の先頭に入る。
 const J_PRESSES_TO_BODY: usize = 9;
 // 本文37行（末尾の画像は代わりの文字1行と、その前の空行1行）、添付ファイル1行と追加行1行、
-// 子Issue一覧2行、Journal 1のdetail 1行を越えた先がJournal 1のnotes。
-const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 51;
+// 子Issue一覧2行と追加行1行、Journal 1のdetail 1行を越えた先がJournal 1のnotes。
+const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 52;
 // Journal 3のnotesの後にあるLocal Journal作成ボタン。
-const J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON: usize = 89;
+const J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON: usize = 90;
 
 fn open_issue_3_and_move_down(
     editor: &FakeEditor,

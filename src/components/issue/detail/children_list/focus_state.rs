@@ -19,89 +19,89 @@ pub enum EventProcessResult {
     Handled,
 }
 
+/// 子Issueの行と末尾の追加行のうち、どの行にカーソルがあるか。
+#[derive(Clone, Copy)]
+enum FocusedRow {
+    Child(IssueId),
+    AddRow,
+}
+
+/// 追加行は常にあるため、子Issueがなくてもカーソルを置ける。
 pub struct FocusState {
     ids: Vec<IssueId>,
-    focused_id: Option<IssueId>,
+    focused_row: Option<FocusedRow>,
 }
 
 impl FocusState {
     pub fn new() -> Self {
         Self {
             ids: vec![],
-            focused_id: None,
+            focused_row: None,
         }
     }
 
     pub fn update(&mut self, ids: &[IssueId]) {
-        let Some(focused_id) = self.focused_id else {
+        let Some(FocusedRow::Child(focused_id)) = self.focused_row else {
             self.ids = ids.to_vec();
             return;
         };
 
-        let new_index = if let Some(pos) = ids.iter().position(|&id| id == focused_id) {
-            // フォーカス中のIDがまだ存在する -> そのインデックスを維持
-            pos
+        let new_row = if ids.contains(&focused_id) {
+            // フォーカス中のIDがまだ存在する -> そのIDを維持
+            FocusedRow::Child(focused_id)
         } else {
-            // なくなっていれば同じインデックス（末尾にclamp）
+            // なくなっていれば同じインデックス（末尾の子にclamp、子がなければ追加行）
             let old_index = self
                 .ids
                 .iter()
                 .position(|&id| id == focused_id)
                 .unwrap_or(0);
-            old_index.min(ids.len().saturating_sub(1))
+            ids.get(old_index.min(ids.len().saturating_sub(1)))
+                .map_or(FocusedRow::AddRow, |&id| FocusedRow::Child(id))
         };
 
         self.ids = ids.to_vec();
-        self.focused_id = ids.get(new_index).copied();
+        self.focused_row = Some(new_row);
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
-        match event {
-            FocusEvent::Unfocused => {
-                self.focused_id = None;
-            }
-            FocusEvent::CursorEnteredFromAbove => {
-                self.focused_id = self.ids.first().copied();
-            }
-            FocusEvent::CursorEnteredFromBelow => {
-                self.focused_id = self.ids.last().copied();
-            }
-        }
+        self.focused_row = match event {
+            FocusEvent::Unfocused => None,
+            FocusEvent::CursorEnteredFromAbove => Some(self.row_at(0)),
+            FocusEvent::CursorEnteredFromBelow => Some(FocusedRow::AddRow),
+        };
     }
 
     pub fn process_event(&mut self, event: &InputEvent) -> Option<EventProcessResult> {
-        let focused_id = self.focused_id?;
+        let focused_row = self.focused_row?;
         let InputEvent::Key(key) = event;
-        let focused_index = self.ids.iter().position(|&id| id == focused_id)?;
+        let focused_index = self.index_of(focused_row);
 
         match key.code {
             KeyCode::Char('j') => {
-                if focused_index + 1 == self.ids.len() {
+                if matches!(focused_row, FocusedRow::AddRow) {
                     return Some(EventProcessResult::CursorLeavedFromBelow);
                 }
-                self.focused_id = self.ids.get(focused_index + 1).copied();
+                self.focused_row = Some(self.row_at(focused_index + 1));
                 Some(EventProcessResult::Handled)
             }
             KeyCode::Char('k') => {
                 if focused_index == 0 {
                     return Some(EventProcessResult::CursorLeavedFromAbove);
                 }
-                self.focused_id = self.ids.get(focused_index - 1).copied();
+                self.focused_row = Some(self.row_at(focused_index - 1));
                 Some(EventProcessResult::Handled)
             }
-            KeyCode::Enter => Some(EventProcessResult::OpenRequested { id: focused_id }),
+            KeyCode::Enter => match focused_row {
+                FocusedRow::Child(id) => Some(EventProcessResult::OpenRequested { id }),
+                FocusedRow::AddRow => None,
+            },
             _ => None,
         }
     }
 
     pub fn get_cursor_position(&self) -> Position {
-        // FIXME: 子Issueがない詳細画面で本文からjを押すと、focus先がないままここへ来てpanicする。
-        let focused_id = self.focused_id.unwrap();
-        let index = self
-            .ids
-            .iter()
-            .position(|&id| id == focused_id)
-            .unwrap_or(0);
+        let index = self.focused_index().unwrap_or(0);
         Position {
             // 一覧は縦線の分だけ字下げされている
             x: GUTTER_WIDTH,
@@ -109,9 +109,26 @@ impl FocusState {
         }
     }
 
+    /// 追加行は子Issueの行の直後のインデックスになる。
     pub fn focused_index(&self) -> Option<usize> {
-        let focused_id = self.focused_id?;
-        self.ids.iter().position(|&id| id == focused_id)
+        self.focused_row.map(|row| self.index_of(row))
+    }
+
+    fn index_of(&self, row: FocusedRow) -> usize {
+        match row {
+            FocusedRow::Child(id) => self
+                .ids
+                .iter()
+                .position(|&child_id| child_id == id)
+                .unwrap_or(0),
+            FocusedRow::AddRow => self.ids.len(),
+        }
+    }
+
+    fn row_at(&self, index: usize) -> FocusedRow {
+        self.ids
+            .get(index)
+            .map_or(FocusedRow::AddRow, |&id| FocusedRow::Child(id))
     }
 }
 
@@ -147,20 +164,45 @@ mod tests {
     }
 
     #[test]
-    fn focus_from_below_after_update_focuses_last_id() {
+    fn focus_from_below_after_update_focuses_add_row() {
         let mut state = FocusState::new();
         state.update(&ids(&[1, 2, 3]));
 
         state.focus_event(FocusEvent::CursorEnteredFromBelow);
 
-        assert_eq!(state.focused_index(), Some(2));
+        assert_eq!(state.focused_index(), Some(3));
         assert_eq!(
             state.get_cursor_position(),
             Position {
                 x: GUTTER_WIDTH,
-                y: 4
+                y: 5
             }
         );
+    }
+
+    #[test]
+    fn without_children_cursor_moves_through_add_row_and_leaves_at_both_ends() {
+        let mut state = FocusState::new();
+        state.update(&[]);
+        state.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        assert_eq!(state.focused_index(), Some(0));
+        assert_eq!(
+            state.get_cursor_position(),
+            Position {
+                x: GUTTER_WIDTH,
+                y: 2
+            }
+        );
+        assert!(state.process_event(&key_event(KeyCode::Enter)).is_none());
+        assert!(matches!(
+            state.process_event(&key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::CursorLeavedFromBelow)
+        ));
+        assert!(matches!(
+            state.process_event(&key_event(KeyCode::Char('k'))),
+            Some(EventProcessResult::CursorLeavedFromAbove)
+        ));
     }
 
     #[test]
@@ -212,7 +254,20 @@ mod tests {
     }
 
     #[test]
-    fn process_event_j_on_last_item_returns_leave_from_below_and_keeps_focus() {
+    fn process_event_j_on_last_child_moves_to_add_row() {
+        let mut state = FocusState::new();
+        state.update(&ids(&[1, 2, 3]));
+        state.focus_event(FocusEvent::CursorEnteredFromBelow);
+        state.process_event(&key_event(KeyCode::Char('k')));
+
+        let result = state.process_event(&key_event(KeyCode::Char('j')));
+
+        assert!(matches!(result, Some(EventProcessResult::Handled)));
+        assert_eq!(state.focused_index(), Some(3));
+    }
+
+    #[test]
+    fn process_event_j_on_add_row_returns_leave_from_below_and_keeps_focus() {
         let mut state = FocusState::new();
         state.update(&ids(&[1, 2, 3]));
         state.focus_event(FocusEvent::CursorEnteredFromBelow);
@@ -223,7 +278,7 @@ mod tests {
             result,
             Some(EventProcessResult::CursorLeavedFromBelow)
         ));
-        assert_eq!(state.focused_index(), Some(2));
+        assert_eq!(state.focused_index(), Some(3));
     }
 
     #[test]
@@ -293,6 +348,7 @@ mod tests {
         let mut state = FocusState::new();
         state.update(&ids(&[1, 2, 3]));
         state.focus_event(FocusEvent::CursorEnteredFromBelow);
+        state.process_event(&key_event(KeyCode::Char('k')));
 
         state.update(&ids(&[4]));
 
@@ -300,14 +356,14 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "未実装: update([]) 時に focus を明示的に解除する仕様として固定したい"]
-    fn update_empty_ids_clears_focus() {
+    fn update_empty_ids_moves_focus_from_child_to_add_row() {
         let mut state = FocusState::new();
         state.update(&ids(&[1, 2, 3]));
-        state.focus_event(FocusEvent::CursorEnteredFromBelow);
+        state.focus_event(FocusEvent::CursorEnteredFromAbove);
 
         state.update(&[]);
 
-        assert_eq!(state.focused_index(), None);
+        assert_eq!(state.focused_index(), Some(0));
+        assert!(state.process_event(&key_event(KeyCode::Enter)).is_none());
     }
 }

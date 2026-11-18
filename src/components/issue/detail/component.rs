@@ -255,10 +255,10 @@ mod tests {
         );
     }
 
-    /// Property(2カラム時の左カラム8行) -> Body -> AttachmentsList(追加行) -> ChildrenList
+    /// Property(2カラム時の左カラム8行) -> Body -> AttachmentsList(追加行) -> ChildrenList(追加行)
     /// -> JournalsList(先頭Journalのdetail)の順にフォーカスを送り、JournalsList内の1件目Journalの
     /// Notes位置に到達させる
-    const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 48;
+    const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 49;
 
     fn dispatcher_with_issue_and_journals() -> Rc<RefCell<Dispatcher>> {
         let dispatcher = dispatcher();
@@ -407,7 +407,7 @@ mod tests {
     }
 
     /// Property(2カラム時の左カラム8行) -> Body -> AttachmentsList(追加行)の順にフォーカスを送る
-    const J_PRESSES_TO_ADD_ATTACHMENT_ROW: usize = J_PRESSES_TO_FIRST_JOURNAL_NOTES - 4;
+    const J_PRESSES_TO_ADD_ATTACHMENT_ROW: usize = J_PRESSES_TO_FIRST_JOURNAL_NOTES - 5;
 
     fn press_j_to_add_attachment_row(
         component: &mut IssueDetailComponent,

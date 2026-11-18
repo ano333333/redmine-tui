@@ -44,7 +44,8 @@ impl ChildrenListComponent {
     }
 
     pub fn line_count(&self, store: &Store) -> u16 {
-        2 + (store.get_issue_children(self.id).len() as u16) + 1
+        // 見出し2行 + 子チケット + 追加行 + 末尾の余白1行
+        2 + (store.get_issue_children(self.id).len() as u16) + 1 + 1
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
@@ -130,7 +131,7 @@ mod tests {
 
     const ISSUE_ID: u32 = 3;
     const WIDTH: u16 = 80;
-    const CHILDREN_LIST_LINE_COUNT: u16 = 5;
+    const CHILDREN_LIST_LINE_COUNT: u16 = 6;
 
     fn store_with_parent_and_children() -> Store {
         let mut store = Store::new();
@@ -298,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn process_event_j_on_bottom_child_returns_leave_from_below_and_keeps_widget_coherent() {
+    fn process_event_j_on_add_row_returns_leave_from_below_and_keeps_widget_coherent() {
         let store = store_with_parent_and_children();
         let mut component = ChildrenListComponent::new(ISSUE_ID);
         component.update(&store);
@@ -310,13 +311,40 @@ mod tests {
             result,
             Some(EventProcessResult::CursorLeavedFromBelow)
         ));
-        assert_layout_contract(&component, &store, Position { x: 0, y: 3 });
+        assert_layout_contract(&component, &store, Position { x: 0, y: 4 });
         render_snapshot(
-            "children_list_component_process_j_on_bottom",
+            "children_list_component_process_j_on_add_row",
             WIDTH,
             component.line_count(&store),
             component.create_widget(&store),
         );
+    }
+
+    #[test]
+    fn without_children_cursor_stops_on_add_row_and_leaves_from_below() {
+        let mut store = Store::new();
+        sync_sample_masters(&mut store);
+        crate::test_support::load_issue(
+            &mut store,
+            crate::test_support::sample_closed_child_issue(),
+        );
+        let mut component = ChildrenListComponent::new(2);
+        component.update(&store);
+
+        component.focus_event(FocusEvent::CursorEnteredFromAbove);
+
+        assert_eq!(component.line_count(&store), 4);
+        assert_eq!(
+            component.get_cursor_position(),
+            Position {
+                x: GUTTER_WIDTH,
+                y: 2,
+            }
+        );
+        assert!(matches!(
+            component.process_event(&key_event(KeyCode::Char('j'))),
+            Some(EventProcessResult::CursorLeavedFromBelow)
+        ));
     }
 
     #[test]

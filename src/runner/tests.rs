@@ -890,7 +890,7 @@ fn move_focus_down(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher
 }
 
 fn focus_remote_journal_notes(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) {
-    move_focus_down(app, dispatcher, 47);
+    move_focus_down(app, dispatcher, 48);
 }
 
 fn focus_local_journal_notes(app: &mut AppComponent<'_>, dispatcher: Rc<RefCell<Dispatcher>>) {
