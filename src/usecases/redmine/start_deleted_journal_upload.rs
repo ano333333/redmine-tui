@@ -133,19 +133,16 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::complete_usecase;
+    use crate::test_support::{RedmineClientStub, complete_usecase};
     use std::sync::Mutex;
 
     use crate::clients::redmine::RedmineClientError;
     use crate::clients::redmine::base::FetchedIssue;
-    use crate::entities::{
-        Attachment, Category, IssueStatus, Journal, Priority, Project, ProjectIssuesPage,
-        TargetVersion, TimeEntityActivity, Tracker, User,
-    };
+    use crate::entities::{Attachment, Journal};
     use crate::stores::{Action, IssueAction, JournalUploadFailure};
     use crate::test_support::{local_datetime, sample_attachment, sample_issue_aggregate};
     use crate::usecases::UsecaseRequest;
-    use crate::vos::{AttachmentId, IssueStatusId, ProjectId};
+    use crate::vos::{AttachmentId, IssueStatusId};
 
     use super::*;
 
@@ -218,7 +215,7 @@ mod tests {
         }
     }
 
-    impl RedmineClient for StubClient {
+    impl RedmineClientStub for StubClient {
         async fn update_issue_notes(
             &self,
             issue_id: IssueId,
@@ -246,98 +243,6 @@ mod tests {
                 aggregate,
                 children: vec![],
             })
-        }
-
-        async fn update_issue(
-            &self,
-            _: crate::vos::IssueId,
-            _: &crate::clients::redmine::IssueUpdate,
-        ) -> Result<(), RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn update_journal_notes(
-            &self,
-            _: JournalId,
-            _: &str,
-        ) -> Result<(), RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn get_categories(&self) -> Result<Vec<Category>, RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn upload_file(
-            &self,
-            _: &str,
-            _: Vec<u8>,
-        ) -> Result<crate::vos::UploadToken, RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn attach_upload(
-            &self,
-            _: IssueId,
-            _: &crate::vos::UploadToken,
-            _: &str,
-        ) -> Result<(), RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn get_attachment_thumbnail(
-            &self,
-            _: crate::vos::AttachmentId,
-            _: u32,
-            _: u64,
-        ) -> Result<Vec<u8>, RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn get_attachment_content(
-            &self,
-            _: crate::vos::AttachmentId,
-            _: u64,
-        ) -> Result<Vec<u8>, RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn get_issue_statuses(&self) -> Result<Vec<IssueStatus>, RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn get_priorities(&self) -> Result<Vec<Priority>, RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn get_projects(&self) -> Result<Vec<Project>, RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn get_project_issues(
-            &self,
-            _: ProjectId,
-            _: std::num::NonZeroUsize,
-        ) -> Result<ProjectIssuesPage, RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn get_target_versions(&self) -> Result<Vec<TargetVersion>, RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn get_time_entity_activities(
-            &self,
-        ) -> Result<Vec<TimeEntityActivity>, RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn get_trackers(&self) -> Result<Vec<Tracker>, RedmineClientError> {
-            unreachable!()
-        }
-
-        async fn get_users(&self) -> Result<Vec<User>, RedmineClientError> {
-            unreachable!()
         }
     }
 
