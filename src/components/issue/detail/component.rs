@@ -460,6 +460,46 @@ mod tests {
         assert_eq!(ctrl_s, Some(EventProcessResult::Handled));
     }
 
+    /// 子もJournalもないIssue 2で、Header -> 親Issue -> Property(左カラム8行) -> Body(空の1行)
+    /// -> AttachmentsList(追加行) -> ChildrenList(追加行)の順にフォーカスを送る
+    const J_PRESSES_TO_CHILDLESS_ADD_CHILD_ROW: usize = 12;
+
+    #[test]
+    fn childless_issue_moves_through_add_child_row_to_create_journal_button_and_back() {
+        let dispatcher = dispatcher();
+        crate::test_support::dispatch_loaded_issue(
+            &mut dispatcher.borrow_mut(),
+            crate::test_support::sample_closed_child_issue(),
+        );
+        let mut component = IssueDetailComponent::new(2);
+        component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+        let mut press = |code: KeyCode| {
+            let result = component.process_event(key_event(code), dispatcher.clone());
+            component.update(dispatcher.clone(), dispatcher.borrow().store(), (80, 24));
+            result
+        };
+        for _ in 0..J_PRESSES_TO_CHILDLESS_ADD_CHILD_ROW {
+            press(KeyCode::Char('j'));
+        }
+
+        assert_eq!(press(KeyCode::Enter), None);
+        press(KeyCode::Char('j'));
+        assert_eq!(
+            press(KeyCode::Enter),
+            Some(EventProcessResult::CreateLocalJournalRequested {
+                issue_id: IssueId::new(2)
+            })
+        );
+        press(KeyCode::Char('k'));
+        press(KeyCode::Char('k'));
+        assert_eq!(
+            press(KeyCode::Enter),
+            Some(EventProcessResult::AddAttachmentRequested {
+                issue_id: IssueId::new(2)
+            })
+        );
+    }
+
     #[test]
     fn process_event_e_on_journals_list_notes_returns_edit_journal_requested() {
         let dispatcher = dispatcher_with_issue_and_journals();
