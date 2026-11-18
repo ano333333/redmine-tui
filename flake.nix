@@ -16,6 +16,7 @@
             cargo
             cargo-insta
             cargo-llvm-cov
+            cargo-mutants
             # profrawの形式はrustcが使うLLVMのversionに依存するため、llvm-cov等もrustcのLLVMに合わせる。
             rustc.llvmPackages.llvm
             lld
