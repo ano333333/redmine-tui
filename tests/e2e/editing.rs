@@ -10,8 +10,10 @@ const J_PRESSES_TO_BODY: usize = 9;
 // 本文37行（末尾の画像は代わりの文字1行と、その前の空行1行）、添付ファイル1行と追加行1行、
 // 子Issue一覧2行と追加行1行、Journal 1のdetail 1行を越えた先がJournal 1のnotes。
 const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 52;
-// Journal 3のnotesの後にあるLocal Journal作成ボタン。
-const J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON: usize = 90;
+// Issue 4の詳細でLocal Journal作成ボタンへ移るjの回数。Issue 4は親Issueを持ち、本文は空で、
+// 添付ファイル・子Issue・Journalを持たない。親の行、propertyの左列8行、本文1行、
+// 添付ファイルの追加行、子Issueの追加行を越えた先が作成ボタン。
+const J_PRESSES_TO_ISSUE_4_CREATE_LOCAL_JOURNAL_BUTTON: usize = 13;
 
 fn open_issue_3_and_move_down(
     editor: &FakeEditor,
@@ -68,13 +70,14 @@ fn editing_remote_journal_notes_shows_the_edited_notes() {
 // Scenario: Local Journalを作成してnotesを書き、もう一度editorで開ける
 #[test]
 fn creating_a_local_journal_opens_the_editor_and_keeps_the_notes() {
-    // Given Issue 3のLocal Journal作成ボタンにfocusしている
+    // Given 子IssueもJournalもないIssue 4のLocal Journal作成ボタンにfocusしている
     let editor = FakeEditor::new("create_local_journal");
-    let mut session = open_issue_3_and_move_down(
-        &editor,
-        "local journal notes",
-        J_PRESSES_TO_CREATE_LOCAL_JOURNAL_BUTTON,
-    );
+    reseed_redmine();
+    let mut session = editor.spawn_app("local journal notes");
+    open_issue_from_initial_popup(&mut session, 0);
+    for _ in 0..J_PRESSES_TO_ISSUE_4_CREATE_LOCAL_JOURNAL_BUTTON {
+        session.press_key("j").expect("failed to press j");
+    }
 
     // When Enterでボタンを押す
     session.press_key("Enter").expect("failed to press Enter");
