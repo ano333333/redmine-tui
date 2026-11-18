@@ -88,7 +88,10 @@ fn ctrl_s_uploads_the_local_journal_as_a_new_journal() {
     reseed_redmine();
     let mut session = editor.spawn_app("uploaded local notes");
     open_issue_from_initial_popup(&mut session, 0);
-    press_j(&mut session, J_PRESSES_TO_ISSUE_4_CREATE_LOCAL_JOURNAL_BUTTON);
+    press_j(
+        &mut session,
+        J_PRESSES_TO_ISSUE_4_CREATE_LOCAL_JOURNAL_BUTTON,
+    );
     session.press_key("Enter").expect("failed to press Enter");
     editor.finish_editing(&mut session);
     wait_for_text(&mut session, "uploaded local notes");
