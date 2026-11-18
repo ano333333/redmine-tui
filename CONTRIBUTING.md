@@ -128,6 +128,7 @@ To summarize a result and compare it with a previous run, use `cargo xtask mutan
 cargo xtask mutants-report mutants.out --previous previous/mutants.out
 ```
 
+The `Mutation testing` workflow runs all mutants weekly and writes this report, compared with the previous run, to the job summary.
 
 ### Web build and demo
 

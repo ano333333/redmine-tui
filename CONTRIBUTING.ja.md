@@ -128,6 +128,7 @@ cargo mutants -j 4 --file src/stores/issue_journals.rs
 cargo xtask mutants-report mutants.out --previous previous/mutants.out
 ```
 
+`Mutation testing` workflow は毎週全 mutant を実行し、前回結果と比較したレポートを job summary に出力します。
 
 ### Web build とデモ
 
