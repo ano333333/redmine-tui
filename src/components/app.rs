@@ -655,6 +655,12 @@ impl<'a> AppComponent<'a> {
                 self.open_issue(id, sink);
             }
             // 子Componentがキーを解釈済みで、App側に要求はない。
+            IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::ComputedPropertyNotEditable { issue_id, property },
+            ) => {
+                self.toast_list
+                    .push_computed_property_not_editable(issue_id, property);
+            }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::Handled) => {}
         }
         true

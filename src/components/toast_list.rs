@@ -1,5 +1,6 @@
 use crate::stores::Store;
 use crate::usecases::UsecaseFailure;
+use crate::vos::IssueId;
 use crate::widgets::ToastWidget;
 
 const TOAST_VISIBLE_FOR: chrono::Duration = chrono::Duration::seconds(5);
@@ -68,6 +69,12 @@ impl ToastListComponent {
         ));
     }
 
+    pub fn push_computed_property_not_editable(&mut self, issue_id: IssueId, property: &str) {
+        self.push(format!(
+            "Issue #{issue_id}の{property}は子Issueから計算されるため編集できません"
+        ));
+    }
+
     fn push(&mut self, message: String) {
         self.toasts.push(Toast {
             message,
@@ -102,7 +109,7 @@ mod tests {
     use super::*;
     use crate::stores::{Action, NoticeAction, NoticeId};
     use crate::test_support::render_snapshot;
-    use crate::vos::{IssueId, JournalId};
+    use crate::vos::JournalId;
 
     fn messages(toast_list: &ToastListComponent) -> Vec<String> {
         toast_list.create_widget(&Store::new()).messages
@@ -316,5 +323,13 @@ mod tests {
         toast_list.push_image_display_unavailable("terminal size is zero");
 
         render_toast_snapshot("toast_list_image_display_unavailable", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_computed_property_not_editable() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_computed_property_not_editable(IssueId::new(3), "優先度");
+
+        render_toast_snapshot("toast_list_computed_property_not_editable", &toast_list);
     }
 }
