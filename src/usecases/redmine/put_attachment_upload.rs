@@ -50,6 +50,7 @@ where
         UsecaseOutput {
             actions: vec![AttachmentAction::AttachSucceeded { issue_id }.into()],
             requests: vec![UsecaseRequest::ConfirmAttachmentUpload { issue_id }],
+            events: Vec::new(),
         }
     }))
 }

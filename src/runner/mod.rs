@@ -20,7 +20,10 @@ mod tests;
 use effect::{
     EditorSession, drain_requests, handle_component_requests, handle_editor_failure, handle_input,
 };
-use lifecycle::{consume_editor_worker_actions, draw, move_worker_action, tick_since, update};
+use lifecycle::{
+    consume_editor_worker_actions, deliver_usecase_events, draw, move_worker_action, tick_since,
+    update,
+};
 
 const TICK_RATE_MS: u64 = 250;
 
@@ -47,6 +50,7 @@ where
 {
     let mut editor_session: Option<EditorSession<'_>> = None;
     let mut requests = VecDeque::new();
+    let mut events = Vec::new();
     let mut sink = RequestSink::default();
     let mut app_component =
         AppComponent::new(dispatcher.clone(), None, host.cursor_rendering(), &mut sink);
@@ -66,13 +70,16 @@ where
     let tick_rate = Duration::from_millis(TICK_RATE_MS);
     let mut last_tick = host.elapsed();
     loop {
-        // editor中もworker完了はStoreへ取り込むが、Component更新・描画・入力と
+        // editor中もworker完了はStoreへ取り込むが、Component更新・イベントの受け渡し・描画・入力と
         // Noticeの経過時間更新はeditor終了まで遅延する。
         if let Some(session) = editor_session.as_mut() {
             // 後続要求の起動はComponentの更新を伴うため、editorから戻るまでqueueに残す。
-            if let Some(message) =
-                consume_editor_worker_actions(spawner, dispatcher.clone(), &mut requests)
-            {
+            if let Some(message) = consume_editor_worker_actions(
+                spawner,
+                dispatcher.clone(),
+                &mut requests,
+                &mut events,
+            ) {
                 return Err(RunError::WorkerPanicked(message));
             }
             let outcome = match session.poll_completion() {
@@ -103,7 +110,9 @@ where
             // editor滞在時間を次のNotice tickへ混ぜないよう、通常loopへ戻る前にresetする。
             last_tick = host.elapsed();
         }
-        if let Some(message) = move_worker_action(spawner, dispatcher.clone(), &mut requests) {
+        if let Some(message) =
+            move_worker_action(spawner, dispatcher.clone(), &mut requests, &mut events)
+        {
             return Err(RunError::WorkerPanicked(message));
         }
         let now = host.elapsed();
@@ -112,6 +121,14 @@ where
         dispatcher.borrow_mut().update_store(tick);
         app_component.tick(tick);
         update(dispatcher.clone(), &mut app_component, host.area());
+        // イベントを受けたComponentが、同じcompletionのActionを反映したStoreを前提にできるよう、
+        // Actionを消費した後に渡す。tickより後に渡すので、届いたtoastはこの周の経過時間で消えない。
+        deliver_usecase_events(
+            &mut events,
+            &mut app_component,
+            dispatcher.clone(),
+            host.area(),
+        );
         // 後続要求の起動条件はcompletionを反映した後のStoreで判定する。
         drain_requests(
             &mut requests,

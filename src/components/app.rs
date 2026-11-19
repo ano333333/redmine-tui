@@ -25,7 +25,6 @@ use crate::stores::{
     Action, DeletedJournalState, Dispatcher, IssueAction, IssueState, JournalAction,
     LocalJournalState, RemoteJournalState, Store,
 };
-use crate::usecases::UsecaseRequest;
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
     build_done_ratio_options, build_issue_status_options, build_priority_options,
@@ -35,6 +34,7 @@ use crate::usecases::issue_popup_options::{
     issue_status_popup_observer, priority_popup_observer, project_popup_observer,
     start_date_popup_observer, target_version_popup_observer, tracker_popup_observer,
 };
+use crate::usecases::{UsecaseEvent, UsecaseRequest};
 use crate::vos::{EntityIdValue, IssueId, JournalId, TimeEntityActivityId};
 
 use super::attachment_input_popup::{
@@ -859,11 +859,18 @@ impl<'a> AppComponent<'a> {
         self.toast_list.tick(elapsed);
     }
 
+    pub fn handle_usecase_events(&mut self, events: Vec<UsecaseEvent>) {
+        for event in events {
+            match event {
+                UsecaseEvent::Failure(failure) => self.toast_list.push_failure(&failure),
+            }
+        }
+    }
+
     /// editorの失敗を通知し、editor contextを解放する。
     pub fn handle_editor_failure(&mut self, error: &dyn std::fmt::Display) {
         self.handle_editor_response(EditorOutcome::Failed);
-        self.toast_list
-            .push(format!("エディタによる編集に失敗しました: {error}"));
+        self.toast_list.push_editor_failure(error);
     }
 
     pub fn handle_editor_response(&mut self, outcome: EditorOutcome) {
@@ -1043,7 +1050,7 @@ mod tests {
     };
 
     #[test]
-    fn handle_editor_failure_shows_a_toast_and_returns_to_application_mode() {
+    fn handle_editor_failure_returns_to_application_mode() {
         let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
         let mut app = AppComponent::new(
             dispatcher.clone(),
@@ -1056,12 +1063,6 @@ mod tests {
         app.handle_editor_failure(&"boom");
 
         assert_eq!(app.interaction_mode(), InteractionMode::Application);
-        assert_eq!(
-            app.toast_list
-                .create_widget(dispatcher.borrow().store())
-                .messages,
-            ["エディタによる編集に失敗しました: boom"]
-        );
     }
 
     fn assert_no_requests(sink: &mut RequestSink) {

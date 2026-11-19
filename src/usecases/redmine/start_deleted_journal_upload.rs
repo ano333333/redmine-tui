@@ -102,6 +102,7 @@ where
                     }
                     .into(),
                 ],
+                events: Vec::new(),
             };
         }
         // 別Issueのレスポンスを確認結果として扱うと、他Issueのjournalを根拠に完了させてしまうため、

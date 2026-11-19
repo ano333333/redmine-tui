@@ -152,6 +152,7 @@ where
                 .into(),
             ],
             requests: preflight_image_requests,
+            events: Vec::new(),
         };
     };
     match resolve_remote_journal_upload(before, after, &server_notes) {
@@ -167,6 +168,7 @@ where
                     .into(),
                 ],
                 requests: preflight_image_requests,
+                events: Vec::new(),
             };
         }
         RemoteJournalUploadResolution::Conflict => {
@@ -180,6 +182,7 @@ where
                     .into(),
                 ],
                 requests: preflight_image_requests,
+                events: Vec::new(),
             };
         }
         RemoteJournalUploadResolution::Upload => {}
@@ -201,6 +204,7 @@ where
                     }
                     .into(),
                 ],
+                events: Vec::new(),
             };
         }
         Ok(confirmed) => mismatched_issue_message(issue_id, confirmed.aggregate.issue.id),
@@ -231,6 +235,7 @@ where
             .into(),
         ],
         requests: preflight_image_requests,
+        events: Vec::new(),
     }
 }
 

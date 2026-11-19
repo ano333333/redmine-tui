@@ -87,6 +87,7 @@ pub(super) async fn write_image<F: LocalFileClient>(
                 .into(),
             ],
             requests: vec![UsecaseRequest::PrepareImage { key, path }],
+            events: Vec::new(),
         },
         Err(error) => vec![
             ImageAction::Fail {

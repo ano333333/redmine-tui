@@ -83,6 +83,7 @@ where
                 token,
                 filename,
             }],
+            events: Vec::new(),
         }
     }))
 }

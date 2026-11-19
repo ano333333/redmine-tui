@@ -48,6 +48,7 @@ where
                         }
                         .into(),
                     ],
+                    events: Vec::new(),
                 };
             }
             Err(reason) => vec![

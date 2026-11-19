@@ -7,10 +7,10 @@ use crate::platform::runtime::tokio_spawner::TokioBackgroundSpawner;
 use crate::platform::runtime::{BackgroundCompletion, BackgroundSpawner};
 use crate::runner::effect::{drain_requests, handle_component_requests, handle_input};
 use crate::runner::lifecycle::{
-    consume_editor_worker_actions, move_worker_action, tick_since, update,
+    consume_editor_worker_actions, deliver_usecase_events, move_worker_action, tick_since, update,
 };
 use crate::stores::{self, Action, Dispatcher};
-use crate::usecases::{UsecaseOutput, UsecaseRequest, start_usecase};
+use crate::usecases::{UsecaseEvent, UsecaseFailure, UsecaseOutput, UsecaseRequest, start_usecase};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -306,7 +306,12 @@ fn background_completion_panic_is_reported_by_the_main_loop_acceptor() {
     ]);
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
 
-    let message = move_worker_action(&spawner, dispatcher.clone(), &mut VecDeque::new());
+    let message = move_worker_action(
+        &spawner,
+        dispatcher.clone(),
+        &mut VecDeque::new(),
+        &mut Vec::new(),
+    );
 
     assert_eq!(message.as_deref(), Some("worker panic marker"));
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
@@ -562,7 +567,12 @@ fn move_worker_action_dispatches_worker_actions_without_extra_notice() {
         message: "network error: offline".to_string(),
     })]);
 
-    let panic_message = move_worker_action(&spawner, dispatcher.clone(), &mut VecDeque::new());
+    let panic_message = move_worker_action(
+        &spawner,
+        dispatcher.clone(),
+        &mut VecDeque::new(),
+        &mut Vec::new(),
+    );
 
     assert!(panic_message.is_none());
     while dispatcher.borrow().consume_actinos_len() > 0 {
@@ -602,7 +612,12 @@ fn move_worker_action_dispatches_no_notice_for_complete_remote_upload() {
             children: vec![],
         })]);
 
-    let panic_message = move_worker_action(&spawner, dispatcher.clone(), &mut VecDeque::new());
+    let panic_message = move_worker_action(
+        &spawner,
+        dispatcher.clone(),
+        &mut VecDeque::new(),
+        &mut Vec::new(),
+    );
 
     assert!(panic_message.is_none());
     while dispatcher.borrow().consume_actinos_len() > 0 {
@@ -630,8 +645,12 @@ fn editor_worker_actions_are_consumed_without_component_updates() {
         .into(),
     ]);
 
-    let panic_message =
-        consume_editor_worker_actions(&spawner, dispatcher.clone(), &mut VecDeque::new());
+    let panic_message = consume_editor_worker_actions(
+        &spawner,
+        dispatcher.clone(),
+        &mut VecDeque::new(),
+        &mut Vec::new(),
+    );
 
     assert!(panic_message.is_none());
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
@@ -928,8 +947,18 @@ fn route_worker_actions(
 ) {
     let actions = recv_actions(spawner, expected);
     let acceptor = CompletionSpawner::new(actions);
-    assert!(move_worker_action(&acceptor, dispatcher.clone(), &mut VecDeque::new()).is_none());
-    update(dispatcher, app, Rect::new(0, 0, 80, 24));
+    let mut events = Vec::new();
+    assert!(
+        move_worker_action(
+            &acceptor,
+            dispatcher.clone(),
+            &mut VecDeque::new(),
+            &mut events
+        )
+        .is_none()
+    );
+    update(dispatcher.clone(), app, Rect::new(0, 0, 80, 24));
+    deliver_usecase_events(&mut events, app, dispatcher, Rect::new(0, 0, 80, 24));
 }
 
 /// completionを`completions`件受理する。runと同じく、各completionのActionを消費してから後続要求を起動する。
@@ -963,8 +992,10 @@ fn accept_completion(
     requests: &mut VecDeque<UsecaseRequest>,
 ) {
     let acceptor = CompletionSpawner::from_completions(vec![recv_completion(spawner)]);
-    assert!(move_worker_action(&acceptor, dispatcher.clone(), requests).is_none());
-    update(dispatcher, app, Rect::new(0, 0, 80, 24));
+    let mut events = Vec::new();
+    assert!(move_worker_action(&acceptor, dispatcher.clone(), requests, &mut events).is_none());
+    update(dispatcher.clone(), app, Rect::new(0, 0, 80, 24));
+    deliver_usecase_events(&mut events, app, dispatcher, Rect::new(0, 0, 80, 24));
 }
 
 fn assert_toast_contains(
@@ -997,7 +1028,7 @@ fn assert_toast_contains(
 }
 
 #[test]
-fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clears_failure() {
+fn issue_upload_failure_routes_worker_actions_to_store_and_retry_clears_failure() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let (initial_dispatcher, server_issue) = edited_issue_dispatcher();
     let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
@@ -1024,9 +1055,7 @@ fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clear
         store.store().try_get_issue_upload_failure(id),
         Some("network error: offline")
     );
-    assert_eq!(store.store().get_notices().len(), 1);
     drop(store);
-    assert_toast_contains(&app, dispatcher.clone(), "Issue #3の保存に失敗しました");
 
     let Ok([request @ UsecaseRequest::StartIssueUpload { id }]) =
         <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
@@ -1523,6 +1552,7 @@ async fn run_starts_completion_requests_after_consuming_the_completion_actions()
                 id: 2.into(),
                 with_parent: false,
             }],
+            events: Vec::new(),
         })]);
     let mut host = RunnerHost::new(dispatcher.clone());
     host.events.push_back(Ok(Some(quit_event())));
@@ -1585,10 +1615,11 @@ fn editor_worker_completion_keeps_its_requests_queued() {
         CompletionSpawner::from_completions(vec![BackgroundCompletion::Succeeded(UsecaseOutput {
             actions: vec![],
             requests: vec![request.clone()],
+            events: Vec::new(),
         })]);
     let mut requests = VecDeque::new();
 
-    consume_editor_worker_actions(&spawner, dispatcher.clone(), &mut requests);
+    consume_editor_worker_actions(&spawner, dispatcher.clone(), &mut requests, &mut Vec::new());
 
     assert_eq!(requests, [request]);
     assert_eq!(spawner.spawned.get(), 0);
@@ -1596,6 +1627,74 @@ fn editor_worker_completion_keeps_its_requests_queued() {
         dispatcher.borrow().store().try_get_issue_fetch_state(2),
         None
     );
+}
+
+#[test]
+fn editor_worker_completion_keeps_its_events_queued() {
+    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+    let event = UsecaseEvent::Failure(UsecaseFailure::IssueUpload {
+        id: 2.into(),
+        reason: "offline".to_string(),
+    });
+    let spawner =
+        CompletionSpawner::from_completions(vec![BackgroundCompletion::Succeeded(UsecaseOutput {
+            actions: vec![],
+            requests: vec![],
+            events: vec![event.clone()],
+        })]);
+    let mut events = Vec::new();
+
+    consume_editor_worker_actions(
+        &spawner,
+        dispatcher.clone(),
+        &mut VecDeque::new(),
+        &mut events,
+    );
+
+    assert_eq!(events, [event]);
+}
+
+fn issue_upload_failed_output(message: &str) -> UsecaseOutput {
+    UsecaseOutput {
+        actions: vec![],
+        requests: vec![],
+        events: vec![UsecaseEvent::Failure(UsecaseFailure::IssueUpload {
+            id: 1.into(),
+            reason: message.to_string(),
+        })],
+    }
+}
+
+#[tokio::test]
+async fn run_shows_completion_events_in_acceptance_order_without_expiring_them_in_the_same_tick() {
+    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+    crate::test_support::dispatch_sample_masters(&mut dispatcher.borrow_mut());
+    while dispatcher.borrow().consume_actinos_len() > 0 {
+        dispatcher.borrow_mut().consume_action();
+    }
+    let spawner = CompletionSpawner::from_completions(vec![
+        BackgroundCompletion::Succeeded(issue_upload_failed_output("first")),
+        BackgroundCompletion::Succeeded(issue_upload_failed_output("second")),
+    ]);
+    let mut host = RunnerHost::new(dispatcher.clone());
+    host.times = RefCell::new(VecDeque::from([Duration::ZERO, Duration::from_secs(5)]));
+    host.events.push_back(Ok(Some(quit_event())));
+    host.events.push_back(Ok(Some(quit_event())));
+
+    let result = super::run(
+        &mut host,
+        &RunnerEditor,
+        &spawner,
+        usecase_clients(Arc::new(FailingClient)),
+        dispatcher,
+    )
+    .await;
+
+    assert!(result.is_ok());
+    let rendered = &host.draws[0].rendered;
+    let first = rendered.find("first").expect("first toast is drawn");
+    let second = rendered.find("second").expect("second toast is drawn");
+    assert!(first < second, "rendered: {rendered}");
 }
 
 #[tokio::test]

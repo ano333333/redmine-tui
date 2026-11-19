@@ -5,8 +5,8 @@ use std::sync::Arc;
 use super::attachment_image_requests;
 use crate::clients::redmine::base::FetchedIssue;
 use crate::clients::redmine::{IssueUpdate, RedmineClient};
-use crate::stores::{Action, Dispatcher, IssueAction, IssueState, NoticeAction, NoticeId};
-use crate::usecases::{UsecaseOutput, UsecaseRequest, UsecaseTask};
+use crate::stores::{Dispatcher, IssueAction, IssueState};
+use crate::usecases::{UsecaseEvent, UsecaseFailure, UsecaseOutput, UsecaseRequest, UsecaseTask};
 use crate::vos::{EntityIdValue, IssueId, IssuePropertyDiff};
 
 /// 編集済みのIssueのuploadを開始する。
@@ -62,7 +62,7 @@ where
 {
     let preflight = match fetch_issue_for_upload(client.as_ref(), id).await {
         Ok(fetched) => fetched,
-        Err(message) => return issue_upload_failure_actions(id, message).into(),
+        Err(message) => return issue_upload_failure_output(id, message),
     };
     let image_requests = attachment_image_requests(&preflight.aggregate);
     if let Err(conflicts) = preflight.aggregate.with_property_diffs(&diffs) {
@@ -76,6 +76,7 @@ where
                 .into(),
             ],
             requests: image_requests,
+            events: Vec::new(),
         };
     }
     UsecaseOutput {
@@ -91,6 +92,7 @@ where
             .into_iter()
             .chain(image_requests)
             .collect(),
+        events: Vec::new(),
     }
 }
 
@@ -116,11 +118,12 @@ where
             .update_issue(id, &IssueUpdate::from_diffs(&diffs))
             .await
         {
-            return issue_upload_failure_actions(id, error.to_string()).into();
+            return issue_upload_failure_output(id, error.to_string());
         }
         UsecaseOutput {
             actions: vec![IssueAction::UploadPutSucceeded { id, diffs }.into()],
             requests: vec![UsecaseRequest::ConfirmIssueUpload { id }],
+            events: Vec::new(),
         }
     }))
 }
@@ -169,35 +172,33 @@ where
     C: RedmineClient + Send + Sync + 'static,
 {
     Box::pin(async move {
-        let actions = match fetch_issue_for_upload(client.as_ref(), id).await {
-            Ok(confirmed) => {
-                return UsecaseOutput {
-                    requests: attachment_image_requests(&confirmed.aggregate),
-                    actions: vec![
-                        IssueAction::UploadSucceeded {
-                            issue: confirmed.aggregate,
-                            children: confirmed.children,
-                        }
-                        .into(),
-                    ],
-                };
-            }
-            Err(reason) => vec![
-                NoticeAction::Push {
-                    id: NoticeId::new(),
-                    message: format!(
-                        "Issue #{id}を保存しましたが、確認の取得に失敗しました: {reason}"
-                    ),
-                }
-                .into(),
-                IssueAction::UploadConfirmFailed {
+        match fetch_issue_for_upload(client.as_ref(), id).await {
+            Ok(confirmed) => UsecaseOutput {
+                requests: attachment_image_requests(&confirmed.aggregate),
+                actions: vec![
+                    IssueAction::UploadSucceeded {
+                        issue: confirmed.aggregate,
+                        children: confirmed.children,
+                    }
+                    .into(),
+                ],
+                events: Vec::new(),
+            },
+            Err(message) => UsecaseOutput {
+                actions: vec![
+                    IssueAction::UploadConfirmFailed {
+                        id,
+                        message: message.clone(),
+                    }
+                    .into(),
+                ],
+                requests: Vec::new(),
+                events: vec![UsecaseEvent::Failure(UsecaseFailure::IssueUploadConfirm {
                     id,
-                    message: reason,
-                }
-                .into(),
-            ],
-        };
-        actions.into()
+                    reason: message,
+                })],
+            },
+        }
     })
 }
 
@@ -226,18 +227,21 @@ pub(super) async fn fetch_issue_for_upload(
     }
 }
 
-// FIXME: usecaseがUI表示物(notice/toast)の文言を組み立てているのは設計上の負債である。
-// 将来的にはIssueStoreの状態を見て判断するtoast component等を導入し、
-// この処理をそちらへ移すべき。
-fn issue_upload_failure_actions(id: IssueId, message: String) -> Vec<Action> {
-    vec![
-        NoticeAction::Push {
-            id: NoticeId::new(),
-            message: format!("Issue #{id}の保存に失敗しました: {message}"),
-        }
-        .into(),
-        IssueAction::FailUpload { id, message }.into(),
-    ]
+fn issue_upload_failure_output(id: IssueId, message: String) -> UsecaseOutput {
+    UsecaseOutput {
+        actions: vec![
+            IssueAction::FailUpload {
+                id,
+                message: message.clone(),
+            }
+            .into(),
+        ],
+        requests: Vec::new(),
+        events: vec![UsecaseEvent::Failure(UsecaseFailure::IssueUpload {
+            id,
+            reason: message,
+        })],
+    }
 }
 
 #[cfg(test)]
@@ -248,6 +252,7 @@ mod tests {
     use crate::clients::redmine::RedmineClientError;
     use crate::clients::redmine::base::FetchedIssue;
     use crate::entities::{IssueAggregate, IssueChild};
+    use crate::stores::Action;
     use crate::test_support::{RedmineClientStub, sample_attachment, sample_issue_aggregate};
     use crate::vos::issue_property_diff::IssueDescriptionDiff;
     use crate::vos::{AttachmentId, IssueStatusId, TrackerId};
@@ -464,16 +469,20 @@ mod tests {
 
         let output = preflight_issue_upload(client.clone(), ISSUE_ID, description_diff()).await;
 
-        let [
-            Action::Notice(NoticeAction::Push { .. }),
-            Action::Issue(IssueAction::FailUpload { id, message }),
-        ] = output.actions.as_slice()
+        let [Action::Issue(IssueAction::FailUpload { id, message })] = output.actions.as_slice()
         else {
-            panic!("expected a notice and FailUpload");
+            panic!("expected FailUpload");
         };
         assert_eq!(*id, ISSUE_ID);
         assert_eq!(message, "requested issue 1 but Redmine returned issue 99");
         assert!(output.requests.is_empty());
+        assert_eq!(
+            output.events,
+            [UsecaseEvent::Failure(UsecaseFailure::IssueUpload {
+                id: ISSUE_ID,
+                reason: "requested issue 1 but Redmine returned issue 99".to_string(),
+            })]
+        );
     }
 
     #[tokio::test]
@@ -545,12 +554,16 @@ mod tests {
 
         assert!(matches!(
             output.actions.as_slice(),
-            [
-                Action::Notice(NoticeAction::Push { .. }),
-                Action::Issue(IssueAction::FailUpload { .. })
-            ]
+            [Action::Issue(IssueAction::FailUpload { .. })]
         ));
         assert!(output.requests.is_empty());
+        assert_eq!(
+            output.events,
+            [UsecaseEvent::Failure(UsecaseFailure::IssueUpload {
+                id: ISSUE_ID,
+                reason: "network error: offline".to_string(),
+            })]
+        );
     }
 
     #[tokio::test]
@@ -588,22 +601,20 @@ mod tests {
         ))
         .await;
 
-        let [
-            Action::Notice(NoticeAction::Push { message, .. }),
-            Action::Issue(IssueAction::UploadConfirmFailed {
-                id,
-                message: reason,
-            }),
-        ] = output.actions.as_slice()
+        let [Action::Issue(IssueAction::UploadConfirmFailed { id, message })] =
+            output.actions.as_slice()
         else {
-            panic!("expected a notice and UploadConfirmFailed");
+            panic!("expected UploadConfirmFailed");
         };
-        assert_eq!(
-            message,
-            "Issue #1を保存しましたが、確認の取得に失敗しました: network error: offline"
-        );
         assert_eq!(*id, ISSUE_ID);
-        assert_eq!(reason, "network error: offline");
+        assert_eq!(message, "network error: offline");
+        assert_eq!(
+            output.events,
+            [UsecaseEvent::Failure(UsecaseFailure::IssueUploadConfirm {
+                id: ISSUE_ID,
+                reason: "network error: offline".to_string(),
+            })]
+        );
         assert!(output.requests.is_empty());
         assert!(client.updates.lock().unwrap().is_empty());
     }

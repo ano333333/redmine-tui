@@ -122,6 +122,7 @@ where
             }
             .into(),
         ],
+        events: Vec::new(),
     }
 }
 

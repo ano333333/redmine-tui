@@ -9,7 +9,7 @@ use crate::{
     platform::host::HostEvent,
     platform::runtime::{BackgroundCompletion, BackgroundSpawner},
     stores::{Action, Dispatcher},
-    usecases::{UsecaseOutput, UsecaseRequest},
+    usecases::{UsecaseEvent, UsecaseOutput, UsecaseRequest},
 };
 
 /// `now`が`last`より前、または`chrono::Duration`の範囲外ならゼロを返す。
@@ -30,11 +30,12 @@ pub(crate) fn handle_host_event(
     }
 }
 
-/// 受理したcompletionのActionをdispatchし、後続要求を`requests`の末尾に積む。
+/// 受理したcompletionのActionをdispatchし、後続要求を`requests`、イベントを`events`の末尾に積む。
 pub(crate) fn move_worker_action<S: BackgroundSpawner<Output = UsecaseOutput>>(
     spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
     requests: &mut VecDeque<UsecaseRequest>,
+    events: &mut Vec<UsecaseEvent>,
 ) -> Option<String> {
     let mut worker_panic_message = None;
     while let Some(completion) = spawner.try_recv_completion() {
@@ -45,6 +46,7 @@ pub(crate) fn move_worker_action<S: BackgroundSpawner<Output = UsecaseOutput>>(
                     dispatcher.borrow_mut().dispatch(action);
                 }
                 requests.extend(output.requests);
+                events.extend(output.events);
             }
             BackgroundCompletion::Panicked { message } => {
                 // Storeへ通常のActionとして流さず、runnerへ返してプロセスの異常終了を判断させる。
@@ -59,8 +61,9 @@ pub(crate) fn consume_editor_worker_actions<S: BackgroundSpawner<Output = Usecas
     spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
     requests: &mut VecDeque<UsecaseRequest>,
+    events: &mut Vec<UsecaseEvent>,
 ) -> Option<String> {
-    let worker_panic_message = move_worker_action(spawner, dispatcher.clone(), requests);
+    let worker_panic_message = move_worker_action(spawner, dispatcher.clone(), requests, events);
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
@@ -76,6 +79,20 @@ pub(crate) fn update(
         dispatcher.borrow_mut().consume_action();
         app_component.update(dispatcher.clone(), dispatcher.borrow().store(), area);
     }
+}
+
+/// `events`を受理順に`AppComponent`へ渡し、イベントで変わったComponentへStoreを反映する。
+pub(crate) fn deliver_usecase_events(
+    events: &mut Vec<UsecaseEvent>,
+    app_component: &mut AppComponent,
+    dispatcher: Rc<RefCell<Dispatcher>>,
+    area: Rect,
+) {
+    if events.is_empty() {
+        return;
+    }
+    app_component.handle_usecase_events(std::mem::take(events));
+    app_component.update(dispatcher.clone(), dispatcher.borrow().store(), area);
 }
 
 pub(crate) fn draw(

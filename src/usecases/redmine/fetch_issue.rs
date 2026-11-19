@@ -61,6 +61,7 @@ where
                         children: fetched.children,
                     }],
                     requests,
+                    events: Vec::new(),
                 };
             }
             // 応答IDの不一致はサーバー側の外部データ異常のため、Storeでpanicさせず取得失敗にする。

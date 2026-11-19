@@ -1,4 +1,5 @@
 use crate::stores::Store;
+use crate::usecases::UsecaseFailure;
 use crate::widgets::ToastWidget;
 
 const TOAST_VISIBLE_FOR: chrono::Duration = chrono::Duration::seconds(5);
@@ -15,7 +16,23 @@ pub struct ToastListComponent {
 }
 
 impl ToastListComponent {
-    pub fn push(&mut self, message: String) {
+    pub fn push_failure(&mut self, failure: &UsecaseFailure) {
+        let message = match failure {
+            UsecaseFailure::IssueUpload { id, reason } => {
+                format!("Issue #{id}の保存に失敗しました: {reason}")
+            }
+            UsecaseFailure::IssueUploadConfirm { id, reason } => {
+                format!("Issue #{id}を保存しましたが、確認の取得に失敗しました: {reason}")
+            }
+        };
+        self.push(message);
+    }
+
+    pub fn push_editor_failure(&mut self, error: &dyn std::fmt::Display) {
+        self.push(format!("エディタによる編集に失敗しました: {error}"));
+    }
+
+    fn push(&mut self, message: String) {
         self.toasts.push(Toast {
             message,
             elapsed: chrono::Duration::zero(),
@@ -48,6 +65,8 @@ impl ToastListComponent {
 mod tests {
     use super::*;
     use crate::stores::{Action, NoticeAction, NoticeId};
+    use crate::test_support::render_snapshot;
+    use crate::vos::IssueId;
 
     fn messages(toast_list: &ToastListComponent) -> Vec<String> {
         toast_list.create_widget(&Store::new()).messages
@@ -100,5 +119,39 @@ mod tests {
         let widget = toast_list.create_widget(&store);
 
         assert_eq!(widget.messages, ["store", "component"]);
+    }
+
+    fn render_toast_snapshot(name: &str, toast_list: &ToastListComponent) {
+        render_snapshot(name, 60, 12, toast_list.create_widget(&Store::new()));
+    }
+
+    #[test]
+    fn snapshot_issue_upload_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::IssueUpload {
+            id: IssueId::new(3),
+            reason: "network error: offline".to_string(),
+        });
+
+        render_toast_snapshot("toast_list_issue_upload_failure", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_issue_upload_confirm_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::IssueUploadConfirm {
+            id: IssueId::new(3),
+            reason: "network error: offline".to_string(),
+        });
+
+        render_toast_snapshot("toast_list_issue_upload_confirm_failure", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_editor_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_editor_failure(&"editor exited with status 1");
+
+        render_toast_snapshot("toast_list_editor_failure", &toast_list);
     }
 }
