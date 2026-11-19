@@ -1,0 +1,87 @@
+name: Mutation testing
+
+on:
+  schedule:
+    # 毎週月曜 03:00 JST
+    - cron: "0 18 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@v23
+      # missed(2)とtimeout(3)は結果として集計するため、job自体は成功させる。
+      # unmutatedのtestが失敗する場合(4)は、全mutantがcaughtになるためjobを失敗させる。
+      - run: |
+          status=0
+          nix develop -c cargo mutants -j 2 --shard ${{ matrix.shard }}/8 || status=$?
+          case "$status" in
+            0 | 2 | 3) ;;
+            *) exit "$status" ;;
+          esac
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mutants-shard-${{ matrix.shard }}
+          path: mutants.out
+          retention-days: 7
+
+  report:
+    needs: mutants
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # 前回runのartifactを取得する。
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: mutants-shard-*
+          path: shards
+      - run: |
+          mkdir mutants-result
+          for outcome in caught missed timeout unviable; do
+            cat shards/*/"$outcome".txt > "mutants-result/$outcome.txt"
+          done
+      - name: Download previous result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          run_id=$(gh run list --workflow mutants.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$run_id" ]; then
+            gh run download "$run_id" --name mutants-result --dir previous || true
+          fi
+      # nix developのshellHookがstdoutへ出力するため、reportはshell内でfileへ書き出す。
+      - run: |
+          previous_args=""
+          if [ -f previous/missed.txt ]; then
+            previous_args="--previous previous"
+          fi
+          nix develop -c sh -c "cargo xtask mutants-report mutants-result $previous_args > mutants-result/report.md"
+          cat mutants-result/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mutants-result
+          path: mutants-result
+          retention-days: 90
+      # 一部のshardが失敗した結果を、次回の比較対象にしない。
+      - if: needs.mutants.result != 'success'
+        run: exit 1

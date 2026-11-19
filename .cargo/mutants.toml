@@ -1,0 +1,7 @@
+# web-demo専用moduleはdefault featuresでcompileされず、変更が常にmissedになるため対象外にする。
+exclude_globs = [
+    "src/entry/web.rs",
+    "src/platform/*/web.rs",
+    "src/platform/host/web/**",
+    "src/platform/runtime/web_spawner.rs",
+]

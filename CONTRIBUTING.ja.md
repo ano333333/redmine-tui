@@ -16,7 +16,7 @@
 nix develop
 ```
 
-開発シェルには Rust、Cargo、Clippy、`cargo-insta`、LLVM coverage ツール、Trunk、actionlint が含まれます。
+開発シェルには Rust、Cargo、Clippy、`cargo-insta`、LLVM coverage ツール、`cargo-mutants`、Trunk、actionlint が含まれます。
 
 ## ローカル Redmine
 
@@ -111,6 +111,27 @@ cargo xtask coverage
 ```
 
 HTML レポートは `target/llvm-cov-target/llvm-cov/html` に出力されます。引数は `cargo llvm-cov report` にそのまま渡します（例: `cargo xtask coverage --summary-only`）。E2E のアプリはシグナルで終了するため、LLVM の continuous mode で計測します。
+
+### ミューテーションテスト
+
+`cargo-mutants` は、コードに小さな変更を加えたときに単体テストが失敗するかを確認します。全体の実行には時間がかかるため、変更したファイルに絞って実行します。
+
+```sh
+cargo mutants -j 4 --file src/stores/issue_journals.rs
+```
+
+結果は `mutants.out/` に出力されます。どのテストにも検出されなかった変更は `missed.txt` に記録されます。
+
+結果の集計と前回結果との比較には `cargo xtask mutants-report` を使います。mutant は行番号を除いたファイルと変更内容で照合します。
+
+```sh
+# 初回は --previous を省略します。
+cargo xtask mutants-report mutants.out
+# 2回目以降は、cargo-mutants が移動した前回結果を指定します。
+cargo xtask mutants-report mutants.out --previous mutants.out.old
+```
+
+`Mutation testing` workflow は毎週全 mutant を実行し、前回結果と比較したレポートを job summary に出力します。
 
 ### Web build とデモ
 

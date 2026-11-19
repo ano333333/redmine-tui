@@ -1,3 +1,4 @@
 # rust built target
 target
 dist/
+mutants.out*/

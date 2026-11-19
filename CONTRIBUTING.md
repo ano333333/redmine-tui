@@ -16,7 +16,7 @@ Enter the provided development shell with:
 nix develop
 ```
 
-It provides Rust, Cargo, Clippy, `cargo-insta`, LLVM coverage tools, Trunk, and actionlint.
+It provides Rust, Cargo, Clippy, `cargo-insta`, LLVM coverage tools, `cargo-mutants`, Trunk, and actionlint.
 
 ## Local Redmine
 
@@ -111,6 +111,27 @@ cargo xtask coverage
 ```
 
 The HTML report is written to `target/llvm-cov-target/llvm-cov/html`. Arguments are passed through to `cargo llvm-cov report` (for example, `cargo xtask coverage --summary-only`). Because the E2E app is terminated by a signal, coverage is collected in LLVM continuous mode.
+
+### Mutation testing
+
+`cargo-mutants` checks whether unit tests detect small changes to the code. A full run takes a long time, so narrow it to the files you changed:
+
+```sh
+cargo mutants -j 4 --file src/stores/issue_journals.rs
+```
+
+Results are written to `mutants.out/`. `missed.txt` lists mutants that no test caught.
+
+To summarize a result and compare it with a previous run, use `cargo xtask mutants-report`. Mutants are matched by file and change, ignoring line numbers:
+
+```sh
+# First run: omit --previous.
+cargo xtask mutants-report mutants.out
+# Later runs: cargo-mutants moves the previous result to mutants.out.old.
+cargo xtask mutants-report mutants.out --previous mutants.out.old
+```
+
+The `Mutation testing` workflow runs all mutants weekly and writes this report, compared with the previous run, to the job summary.
 
 ### Web build and demo
 
