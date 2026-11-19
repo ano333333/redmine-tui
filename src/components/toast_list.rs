@@ -62,6 +62,12 @@ impl ToastListComponent {
         self.push(format!("エディタによる編集に失敗しました: {error}"));
     }
 
+    pub fn push_image_display_unavailable(&mut self, reason: &str) {
+        self.push(format!(
+            "terminalのピクセル単位の大きさを取得できないため、画像を表示しません: {reason}"
+        ));
+    }
+
     fn push(&mut self, message: String) {
         self.toasts.push(Toast {
             message,
@@ -302,5 +308,13 @@ mod tests {
         });
 
         render_toast_snapshot("toast_list_attachment_attach_confirm_failure", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_image_display_unavailable() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_image_display_unavailable("terminal size is zero");
+
+        render_toast_snapshot("toast_list_image_display_unavailable", &toast_list);
     }
 }

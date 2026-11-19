@@ -867,6 +867,10 @@ impl<'a> AppComponent<'a> {
         }
     }
 
+    pub fn notify_image_display_unavailable(&mut self, reason: &str) {
+        self.toast_list.push_image_display_unavailable(reason);
+    }
+
     /// editorの失敗を通知し、editor contextを解放する。
     pub fn handle_editor_failure(&mut self, error: &dyn std::fmt::Display) {
         self.handle_editor_response(EditorOutcome::Failed);

@@ -40,6 +40,7 @@ pub(crate) async fn run<H, E, S, C, F>(
     spawner: &S,
     clients: UsecaseClients<C, F>,
     dispatcher: Rc<RefCell<Dispatcher>>,
+    image_display_unavailable_reason: Option<String>,
 ) -> Result<(), RunError>
 where
     H: PlatformHost,
@@ -54,6 +55,9 @@ where
     let mut sink = RequestSink::default();
     let mut app_component =
         AppComponent::new(dispatcher.clone(), None, host.cursor_rendering(), &mut sink);
+    if let Some(reason) = image_display_unavailable_reason {
+        app_component.notify_image_display_unavailable(&reason);
+    }
     // 初期表示に必要な取得を、最初の描画と入力より前に始める。
     handle_component_requests(
         &mut sink,

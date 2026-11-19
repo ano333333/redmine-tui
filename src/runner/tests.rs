@@ -1434,6 +1434,7 @@ async fn run_accepts_completion_actions_then_ticks_updates_draws_and_reads_input
         &spawner,
         usecase_clients(Arc::new(FailingClient)),
         dispatcher,
+        None,
     )
     .await;
 
@@ -1484,6 +1485,7 @@ async fn run_starts_completion_requests_after_consuming_the_completion_actions()
         &spawner,
         usecase_clients(Arc::new(FailingClient)),
         dispatcher.clone(),
+        None,
     )
     .await;
 
@@ -1607,6 +1609,7 @@ async fn run_shows_completion_events_in_acceptance_order_without_expiring_them_i
         &spawner,
         usecase_clients(Arc::new(FailingClient)),
         dispatcher,
+        None,
     )
     .await;
 
@@ -1641,6 +1644,7 @@ async fn run_starts_startup_and_input_requests_before_drawing() {
         &spawner,
         usecase_clients(Arc::new(FailingClient)),
         dispatcher,
+        None,
     )
     .await;
 
