@@ -35,4 +35,13 @@ pub enum UsecaseFailure {
         issue_id: IssueId,
         reason: String,
     },
+    DeletedJournalUpload {
+        original_id: JournalId,
+        reason: String,
+    },
+    /// PUTは成功し、確認の取得だけが失敗した。
+    DeletedJournalUploadConfirm {
+        original_id: JournalId,
+        reason: String,
+    },
 }

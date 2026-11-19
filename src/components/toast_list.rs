@@ -36,6 +36,12 @@ impl ToastListComponent {
             UsecaseFailure::LocalJournalUploadConfirm { reason, .. } => {
                 format!("Local Journalを保存しましたが、確認の取得に失敗しました: {reason}")
             }
+            UsecaseFailure::DeletedJournalUpload { reason, .. } => {
+                format!("削除されたJournalの投稿に失敗しました: {reason}")
+            }
+            UsecaseFailure::DeletedJournalUploadConfirm { reason, .. } => {
+                format!("削除されたJournalを投稿しましたが、確認の取得に失敗しました: {reason}")
+            }
         };
         self.push(message);
     }
@@ -213,6 +219,31 @@ mod tests {
 
         render_toast_snapshot(
             "toast_list_local_journal_upload_confirm_failure",
+            &toast_list,
+        );
+    }
+
+    #[test]
+    fn snapshot_deleted_journal_upload_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::DeletedJournalUpload {
+            original_id: JournalId::new(3),
+            reason: "network error: offline".to_string(),
+        });
+
+        render_toast_snapshot("toast_list_deleted_journal_upload_failure", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_deleted_journal_upload_confirm_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::DeletedJournalUploadConfirm {
+            original_id: JournalId::new(3),
+            reason: "network error: offline".to_string(),
+        });
+
+        render_toast_snapshot(
+            "toast_list_deleted_journal_upload_confirm_failure",
             &toast_list,
         );
     }

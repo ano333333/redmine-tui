@@ -4,10 +4,8 @@ use std::sync::Arc;
 
 use super::attachment_image_requests;
 use crate::clients::redmine::RedmineClient;
-use crate::stores::{
-    DeletedJournalState, Dispatcher, IssueState, JournalAction, NoticeAction, NoticeId,
-};
-use crate::usecases::{UsecaseOutput, UsecaseTask};
+use crate::stores::{DeletedJournalState, Dispatcher, IssueState, JournalAction};
+use crate::usecases::{UsecaseEvent, UsecaseFailure, UsecaseOutput, UsecaseTask};
 use crate::vos::{EntityIdValue, IssueId, JournalId};
 
 /// 取得結果から消えて退避したJournalを、新規Journalとして投稿し始める。
@@ -75,20 +73,23 @@ where
 {
     if let Err(error) = client.update_issue_notes(issue_id, &notes).await {
         let message = error.to_string();
-        return vec![
-            NoticeAction::Push {
-                id: NoticeId::new(),
-                message: format!("削除されたJournalの投稿に失敗しました: {message}"),
-            }
-            .into(),
-            JournalAction::FailDeletedUpload {
-                issue_id,
-                original_id,
-                message,
-            }
-            .into(),
-        ]
-        .into();
+        return UsecaseOutput {
+            actions: vec![
+                JournalAction::FailDeletedUpload {
+                    issue_id,
+                    original_id,
+                    message: message.clone(),
+                }
+                .into(),
+            ],
+            requests: Vec::new(),
+            events: vec![UsecaseEvent::Failure(
+                UsecaseFailure::DeletedJournalUpload {
+                    original_id,
+                    reason: message,
+                },
+            )],
+        };
     }
     let reason = match client.get_issue(issue_id).await {
         Ok(fetched) if fetched.aggregate.issue.id == issue_id => {
@@ -115,26 +116,27 @@ where
         Err(error) => error.to_string(),
     };
     // notesは投稿済みのため、退避データを削除して再試行による二重投稿を防ぐ。
-    vec![
-        NoticeAction::Push {
-            id: NoticeId::new(),
-            message: format!(
-                "削除されたJournalを投稿しましたが、確認の取得に失敗しました: {reason}"
-            ),
-        }
-        .into(),
-        JournalAction::CompleteDeletedUploadWithoutFetch {
-            issue_id,
-            original_id,
-        }
-        .into(),
-    ]
-    .into()
+    UsecaseOutput {
+        actions: vec![
+            JournalAction::CompleteDeletedUploadWithoutFetch {
+                issue_id,
+                original_id,
+            }
+            .into(),
+        ],
+        requests: Vec::new(),
+        events: vec![UsecaseEvent::Failure(
+            UsecaseFailure::DeletedJournalUploadConfirm {
+                original_id,
+                reason,
+            },
+        )],
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::test_support::{RedmineClientStub, complete_usecase};
+    use crate::test_support::RedmineClientStub;
     use std::sync::Mutex;
 
     use crate::clients::redmine::RedmineClientError;
@@ -283,11 +285,11 @@ mod tests {
     async fn upload_and_apply(
         dispatcher: &Rc<RefCell<Dispatcher>>,
         client: Arc<StubClient>,
-    ) -> Vec<Action> {
+    ) -> UsecaseOutput {
         let future =
             start_deleted_journal_upload(dispatcher.clone(), client, ISSUE_ID, ORIGINAL_ID);
         dispatcher.borrow_mut().consume_action();
-        complete_usecase(future).await
+        future.expect("usecase should start").await
     }
 
     fn apply(dispatcher: &Rc<RefCell<Dispatcher>>, actions: Vec<Action>) {
@@ -352,8 +354,8 @@ mod tests {
             "deleted notes",
         )]));
 
-        let actions = upload_and_apply(&dispatcher, client.clone()).await;
-        apply(&dispatcher, actions);
+        let output = upload_and_apply(&dispatcher, client.clone()).await;
+        apply(&dispatcher, output.actions);
 
         assert_eq!(
             *client.request.lock().unwrap(),
@@ -371,8 +373,8 @@ mod tests {
         let dispatcher = deleted_dispatcher();
         let client = Arc::new(StubClient::fails());
 
-        let actions = upload_and_apply(&dispatcher, client.clone()).await;
-        apply(&dispatcher, actions);
+        let output = upload_and_apply(&dispatcher, client.clone()).await;
+        apply(&dispatcher, output.actions);
 
         assert!(client.get_requests.lock().unwrap().is_empty());
         let dispatcher = dispatcher.borrow();
@@ -389,8 +391,13 @@ mod tests {
             }
         );
         assert_eq!(
-            dispatcher.store().get_notices()[0].message,
-            "削除されたJournalの投稿に失敗しました: network error: offline"
+            output.events,
+            [UsecaseEvent::Failure(
+                UsecaseFailure::DeletedJournalUpload {
+                    original_id: ORIGINAL_ID,
+                    reason: "network error: offline".to_string(),
+                }
+            )]
         );
     }
 
@@ -399,14 +406,19 @@ mod tests {
         let dispatcher = deleted_dispatcher();
         let client = Arc::new(StubClient::fails_to_get());
 
-        let actions = upload_and_apply(&dispatcher, client).await;
-        apply(&dispatcher, actions);
+        let output = upload_and_apply(&dispatcher, client).await;
+        apply(&dispatcher, output.actions);
 
         let dispatcher = dispatcher.borrow();
         assert!(dispatcher.store().get_deleted_journals(ISSUE_ID).is_empty());
         assert_eq!(
-            dispatcher.store().get_notices()[0].message,
-            "削除されたJournalを投稿しましたが、確認の取得に失敗しました: network error: offline"
+            output.events,
+            [UsecaseEvent::Failure(
+                UsecaseFailure::DeletedJournalUploadConfirm {
+                    original_id: ORIGINAL_ID,
+                    reason: "network error: offline".to_string(),
+                }
+            )]
         );
     }
 
@@ -415,14 +427,19 @@ mod tests {
         let dispatcher = deleted_dispatcher();
         let client = Arc::new(StubClient::succeeds_with_fetched_issue_id(99, vec![]));
 
-        let actions = upload_and_apply(&dispatcher, client).await;
-        apply(&dispatcher, actions);
+        let output = upload_and_apply(&dispatcher, client).await;
+        apply(&dispatcher, output.actions);
 
         let dispatcher = dispatcher.borrow();
         assert!(dispatcher.store().get_deleted_journals(ISSUE_ID).is_empty());
         assert_eq!(
-            dispatcher.store().get_notices()[0].message,
-            "削除されたJournalを投稿しましたが、確認の取得に失敗しました: requested issue 1 but Redmine returned issue 99"
+            output.events,
+            [UsecaseEvent::Failure(
+                UsecaseFailure::DeletedJournalUploadConfirm {
+                    original_id: ORIGINAL_ID,
+                    reason: "requested issue 1 but Redmine returned issue 99".to_string(),
+                }
+            )]
         );
     }
 
