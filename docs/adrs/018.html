@@ -145,7 +145,7 @@
       <main>
         <h1>18. Usecaseイベントの通知とtoastのComponent化</h1>
         <h2 id="status">Status</h2>
-        <p>Proposed</p>
+        <p>Accepted</p>
         <h2 id="context">Context</h2>
         <p>
           Usecaseの結果をComponentへ伝える経路は、Storeの状態だけである。Usecaseは完了Actionを返し、runnerがそれをStoreへ適用する。ComponentはupdateでStoreを読み、状態の変化を見つけて表示を変える。
@@ -237,9 +237,12 @@
             イベントはStoreの状態を変えない。再試行に必要な失敗状態など、後から読み直す情報は、これまでどおり完了ActionでStoreに置く。同じ失敗から、Storeの失敗状態を表すActionと、通知のためのイベントを両方返してよい。
           </li>
           <li>
-            イベントは起きたことを表し、表示の文言は持たない。文言は受け取ったComponentが組み立てる。たとえばIssue保存の失敗は<code
-              >IssueUploadFailed { id, message }</code
-            >のように表す。<code>message</code>はClientのエラーなど外部由来の説明であり、通知の文言ではない。
+            イベントは何が起きたかで種類を分ける。失敗は<code>UsecaseEvent::Failure(UsecaseFailure)</code>にまとめ、Issue保存の失敗は<code
+              >UsecaseFailure::IssueUpload { id, reason }</code
+            >のように表す。
+          </li>
+          <li>
+            イベントは表示の文言を持たない。<code>reason</code>はClientのエラーなど外部由来の説明であり、通知の文言ではない。
           </li>
         </ul>
         <h3>runnerはイベントを<code>AppComponent</code>へ渡す</h3>
@@ -247,7 +250,7 @@
           受け取るのは<code>AppComponent</code>だけとする。購読者を登録する仕組みは作らず、runnerが<code>AppComponent</code>のメソッドを直接呼ぶ。
         </p>
         <pre><code>impl AppComponent {
-    pub fn handle_usecase_events(&amp;mut self, events: Vec&lt;UsecaseEvent&gt;, store: &amp;Store);
+    pub fn handle_usecase_events(&amp;mut self, events: Vec&lt;UsecaseEvent&gt;);
 }</code></pre>
         <ul>
           <li>
@@ -256,9 +259,9 @@
           </li>
           <li>
             <code>handle_usecase_events</code
-            >は<code>RequestSink</code>も<code>Dispatcher</code>も受け取らない。イベントを受けてできるのは、Componentの生成・破棄・内部状態の変更だけである。Storeは読み取りだけに使う。たとえば新規作成の完了では、<code
+            >は<code>RequestSink</code>も<code>Dispatcher</code>も受け取らない。イベントを受けてできるのは、Componentの生成・破棄・内部状態の変更だけである。今はStoreも受け取らない。Issueの新規作成の完了で<code
               >IssueComponent::new(store, id)</code
-            >を作るためにStoreを読む。
+            >を作るときなど、Storeを読む必要が出たら読み取り専用で渡す。
           </li>
         </ul>
         <p>runnerはcompletionの処理を次の順にする。</p>
@@ -271,7 +274,7 @@ loop:
   move_worker_action()
   app_component.tick(elapsed)
   update()                                        // Actionを1件ずつ消費し、そのたびにupdateする
-  app_component.handle_usecase_events(event queueを全部, store)
+  app_component.handle_usecase_events(event queueを全部)
   app_component.update(store)
   drain_requests()
   draw()</code></pre>
@@ -298,7 +301,7 @@ loop:
         <ul>
           <li>
             <code>AppComponent</code
-            >は通知にあたるイベントを受け取ると、toastを作る。
+            >は<code>UsecaseEvent::Failure</code>を<code>ToastListComponent</code>に渡す。<code>ToastListComponent</code>が失敗の種類ごとに文言を組み立て、toastを作る。
           </li>
           <li>
             runnerは毎周、表示経過時間を<code>AppComponent::tick(elapsed)</code>で渡す。これは今の<code>Dispatcher::update_store(tick)</code>を置き換える。toastは<code>Instant</code>を持たない。
@@ -325,22 +328,23 @@ loop:
         <ul>
           <li>
             runner:
-            外部editorの失敗は、runnerが<code>AppComponent</code>に失敗の説明を渡し、<code>AppComponent</code>がtoastを作る。今もeditorの失敗時は<code>handle_editor_response</code>を呼んでいるため、その経路で説明を渡す。
+            外部editorの失敗は、runnerが<code>AppComponent::handle_editor_failure</code>に失敗の説明を渡す。<code>AppComponent</code>はeditor
+            contextを解放し、<code>ToastListComponent</code>にtoastを作らせる。
           </li>
           <li>
             起動処理:
-            画像を表示しない理由は、entryがrunnerに渡し、runnerが<code>AppComponent</code>の生成直後に渡す。
+            画像を表示しない理由は、entryが<code>run</code>の引数で渡し、runnerが<code>AppComponent</code>の生成直後に<code>notify_image_display_unavailable</code>で渡す。
           </li>
           <li>
             Component:
-            子Componentは<code>process_event</code>の結果として<code>AppComponent</code>へ返し、<code>AppComponent</code>がtoastを作る。
+            子Issueから計算される属性を編集しようとしたことは、属性のComponentが<code>process_event</code>の結果<code>ComputedPropertyNotEditable</code>として返し、<code>AppComponent</code>まで伝える。
           </li>
         </ul>
         <h3>本ADRで移行する範囲</h3>
         <ul>
           <li>
             <code>NoticeAction::Push</code
-            >を発しているUsecaseを、<code>UsecaseEvent</code>を返す形に移す。文言の組み立ては<code>AppComponent</code>側に移す。
+            >を発しているUsecaseを、<code>UsecaseEvent</code>を返す形に移す。文言の組み立ては<code>ToastListComponent</code>に移す。
           </li>
           <li>
             <code>NoticeStore</code
@@ -372,7 +376,10 @@ loop:
           toastを表示経過時間で破棄する処理をComponentに移すと、Storeは適用したActionだけで決まる。<code>AppComponent::tick</code>に経過時間を渡せば、Componentのテストでも時間を固定できる。
         </p>
         <p>
-          イベントが文言を持たないので、通知の文言を組み立てる処理はUsecaseから<code>AppComponent</code>に移る。これにより、<code>upload_issue.rs</code>のFIXMEが指摘する負債が解消する。
+          イベントが文言を持たないので、通知の文言を組み立てる処理はUsecaseから<code>ToastListComponent</code>に移る。これにより、<code>upload_issue.rs</code>のFIXMEが指摘する負債が解消する。文言を<code>ToastListComponent</code>に置くのは、表示する情報の保持とWidgetの生成までを各Componentが担う構成に合わせるためである。
+        </p>
+        <p>
+          失敗を<code>UsecaseFailure</code>にまとめると、<code>ToastListComponent</code>は失敗の種類だけを漏れなくmatchできる。<code>AppComponent</code>は上の層でイベントの種類ごとに渡す先を決める。失敗以外のイベントを足しても、どちらのmatchも網羅性をコンパイラが確かめる。種類は受け取り手ではなく起きたことで分けるので、Usecaseは受け取り手を知らないままである。
         </p>
         <h2 id="consequences">Consequences</h2>
         <ul>
@@ -403,7 +410,7 @@ loop:
             >を組み立てる箇所に<code>events</code>が必要になる。<code>From&lt;Vec&lt;Action&gt;&gt;</code>は<code>events</code>を空にする。
           </li>
           <li>
-            通知を返すUsecaseのテストは、<code>Action::Notice</code>ではなく<code>UsecaseEvent</code>を検査する形に変わる。runnerのテストのうち、Storeのnoticeを観測しているものは、<code>AppComponent</code>のtoastを観測する形に変わる。<code>notice_store_tests.rs</code>はtoastのテストに置き換える。
+            通知を返すUsecaseのテストは、<code>Action::Notice</code>ではなく<code>UsecaseEvent</code>を検査する形に変わる。通知の文言は<code>ToastListComponent</code>のsnapshotで、<code>AppComponent</code>と<code>ToastListComponent</code>の結合はE2Eで確かめる。<code>notice_store_tests.rs</code>は<code>ToastListComponent</code>のテストに置き換える。
           </li>
           <li>
             表示から外れた対象についてのイベントは、<code>AppComponent</code>が無視する。新規作成中に別のIssueを開いた場合の完了イベントがこれにあたる。
@@ -446,6 +453,15 @@ loop:
             汎用の<code>Notice { message }</code
             >イベントにして、文言はUsecaseが組み立てる:
             移行は機械的になるが、Usecaseが表示の文言を組み立てる負債が残るため、採用しない。
+          </li>
+          <li>
+            toastにするかどうかでイベントの種類を分ける:
+            Usecaseが受け取り手を知ることになるため、採用しない。
+          </li>
+          <li>
+            文言を<code>AppComponent</code>が組み立てる:
+            <code>AppComponent</code
+            >がtoastの表示内容まで持つことになり、表示情報とWidgetの生成を各Componentが担う構成から外れるため、採用しない。
           </li>
           <li>
             toastが<code>Instant</code>を持ち、自分で期限を判定する:
