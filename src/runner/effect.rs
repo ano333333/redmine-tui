@@ -12,7 +12,7 @@ use crate::{
         host::{HostEvent, PlatformHost},
         runtime::{BackgroundSpawner, LocalTask},
     },
-    stores::{Dispatcher, NoticeAction, NoticeId},
+    stores::Dispatcher,
     usecases::{UsecaseClients, UsecaseOutput, UsecaseRequest, UsecaseTask, start_usecase},
 };
 
@@ -50,14 +50,7 @@ pub(crate) fn handle_component_requests<'a, S, C, F, E, H>(
         area,
     );
     if let Some(request) = sink.take_editor() {
-        open_editor(
-            request,
-            app_component,
-            dispatcher,
-            editor,
-            editor_session,
-            host,
-        );
+        open_editor(request, app_component, editor, editor_session, host);
     }
 }
 
@@ -108,7 +101,6 @@ where
 fn open_editor<'a, E, H>(
     request: EditorRequest,
     app_component: &mut AppComponent,
-    dispatcher: Rc<RefCell<Dispatcher>>,
     editor: &'a E,
     editor_session: &mut Option<EditorSession<'a>>,
     host: &mut H,
@@ -120,12 +112,7 @@ fn open_editor<'a, E, H>(
     // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
     // FIXME: 実terminalとexternal editor processを使い、アプリ終了時にterminal状態が復元されeditor processがkillされることをE2E testで確認する。
     if let Err(error) = host.suspend_for_editor() {
-        handle_editor_failure(
-            app_component,
-            dispatcher,
-            &error,
-            "failed to leave terminal for editor",
-        );
+        handle_editor_failure(app_component, &error, "failed to leave terminal for editor");
     } else {
         *editor_session = Some(LocalTask::new(editor.edit(request)));
     }
@@ -133,22 +120,11 @@ fn open_editor<'a, E, H>(
 
 pub(crate) fn handle_editor_failure(
     app_component: &mut AppComponent,
-    dispatcher: Rc<RefCell<Dispatcher>>,
     error: &dyn std::fmt::Display,
     message: &'static str,
 ) {
-    app_component.handle_editor_response(EditorOutcome::Failed);
     tracing::event!(target: module_path!(), tracing::Level::ERROR, error = %error, "{message}");
-    dispatcher
-        .borrow_mut()
-        .dispatch(editor_failure_notice_action(error));
-}
-
-pub(crate) fn editor_failure_notice_action(error: &dyn std::fmt::Display) -> NoticeAction {
-    NoticeAction::Push {
-        id: NoticeId::new(),
-        message: format!("エディタによる編集に失敗しました: {error}"),
-    }
+    app_component.handle_editor_failure(error);
 }
 
 /// `requests`を先頭から1件ずつ起動し、起動するたびにupdateする。

@@ -10,6 +10,7 @@ pub mod remote_journal_conflict_popup;
 pub mod request_sink;
 pub mod select_box_popup;
 pub mod spent_time_input_popup;
+pub mod toast_list;
 
 pub use app::AppComponent;
 pub use request_sink::RequestSink;

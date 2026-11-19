@@ -87,18 +87,12 @@ where
                 Ok(()) => match outcome {
                     Ok(outcome) => app_component.handle_editor_response(outcome),
                     Err(error) => {
-                        handle_editor_failure(
-                            &mut app_component,
-                            dispatcher.clone(),
-                            &error,
-                            "editor failed",
-                        );
+                        handle_editor_failure(&mut app_component, &error, "editor failed");
                     }
                 },
                 Err(error) => {
                     handle_editor_failure(
                         &mut app_component,
-                        dispatcher.clone(),
                         &error,
                         "failed to restore terminal after editor",
                     );
@@ -116,6 +110,7 @@ where
         let tick = tick_since(last_tick, now);
         last_tick = now;
         dispatcher.borrow_mut().update_store(tick);
+        app_component.tick(tick);
         update(dispatcher.clone(), &mut app_component, host.area());
         // 後続要求の起動条件はcompletionを反映した後のStoreで判定する。
         drain_requests(
