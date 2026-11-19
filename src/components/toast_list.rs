@@ -24,6 +24,12 @@ impl ToastListComponent {
             UsecaseFailure::IssueUploadConfirm { id, reason } => {
                 format!("Issue #{id}を保存しましたが、確認の取得に失敗しました: {reason}")
             }
+            UsecaseFailure::RemoteJournalUpload { reason, .. } => {
+                format!("Remote Journalの保存に失敗しました: {reason}")
+            }
+            UsecaseFailure::RemoteJournalUploadConfirm { journal_id, reason } => {
+                format!("Journal #{journal_id}を保存しましたが、確認の取得に失敗しました: {reason}")
+            }
         };
         self.push(message);
     }
@@ -66,7 +72,7 @@ mod tests {
     use super::*;
     use crate::stores::{Action, NoticeAction, NoticeId};
     use crate::test_support::render_snapshot;
-    use crate::vos::IssueId;
+    use crate::vos::{IssueId, JournalId};
 
     fn messages(toast_list: &ToastListComponent) -> Vec<String> {
         toast_list.create_widget(&Store::new()).messages
@@ -153,5 +159,30 @@ mod tests {
         toast_list.push_editor_failure(&"editor exited with status 1");
 
         render_toast_snapshot("toast_list_editor_failure", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_remote_journal_upload_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::RemoteJournalUpload {
+            journal_id: JournalId::new(10),
+            reason: "network error: offline".to_string(),
+        });
+
+        render_toast_snapshot("toast_list_remote_journal_upload_failure", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_remote_journal_upload_confirm_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::RemoteJournalUploadConfirm {
+            journal_id: JournalId::new(10),
+            reason: "network error: offline".to_string(),
+        });
+
+        render_toast_snapshot(
+            "toast_list_remote_journal_upload_confirm_failure",
+            &toast_list,
+        );
     }
 }

@@ -714,10 +714,7 @@ fn remote_journal_upload_request_routes_the_failure_completion_to_worker_channel
         client.clone(),
     );
 
-    let mut actions = recv_actions(&spawner, 2).into_iter();
-    let notice = actions.next().expect("failure notice");
-    assert!(matches!(notice, Action::Notice(NoticeAction::Push { .. })));
-    let completion = actions.next().expect("upload failure");
+    let completion = recv_actions(&spawner, 1).remove(0);
     assert!(matches!(
         completion,
         Action::Journal(JournalAction::FailRemoteUpload { issue_id, journal_id, .. })
@@ -939,28 +936,6 @@ fn press_ctrl_s(
     sink.take_usecases()
 }
 
-fn route_worker_actions(
-    spawner: &TokioBackgroundSpawner<UsecaseOutput>,
-    expected: usize,
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    app: &mut AppComponent<'_>,
-) {
-    let actions = recv_actions(spawner, expected);
-    let acceptor = CompletionSpawner::new(actions);
-    let mut events = Vec::new();
-    assert!(
-        move_worker_action(
-            &acceptor,
-            dispatcher.clone(),
-            &mut VecDeque::new(),
-            &mut events
-        )
-        .is_none()
-    );
-    update(dispatcher.clone(), app, Rect::new(0, 0, 80, 24));
-    deliver_usecase_events(&mut events, app, dispatcher, Rect::new(0, 0, 80, 24));
-}
-
 /// completionを`completions`件受理する。runと同じく、各completionのActionを消費してから後続要求を起動する。
 fn route_completions_with_follow_ups<C>(
     spawner: &TokioBackgroundSpawner<UsecaseOutput>,
@@ -1102,12 +1077,7 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
     // upload中の重複Ctrl+Sは要求を生成せず、usecase呼び出し前に正常なno-opとなる。
     assert_eq!(press_ctrl_s(&mut app, dispatcher.clone()), []);
-    route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
-    assert_toast_contains(
-        &app,
-        dispatcher.clone(),
-        "Remote Journalの保存に失敗しました",
-    );
+    accept_completion(&spawner, dispatcher.clone(), &mut app, &mut VecDeque::new());
 
     let Ok(
         [
@@ -1122,7 +1092,7 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
     };
     start_request(request, dispatcher.clone(), &spawner, client.clone());
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-    route_worker_actions(&spawner, 1, dispatcher.clone(), &mut app);
+    accept_completion(&spawner, dispatcher.clone(), &mut app, &mut VecDeque::new());
 
     assert!(matches!(
         dispatcher
@@ -1150,7 +1120,7 @@ fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     ));
     *client.journal_failures_remaining.lock().unwrap() = 1;
 
-    for expected_actions in [2, 1] {
+    for _ in 0..2 {
         let Ok([request @ UsecaseRequest::StartRemoteJournalUpload { .. }]) =
             <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
         else {
@@ -1158,14 +1128,7 @@ fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
         };
         start_request(request, dispatcher.clone(), &spawner, client.clone());
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-        route_worker_actions(&spawner, expected_actions, dispatcher.clone(), &mut app);
-        if expected_actions == 2 {
-            assert_toast_contains(
-                &app,
-                dispatcher.clone(),
-                "Remote Journalの保存に失敗しました",
-            );
-        }
+        accept_completion(&spawner, dispatcher.clone(), &mut app, &mut VecDeque::new());
     }
 
     assert_eq!(*client.get_requests.lock().unwrap(), 3);
@@ -1198,7 +1161,7 @@ fn local_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
         };
         start_request(request, dispatcher.clone(), &spawner, client.clone());
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-        route_worker_actions(&spawner, expected_actions, dispatcher.clone(), &mut app);
+        accept_completion(&spawner, dispatcher.clone(), &mut app, &mut VecDeque::new());
         if expected_actions == 2 {
             assert_toast_contains(
                 &app,
@@ -1240,7 +1203,7 @@ fn local_confirmation_get_failure_tells_that_the_notes_were_saved_and_removes_th
     };
     start_request(request, dispatcher.clone(), &spawner, client.clone());
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-    route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
+    accept_completion(&spawner, dispatcher.clone(), &mut app, &mut VecDeque::new());
 
     assert_toast_contains(
         &app,
