@@ -9,7 +9,6 @@ use super::issue_store::{IssueAction, IssueFetchState, IssueState, IssueStore};
 use super::journal_state::{
     DeletedJournalEntry, LocalJournalEntry, RemoteJournalUploadConflict, RemoteJournalView,
 };
-use super::notice_store::{Notice, NoticeAction, NoticeStore};
 use super::project_issues_store::{
     ProjectIssuesAction, ProjectIssuesPageState, ProjectIssuesStore,
 };
@@ -45,10 +44,6 @@ impl Dispatcher {
     pub fn consume_actinos_len(&self) -> usize {
         self.actions.len()
     }
-    /// 時間経過に依存する全Storeへ、前回更新からの同じ経過時間を適用する。
-    pub fn update_store(&mut self, tick: chrono::Duration) {
-        self.store.update(tick);
-    }
     pub fn consume_action(&mut self) {
         if let Some(action) = self.actions.pop_front() {
             self.store.consume_action(action);
@@ -59,7 +54,6 @@ impl Dispatcher {
 pub struct Store {
     issue_store: IssueStore,
     project_issues_store: ProjectIssuesStore,
-    notice_store: NoticeStore,
     settings_store: SettingsStore,
     image_store: ImageStore,
     users: HashMap<UserId, User>,
@@ -77,7 +71,6 @@ impl Store {
         Self {
             issue_store: IssueStore::new(),
             project_issues_store: ProjectIssuesStore::new(),
-            notice_store: NoticeStore::new(),
             settings_store: SettingsStore::new(),
             image_store: ImageStore::new(),
             users: HashMap::new(),
@@ -102,7 +95,6 @@ impl Store {
             Action::ProjectIssues(action) => self.project_issues_store.consume_action(action),
             Action::Journal(action) => self.issue_store.consume_journal_action(action),
             Action::Attachment(action) => self.issue_store.consume_attachment_action(action),
-            Action::Notice(action) => self.notice_store.consume_action(action),
             Action::Settings(action) => self.settings_store.consume_action(action),
             Action::Image(action) => self.image_store.consume_action(action),
             Action::AttachmentImage(action) => self.consume_attachment_image_action(action),
@@ -409,11 +401,6 @@ impl Store {
         self.issue_store.try_get_issue_confirmation_failure(id)
     }
 
-    /// 表示中のnoticeを追加順で返す。
-    pub fn get_notices(&self) -> &[Notice] {
-        self.notice_store.notices()
-    }
-
     pub fn get_image_display(&self) -> &ImageDisplay {
         self.settings_store.image_display()
     }
@@ -470,13 +457,6 @@ impl Store {
             }
         }
     }
-
-    /// 前回更新からの経過時間を内部状態へ累積する。
-    ///
-    /// この更新で表示期限ちょうどに達したnoticeも破棄する。
-    pub fn update(&mut self, tick: chrono::Duration) {
-        self.notice_store.update(tick);
-    }
 }
 
 pub enum Action {
@@ -517,7 +497,6 @@ pub enum Action {
     },
     Journal(JournalAction),
     Attachment(AttachmentAction),
-    Notice(NoticeAction),
     Settings(SettingsAction),
     Image(ImageAction),
     AttachmentImage(AttachmentImageAction),
@@ -544,12 +523,6 @@ impl From<JournalAction> for Action {
 impl From<AttachmentAction> for Action {
     fn from(action: AttachmentAction) -> Self {
         Self::Attachment(action)
-    }
-}
-
-impl From<NoticeAction> for Action {
-    fn from(action: NoticeAction) -> Self {
-        Self::Notice(action)
     }
 }
 

@@ -30,7 +30,7 @@ use crate::entities::{
     Category, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
     TimeEntityActivity, Tracker, User,
 };
-use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId};
+use crate::stores::{IssueAction, JournalAction};
 use crate::test_support::{RedmineClientStub, sample_issue_aggregate, usecase_clients};
 use crate::vos::{self, IssueId, IssueStatusId, JournalId};
 
@@ -294,9 +294,8 @@ fn background_completion_panic_is_reported_by_the_main_loop_acceptor() {
     let spawner = CompletionSpawner::from_completions(vec![
         BackgroundCompletion::Succeeded(
             vec![
-                NoticeAction::Push {
-                    id: NoticeId::new(),
-                    message: "completed before panic".to_string(),
+                IssueAction::StartFetching {
+                    id: IssueId::new(2),
                 }
                 .into(),
             ]
@@ -316,44 +315,10 @@ fn background_completion_panic_is_reported_by_the_main_loop_acceptor() {
     assert_eq!(message.as_deref(), Some("worker panic marker"));
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
     dispatcher.borrow_mut().consume_action();
-    assert_eq!(dispatcher.borrow().store().get_notices().len(), 1);
-}
-
-#[test]
-fn update_store_removes_expired_notices() {
-    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    for _ in 0..2 {
-        dispatcher.borrow_mut().dispatch(NoticeAction::Push {
-            id: NoticeId::new(),
-            message: "failed".to_string(),
-        });
-    }
-    while dispatcher.borrow().consume_actinos_len() > 0 {
-        dispatcher.borrow_mut().consume_action();
-    }
-    assert_eq!(dispatcher.borrow().store().get_notices().len(), 2);
-
-    dispatcher
-        .borrow_mut()
-        .update_store(chrono::Duration::seconds(5));
-
-    assert!(dispatcher.borrow().store().get_notices().is_empty());
-}
-
-#[test]
-fn update_store_keeps_notices_within_the_visible_duration() {
-    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    dispatcher.borrow_mut().dispatch(NoticeAction::Push {
-        id: NoticeId::new(),
-        message: "fresh".to_string(),
-    });
-    dispatcher.borrow_mut().consume_action();
-
-    dispatcher
-        .borrow_mut()
-        .update_store(chrono::Duration::seconds(1));
-
-    assert_eq!(dispatcher.borrow().store().get_notices().len(), 1);
+    assert_eq!(
+        dispatcher.borrow().store().try_get_issue_fetch_state(2),
+        Some(stores::IssueFetchState::Fetching)
+    );
 }
 
 struct IssueUploadClient {
@@ -552,7 +517,7 @@ fn saved_journal_issue(issue_id: u32) -> IssueAggregate {
 }
 
 #[test]
-fn move_worker_action_dispatches_worker_actions_without_extra_notice() {
+fn move_worker_action_dispatches_a_remote_upload_failure() {
     let mut dispatcher = Dispatcher::new();
     start_edited_journal_upload(&mut dispatcher, 3, "first journal notes marker");
     dispatcher.dispatch(Action::Journal(JournalAction::StartRemoteUpload {
@@ -580,7 +545,6 @@ fn move_worker_action_dispatches_worker_actions_without_extra_notice() {
     }
     let dispatcher = dispatcher.borrow();
     let store = dispatcher.store();
-    assert!(store.get_notices().is_empty());
     match &store
         .get_remote_journal(IssueId::new(3), JournalId::new(1))
         .state
@@ -596,7 +560,7 @@ fn move_worker_action_dispatches_worker_actions_without_extra_notice() {
 }
 
 #[test]
-fn move_worker_action_dispatches_no_notice_for_complete_remote_upload() {
+fn move_worker_action_dispatches_a_completed_remote_upload() {
     let mut dispatcher = Dispatcher::new();
     start_edited_journal_upload(&mut dispatcher, 3, "first journal notes marker");
     dispatcher.dispatch(Action::Journal(JournalAction::StartRemoteUpload {
@@ -623,7 +587,6 @@ fn move_worker_action_dispatches_no_notice_for_complete_remote_upload() {
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
-    assert!(dispatcher.borrow().store().get_notices().is_empty());
     assert!(matches!(
         dispatcher
             .borrow()
@@ -638,9 +601,8 @@ fn move_worker_action_dispatches_no_notice_for_complete_remote_upload() {
 fn editor_worker_actions_are_consumed_without_component_updates() {
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
     let spawner = CompletionSpawner::new(vec![
-        NoticeAction::Push {
-            id: NoticeId::new(),
-            message: "completed while editing".to_string(),
+        IssueAction::StartFetching {
+            id: IssueId::new(2),
         }
         .into(),
     ]);
@@ -654,7 +616,10 @@ fn editor_worker_actions_are_consumed_without_component_updates() {
 
     assert!(panic_message.is_none());
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
-    assert_eq!(dispatcher.borrow().store().get_notices().len(), 1);
+    assert_eq!(
+        dispatcher.borrow().store().try_get_issue_fetch_state(2),
+        Some(stores::IssueFetchState::Fetching)
+    );
 }
 
 #[test]
@@ -1278,7 +1243,6 @@ impl TextEditor for RunnerEditor {
 }
 
 struct DrawRecord {
-    notices: Vec<String>,
     rendered: String,
     pending_actions: usize,
     loading_project_ids: Vec<u32>,
@@ -1290,7 +1254,6 @@ struct RunnerHost {
     times: RefCell<VecDeque<Duration>>,
     events: VecDeque<io::Result<Option<HostEvent>>>,
     draws: Vec<DrawRecord>,
-    input_observations: Vec<Vec<String>>,
     /// editorを起動した時点の、Issue 2の取得状態。
     issue_2_fetch_states_at_suspend: Vec<Option<stores::IssueFetchState>>,
 }
@@ -1303,19 +1266,8 @@ impl RunnerHost {
             times: RefCell::new(VecDeque::from([Duration::ZERO, Duration::ZERO])),
             events: VecDeque::new(),
             draws: Vec::new(),
-            input_observations: Vec::new(),
             issue_2_fetch_states_at_suspend: Vec::new(),
         }
-    }
-
-    fn messages(&self) -> Vec<String> {
-        self.dispatcher
-            .borrow()
-            .store()
-            .get_notices()
-            .iter()
-            .map(|notice| notice.message.clone())
-            .collect()
     }
 }
 
@@ -1361,7 +1313,6 @@ impl PlatformHost for RunnerHost {
         let pending_actions = dispatcher.consume_actinos_len();
         drop(dispatcher);
         self.draws.push(DrawRecord {
-            notices: self.messages(),
             rendered,
             pending_actions,
             loading_project_ids,
@@ -1370,7 +1321,6 @@ impl PlatformHost for RunnerHost {
     }
 
     async fn next_event(&mut self, _: Duration) -> io::Result<Option<HostEvent>> {
-        self.input_observations.push(self.messages());
         self.events.pop_front().expect("scripted event")
     }
 
@@ -1391,14 +1341,6 @@ impl PlatformHost for RunnerHost {
     }
 }
 
-fn runner_notice(message: &str) -> Action {
-    NoticeAction::Push {
-        id: NoticeId::new(),
-        message: message.to_string(),
-    }
-    .into()
-}
-
 fn quit_event() -> HostEvent {
     // 起動時のpopupが最初のqを閉じるため、終了するtestでは二回送る。
     HostEvent::Input(InputEvent::Key(KeyEvent::new(
@@ -1408,22 +1350,18 @@ fn quit_event() -> HostEvent {
 }
 
 #[tokio::test]
-async fn run_accepts_completion_actions_then_ticks_updates_draws_and_reads_input() {
+async fn run_accepts_completion_events_then_ticks_updates_draws_and_reads_input() {
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
     crate::test_support::dispatch_sample_masters(&mut dispatcher.borrow_mut());
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
-    dispatcher.borrow_mut().dispatch(runner_notice("expired"));
-    dispatcher.borrow_mut().consume_action();
     let spawner = CompletionSpawner::from_completions(vec![
-        BackgroundCompletion::Succeeded(
-            vec![runner_notice("first"), runner_notice("second")].into(),
-        ),
-        BackgroundCompletion::Succeeded(vec![runner_notice("third")].into()),
+        BackgroundCompletion::Succeeded(issue_upload_failed_output("first")),
+        BackgroundCompletion::Succeeded(issue_upload_failed_output("second")),
     ]);
     let mut host = RunnerHost::new(dispatcher.clone());
-    // 同じ周のcompletionはtick適用後にconsumeされるため、既存Noticeだけが期限切れになることを確かめる。
+    // 同じ周のcompletionのイベントはtickの後に渡されるため、起動時のtoastだけが期限切れになることを確かめる。
     host.times = RefCell::new(VecDeque::from([Duration::ZERO, Duration::from_secs(5)]));
     host.events.push_back(Ok(Some(quit_event())));
     host.events.push_back(Ok(Some(quit_event())));
@@ -1434,19 +1372,17 @@ async fn run_accepts_completion_actions_then_ticks_updates_draws_and_reads_input
         &spawner,
         usecase_clients(Arc::new(FailingClient)),
         dispatcher,
-        None,
+        Some("expired".to_string()),
     )
     .await;
 
     assert!(result.is_ok());
     assert_eq!(host.draws.len(), 2);
-    assert_eq!(host.draws[0].notices, ["first", "second", "third"]);
-    assert_eq!(
-        host.input_observations,
-        [["first", "second", "third"], ["first", "second", "third"]]
-    );
-    assert!(host.draws[0].rendered.contains("third"));
-    assert!(!host.draws[0].rendered.contains("expired"));
+    let rendered = &host.draws[0].rendered;
+    let first = rendered.find("first").expect("first toast is drawn");
+    let second = rendered.find("second").expect("second toast is drawn");
+    assert!(first < second, "rendered: {rendered}");
+    assert!(!rendered.contains("expired"), "rendered: {rendered}");
 }
 
 #[tokio::test]
@@ -1585,39 +1521,6 @@ fn issue_upload_failed_output(message: &str) -> UsecaseOutput {
             reason: message.to_string(),
         })],
     }
-}
-
-#[tokio::test]
-async fn run_shows_completion_events_in_acceptance_order_without_expiring_them_in_the_same_tick() {
-    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    crate::test_support::dispatch_sample_masters(&mut dispatcher.borrow_mut());
-    while dispatcher.borrow().consume_actinos_len() > 0 {
-        dispatcher.borrow_mut().consume_action();
-    }
-    let spawner = CompletionSpawner::from_completions(vec![
-        BackgroundCompletion::Succeeded(issue_upload_failed_output("first")),
-        BackgroundCompletion::Succeeded(issue_upload_failed_output("second")),
-    ]);
-    let mut host = RunnerHost::new(dispatcher.clone());
-    host.times = RefCell::new(VecDeque::from([Duration::ZERO, Duration::from_secs(5)]));
-    host.events.push_back(Ok(Some(quit_event())));
-    host.events.push_back(Ok(Some(quit_event())));
-
-    let result = super::run(
-        &mut host,
-        &RunnerEditor,
-        &spawner,
-        usecase_clients(Arc::new(FailingClient)),
-        dispatcher,
-        None,
-    )
-    .await;
-
-    assert!(result.is_ok());
-    let rendered = &host.draws[0].rendered;
-    let first = rendered.find("first").expect("first toast is drawn");
-    let second = rendered.find("second").expect("second toast is drawn");
-    assert!(first < second, "rendered: {rendered}");
 }
 
 #[tokio::test]

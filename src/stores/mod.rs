@@ -3,7 +3,6 @@ mod issue_attachments;
 mod issue_journals;
 mod issue_store;
 mod journal_state;
-mod notice_store;
 mod project_issues_store;
 mod settings_store;
 mod store;
@@ -25,8 +24,6 @@ pub use project_issues_store::{
 pub use settings_store::{ImageDisplay, SettingsAction};
 pub use store::{Action, Dispatcher, Store};
 pub use terminal_image::{PreparedImage, TerminalImageEncoder};
-// Journal保存などの失敗発生源が接続されるまで、Notice系の公開APIは主にテストから利用される。
-pub use notice_store::{Notice, NoticeAction, NoticeId};
 
 #[cfg(test)]
 mod image_store_tests;
@@ -37,8 +34,6 @@ mod issue_journals_tests;
 #[cfg(test)]
 mod issue_store_tests;
 #[cfg(test)]
-mod notice_store_tests;
-#[cfg(test)]
 mod project_issues_store_tests;
 #[cfg(test)]
 mod settings_store_tests;
@@ -46,8 +41,7 @@ mod settings_store_tests;
 #[cfg(test)]
 mod tests {
     use super::{
-        Action, Dispatcher, IssueAction, IssueState, JournalAction, NoticeId,
-        ProjectIssuesRequestId, Store,
+        Action, Dispatcher, IssueAction, IssueState, JournalAction, ProjectIssuesRequestId, Store,
     };
 
     #[test]
@@ -59,6 +53,5 @@ mod tests {
         let _: Option<IssueState> = None;
         let _: Option<JournalAction> = None;
         let _: Option<ProjectIssuesRequestId> = None;
-        let _: Option<NoticeId> = None;
     }
 }

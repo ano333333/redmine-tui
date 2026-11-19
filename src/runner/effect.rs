@@ -108,8 +108,8 @@ fn open_editor<'a, E, H>(
     E: TextEditor,
     H: PlatformHost,
 {
-    // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もNoticeが残ることをE2E testで確認する。
-    // FIXME: 実terminalとexternal editor processを使い、editor失敗時のnotice追加とfocus/cursor維持をE2E testで確認する。
+    // FIXME: 実terminalとexternal editor processを使い、editorの成否にかかわらず長時間滞在後もtoastが残ることをE2E testで確認する。
+    // FIXME: 実terminalとexternal editor processを使い、editor失敗時のtoast追加とfocus/cursor維持をE2E testで確認する。
     // FIXME: 実terminalとexternal editor processを使い、アプリ終了時にterminal状態が復元されeditor processがkillされることをE2E testで確認する。
     if let Err(error) = host.suspend_for_editor() {
         handle_editor_failure(app_component, &error, "failed to leave terminal for editor");

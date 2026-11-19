@@ -842,7 +842,7 @@ impl<'a> AppComponent<'a> {
         }
         self.render_popup_component(frame, area, store);
         // popupより後に描画して最前面へ重ねる。toastはfocusを持たずcursor位置も変えない。
-        frame.render_widget(self.toast_list.create_widget(store), area);
+        frame.render_widget(self.toast_list.create_widget(), area);
         if let Some(cursor_position) = self.cursor_position(store, area) {
             match self.cursor_rendering {
                 CursorRendering::Terminal => frame.set_cursor_position(cursor_position),

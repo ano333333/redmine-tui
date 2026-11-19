@@ -1,4 +1,3 @@
-use crate::stores::Store;
 use crate::usecases::UsecaseFailure;
 use crate::vos::IssueId;
 use crate::widgets::ToastWidget;
@@ -91,14 +90,11 @@ impl ToastListComponent {
             .retain(|toast| toast.elapsed < TOAST_VISIBLE_FOR);
     }
 
-    /// Storeのnoticeに続けて、このComponentのtoastを追加順に並べる。
-    pub fn create_widget(&self, store: &Store) -> ToastWidget {
+    pub fn create_widget(&self) -> ToastWidget {
         ToastWidget::new(
-            store
-                .get_notices()
+            self.toasts
                 .iter()
-                .map(|notice| notice.message.clone())
-                .chain(self.toasts.iter().map(|toast| toast.message.clone()))
+                .map(|toast| toast.message.clone())
                 .collect(),
         )
     }
@@ -107,12 +103,11 @@ impl ToastListComponent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stores::{Action, NoticeAction, NoticeId};
     use crate::test_support::render_snapshot;
     use crate::vos::JournalId;
 
     fn messages(toast_list: &ToastListComponent) -> Vec<String> {
-        toast_list.create_widget(&Store::new()).messages
+        toast_list.create_widget().messages
     }
 
     #[test]
@@ -149,23 +144,8 @@ mod tests {
         assert_eq!(messages(&toast_list), ["new"]);
     }
 
-    #[test]
-    fn create_widget_shows_toasts_after_store_notices() {
-        let mut store = Store::new();
-        store.consume_action(Action::Notice(NoticeAction::Push {
-            id: NoticeId::new(),
-            message: "store".to_string(),
-        }));
-        let mut toast_list = ToastListComponent::default();
-        toast_list.push("component".to_string());
-
-        let widget = toast_list.create_widget(&store);
-
-        assert_eq!(widget.messages, ["store", "component"]);
-    }
-
     fn render_toast_snapshot(name: &str, toast_list: &ToastListComponent) {
-        render_snapshot(name, 60, 12, toast_list.create_widget(&Store::new()));
+        render_snapshot(name, 60, 12, toast_list.create_widget());
     }
 
     #[test]
