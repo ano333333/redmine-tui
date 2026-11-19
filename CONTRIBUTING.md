@@ -125,7 +125,10 @@ Results are written to `mutants.out/`. `missed.txt` lists mutants that no test c
 To summarize a result and compare it with a previous run, use `cargo xtask mutants-report`. Mutants are matched by file and change, ignoring line numbers:
 
 ```sh
-cargo xtask mutants-report mutants.out --previous previous/mutants.out
+# First run: omit --previous.
+cargo xtask mutants-report mutants.out
+# Later runs: cargo-mutants moves the previous result to mutants.out.old.
+cargo xtask mutants-report mutants.out --previous mutants.out.old
 ```
 
 The `Mutation testing` workflow runs all mutants weekly and writes this report, compared with the previous run, to the job summary.

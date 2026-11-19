@@ -125,7 +125,10 @@ cargo mutants -j 4 --file src/stores/issue_journals.rs
 結果の集計と前回結果との比較には `cargo xtask mutants-report` を使います。mutant は行番号を除いたファイルと変更内容で照合します。
 
 ```sh
-cargo xtask mutants-report mutants.out --previous previous/mutants.out
+# 初回は --previous を省略します。
+cargo xtask mutants-report mutants.out
+# 2回目以降は、cargo-mutants が移動した前回結果を指定します。
+cargo xtask mutants-report mutants.out --previous mutants.out.old
 ```
 
 `Mutation testing` workflow は毎週全 mutant を実行し、前回結果と比較したレポートを job summary に出力します。
