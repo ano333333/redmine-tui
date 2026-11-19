@@ -4,35 +4,38 @@ use std::sync::Arc;
 
 use super::attachment_image_requests;
 use crate::clients::redmine::RedmineClient;
-use crate::stores::{
-    Action, Dispatcher, IssueState, JournalAction, LocalJournalState, NoticeAction, NoticeId,
-};
-use crate::usecases::{UsecaseOutput, UsecaseTask};
+use crate::stores::{Dispatcher, IssueState, JournalAction, LocalJournalState};
+use crate::usecases::{UsecaseEvent, UsecaseFailure, UsecaseOutput, UsecaseTask};
 use crate::vos::{EntityIdValue, IssueId};
 
-fn local_journal_put_failure_actions(issue_id: IssueId, message: String) -> Vec<Action> {
-    vec![
-        NoticeAction::Push {
-            id: NoticeId::new(),
-            message: format!("Local Journalの保存に失敗しました: {message}"),
-        }
-        .into(),
-        JournalAction::FailLocalUpload { issue_id, message }.into(),
-    ]
+fn local_journal_put_failure_output(issue_id: IssueId, message: String) -> UsecaseOutput {
+    UsecaseOutput {
+        actions: vec![
+            JournalAction::FailLocalUpload {
+                issue_id,
+                message: message.clone(),
+            }
+            .into(),
+        ],
+        requests: Vec::new(),
+        events: vec![UsecaseEvent::Failure(UsecaseFailure::LocalJournalUpload {
+            issue_id,
+            reason: message,
+        })],
+    }
 }
 
-/// PUT成功後の確認GETが失敗したときのActionを生成する。
+/// PUT成功後の確認GETが失敗したときの完了値を生成する。
 ///
 /// notesは投稿済みのため、下書きを削除して再試行による二重投稿を防ぐ。
-fn local_journal_fetch_failure_actions(issue_id: IssueId, reason: String) -> Vec<Action> {
-    vec![
-        NoticeAction::Push {
-            id: NoticeId::new(),
-            message: format!("Local Journalを保存しましたが、確認の取得に失敗しました: {reason}"),
-        }
-        .into(),
-        JournalAction::CompleteLocalUploadWithoutFetch { issue_id }.into(),
-    ]
+fn local_journal_fetch_failure_output(issue_id: IssueId, reason: String) -> UsecaseOutput {
+    UsecaseOutput {
+        actions: vec![JournalAction::CompleteLocalUploadWithoutFetch { issue_id }.into()],
+        requests: Vec::new(),
+        events: vec![UsecaseEvent::Failure(
+            UsecaseFailure::LocalJournalUploadConfirm { issue_id, reason },
+        )],
+    }
 }
 
 /// 未保存のLocal Journalのuploadを開始する。
@@ -92,26 +95,25 @@ where
     C: RedmineClient + Send + Sync + 'static,
 {
     if let Err(error) = client.update_issue_notes(issue_id, &notes).await {
-        return local_journal_put_failure_actions(issue_id, error.to_string()).into();
+        return local_journal_put_failure_output(issue_id, error.to_string());
     }
     let fetched = match client.get_issue(issue_id).await {
         Ok(fetched) => fetched,
         Err(error) => {
-            return local_journal_fetch_failure_actions(issue_id, error.to_string()).into();
+            return local_journal_fetch_failure_output(issue_id, error.to_string());
         }
     };
     // 別Issueのレスポンスを確認結果として扱うと、他Issueのjournalを根拠に完了させてしまうため、
     // 取得失敗と同じ扱いにする。
     if fetched.aggregate.issue.id != issue_id {
-        return local_journal_fetch_failure_actions(
+        return local_journal_fetch_failure_output(
             issue_id,
             format!(
                 "requested issue {} but Redmine returned issue {}",
                 issue_id.get(),
                 fetched.aggregate.issue.id.get()
             ),
-        )
-        .into();
+        );
     }
     UsecaseOutput {
         requests: attachment_image_requests(&fetched.aggregate),
@@ -133,7 +135,7 @@ mod tests {
     use crate::clients::redmine::RedmineClientError;
     use crate::clients::redmine::base::FetchedIssue;
     use crate::entities::{Attachment, Journal};
-    use crate::stores::{IssueAction, JournalUploadFailure};
+    use crate::stores::{Action, IssueAction, JournalUploadFailure};
     use crate::test_support::{RedmineClientStub, complete_usecase};
     use crate::test_support::{local_datetime, sample_attachment, sample_issue_aggregate};
     use crate::usecases::UsecaseRequest;
@@ -472,25 +474,25 @@ mod tests {
         let dispatcher = local_only_dispatcher();
         let client = Arc::new(StubClient::fails_to_get());
 
-        let actions = complete_usecase(start_local_journal_upload(
-            dispatcher.clone(),
-            client.clone(),
-            ISSUE_ID,
-        ))
-        .await;
+        let output = start_local_journal_upload(dispatcher.clone(), client.clone(), ISSUE_ID)
+            .expect("usecase should start")
+            .await;
+        let actions = output.actions;
         dispatcher.borrow_mut().consume_action();
 
         assert_eq!(*client.get_requests.lock().unwrap(), vec![ISSUE_ID]);
-        assert_eq!(actions.len(), 2);
-        let Action::Notice(NoticeAction::Push { message, .. }) = &actions[0] else {
-            panic!("expected notice action");
-        };
+        assert_eq!(actions.len(), 1);
         assert_eq!(
-            message,
-            "Local Journalを保存しましたが、確認の取得に失敗しました: network error: offline"
+            output.events,
+            [UsecaseEvent::Failure(
+                UsecaseFailure::LocalJournalUploadConfirm {
+                    issue_id: ISSUE_ID,
+                    reason: "network error: offline".to_string(),
+                }
+            )]
         );
         assert!(matches!(
-            &actions[1],
+            &actions[0],
             Action::Journal(JournalAction::CompleteLocalUploadWithoutFetch { issue_id })
                 if *issue_id == ISSUE_ID
         ));
@@ -546,21 +548,21 @@ mod tests {
             vec![remote_journal(11, "local notes")],
         ));
 
-        let actions = complete_usecase(start_local_journal_upload(
-            dispatcher.clone(),
-            client,
-            ISSUE_ID,
-        ))
-        .await;
+        let output = start_local_journal_upload(dispatcher.clone(), client, ISSUE_ID)
+            .expect("usecase should start")
+            .await;
+        let actions = output.actions;
         dispatcher.borrow_mut().consume_action();
 
-        assert_eq!(actions.len(), 2);
-        let Action::Notice(NoticeAction::Push { message, .. }) = &actions[0] else {
-            panic!("expected notice action");
-        };
+        assert_eq!(actions.len(), 1);
         assert_eq!(
-            message,
-            "Local Journalを保存しましたが、確認の取得に失敗しました: requested issue 1 but Redmine returned issue 99"
+            output.events,
+            [UsecaseEvent::Failure(
+                UsecaseFailure::LocalJournalUploadConfirm {
+                    issue_id: ISSUE_ID,
+                    reason: "requested issue 1 but Redmine returned issue 99".to_string(),
+                }
+            )]
         );
 
         for action in actions {
@@ -577,23 +579,22 @@ mod tests {
     #[tokio::test]
     async fn put_failure_returns_failure_actions_that_restore_notes() {
         let dispatcher = local_only_dispatcher();
-        let actions = complete_usecase(start_local_journal_upload(
-            dispatcher.clone(),
-            Arc::new(StubClient::fails()),
-            ISSUE_ID,
-        ))
-        .await;
+        let output =
+            start_local_journal_upload(dispatcher.clone(), Arc::new(StubClient::fails()), ISSUE_ID)
+                .expect("usecase should start")
+                .await;
+        let actions = output.actions;
         dispatcher.borrow_mut().consume_action();
 
-        assert_eq!(actions.len(), 2);
-        let Action::Notice(NoticeAction::Push { message, .. }) = &actions[0] else {
-            panic!("expected notice action");
-        };
+        assert_eq!(actions.len(), 1);
         assert_eq!(
-            message,
-            "Local Journalの保存に失敗しました: network error: offline"
+            output.events,
+            [UsecaseEvent::Failure(UsecaseFailure::LocalJournalUpload {
+                issue_id: ISSUE_ID,
+                reason: "network error: offline".to_string(),
+            })]
         );
-        let Action::Journal(JournalAction::FailLocalUpload { issue_id, message }) = &actions[1]
+        let Action::Journal(JournalAction::FailLocalUpload { issue_id, message }) = &actions[0]
         else {
             panic!("expected fail local upload action");
         };
@@ -601,7 +602,7 @@ mod tests {
         assert_eq!(message, "network error: offline");
         dispatcher
             .borrow_mut()
-            .dispatch(actions.into_iter().nth(1).unwrap());
+            .dispatch(actions.into_iter().next().unwrap());
         dispatcher.borrow_mut().consume_action();
         let dispatcher = dispatcher.borrow();
         let entry = dispatcher.store().get_local_journal(ISSUE_ID);

@@ -30,6 +30,12 @@ impl ToastListComponent {
             UsecaseFailure::RemoteJournalUploadConfirm { journal_id, reason } => {
                 format!("Journal #{journal_id}を保存しましたが、確認の取得に失敗しました: {reason}")
             }
+            UsecaseFailure::LocalJournalUpload { reason, .. } => {
+                format!("Local Journalの保存に失敗しました: {reason}")
+            }
+            UsecaseFailure::LocalJournalUploadConfirm { reason, .. } => {
+                format!("Local Journalを保存しましたが、確認の取得に失敗しました: {reason}")
+            }
         };
         self.push(message);
     }
@@ -182,6 +188,31 @@ mod tests {
 
         render_toast_snapshot(
             "toast_list_remote_journal_upload_confirm_failure",
+            &toast_list,
+        );
+    }
+
+    #[test]
+    fn snapshot_local_journal_upload_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::LocalJournalUpload {
+            issue_id: IssueId::new(3),
+            reason: "network error: offline".to_string(),
+        });
+
+        render_toast_snapshot("toast_list_local_journal_upload_failure", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_local_journal_upload_confirm_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::LocalJournalUploadConfirm {
+            issue_id: IssueId::new(3),
+            reason: "network error: offline".to_string(),
+        });
+
+        render_toast_snapshot(
+            "toast_list_local_journal_upload_confirm_failure",
             &toast_list,
         );
     }

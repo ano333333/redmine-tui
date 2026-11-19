@@ -26,4 +26,13 @@ pub enum UsecaseFailure {
         journal_id: JournalId,
         reason: String,
     },
+    LocalJournalUpload {
+        issue_id: IssueId,
+        reason: String,
+    },
+    /// PUTは成功し、確認の取得だけが失敗した。
+    LocalJournalUploadConfirm {
+        issue_id: IssueId,
+        reason: String,
+    },
 }
