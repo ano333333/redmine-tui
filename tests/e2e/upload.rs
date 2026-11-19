@@ -57,6 +57,31 @@ fn ctrl_s_uploads_the_edited_issue() {
     });
 }
 
+// Scenario: Issueのuploadに失敗すると、失敗を知らせるtoastが表示される
+#[test]
+fn issue_upload_failure_shows_a_toast() {
+    // Given Issue 2の優先度をminorに変えている
+    reseed_redmine();
+    let mut session = spawn_app();
+    open_issue_from_initial_popup(&mut session, 2);
+    press_j(&mut session, J_PRESSES_TO_PRIORITY);
+    press_keys(&mut session, &["e", "j", "Enter"]);
+    wait_until(&mut session, "changing the priority to minor", |frame| {
+        property_value(frame, "優先度") == "minor"
+    });
+    // And 編集後に、Issue 2がRedmineから削除されている
+    assert_eq!(
+        redmine_api(reqwest::Method::DELETE, "/issues/2.json", None),
+        reqwest::StatusCode::NO_CONTENT
+    );
+
+    // When journal一覧の外でctrl+sを押す
+    session.press_key("ctrl+s").expect("failed to press ctrl+s");
+
+    // Then 保存前の取得が404で失敗し、Issue 2の保存に失敗したtoastが表示される
+    wait_for_text(&mut session, "Issue #2の保存に失敗しました");
+}
+
 // Scenario: 編集したRemote Journalのnotesをctrl+sでuploadすると、Redmineに反映される
 #[test]
 fn ctrl_s_uploads_the_edited_remote_journal_notes() {
