@@ -42,6 +42,18 @@ impl ToastListComponent {
             UsecaseFailure::DeletedJournalUploadConfirm { reason, .. } => {
                 format!("削除されたJournalを投稿しましたが、確認の取得に失敗しました: {reason}")
             }
+            UsecaseFailure::AttachmentFileRead { issue_id, reason } => {
+                format!("Issue #{issue_id}へ添付するファイルを読み込めませんでした: {reason}")
+            }
+            UsecaseFailure::AttachmentFileUpload { issue_id, reason } => {
+                format!("Issue #{issue_id}へ添付するファイルの送信に失敗しました: {reason}")
+            }
+            UsecaseFailure::AttachmentAttach { issue_id, reason } => {
+                format!("Issue #{issue_id}へのファイルの添付に失敗しました: {reason}")
+            }
+            UsecaseFailure::AttachmentAttachConfirm { issue_id, reason } => format!(
+                "Issue #{issue_id}にファイルを添付しましたが、確認の取得に失敗しました。もう一度追加すると二重に添付されます: {reason}"
+            ),
         };
         self.push(message);
     }
@@ -246,5 +258,49 @@ mod tests {
             "toast_list_deleted_journal_upload_confirm_failure",
             &toast_list,
         );
+    }
+
+    #[test]
+    fn snapshot_attachment_file_read_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::AttachmentFileRead {
+            issue_id: IssueId::new(3),
+            reason: "network error: offline".to_string(),
+        });
+
+        render_toast_snapshot("toast_list_attachment_file_read_failure", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_attachment_file_upload_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::AttachmentFileUpload {
+            issue_id: IssueId::new(3),
+            reason: "network error: offline".to_string(),
+        });
+
+        render_toast_snapshot("toast_list_attachment_file_upload_failure", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_attachment_attach_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::AttachmentAttach {
+            issue_id: IssueId::new(3),
+            reason: "network error: offline".to_string(),
+        });
+
+        render_toast_snapshot("toast_list_attachment_attach_failure", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_attachment_attach_confirm_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::AttachmentAttachConfirm {
+            issue_id: IssueId::new(3),
+            reason: "network error: offline".to_string(),
+        });
+
+        render_toast_snapshot("toast_list_attachment_attach_confirm_failure", &toast_list);
     }
 }

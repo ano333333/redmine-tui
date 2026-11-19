@@ -3,8 +3,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::clients::redmine::RedmineClient;
-use crate::stores::{AttachmentAction, AttachmentUploadStage, Dispatcher, NoticeAction, NoticeId};
-use crate::usecases::{UsecaseOutput, UsecaseTask};
+use crate::stores::{AttachmentAction, AttachmentUploadStage, Dispatcher};
+use crate::usecases::{UsecaseEvent, UsecaseFailure, UsecaseOutput, UsecaseTask};
 use crate::vos::IssueId;
 
 use super::attachment_image_requests;
@@ -37,32 +37,26 @@ where
         "attachment upload of issue {issue_id} is not confirming"
     );
     Some(Box::pin(async move {
-        let actions = match fetch_issue_for_upload(client.as_ref(), issue_id).await {
-            Ok(confirmed) => {
-                return UsecaseOutput {
-                    requests: attachment_image_requests(&confirmed.aggregate),
-                    actions: vec![
-                        AttachmentAction::ConfirmSucceeded {
-                            issue: confirmed.aggregate,
-                            children: confirmed.children,
-                        }
-                        .into(),
-                    ],
-                    events: Vec::new(),
-                };
-            }
-            Err(reason) => vec![
-                NoticeAction::Push {
-                    id: NoticeId::new(),
-                    message: format!(
-                        "Issue #{issue_id}にファイルを添付しましたが、確認の取得に失敗しました。もう一度追加すると二重に添付されます: {reason}"
-                    ),
-                }
-                .into(),
-                AttachmentAction::FailUpload { issue_id }.into(),
-            ],
-        };
-        actions.into()
+        match fetch_issue_for_upload(client.as_ref(), issue_id).await {
+            Ok(confirmed) => UsecaseOutput {
+                requests: attachment_image_requests(&confirmed.aggregate),
+                actions: vec![
+                    AttachmentAction::ConfirmSucceeded {
+                        issue: confirmed.aggregate,
+                        children: confirmed.children,
+                    }
+                    .into(),
+                ],
+                events: Vec::new(),
+            },
+            Err(reason) => UsecaseOutput {
+                actions: vec![AttachmentAction::FailUpload { issue_id }.into()],
+                requests: Vec::new(),
+                events: vec![UsecaseEvent::Failure(
+                    UsecaseFailure::AttachmentAttachConfirm { issue_id, reason },
+                )],
+            },
+        }
     }))
 }
 
@@ -70,7 +64,7 @@ where
 mod tests {
     use crate::clients::redmine::base::FetchedIssue;
     use crate::entities::IssueAggregate;
-    use crate::stores::{Action, AttachmentAction, NoticeAction};
+    use crate::stores::{Action, AttachmentAction};
     use crate::test_support::{
         complete_usecase, dispatch_loaded_issue, sample_attachment, sample_issue_aggregate,
     };
@@ -158,22 +152,25 @@ mod tests {
     async fn failed_fetch_ends_the_upload_with_a_notice() {
         let client = client_returning(Err(offline()));
 
-        let actions = complete_usecase(confirm_attachment_upload(
-            confirming_dispatcher(),
-            client,
-            ISSUE_ID,
-        ))
-        .await;
+        let output = confirm_attachment_upload(confirming_dispatcher(), client, ISSUE_ID)
+            .expect("usecase should start")
+            .await;
 
-        let [
-            Action::Notice(NoticeAction::Push { message, .. }),
-            Action::Attachment(AttachmentAction::FailUpload { issue_id }),
-        ] = actions.as_slice()
+        let [Action::Attachment(AttachmentAction::FailUpload { issue_id })] =
+            output.actions.as_slice()
         else {
-            panic!("expected a notice and FailUpload");
+            panic!("expected FailUpload");
         };
-        assert!(message.contains("二重に添付されます"));
         assert_eq!(*issue_id, ISSUE_ID);
+        assert_eq!(
+            output.events,
+            [UsecaseEvent::Failure(
+                UsecaseFailure::AttachmentAttachConfirm {
+                    issue_id: ISSUE_ID,
+                    reason: "network error: offline".to_string(),
+                }
+            )]
+        );
     }
 
     #[tokio::test]
@@ -192,10 +189,7 @@ mod tests {
 
         assert!(matches!(
             actions.as_slice(),
-            [
-                Action::Notice(_),
-                Action::Attachment(AttachmentAction::FailUpload { .. })
-            ]
+            [Action::Attachment(AttachmentAction::FailUpload { .. })]
         ));
     }
 

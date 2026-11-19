@@ -44,4 +44,21 @@ pub enum UsecaseFailure {
         original_id: JournalId,
         reason: String,
     },
+    AttachmentFileRead {
+        issue_id: IssueId,
+        reason: String,
+    },
+    AttachmentFileUpload {
+        issue_id: IssueId,
+        reason: String,
+    },
+    AttachmentAttach {
+        issue_id: IssueId,
+        reason: String,
+    },
+    /// 添付は成功し、確認の取得だけが失敗した。
+    AttachmentAttachConfirm {
+        issue_id: IssueId,
+        reason: String,
+    },
 }

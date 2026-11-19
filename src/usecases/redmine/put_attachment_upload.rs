@@ -3,8 +3,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::clients::redmine::RedmineClient;
-use crate::stores::{AttachmentAction, AttachmentUploadStage, Dispatcher, NoticeAction, NoticeId};
-use crate::usecases::{UsecaseOutput, UsecaseRequest, UsecaseTask};
+use crate::stores::{AttachmentAction, AttachmentUploadStage, Dispatcher};
+use crate::usecases::{UsecaseEvent, UsecaseFailure, UsecaseOutput, UsecaseRequest, UsecaseTask};
 use crate::vos::{IssueId, UploadToken};
 
 /// 送ったファイルを`filename`の名前でIssueに紐付ける。
@@ -37,15 +37,14 @@ where
     );
     Some(Box::pin(async move {
         if let Err(error) = client.attach_upload(issue_id, &token, &filename).await {
-            return vec![
-                NoticeAction::Push {
-                    id: NoticeId::new(),
-                    message: format!("Issue #{issue_id}へのファイルの添付に失敗しました: {error}"),
-                }
-                .into(),
-                AttachmentAction::FailUpload { issue_id }.into(),
-            ]
-            .into();
+            return UsecaseOutput {
+                actions: vec![AttachmentAction::FailUpload { issue_id }.into()],
+                requests: Vec::new(),
+                events: vec![UsecaseEvent::Failure(UsecaseFailure::AttachmentAttach {
+                    issue_id,
+                    reason: error.to_string(),
+                })],
+            };
         }
         UsecaseOutput {
             actions: vec![AttachmentAction::AttachSucceeded { issue_id }.into()],
@@ -136,12 +135,14 @@ mod tests {
 
         assert!(matches!(
             output.actions.as_slice(),
-            [
-                Action::Notice(NoticeAction::Push { .. }),
-                Action::Attachment(AttachmentAction::FailUpload { issue_id })
-            ] if *issue_id == ISSUE_ID
+            [Action::Attachment(AttachmentAction::FailUpload { issue_id })] if *issue_id == ISSUE_ID
         ));
         assert!(output.requests.is_empty());
+        assert!(matches!(
+            output.events.as_slice(),
+            [UsecaseEvent::Failure(UsecaseFailure::AttachmentAttach { issue_id, .. })]
+                if *issue_id == ISSUE_ID
+        ));
     }
 
     #[test]
