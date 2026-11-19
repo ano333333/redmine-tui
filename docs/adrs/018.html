@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 18 — Usecaseイベントの通知とtoastのComponent化</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0f1117;
+        color: #d0d4e8;
+        font:
+          15px/1.75 system-ui,
+          "Noto Sans JP",
+          sans-serif;
+      }
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+      nav {
+        position: sticky;
+        top: 0;
+        width: 240px;
+        height: 100vh;
+        padding: 28px 20px;
+        background: #1a1d27;
+        border-right: 1px solid #2e3350;
+      }
+      nav a {
+        display: block;
+        padding: 5px 0;
+        color: #8ba3f5;
+        text-decoration: none;
+        font-size: 13px;
+      }
+      main {
+        max-width: 980px;
+        padding: 52px 64px;
+      }
+      h1,
+      h2,
+      h3 {
+        color: #e8eaf6;
+      }
+      h1 {
+        font-size: 27px;
+        line-height: 1.25;
+      }
+      h2 {
+        margin-top: 44px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #2e3350;
+        font-size: 19px;
+      }
+      h3 {
+        margin-top: 28px;
+        font-size: 16px;
+      }
+      code,
+      pre {
+        font-family: "JetBrains Mono", monospace;
+      }
+      code {
+        color: #8ba3f5;
+      }
+      pre {
+        overflow: auto;
+        padding: 16px 18px;
+        background: #13151f;
+        border: 1px solid #2a2e45;
+        border-radius: 8px;
+        color: #d0d4e8;
+      }
+      .status {
+        display: inline-block;
+        padding: 3px 10px;
+        border: 1px solid #2a7a50;
+        border-radius: 20px;
+        color: #4caf8a;
+      }
+      li {
+        margin: 5px 0;
+      }
+      @media (max-width: 820px) {
+        .layout {
+          display: block;
+        }
+        nav {
+          position: static;
+          width: auto;
+          height: auto;
+        }
+        main {
+          padding: 32px 22px;
+        }
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 9px 12px;
+        border: 1px solid #2e3350;
+        text-align: left;
+      }
+      th {
+        background: #1a1d27;
+      }
+      main {
+        min-width: 0;
+      }
+      nav {
+        flex-shrink: 0;
+        overflow-y: auto;
+      }
+      a {
+        color: #8ba3f5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <nav>
+        <strong>ADR 18</strong><a href="#status">Status</a
+        ><a href="#context">Context</a><a href="#decision">Decision</a
+        ><a href="#rationale">Rationale</a
+        ><a href="#consequences">Consequences</a
+        ><a href="#alternatives-considered">Alternatives Considered</a>
+        <hr />
+        <a href="017.html">ADR 17</a
+        ><a href="../architecture.html">Architecture</a>
+      </nav>
+      <main>
+        <h1>18. Usecaseイベントの通知とtoastのComponent化</h1>
+        <h2 id="status">Status</h2>
+        <p>Proposed</p>
+        <h2 id="context">Context</h2>
+        <p>
+          Usecaseの結果をComponentへ伝える経路は、Storeの状態だけである。Usecaseは完了Actionを返し、runnerがそれをStoreへ適用する。ComponentはupdateでStoreを読み、状態の変化を見つけて表示を変える。
+        </p>
+        <p>この経路には、「一度だけ起きたこと」を伝える手段がない。</p>
+        <ul>
+          <li>
+            競合popupは、<code>AppComponent::update</code>が毎回Storeの競合情報を読み、同じpopupがまだ開いていなければ開く。「一度だけ開く」ことを、popup
+            stackの検査で保っている。Remote
+            Journalの競合popupは、続行した直後のupdateでまだ消えていない競合情報を読み、開き直すことがある（<code>src/components/app.rs</code>のFIXME）。
+          </li>
+          <li>
+            Issueの新規作成（ANO-183）では、<code>POST /issues.json</code
+            >が完了したら、新規作成用ComponentをIssueDetailComponentに差し替えたい。下書きは新規作成用Componentが持ち、Storeには置かない。そのため、「作成が完了した」ことをStoreの状態として残す理由がない。
+          </li>
+        </ul>
+        <p>一時通知も、Storeの状態として扱っている。</p>
+        <ul>
+          <li>
+            一時通知は<code>NoticeAction::Push</code>で<code>NoticeStore</code>に追加する（<a
+              href="009.html"
+              >ADR 9</a
+            >）。runnerは毎周<code>Dispatcher::update_store(tick)</code>で表示経過時間を渡し、<code>NoticeStore</code>は5秒を過ぎた通知を捨てる（<a
+              href="010.html"
+              >ADR 10</a
+            >）。
+          </li>
+          <li>
+            Storeは、Actionを適用した結果として決まる情報を持つ場所である。時間の経過で中身が変わる<code>NoticeStore</code>は、この性質から外れている。
+          </li>
+          <li>
+            Usecaseが通知の文言を組み立てている。<code>upload_issue.rs</code>には、これを設計上の負債とするFIXMEがある。
+          </li>
+        </ul>
+        <p>現在の<code>NoticeAction::Push</code>の発生元は次のとおりである。</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>発生元</th>
+                <th>内容</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>非同期Usecaseの完了</td>
+                <td>
+                  Issue保存の失敗、Remote・Local・削除済みJournalの保存失敗とPUT後の確認GETの失敗、添付ファイルのupload失敗
+                </td>
+              </tr>
+              <tr>
+                <td>runner</td>
+                <td>外部editorの起動・実行・terminal復帰の失敗</td>
+              </tr>
+              <tr>
+                <td>起動処理（<code>entry/native.rs</code>）</td>
+                <td>
+                  terminalのピクセル単位の大きさを取得できず、画像を表示しないこと
+                </td>
+              </tr>
+              <tr>
+                <td>Component（<code>issue/detail/property</code>）</td>
+                <td>子Issueから計算される属性は編集できないこと</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Usecaseの起動時の同期処理から通知を出している箇所はない。</p>
+        <h2 id="decision">Decision</h2>
+        <h3>Usecaseは<code>UsecaseOutput</code>でイベントを返す</h3>
+        <p>
+          Usecaseが一度だけ起きたことを伝える<code>UsecaseEvent</code>
+          enumを<code>src/usecases/</code>に置く。<code>UsecaseOutput</code>に<code>events</code>を加える。
+        </p>
+        <pre><code>pub struct UsecaseOutput {
+    pub actions: Vec&lt;Action&gt;,
+    pub requests: Vec&lt;UsecaseRequest&gt;,
+    pub events: Vec&lt;UsecaseEvent&gt;,
+}</code></pre>
+        <ul>
+          <li>どのUsecaseもイベントを返してよい。</li>
+          <li>
+            イベントを契機にUsecaseを起動しない。後続のUsecaseは、これまでどおり<code>UsecaseOutput::requests</code>で表す（<a
+              href="015.html"
+              >ADR 15</a
+            >）。
+          </li>
+          <li>
+            イベントはStoreの状態を変えない。再試行に必要な失敗状態など、後から読み直す情報は、これまでどおり完了ActionでStoreに置く。同じ失敗から、Storeの失敗状態を表すActionと、通知のためのイベントを両方返してよい。
+          </li>
+          <li>
+            イベントは起きたことを表し、表示の文言は持たない。文言は受け取ったComponentが組み立てる。たとえばIssue保存の失敗は<code
+              >IssueUploadFailed { id, message }</code
+            >のように表す。<code>message</code>はClientのエラーなど外部由来の説明であり、通知の文言ではない。
+          </li>
+        </ul>
+        <h3>runnerはイベントを<code>AppComponent</code>へ渡す</h3>
+        <p>
+          受け取るのは<code>AppComponent</code>だけとする。購読者を登録する仕組みは作らず、runnerが<code>AppComponent</code>のメソッドを直接呼ぶ。
+        </p>
+        <pre><code>impl AppComponent {
+    pub fn handle_usecase_events(&amp;mut self, events: Vec&lt;UsecaseEvent&gt;, store: &amp;Store);
+}</code></pre>
+        <ul>
+          <li>
+            <code>handle_usecase_events</code
+            >は<code>update</code>と別のメソッドにする。<code>update</code>はStoreの状態をComponentへ反映する処理で、Actionを1件消費するたびに呼ばれる。イベントはComponentの生成や破棄を引き起こすため、Storeの反映とは分ける。
+          </li>
+          <li>
+            <code>handle_usecase_events</code
+            >は<code>RequestSink</code>も<code>Dispatcher</code>も受け取らない。イベントを受けてできるのは、Componentの生成・破棄・内部状態の変更だけである。Storeは読み取りだけに使う。たとえば新規作成の完了では、<code
+              >IssueComponent::new(store, id)</code
+            >を作るためにStoreを読む。
+          </li>
+        </ul>
+        <p>runnerはcompletionの処理を次の順にする。</p>
+        <pre><code>move_worker_action:
+  for completion in 受理したcompletion:
+    output.actionsをdispatchする
+    output.requestsをrequest queueに積む
+    output.eventsをevent queueに積む
+loop:
+  move_worker_action()
+  app_component.tick(elapsed)
+  update()                                        // Actionを1件ずつ消費し、そのたびにupdateする
+  app_component.handle_usecase_events(event queueを全部, store)
+  app_component.update(store)
+  drain_requests()
+  draw()</code></pre>
+        <ul>
+          <li>
+            イベントは、同じcompletionのActionをStoreへ適用した後に渡す。イベントを受け取った時点で、Storeには同じcompletionの結果が入っている。
+          </li>
+          <li>
+            1周で複数のcompletionを受理した場合は、すべてのActionを消費してから、すべてのイベントをcompletionの受理順に渡す。そのため、あるイベントを受け取った時点で、後に受理したcompletionのActionもStoreに入っていることがある。
+          </li>
+          <li>
+            後続要求は、これまでどおりイベントの処理とupdateの後に起動する。
+          </li>
+          <li>
+            editor中に受理したcompletionは、今と同じくActionだけをStoreへ適用する。イベントはevent
+            queueに残し、editorから戻ってComponentへの入力を再開するときに渡す。
+          </li>
+        </ul>
+        <h3>toastはComponentが持つ</h3>
+        <p>
+          <code>NoticeStore</code
+          >を廃止する。<code>AppComponent</code>が通知を表すtoastを持ち、toastは表示経過時間で自身を破棄する。
+        </p>
+        <ul>
+          <li>
+            <code>AppComponent</code
+            >は通知にあたるイベントを受け取ると、toastを作る。
+          </li>
+          <li>
+            runnerは毎周、表示経過時間を<code>AppComponent::tick(elapsed)</code>で渡す。これは今の<code>Dispatcher::update_store(tick)</code>を置き換える。toastは<code>Instant</code>を持たない。
+          </li>
+          <li>
+            editor中は経過時間を渡さず、editorから戻ったときに起点を取り直す。<a
+              href="010.html"
+              >ADR 10</a
+            >の「表示経過時間はeditor中に消費しない」は維持する。
+          </li>
+          <li>
+            1周の中では、<code>tick</code>をイベントの処理より前に呼ぶ。そのため、その周に届いた通知が表示される前に期限切れになることはない。
+          </li>
+          <li>
+            表示は今と同じく<code>ToastWidget</code>で行い、<code>AppComponent::render</code>が通常画面とpopupの後に描画する。toastはfocusを取らない（<a
+              href="009.html"
+              >ADR 9</a
+            >）。
+          </li>
+        </ul>
+        <p>
+          Usecase以外が発する通知は、イベントを経由せずに<code>AppComponent</code>へ伝える。
+        </p>
+        <ul>
+          <li>
+            runner:
+            外部editorの失敗は、runnerが<code>AppComponent</code>に失敗の説明を渡し、<code>AppComponent</code>がtoastを作る。今もeditorの失敗時は<code>handle_editor_response</code>を呼んでいるため、その経路で説明を渡す。
+          </li>
+          <li>
+            起動処理:
+            画像を表示しない理由は、entryがrunnerに渡し、runnerが<code>AppComponent</code>の生成直後に渡す。
+          </li>
+          <li>
+            Component:
+            子Componentは<code>process_event</code>の結果として<code>AppComponent</code>へ返し、<code>AppComponent</code>がtoastを作る。
+          </li>
+        </ul>
+        <h3>本ADRで移行する範囲</h3>
+        <ul>
+          <li>
+            <code>NoticeAction::Push</code
+            >を発しているUsecaseを、<code>UsecaseEvent</code>を返す形に移す。文言の組み立ては<code>AppComponent</code>側に移す。
+          </li>
+          <li>
+            <code>NoticeStore</code
+            >、<code>NoticeAction</code>、<code>NoticeId</code>、<code>Store::get_notices</code>、<code>Dispatcher::update_store</code>を削除する。
+          </li>
+          <li>
+            競合popupを開く処理は移行しない。upload中に別のIssueへ移り、戻ってきたときに競合popupを開く挙動は、Storeの競合情報を毎回読むことで成り立っている。イベントに移すと、離れている間に届いたイベントは失われ、Issueは解決する手段のない競合状態のまま残る。移すには、表示から外れたIssueのuploadの状態遷移を見直す必要がある。
+          </li>
+          <li>Issueの新規作成完了は、ANO-183でこの仕組みを使って実装する。</li>
+        </ul>
+        <h2 id="rationale">Rationale</h2>
+        <p>
+          一度だけ起きたことをStoreの状態として表すと、Componentは「すでに反応したか」を自分で判定する必要がある。競合popupのpopup
+          stack検査がその例である。イベントとして一度だけ渡せば、この判定は要らない。
+        </p>
+        <p>
+          イベントを<code>UsecaseOutput</code>に載せるのは、後続要求と同じく、Usecaseの単体テストで返したイベントを検査できるためである。
+        </p>
+        <p>
+          受け取り手を<code>AppComponent</code>に限り、登録の仕組みを作らないのは、今の受け取り手が<code>AppComponent</code>だけだからである。表示中のComponentの差し替えやtoastの追加は、Componentの木の根にあたる<code>AppComponent</code>が担う。
+        </p>
+        <p>
+          イベントをActionの消費とupdateの後に渡すのは、イベントを受けたComponentがStoreに入った結果を前提にできるようにするためである。新規作成の完了イベントを受けた時点では、後続の<code>FetchIssue</code>はまだ起動していない。それでも<code>IssueComponent::new</code>は未取得のIssueでも作れるため、Componentを差し替えられる。
+        </p>
+        <p>
+          イベントからUsecaseを起動しないのは、何を起動するかをUsecaseの戻り値から読み取れるようにするためである。イベントの処理に<code>RequestSink</code>を渡すと、後続要求と同じことを2つの経路で表せてしまう。
+        </p>
+        <p>
+          toastを表示経過時間で破棄する処理をComponentに移すと、Storeは適用したActionだけで決まる。<code>AppComponent::tick</code>に経過時間を渡せば、Componentのテストでも時間を固定できる。
+        </p>
+        <p>
+          イベントが文言を持たないので、通知の文言を組み立てる処理はUsecaseから<code>AppComponent</code>に移る。これにより、<code>upload_issue.rs</code>のFIXMEが指摘する負債が解消する。
+        </p>
+        <h2 id="consequences">Consequences</h2>
+        <ul>
+          <li>
+            <a href="009.html">ADR 9</a>の次の決定を置き換える。
+            <ul>
+              <li>
+                一時通知を<code>NoticeAction::Push</code>として<code>NoticeStore</code>に送ること。今後はUsecaseが<code>UsecaseEvent</code>を返し、<code>AppComponent</code>がtoastを持つ。
+              </li>
+              <li>
+                時間で変化するStoreの状態を<code>Store::update(now)</code>へ集約すること。
+              </li>
+              <li>
+                同じ<code>NoticeId</code>の再追加とすでに消えたnoticeの<code>Dismiss</code>を、冪等なno-opの例とすること。<code>NoticeId</code>はなくなる。
+              </li>
+            </ul>
+          </li>
+          <li>
+            <a href="010.html">ADR 10</a
+            >の「Noticeと経過時間」のうち、Storeが表示経過時間を受け取る契約を、<code>AppComponent::tick</code>が受け取る契約で置き換える。editor中に経過時間を消費しないことは維持する。
+          </li>
+          <li>
+            <a href="015.html">ADR 15</a
+            >の<code>UsecaseOutput</code>に<code>events</code>を加える。runnerのcompletion処理に、イベントの受け渡しが加わる。
+          </li>
+          <li>
+            <code>UsecaseOutput</code
+            >を組み立てる箇所に<code>events</code>が必要になる。<code>From&lt;Vec&lt;Action&gt;&gt;</code>は<code>events</code>を空にする。
+          </li>
+          <li>
+            通知を返すUsecaseのテストは、<code>Action::Notice</code>ではなく<code>UsecaseEvent</code>を検査する形に変わる。runnerのテストのうち、Storeのnoticeを観測しているものは、<code>AppComponent</code>のtoastを観測する形に変わる。<code>notice_store_tests.rs</code>はtoastのテストに置き換える。
+          </li>
+          <li>
+            表示から外れた対象についてのイベントは、<code>AppComponent</code>が無視する。新規作成中に別のIssueを開いた場合の完了イベントがこれにあたる。
+          </li>
+          <li>
+            <code>docs/architecture.md</code
+            >のusecases、runner、Flux構成の説明（<code>RequestSink</code>、update、冪等no-opの例）を更新する。
+          </li>
+          <li>
+            複数の通知が同時に出たときのtoastの集約・積み上げの規則は、<a
+              href="009.html"
+              >ADR 9</a
+            >のFuture Workのまま残す。
+          </li>
+        </ul>
+        <h2 id="alternatives-considered">Alternatives Considered</h2>
+        <ul>
+          <li>
+            イベントを<code>Action</code>のvariantにしてDispatcherのqueueに載せる:
+            runnerの型は変わらないが、ActionがStoreの状態遷移を表すという意味が崩れる。Actionは1件ずつ消費してupdateするため、同じcompletionの残りのActionを適用する前にイベントが届く。採用しない。
+          </li>
+          <li>
+            <code>Dispatcher</code>にイベントのqueueを持たせる:
+            Usecaseの同期処理からもイベントを出せるが、今は同期処理から通知を出す箇所がない。Storeの情報保存とイベントの通知の責務が<code>Dispatcher</code>に同居するため、採用しない。
+          </li>
+          <li>
+            <code>Rc&lt;dyn Subject&gt;</code>のような購読者の登録方式にする:
+            受け取り手が<code>AppComponent</code>だけの今は、登録と解除の管理が増えるだけである。受け取り手が増えたときに改めて検討する。
+          </li>
+          <li>
+            イベントを<code>update</code>の引数で渡す:
+            <code>update</code
+            >はActionを1件消費するたびに呼ばれるため、どの呼び出しでイベントを渡すかの規則が別に要る。Storeの反映とComponentの生成・破棄が同じメソッドに混ざるため、採用しない。
+          </li>
+          <li>
+            イベントの処理に<code>RequestSink</code>を渡し、イベントからUsecaseを起動できるようにする:
+            後続のUsecaseを表す経路が<code>UsecaseOutput::requests</code>と2つになる。採用しない。
+          </li>
+          <li>
+            汎用の<code>Notice { message }</code
+            >イベントにして、文言はUsecaseが組み立てる:
+            移行は機械的になるが、Usecaseが表示の文言を組み立てる負債が残るため、採用しない。
+          </li>
+          <li>
+            toastが<code>Instant</code>を持ち、自分で期限を判定する:
+            テストで時間を固定できず、editor中に経過時間を止める契約も守れないため、採用しない。
+          </li>
+          <li>
+            <code>NoticeStore</code>を残し、イベントの仕組みだけを足す:
+            時間で中身が変わるStoreが残り、通知が2つの経路に分かれるため、採用しない。
+          </li>
+        </ul>
+      </main>
+    </div>
+  </body>
+</html>
