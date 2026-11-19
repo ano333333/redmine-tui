@@ -22,11 +22,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@v23
-      # unmutatedのtestはCIのunit jobで確認しているため、baselineは省く。
       # missed(2)とtimeout(3)は結果として集計するため、job自体は成功させる。
+      # unmutatedのtestが失敗する場合(4)は、全mutantがcaughtになるためjobを失敗させる。
       - run: |
           status=0
-          nix develop -c cargo mutants -j 2 --baseline=skip --shard ${{ matrix.shard }}/8 || status=$?
+          nix develop -c cargo mutants -j 2 --shard ${{ matrix.shard }}/8 || status=$?
           case "$status" in
             0 | 2 | 3) ;;
             *) exit "$status" ;;
