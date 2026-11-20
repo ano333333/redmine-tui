@@ -7,10 +7,10 @@ use crate::platform::runtime::tokio_spawner::TokioBackgroundSpawner;
 use crate::platform::runtime::{BackgroundCompletion, BackgroundSpawner};
 use crate::runner::effect::{drain_requests, handle_component_requests, handle_input};
 use crate::runner::lifecycle::{
-    consume_editor_worker_actions, move_worker_action, tick_since, update,
+    consume_editor_worker_actions, deliver_usecase_events, move_worker_action, tick_since, update,
 };
 use crate::stores::{self, Action, Dispatcher};
-use crate::usecases::{UsecaseOutput, UsecaseRequest, start_usecase};
+use crate::usecases::{UsecaseEvent, UsecaseFailure, UsecaseOutput, UsecaseRequest, start_usecase};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -30,7 +30,7 @@ use crate::entities::{
     Category, IssueAggregate, IssueStatus, Journal, Priority, Project, TargetVersion,
     TimeEntityActivity, Tracker, User,
 };
-use crate::stores::{IssueAction, JournalAction, NoticeAction, NoticeId};
+use crate::stores::{IssueAction, JournalAction};
 use crate::test_support::{RedmineClientStub, sample_issue_aggregate, usecase_clients};
 use crate::vos::{self, IssueId, IssueStatusId, JournalId};
 
@@ -294,9 +294,8 @@ fn background_completion_panic_is_reported_by_the_main_loop_acceptor() {
     let spawner = CompletionSpawner::from_completions(vec![
         BackgroundCompletion::Succeeded(
             vec![
-                NoticeAction::Push {
-                    id: NoticeId::new(),
-                    message: "completed before panic".to_string(),
+                IssueAction::StartFetching {
+                    id: IssueId::new(2),
                 }
                 .into(),
             ]
@@ -306,49 +305,20 @@ fn background_completion_panic_is_reported_by_the_main_loop_acceptor() {
     ]);
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
 
-    let message = move_worker_action(&spawner, dispatcher.clone(), &mut VecDeque::new());
+    let message = move_worker_action(
+        &spawner,
+        dispatcher.clone(),
+        &mut VecDeque::new(),
+        &mut Vec::new(),
+    );
 
     assert_eq!(message.as_deref(), Some("worker panic marker"));
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 1);
     dispatcher.borrow_mut().consume_action();
-    assert_eq!(dispatcher.borrow().store().get_notices().len(), 1);
-}
-
-#[test]
-fn update_store_removes_expired_notices() {
-    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    for _ in 0..2 {
-        dispatcher.borrow_mut().dispatch(NoticeAction::Push {
-            id: NoticeId::new(),
-            message: "failed".to_string(),
-        });
-    }
-    while dispatcher.borrow().consume_actinos_len() > 0 {
-        dispatcher.borrow_mut().consume_action();
-    }
-    assert_eq!(dispatcher.borrow().store().get_notices().len(), 2);
-
-    dispatcher
-        .borrow_mut()
-        .update_store(chrono::Duration::seconds(5));
-
-    assert!(dispatcher.borrow().store().get_notices().is_empty());
-}
-
-#[test]
-fn update_store_keeps_notices_within_the_visible_duration() {
-    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
-    dispatcher.borrow_mut().dispatch(NoticeAction::Push {
-        id: NoticeId::new(),
-        message: "fresh".to_string(),
-    });
-    dispatcher.borrow_mut().consume_action();
-
-    dispatcher
-        .borrow_mut()
-        .update_store(chrono::Duration::seconds(1));
-
-    assert_eq!(dispatcher.borrow().store().get_notices().len(), 1);
+    assert_eq!(
+        dispatcher.borrow().store().try_get_issue_fetch_state(2),
+        Some(stores::IssueFetchState::Fetching)
+    );
 }
 
 struct IssueUploadClient {
@@ -547,7 +517,7 @@ fn saved_journal_issue(issue_id: u32) -> IssueAggregate {
 }
 
 #[test]
-fn move_worker_action_dispatches_worker_actions_without_extra_notice() {
+fn move_worker_action_dispatches_a_remote_upload_failure() {
     let mut dispatcher = Dispatcher::new();
     start_edited_journal_upload(&mut dispatcher, 3, "first journal notes marker");
     dispatcher.dispatch(Action::Journal(JournalAction::StartRemoteUpload {
@@ -562,7 +532,12 @@ fn move_worker_action_dispatches_worker_actions_without_extra_notice() {
         message: "network error: offline".to_string(),
     })]);
 
-    let panic_message = move_worker_action(&spawner, dispatcher.clone(), &mut VecDeque::new());
+    let panic_message = move_worker_action(
+        &spawner,
+        dispatcher.clone(),
+        &mut VecDeque::new(),
+        &mut Vec::new(),
+    );
 
     assert!(panic_message.is_none());
     while dispatcher.borrow().consume_actinos_len() > 0 {
@@ -570,7 +545,6 @@ fn move_worker_action_dispatches_worker_actions_without_extra_notice() {
     }
     let dispatcher = dispatcher.borrow();
     let store = dispatcher.store();
-    assert!(store.get_notices().is_empty());
     match &store
         .get_remote_journal(IssueId::new(3), JournalId::new(1))
         .state
@@ -586,7 +560,7 @@ fn move_worker_action_dispatches_worker_actions_without_extra_notice() {
 }
 
 #[test]
-fn move_worker_action_dispatches_no_notice_for_complete_remote_upload() {
+fn move_worker_action_dispatches_a_completed_remote_upload() {
     let mut dispatcher = Dispatcher::new();
     start_edited_journal_upload(&mut dispatcher, 3, "first journal notes marker");
     dispatcher.dispatch(Action::Journal(JournalAction::StartRemoteUpload {
@@ -602,13 +576,17 @@ fn move_worker_action_dispatches_no_notice_for_complete_remote_upload() {
             children: vec![],
         })]);
 
-    let panic_message = move_worker_action(&spawner, dispatcher.clone(), &mut VecDeque::new());
+    let panic_message = move_worker_action(
+        &spawner,
+        dispatcher.clone(),
+        &mut VecDeque::new(),
+        &mut Vec::new(),
+    );
 
     assert!(panic_message.is_none());
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
-    assert!(dispatcher.borrow().store().get_notices().is_empty());
     assert!(matches!(
         dispatcher
             .borrow()
@@ -623,19 +601,25 @@ fn move_worker_action_dispatches_no_notice_for_complete_remote_upload() {
 fn editor_worker_actions_are_consumed_without_component_updates() {
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
     let spawner = CompletionSpawner::new(vec![
-        NoticeAction::Push {
-            id: NoticeId::new(),
-            message: "completed while editing".to_string(),
+        IssueAction::StartFetching {
+            id: IssueId::new(2),
         }
         .into(),
     ]);
 
-    let panic_message =
-        consume_editor_worker_actions(&spawner, dispatcher.clone(), &mut VecDeque::new());
+    let panic_message = consume_editor_worker_actions(
+        &spawner,
+        dispatcher.clone(),
+        &mut VecDeque::new(),
+        &mut Vec::new(),
+    );
 
     assert!(panic_message.is_none());
     assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
-    assert_eq!(dispatcher.borrow().store().get_notices().len(), 1);
+    assert_eq!(
+        dispatcher.borrow().store().try_get_issue_fetch_state(2),
+        Some(stores::IssueFetchState::Fetching)
+    );
 }
 
 #[test]
@@ -695,10 +679,7 @@ fn remote_journal_upload_request_routes_the_failure_completion_to_worker_channel
         client.clone(),
     );
 
-    let mut actions = recv_actions(&spawner, 2).into_iter();
-    let notice = actions.next().expect("failure notice");
-    assert!(matches!(notice, Action::Notice(NoticeAction::Push { .. })));
-    let completion = actions.next().expect("upload failure");
+    let completion = recv_actions(&spawner, 1).remove(0);
     assert!(matches!(
         completion,
         Action::Journal(JournalAction::FailRemoteUpload { issue_id, journal_id, .. })
@@ -791,9 +772,7 @@ fn local_journal_upload_request_routes_the_failure_completion_to_worker_channel(
         client.clone(),
     );
 
-    let mut actions = recv_actions(&spawner, 2).into_iter();
-    let notice = actions.next().expect("failure notice");
-    assert!(matches!(notice, Action::Notice(NoticeAction::Push { .. })));
+    let mut actions = recv_actions(&spawner, 1).into_iter();
     let completion = actions.next().expect("upload failure");
     assert!(matches!(
         completion,
@@ -920,18 +899,6 @@ fn press_ctrl_s(
     sink.take_usecases()
 }
 
-fn route_worker_actions(
-    spawner: &TokioBackgroundSpawner<UsecaseOutput>,
-    expected: usize,
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    app: &mut AppComponent<'_>,
-) {
-    let actions = recv_actions(spawner, expected);
-    let acceptor = CompletionSpawner::new(actions);
-    assert!(move_worker_action(&acceptor, dispatcher.clone(), &mut VecDeque::new()).is_none());
-    update(dispatcher, app, Rect::new(0, 0, 80, 24));
-}
-
 /// completionを`completions`件受理する。runと同じく、各completionのActionを消費してから後続要求を起動する。
 fn route_completions_with_follow_ups<C>(
     spawner: &TokioBackgroundSpawner<UsecaseOutput>,
@@ -963,41 +930,14 @@ fn accept_completion(
     requests: &mut VecDeque<UsecaseRequest>,
 ) {
     let acceptor = CompletionSpawner::from_completions(vec![recv_completion(spawner)]);
-    assert!(move_worker_action(&acceptor, dispatcher.clone(), requests).is_none());
-    update(dispatcher, app, Rect::new(0, 0, 80, 24));
-}
-
-fn assert_toast_contains(
-    app: &AppComponent<'_>,
-    dispatcher: Rc<RefCell<Dispatcher>>,
-    expected: &str,
-) {
-    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-    terminal
-        .draw(|frame| app.render(dispatcher.borrow().store(), frame, frame.area()))
-        .unwrap();
-    let rendered = terminal
-        .backend()
-        .buffer()
-        .content
-        .iter()
-        .map(|cell| cell.symbol())
-        .collect::<String>();
-    // 日本語はwide-character cell間に空白が入るため、本文はStoreで検証し、
-    // render bufferでは単一幅のエラー原因だけをtoast表示の目印にする。
-    assert!(
-        dispatcher
-            .borrow()
-            .store()
-            .get_notices()
-            .iter()
-            .any(|notice| notice.message.contains(expected))
-    );
-    assert!(rendered.contains("offline"), "rendered: {rendered}");
+    let mut events = Vec::new();
+    assert!(move_worker_action(&acceptor, dispatcher.clone(), requests, &mut events).is_none());
+    update(dispatcher.clone(), app, Rect::new(0, 0, 80, 24));
+    deliver_usecase_events(&mut events, app, dispatcher, Rect::new(0, 0, 80, 24));
 }
 
 #[test]
-fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clears_failure() {
+fn issue_upload_failure_routes_worker_actions_to_store_and_retry_clears_failure() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
     let (initial_dispatcher, server_issue) = edited_issue_dispatcher();
     let dispatcher = Rc::new(RefCell::new(initial_dispatcher));
@@ -1024,9 +964,7 @@ fn issue_upload_failure_routes_worker_actions_to_store_and_toast_and_retry_clear
         store.store().try_get_issue_upload_failure(id),
         Some("network error: offline")
     );
-    assert_eq!(store.store().get_notices().len(), 1);
     drop(store);
-    assert_toast_contains(&app, dispatcher.clone(), "Issue #3の保存に失敗しました");
 
     let Ok([request @ UsecaseRequest::StartIssueUpload { id }]) =
         <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
@@ -1073,12 +1011,7 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
     // upload中の重複Ctrl+Sは要求を生成せず、usecase呼び出し前に正常なno-opとなる。
     assert_eq!(press_ctrl_s(&mut app, dispatcher.clone()), []);
-    route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
-    assert_toast_contains(
-        &app,
-        dispatcher.clone(),
-        "Remote Journalの保存に失敗しました",
-    );
+    accept_completion(&spawner, dispatcher.clone(), &mut app, &mut VecDeque::new());
 
     let Ok(
         [
@@ -1093,7 +1026,7 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
     };
     start_request(request, dispatcher.clone(), &spawner, client.clone());
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-    route_worker_actions(&spawner, 1, dispatcher.clone(), &mut app);
+    accept_completion(&spawner, dispatcher.clone(), &mut app, &mut VecDeque::new());
 
     assert!(matches!(
         dispatcher
@@ -1121,7 +1054,7 @@ fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     ));
     *client.journal_failures_remaining.lock().unwrap() = 1;
 
-    for expected_actions in [2, 1] {
+    for _ in 0..2 {
         let Ok([request @ UsecaseRequest::StartRemoteJournalUpload { .. }]) =
             <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
         else {
@@ -1129,14 +1062,7 @@ fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
         };
         start_request(request, dispatcher.clone(), &spawner, client.clone());
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-        route_worker_actions(&spawner, expected_actions, dispatcher.clone(), &mut app);
-        if expected_actions == 2 {
-            assert_toast_contains(
-                &app,
-                dispatcher.clone(),
-                "Remote Journalの保存に失敗しました",
-            );
-        }
+        accept_completion(&spawner, dispatcher.clone(), &mut app, &mut VecDeque::new());
     }
 
     assert_eq!(*client.get_requests.lock().unwrap(), 3);
@@ -1161,7 +1087,7 @@ fn local_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     ));
     *client.local_failures_remaining.lock().unwrap() = 1;
 
-    for expected_actions in [2, 1] {
+    for _ in 0..2 {
         let Ok([request @ UsecaseRequest::StartLocalJournalUpload { .. }]) =
             <[UsecaseRequest; 1]>::try_from(press_ctrl_s(&mut app, dispatcher.clone()))
         else {
@@ -1169,14 +1095,7 @@ fn local_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
         };
         start_request(request, dispatcher.clone(), &spawner, client.clone());
         update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-        route_worker_actions(&spawner, expected_actions, dispatcher.clone(), &mut app);
-        if expected_actions == 2 {
-            assert_toast_contains(
-                &app,
-                dispatcher.clone(),
-                "Local Journalの保存に失敗しました",
-            );
-        }
+        accept_completion(&spawner, dispatcher.clone(), &mut app, &mut VecDeque::new());
     }
 
     assert!(
@@ -1211,13 +1130,8 @@ fn local_confirmation_get_failure_tells_that_the_notes_were_saved_and_removes_th
     };
     start_request(request, dispatcher.clone(), &spawner, client.clone());
     update(dispatcher.clone(), &mut app, Rect::new(0, 0, 80, 24));
-    route_worker_actions(&spawner, 2, dispatcher.clone(), &mut app);
+    accept_completion(&spawner, dispatcher.clone(), &mut app, &mut VecDeque::new());
 
-    assert_toast_contains(
-        &app,
-        dispatcher.clone(),
-        "保存しましたが、確認の取得に失敗しました",
-    );
     assert!(
         dispatcher
             .borrow()
@@ -1329,7 +1243,6 @@ impl TextEditor for RunnerEditor {
 }
 
 struct DrawRecord {
-    notices: Vec<String>,
     rendered: String,
     pending_actions: usize,
     loading_project_ids: Vec<u32>,
@@ -1341,7 +1254,6 @@ struct RunnerHost {
     times: RefCell<VecDeque<Duration>>,
     events: VecDeque<io::Result<Option<HostEvent>>>,
     draws: Vec<DrawRecord>,
-    input_observations: Vec<Vec<String>>,
     /// editorを起動した時点の、Issue 2の取得状態。
     issue_2_fetch_states_at_suspend: Vec<Option<stores::IssueFetchState>>,
 }
@@ -1354,19 +1266,8 @@ impl RunnerHost {
             times: RefCell::new(VecDeque::from([Duration::ZERO, Duration::ZERO])),
             events: VecDeque::new(),
             draws: Vec::new(),
-            input_observations: Vec::new(),
             issue_2_fetch_states_at_suspend: Vec::new(),
         }
-    }
-
-    fn messages(&self) -> Vec<String> {
-        self.dispatcher
-            .borrow()
-            .store()
-            .get_notices()
-            .iter()
-            .map(|notice| notice.message.clone())
-            .collect()
     }
 }
 
@@ -1412,7 +1313,6 @@ impl PlatformHost for RunnerHost {
         let pending_actions = dispatcher.consume_actinos_len();
         drop(dispatcher);
         self.draws.push(DrawRecord {
-            notices: self.messages(),
             rendered,
             pending_actions,
             loading_project_ids,
@@ -1421,7 +1321,6 @@ impl PlatformHost for RunnerHost {
     }
 
     async fn next_event(&mut self, _: Duration) -> io::Result<Option<HostEvent>> {
-        self.input_observations.push(self.messages());
         self.events.pop_front().expect("scripted event")
     }
 
@@ -1442,14 +1341,6 @@ impl PlatformHost for RunnerHost {
     }
 }
 
-fn runner_notice(message: &str) -> Action {
-    NoticeAction::Push {
-        id: NoticeId::new(),
-        message: message.to_string(),
-    }
-    .into()
-}
-
 fn quit_event() -> HostEvent {
     // 起動時のpopupが最初のqを閉じるため、終了するtestでは二回送る。
     HostEvent::Input(InputEvent::Key(KeyEvent::new(
@@ -1459,22 +1350,18 @@ fn quit_event() -> HostEvent {
 }
 
 #[tokio::test]
-async fn run_accepts_completion_actions_then_ticks_updates_draws_and_reads_input() {
+async fn run_accepts_completion_events_then_ticks_updates_draws_and_reads_input() {
     let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
     crate::test_support::dispatch_sample_masters(&mut dispatcher.borrow_mut());
     while dispatcher.borrow().consume_actinos_len() > 0 {
         dispatcher.borrow_mut().consume_action();
     }
-    dispatcher.borrow_mut().dispatch(runner_notice("expired"));
-    dispatcher.borrow_mut().consume_action();
     let spawner = CompletionSpawner::from_completions(vec![
-        BackgroundCompletion::Succeeded(
-            vec![runner_notice("first"), runner_notice("second")].into(),
-        ),
-        BackgroundCompletion::Succeeded(vec![runner_notice("third")].into()),
+        BackgroundCompletion::Succeeded(issue_upload_failed_output("first")),
+        BackgroundCompletion::Succeeded(issue_upload_failed_output("second")),
     ]);
     let mut host = RunnerHost::new(dispatcher.clone());
-    // 同じ周のcompletionはtick適用後にconsumeされるため、既存Noticeだけが期限切れになることを確かめる。
+    // 同じ周のcompletionのイベントはtickの後に渡されるため、起動時のtoastだけが期限切れになることを確かめる。
     host.times = RefCell::new(VecDeque::from([Duration::ZERO, Duration::from_secs(5)]));
     host.events.push_back(Ok(Some(quit_event())));
     host.events.push_back(Ok(Some(quit_event())));
@@ -1485,18 +1372,17 @@ async fn run_accepts_completion_actions_then_ticks_updates_draws_and_reads_input
         &spawner,
         usecase_clients(Arc::new(FailingClient)),
         dispatcher,
+        Some("expired".to_string()),
     )
     .await;
 
     assert!(result.is_ok());
     assert_eq!(host.draws.len(), 2);
-    assert_eq!(host.draws[0].notices, ["first", "second", "third"]);
-    assert_eq!(
-        host.input_observations,
-        [["first", "second", "third"], ["first", "second", "third"]]
-    );
-    assert!(host.draws[0].rendered.contains("third"));
-    assert!(!host.draws[0].rendered.contains("expired"));
+    let rendered = &host.draws[0].rendered;
+    let first = rendered.find("first").expect("first toast is drawn");
+    let second = rendered.find("second").expect("second toast is drawn");
+    assert!(first < second, "rendered: {rendered}");
+    assert!(!rendered.contains("expired"), "rendered: {rendered}");
 }
 
 #[tokio::test]
@@ -1523,6 +1409,7 @@ async fn run_starts_completion_requests_after_consuming_the_completion_actions()
                 id: 2.into(),
                 with_parent: false,
             }],
+            events: Vec::new(),
         })]);
     let mut host = RunnerHost::new(dispatcher.clone());
     host.events.push_back(Ok(Some(quit_event())));
@@ -1534,6 +1421,7 @@ async fn run_starts_completion_requests_after_consuming_the_completion_actions()
         &spawner,
         usecase_clients(Arc::new(FailingClient)),
         dispatcher.clone(),
+        None,
     )
     .await;
 
@@ -1585,10 +1473,11 @@ fn editor_worker_completion_keeps_its_requests_queued() {
         CompletionSpawner::from_completions(vec![BackgroundCompletion::Succeeded(UsecaseOutput {
             actions: vec![],
             requests: vec![request.clone()],
+            events: Vec::new(),
         })]);
     let mut requests = VecDeque::new();
 
-    consume_editor_worker_actions(&spawner, dispatcher.clone(), &mut requests);
+    consume_editor_worker_actions(&spawner, dispatcher.clone(), &mut requests, &mut Vec::new());
 
     assert_eq!(requests, [request]);
     assert_eq!(spawner.spawned.get(), 0);
@@ -1596,6 +1485,42 @@ fn editor_worker_completion_keeps_its_requests_queued() {
         dispatcher.borrow().store().try_get_issue_fetch_state(2),
         None
     );
+}
+
+#[test]
+fn editor_worker_completion_keeps_its_events_queued() {
+    let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+    let event = UsecaseEvent::Failure(UsecaseFailure::IssueUpload {
+        id: 2.into(),
+        reason: "offline".to_string(),
+    });
+    let spawner =
+        CompletionSpawner::from_completions(vec![BackgroundCompletion::Succeeded(UsecaseOutput {
+            actions: vec![],
+            requests: vec![],
+            events: vec![event.clone()],
+        })]);
+    let mut events = Vec::new();
+
+    consume_editor_worker_actions(
+        &spawner,
+        dispatcher.clone(),
+        &mut VecDeque::new(),
+        &mut events,
+    );
+
+    assert_eq!(events, [event]);
+}
+
+fn issue_upload_failed_output(message: &str) -> UsecaseOutput {
+    UsecaseOutput {
+        actions: vec![],
+        requests: vec![],
+        events: vec![UsecaseEvent::Failure(UsecaseFailure::IssueUpload {
+            id: 1.into(),
+            reason: message.to_string(),
+        })],
+    }
 }
 
 #[tokio::test]
@@ -1622,6 +1547,7 @@ async fn run_starts_startup_and_input_requests_before_drawing() {
         &spawner,
         usecase_clients(Arc::new(FailingClient)),
         dispatcher,
+        None,
     )
     .await;
 

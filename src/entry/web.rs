@@ -64,7 +64,7 @@ pub(crate) fn run() {
             redmine: client,
             local_file: Arc::new(DemoLocalFileClient),
         };
-        if let Err(error) = run_app(&mut host, &editor, &spawner, clients, dispatcher).await {
+        if let Err(error) = run_app(&mut host, &editor, &spawner, clients, dispatcher, None).await {
             match error {
                 RunError::WorkerPanicked(message) => {
                     report(format!("worker task panicked: {message}"))

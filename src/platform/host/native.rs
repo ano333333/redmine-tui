@@ -18,7 +18,7 @@ static PANIC_HOOK_INSTALLED: AtomicBool = AtomicBool::new(false);
 
 pub struct NativePlatformHost {
     terminal: DefaultTerminal,
-    // Noticeの表示時間をwall clockの補正から独立させるため、経過時間は単調時計で測る。
+    // toastの表示時間をwall clockの補正から独立させるため、経過時間は単調時計で測る。
     started_at: Instant,
 }
 

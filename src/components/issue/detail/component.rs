@@ -83,6 +83,10 @@ pub enum EventProcessResult {
     OpenSpentTimeInputPopup,
     OpenCategoryPopup,
     StartIssueUpload,
+    ComputedPropertyNotEditable {
+        issue_id: IssueId,
+        property: &'static str,
+    },
     SaveRequested {
         issue_id: IssueId,
         id: JournalId,
@@ -711,6 +715,12 @@ impl IssueDetailComponent {
                     }
                     Some(PropertyEventProcessResult::OpenCategoryPopup) => {
                         return Some(EventProcessResult::OpenCategoryPopup);
+                    }
+                    Some(PropertyEventProcessResult::ComputedPropertyNotEditable { property }) => {
+                        return Some(EventProcessResult::ComputedPropertyNotEditable {
+                            issue_id: self.id,
+                            property,
+                        });
                     }
                     Some(PropertyEventProcessResult::Handled) => {
                         return Some(EventProcessResult::Handled);

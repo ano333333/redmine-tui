@@ -7,7 +7,7 @@ use ratatui::layout::Position;
 
 use crate::entities::{IssueStatus, IssueView};
 use crate::platform::input::InputEvent;
-use crate::stores::{Dispatcher, NoticeAction, NoticeId, Store};
+use crate::stores::{Dispatcher, Store};
 use crate::vos::IssueId;
 
 pub struct PropertyComponent {
@@ -23,7 +23,7 @@ impl PropertyComponent {
         }
     }
 
-    /// 編集できない属性のpopupを開く要求は、Noticeを出して`Handled`に置き換える。
+    /// 子Issueから計算される属性のpopupを開く要求は、`ComputedPropertyNotEditable`に置き換える。
     pub fn process_event(
         &mut self,
         event: InputEvent,
@@ -57,17 +57,10 @@ impl PropertyComponent {
                 _ => None,
             }
         };
-        let Some(property) = blocked_property else {
-            return Some(result);
-        };
-        dispatcher.borrow_mut().dispatch(NoticeAction::Push {
-            id: NoticeId::new(),
-            message: format!(
-                "Issue #{}の{property}は子Issueから計算されるため編集できません",
-                self.id
-            ),
-        });
-        Some(EventProcessResult::Handled)
+        match blocked_property {
+            Some(property) => Some(EventProcessResult::ComputedPropertyNotEditable { property }),
+            None => Some(result),
+        }
     }
 
     pub fn focus_event(&mut self, event: FocusEvent) {
@@ -520,39 +513,23 @@ mod tests {
     }
 
     #[test]
-    fn process_event_e_on_derived_property_of_issue_with_children_pushes_notice() {
+    fn process_event_e_on_derived_property_of_issue_with_children_returns_not_editable() {
         for (line, expected) in [
-            (
-                PRIORITY_LINE,
-                "Issue #3の優先度は子Issueから計算されるため編集できません",
-            ),
-            (
-                START_DATE_LINE,
-                "Issue #3の開始日は子Issueから計算されるため編集できません",
-            ),
-            (
-                DUE_DATE_LINE,
-                "Issue #3の期日は子Issueから計算されるため編集できません",
-            ),
-            (
-                DONE_RATIO_LINE,
-                "Issue #3の進捗率は子Issueから計算されるため編集できません",
-            ),
+            (PRIORITY_LINE, "優先度"),
+            (START_DATE_LINE, "開始日"),
+            (DUE_DATE_LINE, "期日"),
+            (DONE_RATIO_LINE, "進捗率"),
         ] {
             let dispatcher = dispatcher_with_parent_issue();
 
             let result = press_e_on_line(dispatcher.clone(), 3, line);
 
-            assert!(matches!(result, Some(EventProcessResult::Handled)));
-            consume_all(&mut dispatcher.borrow_mut());
-            let messages: Vec<_> = dispatcher
-                .borrow()
-                .store()
-                .get_notices()
-                .iter()
-                .map(|notice| notice.message.clone())
-                .collect();
-            assert_eq!(messages, [expected]);
+            assert!(matches!(
+                result,
+                Some(EventProcessResult::ComputedPropertyNotEditable { property })
+                    if property == expected
+            ));
+            assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
         }
     }
 

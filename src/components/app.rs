@@ -25,7 +25,6 @@ use crate::stores::{
     Action, DeletedJournalState, Dispatcher, IssueAction, IssueState, JournalAction,
     LocalJournalState, RemoteJournalState, Store,
 };
-use crate::usecases::UsecaseRequest;
 use crate::usecases::issue_popup_options::{
     assigned_to_popup_observer, build_assigned_to_options, build_category_options,
     build_done_ratio_options, build_issue_status_options, build_priority_options,
@@ -35,8 +34,8 @@ use crate::usecases::issue_popup_options::{
     issue_status_popup_observer, priority_popup_observer, project_popup_observer,
     start_date_popup_observer, target_version_popup_observer, tracker_popup_observer,
 };
+use crate::usecases::{UsecaseEvent, UsecaseRequest};
 use crate::vos::{EntityIdValue, IssueId, JournalId, TimeEntityActivityId};
-use crate::widgets::ToastWidget;
 
 use super::attachment_input_popup::{
     AttachmentInputPopupComponent, EventProcessResult as AttachmentInputPopupEventProcessResult,
@@ -53,6 +52,7 @@ use super::select_box_popup::{
 use super::spent_time_input_popup::{
     EventProcessResult as SpentTimeInputPopupEventProcessResult, SpentTimeInputPopupComponent,
 };
+use super::toast_list::ToastListComponent;
 
 enum PendingEditorContext {
     IssueBody {
@@ -136,6 +136,7 @@ pub struct AppComponent<'a> {
     pending_editor_context: Option<PendingEditorContext>,
     interaction_mode: InteractionMode,
     cursor_rendering: CursorRendering,
+    toast_list: ToastListComponent,
 }
 
 impl<'a> AppComponent<'a> {
@@ -152,6 +153,7 @@ impl<'a> AppComponent<'a> {
             pending_editor_context: None,
             interaction_mode: InteractionMode::Application,
             cursor_rendering,
+            toast_list: ToastListComponent::default(),
         };
         match issue_id {
             Some(issue_id) => app.open_issue(issue_id, sink),
@@ -653,6 +655,12 @@ impl<'a> AppComponent<'a> {
                 self.open_issue(id, sink);
             }
             // 子Componentがキーを解釈済みで、App側に要求はない。
+            IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::ComputedPropertyNotEditable { issue_id, property },
+            ) => {
+                self.toast_list
+                    .push_computed_property_not_editable(issue_id, property);
+            }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::Handled) => {}
         }
         true
@@ -834,7 +842,7 @@ impl<'a> AppComponent<'a> {
         }
         self.render_popup_component(frame, area, store);
         // popupより後に描画して最前面へ重ねる。toastはfocusを持たずcursor位置も変えない。
-        frame.render_widget(create_toast_widget(store), area);
+        frame.render_widget(self.toast_list.create_widget(), area);
         if let Some(cursor_position) = self.cursor_position(store, area) {
             match self.cursor_rendering {
                 CursorRendering::Terminal => frame.set_cursor_position(cursor_position),
@@ -850,6 +858,29 @@ impl<'a> AppComponent<'a> {
 
     pub fn interaction_mode(&self) -> InteractionMode {
         self.interaction_mode
+    }
+
+    /// 表示経過時間を進める。
+    pub fn tick(&mut self, elapsed: chrono::Duration) {
+        self.toast_list.tick(elapsed);
+    }
+
+    pub fn handle_usecase_events(&mut self, events: Vec<UsecaseEvent>) {
+        for event in events {
+            match event {
+                UsecaseEvent::Failure(failure) => self.toast_list.push_failure(&failure),
+            }
+        }
+    }
+
+    pub fn notify_image_display_unavailable(&mut self, reason: &str) {
+        self.toast_list.push_image_display_unavailable(reason);
+    }
+
+    /// editorの失敗を通知し、editor contextを解放する。
+    pub fn handle_editor_failure(&mut self, error: &dyn std::fmt::Display) {
+        self.handle_editor_response(EditorOutcome::Failed);
+        self.toast_list.push_editor_failure(error);
     }
 
     pub fn handle_editor_response(&mut self, outcome: EditorOutcome) {
@@ -1011,16 +1042,6 @@ impl<'a> AppComponent<'a> {
     }
 }
 
-fn create_toast_widget(store: &Store) -> ToastWidget {
-    ToastWidget::new(
-        store
-            .get_notices()
-            .iter()
-            .map(|notice| notice.message.clone())
-            .collect(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1028,7 +1049,7 @@ mod tests {
 
     use crate::entities::{Issue, ProjectIssuesPage};
     use crate::platform::input::{InputEvent, KeyCode, KeyEvent, KeyModifiers};
-    use crate::stores::{JournalAction, NoticeAction, NoticeId, ProjectIssuesAction};
+    use crate::stores::{JournalAction, ProjectIssuesAction};
     use crate::vos::ProjectId;
 
     const AREA: Rect = Rect {
@@ -1039,28 +1060,19 @@ mod tests {
     };
 
     #[test]
-    fn toast_widget_reflects_store_notices() {
-        let mut store = Store::new();
-        store.consume_action(Action::Notice(NoticeAction::Push {
-            id: NoticeId::new(),
-            message: "Issueの保存に失敗しました: 接続が切れました".to_string(),
-        }));
-
-        let widget = create_toast_widget(&store);
-
-        assert_eq!(
-            widget.messages,
-            vec!["Issueの保存に失敗しました: 接続が切れました".to_string()]
+    fn handle_editor_failure_returns_to_application_mode() {
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            None,
+            CursorRendering::Terminal,
+            &mut RequestSink::default(),
         );
-    }
+        app.interaction_mode = InteractionMode::Editing;
 
-    #[test]
-    fn toast_widget_is_empty_when_store_has_no_notices() {
-        let store = Store::new();
+        app.handle_editor_failure(&"boom");
 
-        let widget = create_toast_widget(&store);
-
-        assert!(widget.messages.is_empty());
+        assert_eq!(app.interaction_mode(), InteractionMode::Application);
     }
 
     fn assert_no_requests(sink: &mut RequestSink) {

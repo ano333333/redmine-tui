@@ -4,8 +4,10 @@ use std::rc::Rc;
 
 use crate::clients::local_file::LocalFileClient;
 use crate::clients::redmine::RedmineClient;
-use crate::stores::{AttachmentAction, Dispatcher, IssueState, NoticeAction, NoticeId};
-use crate::usecases::{UsecaseClients, UsecaseOutput, UsecaseRequest, UsecaseTask};
+use crate::stores::{AttachmentAction, Dispatcher, IssueState};
+use crate::usecases::{
+    UsecaseClients, UsecaseEvent, UsecaseFailure, UsecaseOutput, UsecaseRequest, UsecaseTask,
+};
 use crate::vos::IssueId;
 
 /// Redmineの添付ファイルサイズ上限の設定`attachment_max_size`の既定値（5120 KB）。
@@ -63,7 +65,10 @@ where
             Err(error) => {
                 return failure_output(
                     issue_id,
-                    format!("Issue #{issue_id}へ添付するファイルを読み込めませんでした: {error}"),
+                    UsecaseFailure::AttachmentFileRead {
+                        issue_id,
+                        reason: error.to_string(),
+                    },
                 );
             }
         };
@@ -72,7 +77,10 @@ where
             Err(error) => {
                 return failure_output(
                     issue_id,
-                    format!("Issue #{issue_id}へ添付するファイルの送信に失敗しました: {error}"),
+                    UsecaseFailure::AttachmentFileUpload {
+                        issue_id,
+                        reason: error.to_string(),
+                    },
                 );
             }
         };
@@ -83,20 +91,17 @@ where
                 token,
                 filename,
             }],
+            events: Vec::new(),
         }
     }))
 }
 
-fn failure_output(issue_id: IssueId, message: String) -> UsecaseOutput {
-    vec![
-        NoticeAction::Push {
-            id: NoticeId::new(),
-            message,
-        }
-        .into(),
-        AttachmentAction::FailUpload { issue_id }.into(),
-    ]
-    .into()
+fn failure_output(issue_id: IssueId, failure: UsecaseFailure) -> UsecaseOutput {
+    UsecaseOutput {
+        actions: vec![AttachmentAction::FailUpload { issue_id }.into()],
+        requests: Vec::new(),
+        events: vec![UsecaseEvent::Failure(failure)],
+    }
 }
 
 #[cfg(test)]
@@ -209,12 +214,16 @@ mod tests {
         assert!(clients.redmine.uploads.lock().unwrap().is_empty());
         assert!(matches!(
             output.actions.as_slice(),
-            [
-                Action::Notice(NoticeAction::Push { .. }),
-                Action::Attachment(AttachmentAction::FailUpload { issue_id })
-            ] if *issue_id == ISSUE_ID
+            [Action::Attachment(AttachmentAction::FailUpload { issue_id })] if *issue_id == ISSUE_ID
         ));
         assert!(output.requests.is_empty());
+        assert_eq!(
+            output.events,
+            [UsecaseEvent::Failure(UsecaseFailure::AttachmentFileRead {
+                issue_id: ISSUE_ID,
+                reason: "failed to read /tmp/sample.png: not found".to_string(),
+            })]
+        );
     }
 
     #[tokio::test]
@@ -232,12 +241,14 @@ mod tests {
 
         assert!(matches!(
             output.actions.as_slice(),
-            [
-                Action::Notice(NoticeAction::Push { .. }),
-                Action::Attachment(AttachmentAction::FailUpload { .. })
-            ]
+            [Action::Attachment(AttachmentAction::FailUpload { .. })]
         ));
         assert!(output.requests.is_empty());
+        assert!(matches!(
+            output.events.as_slice(),
+            [UsecaseEvent::Failure(UsecaseFailure::AttachmentFileUpload { issue_id, .. })]
+                if *issue_id == ISSUE_ID
+        ));
     }
 
     #[test]

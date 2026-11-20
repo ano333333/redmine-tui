@@ -4,37 +4,34 @@ use std::sync::Arc;
 
 use super::attachment_image_requests;
 use crate::clients::redmine::RedmineClient;
-use crate::stores::{
-    Action, Dispatcher, IssueState, JournalAction, NoticeAction, NoticeId, RemoteJournalState,
-};
-use crate::usecases::{UsecaseOutput, UsecaseTask};
+use crate::stores::{Dispatcher, IssueState, JournalAction, RemoteJournalState};
+use crate::usecases::{UsecaseEvent, UsecaseFailure, UsecaseOutput, UsecaseTask};
 use crate::vos::{EntityIdValue, IssueId, JournalId};
 
 use super::resolve_remote_journal_upload::{
     RemoteJournalUploadResolution, resolve_remote_journal_upload,
 };
 
-/// FIXME: usecaseがUI表示物(notice/toast)の文言を組み立てているのは設計上の負債である。
-/// 将来的にはStoreのJournal状態を見て判断するtoast component等を導入し、
-/// この処理をそちらへ移すべき。
-pub fn remote_journal_upload_failure_actions(
+fn remote_journal_upload_failure_output(
     issue_id: IssueId,
     journal_id: JournalId,
     message: String,
-) -> Vec<Action> {
-    vec![
-        NoticeAction::Push {
-            id: NoticeId::new(),
-            message: format!("Remote Journalの保存に失敗しました: {message}"),
-        }
-        .into(),
-        JournalAction::FailRemoteUpload {
-            issue_id,
+) -> UsecaseOutput {
+    UsecaseOutput {
+        actions: vec![
+            JournalAction::FailRemoteUpload {
+                issue_id,
+                journal_id,
+                message: message.clone(),
+            }
+            .into(),
+        ],
+        requests: Vec::new(),
+        events: vec![UsecaseEvent::Failure(UsecaseFailure::RemoteJournalUpload {
             journal_id,
-            message,
-        }
-        .into(),
-    ]
+            reason: message,
+        })],
+    }
 }
 
 /// 編集済みのRemote Journalのuploadを開始する。
@@ -121,16 +118,14 @@ where
     let mut preflight = match client.get_issue(issue_id).await {
         Ok(fetched) if fetched.aggregate.issue.id == issue_id => fetched,
         Ok(fetched) => {
-            return remote_journal_upload_failure_actions(
+            return remote_journal_upload_failure_output(
                 issue_id,
                 journal_id,
                 mismatched_issue_message(issue_id, fetched.aggregate.issue.id),
-            )
-            .into();
+            );
         }
         Err(error) => {
-            return remote_journal_upload_failure_actions(issue_id, journal_id, error.to_string())
-                .into();
+            return remote_journal_upload_failure_output(issue_id, journal_id, error.to_string());
         }
     };
     let preflight_image_requests = attachment_image_requests(&preflight.aggregate);
@@ -152,6 +147,7 @@ where
                 .into(),
             ],
             requests: preflight_image_requests,
+            events: Vec::new(),
         };
     };
     match resolve_remote_journal_upload(before, after, &server_notes) {
@@ -167,6 +163,7 @@ where
                     .into(),
                 ],
                 requests: preflight_image_requests,
+                events: Vec::new(),
             };
         }
         RemoteJournalUploadResolution::Conflict => {
@@ -180,13 +177,13 @@ where
                     .into(),
                 ],
                 requests: preflight_image_requests,
+                events: Vec::new(),
             };
         }
         RemoteJournalUploadResolution::Upload => {}
     }
     if let Err(error) = client.update_journal_notes(journal_id, after).await {
-        return remote_journal_upload_failure_actions(issue_id, journal_id, error.to_string())
-            .into();
+        return remote_journal_upload_failure_output(issue_id, journal_id, error.to_string());
     }
 
     let reason = match client.get_issue(issue_id).await {
@@ -201,6 +198,7 @@ where
                     }
                     .into(),
                 ],
+                events: Vec::new(),
             };
         }
         Ok(confirmed) => mismatched_issue_message(issue_id, confirmed.aggregate.issue.id),
@@ -216,13 +214,6 @@ where
         .notes = after.to_string();
     UsecaseOutput {
         actions: vec![
-            NoticeAction::Push {
-                id: NoticeId::new(),
-                message: format!(
-                    "Journal #{journal_id}を保存しましたが、確認の取得に失敗しました: {reason}"
-                ),
-            }
-            .into(),
             JournalAction::CompleteRemoteUpload {
                 journal_id,
                 issue: preflight.aggregate,
@@ -231,6 +222,9 @@ where
             .into(),
         ],
         requests: preflight_image_requests,
+        events: vec![UsecaseEvent::Failure(
+            UsecaseFailure::RemoteJournalUploadConfirm { journal_id, reason },
+        )],
     }
 }
 
@@ -254,7 +248,7 @@ pub(super) mod tests {
     use crate::entities::{IssueChild, Journal};
     use crate::stores::{
         Action, DeletedJournalEntry, DeletedJournalState, Dispatcher, IssueAction, IssueState,
-        JournalAction, NoticeAction, RemoteJournalState,
+        JournalAction, RemoteJournalState,
     };
     use crate::test_support::{RedmineClientStub, complete_usecase};
     use crate::test_support::{local_datetime, sample_attachment, sample_issue_aggregate};
@@ -481,26 +475,22 @@ pub(super) mod tests {
         let dispatcher = Rc::new(RefCell::new(dispatcher));
         let client = Arc::new(StubClient::new(vec![Err(offline())], Ok(())));
 
-        let actions = complete_usecase(start_remote_journal_upload(
-            dispatcher.clone(),
-            client,
-            ISSUE_ID,
-            JOURNAL_ID,
-        ))
-        .await;
+        let output = start_remote_journal_upload(dispatcher.clone(), client, ISSUE_ID, JOURNAL_ID)
+            .expect("usecase should start")
+            .await;
 
-        let [
-            Action::Notice(NoticeAction::Push { message, .. }),
-            Action::Journal(JournalAction::FailRemoteUpload { .. }),
-        ] = actions.as_slice()
-        else {
-            panic!("expected a notice and FailRemoteUpload");
-        };
+        assert!(matches!(
+            output.actions.as_slice(),
+            [Action::Journal(JournalAction::FailRemoteUpload { .. })]
+        ));
         assert_eq!(
-            message,
-            "Remote Journalの保存に失敗しました: network error: offline"
+            output.events,
+            [UsecaseEvent::Failure(UsecaseFailure::RemoteJournalUpload {
+                journal_id: JOURNAL_ID,
+                reason: "network error: offline".to_string(),
+            })]
         );
-        dispatch_all(&dispatcher, actions);
+        dispatch_all(&dispatcher, output.actions);
         let dispatcher = dispatcher.borrow();
         let entry = dispatcher.store().get_remote_journal(ISSUE_ID, JOURNAL_ID);
         let RemoteJournalState::Edited { diff, failure } = &entry.state else {
@@ -562,12 +552,9 @@ pub(super) mod tests {
         .await
         .actions;
 
-        let [
-            _,
-            Action::Journal(JournalAction::FailRemoteUpload { message, .. }),
-        ] = actions.as_slice()
+        let [Action::Journal(JournalAction::FailRemoteUpload { message, .. })] = actions.as_slice()
         else {
-            panic!("expected a notice and FailRemoteUpload");
+            panic!("expected FailRemoteUpload");
         };
         assert_eq!(message, "requested issue 1 but Redmine returned issue 99");
         assert!(client.put_notes.lock().unwrap().is_empty());
@@ -788,12 +775,9 @@ pub(super) mod tests {
         .await
         .actions;
 
-        let [
-            _,
-            Action::Journal(JournalAction::FailRemoteUpload { message, .. }),
-        ] = actions.as_slice()
+        let [Action::Journal(JournalAction::FailRemoteUpload { message, .. })] = actions.as_slice()
         else {
-            panic!("expected a notice and FailRemoteUpload");
+            panic!("expected FailRemoteUpload");
         };
         assert_eq!(message, "network error: put failed");
     }
@@ -805,28 +789,31 @@ pub(super) mod tests {
             Ok(()),
         );
 
-        let actions = upload_remote_journal_action(
+        let output = upload_remote_journal_action(
             &client,
             ISSUE_ID,
             JOURNAL_ID,
             "remote notes",
             "edited notes",
         )
-        .await
-        .actions;
+        .await;
 
         let [
-            Action::Notice(NoticeAction::Push { message, .. }),
             Action::Journal(JournalAction::CompleteRemoteUpload {
                 issue, children, ..
             }),
-        ] = actions.as_slice()
+        ] = output.actions.as_slice()
         else {
-            panic!("expected a notice and CompleteRemoteUpload");
+            panic!("expected CompleteRemoteUpload");
         };
         assert_eq!(
-            message,
-            "Journal #10を保存しましたが、確認の取得に失敗しました: network error: offline"
+            output.events,
+            [UsecaseEvent::Failure(
+                UsecaseFailure::RemoteJournalUploadConfirm {
+                    journal_id: JOURNAL_ID,
+                    reason: "network error: offline".to_string(),
+                }
+            )]
         );
         assert_eq!(issue.journals[0].notes, "edited notes");
         assert_eq!(children[0].subject, "before put");

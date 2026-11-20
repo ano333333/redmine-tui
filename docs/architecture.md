@@ -14,7 +14,7 @@
   - `terminal_image.rs` は、terminal への画像表示に使う `ratatui-image` と `image` の型を包む。native 版だけがこれらに依存し、Web デモでは値を作れない型にする。
 - `src/usecases/`
   - アプリ固有の操作を置く。Store・Client の情報統合、および同期的な Dispatch や非同期タスクによる Action の形成を担う。
-  - 非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期の処理は `Option<UsecaseTask>` として返却する形が基本形である。`UsecaseTask` は完了 Action を `UsecaseOutput` に入れて返す Future で、非同期の処理がない場合は `None` を返す。完了後に別の Usecase を起動するときは、Future の中で起動せず、`UsecaseOutput::requests` に後続の `UsecaseRequest` を入れて返す。`Store` を直接書き換えず、`Dispatcher::dispatch` を介して Action を積む。`runner` が `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で起動し、完了 Action を Dispatcher へ戻す。
+  - 非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期の処理は `Option<UsecaseTask>` として返却する形が基本形である。`UsecaseTask` は完了 Action を `UsecaseOutput` に入れて返す Future で、非同期の処理がない場合は `None` を返す。完了後に別の Usecase を起動するときは、Future の中で起動せず、`UsecaseOutput::requests` に後続の `UsecaseRequest` を入れて返す。保存の失敗など一度だけ起きたことは、`UsecaseOutput::events` に `UsecaseEvent` として入れて返す。Usecase はイベントの受け取り手を知らず、イベントを契機に Usecase を起動することもしない。`Store` を直接書き換えず、`Dispatcher::dispatch` を介して Action を積む。`runner` が `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で起動し、完了 Action を Dispatcher へ戻す。
 - `src/clients/`
   - 外部プロセスとの通信を行う。
   - `redmine/base.rs` は `RedmineClient` trait を定義し、 Redmine との通信のインターフェースを定義する。`redmine/default.rs` は `DefaultRedmineClient`（実 HTTP 実装）を定義する。
@@ -120,15 +120,17 @@ Store の更新は原則として Dispatcher を介して行う。
 - focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。
 - 親子 Component 間の focus 遷移は Store / Action を経由せず、`process_event` の戻り値と `focus_event` で直接処理する。
 - editor 起動、Redmine への非同期取得・保存などの外部副作用は、Component が `RequestSink` に要求を書き、`runner` 側で実行する。`RequestSink` は `runner` が `&mut` で貸すもので、受け取るのは `AppComponent` の `new`・`process_event`・`handle_key_event` と、`IssueSelectPopupComponent` の `new`・`process_event` だけである。`update` と `render` は受け取らないため、update からは要求を発行できない。要求を Component のフィールドに溜めて後で書くことも禁止する。Redmine の Usecase は `UsecaseRequest` で要求する。`runner` は `start_usecase` で Usecase を起動し、返された `UsecaseTask` を platform の runtime port（native は Tokio、Web は `spawn_local`）で spawn して、完了 Action を Dispatcher に戻す。`runner` は要求を queue に積み、1件起動するたびに update する。Component 生成と入力に由来する要求は、その処理の直後、update の前に起動し、その後に editor を起動する。completion の後続要求は、その completion の Action を消費した update の後に起動する。そのため Usecase の起動条件は、それまでの要求と completion を反映した Store で判定できる。
+- Usecase のイベントは、`runner` が `AppComponent::handle_usecase_events` に渡す。受け取るのは `AppComponent` だけで、購読者を登録する仕組みは持たない。`runner` は completion の Action を消費して update した後にイベントを渡し、もう一度 update する。そのためイベントを受けた Component は、同じ completion の Action を反映した Store を前提にできる。editor 中に受理した completion のイベントは、editor から戻るまで保持する。
+- 一時通知（toast）は Store に置かない。`AppComponent` が持つ `ToastListComponent` が、通知の文言を組み立てて表示し、表示経過時間で破棄する。`runner` は表示経過時間を `AppComponent::tick` で渡し、editor 中の時間は渡さない。
 - `create_widget(&Store)` で Store を参照して表示用 entity を取得してよい。
 
 Store は、失敗または Action の不受理に見える分岐を以下に区別して扱う。
 
 - 異常系: 自プロセスの制御破綻を示す状態機械違反。`panic!` で即座に停止する。異常系を `Result` で呼び出し元へ返すのは、Flux を参考にした一方向データフローでは dispatch 時点と consume 時点が分離しておりエラーを返す先がないため採用しない。
-- 準異常系: 外部プロセスや外部データ起因の復帰可能な失敗。message を Action に載せ、状態復帰と notice によるユーザー通知を行う。失敗後の再試行に必要な状態がある場合は、失敗 Action によって対象の状態機械を再試行可能な状態へ戻し、message を状態の一部として保持する。
+- 準異常系: 外部プロセスや外部データ起因の復帰可能な失敗。message を Action に載せて状態を復帰し、Usecase のイベントを通じて toast でユーザーに通知する。失敗後の再試行に必要な状態がある場合は、失敗 Action によって対象の状態機械を再試行可能な状態へ戻し、message を状態の一部として保持する。
 - stale completion: 重複を許した非同期要求の追い越し。request ID の一致判定で破棄し、暗黙の状態判定では破棄しない。現時点でこれに該当するのは `ProjectIssuesStore` のみ。`IssueAction`、`JournalAction`、`AttachmentAction` は重複を事前条件で排除するため、想定した状態以外へ着弾した完了は stale completion として捨てず異常系として拒否する。
 - マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。取得した Journal を取り込む際に、未送信の編集差分を取得値で置き換えないことがこれにあたる。編集中の Journal は本体だけを取得値に更新して `diff.before` を残し、サーバーの notes が `after` と同じなら Synced にする。notes の競合はその Journal を保存するときの取得で判定する。upload 中の Journal は取得値で上書きしない。取得結果から消えた編集中の Journal は元の ID と編集後の notes で退避し、同じ ID が再び現れたらサーバーの notes からの編集として戻す。退避した Journal は利用者が個別に新規投稿するか破棄する。
-- 冪等 no-op: 同じ `NoticeId` の再追加など、Action 自体が冪等であることを契約として持つ正常な no-op。stale completion とマージ戦略は同じ no-op の見た目になりやすいため独立して扱う。
+- 冪等 no-op: Action 自体が冪等であることを契約として持つ正常な no-op。stale completion とマージ戦略は同じ no-op の見た目になりやすいため独立して扱う。
 
 Redmine への保存の完了では、取得した Issue を `IssueStore` の共通処理で Issue 本体・Journal・子一覧ごと取り込み、未送信の編集差分は残す。PUT が成功した後に確認の取得だけが失敗した場合は、PUT を繰り返さずに保存済みとして完了し、失敗の理由を残して確認の取得だけをやり直せるようにする。
 
@@ -375,6 +377,7 @@ flowchart TD
     component -->|RequestSink| runner["App runner"]
     runner --> ports["platform ports<br/>Redmine・Editor・Runtime・Logging"]
     ports -->|completion| store["Dispatcher/Store"]
+    runner -->|UsecaseEvent| component
     component --> action["Action"]
     action --> store
 ```

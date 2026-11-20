@@ -20,7 +20,10 @@ mod tests;
 use effect::{
     EditorSession, drain_requests, handle_component_requests, handle_editor_failure, handle_input,
 };
-use lifecycle::{consume_editor_worker_actions, draw, move_worker_action, tick_since, update};
+use lifecycle::{
+    consume_editor_worker_actions, deliver_usecase_events, draw, move_worker_action, tick_since,
+    update,
+};
 
 const TICK_RATE_MS: u64 = 250;
 
@@ -37,6 +40,7 @@ pub(crate) async fn run<H, E, S, C, F>(
     spawner: &S,
     clients: UsecaseClients<C, F>,
     dispatcher: Rc<RefCell<Dispatcher>>,
+    image_display_unavailable_reason: Option<String>,
 ) -> Result<(), RunError>
 where
     H: PlatformHost,
@@ -47,9 +51,13 @@ where
 {
     let mut editor_session: Option<EditorSession<'_>> = None;
     let mut requests = VecDeque::new();
+    let mut events = Vec::new();
     let mut sink = RequestSink::default();
     let mut app_component =
         AppComponent::new(dispatcher.clone(), None, host.cursor_rendering(), &mut sink);
+    if let Some(reason) = image_display_unavailable_reason {
+        app_component.notify_image_display_unavailable(&reason);
+    }
     // 初期表示に必要な取得を、最初の描画と入力より前に始める。
     handle_component_requests(
         &mut sink,
@@ -66,13 +74,16 @@ where
     let tick_rate = Duration::from_millis(TICK_RATE_MS);
     let mut last_tick = host.elapsed();
     loop {
-        // editor中もworker完了はStoreへ取り込むが、Component更新・描画・入力と
-        // Noticeの経過時間更新はeditor終了まで遅延する。
+        // editor中もworker完了はStoreへ取り込むが、Component更新・イベントの受け渡し・描画・入力と
+        // toastの経過時間更新はeditor終了まで遅延する。
         if let Some(session) = editor_session.as_mut() {
             // 後続要求の起動はComponentの更新を伴うため、editorから戻るまでqueueに残す。
-            if let Some(message) =
-                consume_editor_worker_actions(spawner, dispatcher.clone(), &mut requests)
-            {
+            if let Some(message) = consume_editor_worker_actions(
+                spawner,
+                dispatcher.clone(),
+                &mut requests,
+                &mut events,
+            ) {
                 return Err(RunError::WorkerPanicked(message));
             }
             let outcome = match session.poll_completion() {
@@ -87,18 +98,12 @@ where
                 Ok(()) => match outcome {
                     Ok(outcome) => app_component.handle_editor_response(outcome),
                     Err(error) => {
-                        handle_editor_failure(
-                            &mut app_component,
-                            dispatcher.clone(),
-                            &error,
-                            "editor failed",
-                        );
+                        handle_editor_failure(&mut app_component, &error, "editor failed");
                     }
                 },
                 Err(error) => {
                     handle_editor_failure(
                         &mut app_component,
-                        dispatcher.clone(),
                         &error,
                         "failed to restore terminal after editor",
                     );
@@ -106,17 +111,27 @@ where
             }
             // editor中にStoreへ適用したActionを、描画再開前にComponentへ反映する。
             app_component.update(dispatcher.clone(), dispatcher.borrow().store(), host.area());
-            // editor滞在時間を次のNotice tickへ混ぜないよう、通常loopへ戻る前にresetする。
+            // editor滞在時間を次のtickへ混ぜないよう、通常loopへ戻る前にresetする。
             last_tick = host.elapsed();
         }
-        if let Some(message) = move_worker_action(spawner, dispatcher.clone(), &mut requests) {
+        if let Some(message) =
+            move_worker_action(spawner, dispatcher.clone(), &mut requests, &mut events)
+        {
             return Err(RunError::WorkerPanicked(message));
         }
         let now = host.elapsed();
         let tick = tick_since(last_tick, now);
         last_tick = now;
-        dispatcher.borrow_mut().update_store(tick);
+        app_component.tick(tick);
         update(dispatcher.clone(), &mut app_component, host.area());
+        // イベントを受けたComponentが、同じcompletionのActionを反映したStoreを前提にできるよう、
+        // Actionを消費した後に渡す。tickより後に渡すので、届いたtoastはこの周の経過時間で消えない。
+        deliver_usecase_events(
+            &mut events,
+            &mut app_component,
+            dispatcher.clone(),
+            host.area(),
+        );
         // 後続要求の起動条件はcompletionを反映した後のStoreで判定する。
         drain_requests(
             &mut requests,

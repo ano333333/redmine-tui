@@ -101,6 +101,7 @@ where
                     .into(),
                 ],
                 requests: vec![UsecaseRequest::DownloadAttachmentOriginal { attachment_id }],
+                events: Vec::new(),
             },
         }
     }))
