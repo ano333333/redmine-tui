@@ -447,8 +447,12 @@ impl<'a> AppComponent<'a> {
                 );
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenAssignedToPopup) => {
-                let (items, focused_index) =
-                    build_assigned_to_options(dispatcher.borrow().store(), issue_id);
+                let (items, focused_index) = {
+                    let dispatcher = dispatcher.borrow();
+                    let store = dispatcher.store();
+                    let current = store.get_issue(issue_id).0.assigned_to_id();
+                    build_assigned_to_options(store, current)
+                };
                 self.push_select_box_popup(
                     &items,
                     focused_index,
@@ -459,8 +463,16 @@ impl<'a> AppComponent<'a> {
             IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::OpenTargetVersionPopup,
             ) => {
-                let (items, focused_index) =
-                    build_target_version_options(dispatcher.borrow().store(), issue_id);
+                let (items, focused_index) = {
+                    let dispatcher = dispatcher.borrow();
+                    let store = dispatcher.store();
+                    let (issue, _) = store.get_issue(issue_id);
+                    build_target_version_options(
+                        store,
+                        issue.project_id(),
+                        issue.target_version_id(),
+                    )
+                };
                 self.push_select_box_popup(
                     &items,
                     focused_index,
@@ -504,8 +516,12 @@ impl<'a> AppComponent<'a> {
                 );
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenCategoryPopup) => {
-                let (items, focused_index) =
-                    build_category_options(dispatcher.borrow().store(), issue_id);
+                let (items, focused_index) = {
+                    let dispatcher = dispatcher.borrow();
+                    let store = dispatcher.store();
+                    let (issue, _) = store.get_issue(issue_id);
+                    build_category_options(store, issue.project_id(), issue.category_id())
+                };
                 self.push_select_box_popup(
                     &items,
                     focused_index,
