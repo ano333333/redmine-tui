@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use chrono::{DateTime, Local};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::Widget;
@@ -57,6 +58,11 @@ pub enum EventProcessResult {
     OpenIssueSelectPopup,
     Handled,
 }
+
+/// 選んだ日付を下書きへ書き戻すobserver。
+pub type DateObserver = Box<dyn FnMut(DateTime<Local>)>;
+/// 入力した工数を下書きへ書き戻すobserver。
+pub type HoursObserver = Box<dyn FnMut(Option<f64>)>;
 
 /// select boxで値を選ぶ項目の、選択肢・フォーカス位置・確定値を下書きへ書き戻すobserver。
 pub struct DraftSelectBox {
@@ -156,6 +162,35 @@ impl NewIssueComponent {
             focused_index,
             observer: Box::new(move |id| apply(&mut shared.borrow_mut(), id)),
         })
+    }
+
+    /// 開始日か期日の現在値と、選んだ日付を下書きへ書き戻すobserverを返す。
+    ///
+    /// # Panics
+    ///
+    /// `field`が開始日でも期日でもない場合にpanicする。
+    pub fn date_popup(&self, field: DraftField) -> (Option<DateTime<Local>>, DateObserver) {
+        let draft = self.draft.clone();
+        match field {
+            DraftField::StartDate => (
+                self.draft.borrow().start_date,
+                Box::new(move |date| draft.borrow_mut().start_date = Some(date)),
+            ),
+            DraftField::DueDate => (
+                self.draft.borrow().due_date,
+                Box::new(move |date| draft.borrow_mut().due_date = Some(date)),
+            ),
+            field => panic!("{field:?} is not a date field"),
+        }
+    }
+
+    /// 予定工数の現在値と、入力値を下書きへ書き戻すobserverを返す。
+    pub fn estimated_hours_popup(&self) -> (Option<f64>, HoursObserver) {
+        let draft = self.draft.clone();
+        (
+            self.draft.borrow().estimated_hours,
+            Box::new(move |hours| draft.borrow_mut().estimated_hours = hours),
+        )
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> NewIssueWidget<'a> {
@@ -382,6 +417,28 @@ mod tests {
         ] {
             assert!(component.select_box(dispatcher.store(), field).is_none());
         }
+    }
+
+    #[test]
+    fn date_and_estimated_hours_observers_write_back_to_the_draft() {
+        let component = NewIssueComponent::new(ProjectId::new(1), None);
+        let date = crate::test_support::local_date(2026, 11, 21);
+
+        let (_, mut start_date) = component.date_popup(DraftField::StartDate);
+        start_date(date);
+        let (_, mut due_date) = component.date_popup(DraftField::DueDate);
+        due_date(date);
+        let (_, mut estimated_hours) = component.estimated_hours_popup();
+        estimated_hours(Some(1.5));
+
+        let draft = component.draft();
+        let draft = draft.borrow();
+        assert_eq!(draft.start_date, Some(date));
+        assert_eq!(draft.due_date, Some(date));
+        assert_eq!(draft.estimated_hours, Some(1.5));
+        drop(draft);
+        let (current, _) = component.date_popup(DraftField::DueDate);
+        assert_eq!(current, Some(date));
     }
 
     #[test]

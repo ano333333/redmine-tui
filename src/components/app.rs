@@ -401,12 +401,33 @@ impl<'a> AppComponent<'a> {
                         PendingEditorContext::NewIssueDescription { creation_id },
                         draft.borrow().description.clone(),
                     ),
+                    DraftField::StartDate | DraftField::DueDate => {
+                        let (selected_date, observer) = new_issue_component.date_popup(field);
+                        self.popup_components.push_back(Rc::new(RefCell::new(
+                            PopupComponent::DatePicker(DatePickerPopupComponent::new(
+                                selected_date,
+                                observer,
+                            )),
+                        )));
+                        return true;
+                    }
+                    DraftField::EstimatedHours => {
+                        let (estimated_hours, observer) =
+                            new_issue_component.estimated_hours_popup();
+                        self.popup_components.push_back(Rc::new(RefCell::new(
+                            PopupComponent::NumberInput(NumberInputPopupComponent::new(
+                                "予定工数",
+                                estimated_hours,
+                                observer,
+                            )),
+                        )));
+                        return true;
+                    }
                     field => {
                         let select_box = {
                             let dispatcher = self.dispatcher.borrow();
                             new_issue_component.select_box(dispatcher.store(), field)
                         };
-                        // FIXME: 日付と予定工数の編集popupを開く。
                         if let Some(select_box) = select_box {
                             self.push_select_box_popup(
                                 &select_box.items,
@@ -2002,6 +2023,33 @@ mod tests {
             Some(crate::vos::TrackerId::new(2))
         );
         assert_no_requests(&mut sink);
+    }
+
+    #[test]
+    fn dates_and_estimated_hours_of_the_draft_open_their_input_popups() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+        // 開始日・期日・予定工数は、題名から数えて7・8・10番目の項目である。
+        for _ in 0..7 {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone(), &mut sink);
+        }
+
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone(), &mut sink);
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::DatePicker(_)
+        ));
+        app.popup_components.clear();
+        for code in [KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j')] {
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone(), &mut sink);
+
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::NumberInput(_)
+        ));
     }
 
     #[test]
