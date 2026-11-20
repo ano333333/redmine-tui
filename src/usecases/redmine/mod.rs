@@ -19,6 +19,7 @@ mod start_deleted_journal_upload;
 mod start_local_journal_upload;
 mod start_remote_journal_upload;
 mod upload_issue;
+mod upload_local_file;
 
 pub use cancel_issue_upload::cancel_issue_upload;
 pub use cancel_remote_journal_upload::cancel_remote_journal_upload;
