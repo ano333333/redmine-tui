@@ -4,740 +4,117 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agent 実装ガイド</title>
-    <style>
-      *,
-      *::before,
-      *::after {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-
-      :root {
-        --bg: #0f1117;
-        --surface: #1a1d27;
-        --surface-2: #22263a;
-        --border: #2e3350;
-        --accent: #6c8efb;
-        --accent-dim: #3d4f8a;
-        --text: #d0d4e8;
-        --text-muted: #7a80a0;
-        --text-heading: #e8eaf6;
-        --code-bg: #13151f;
-        --code-border: #2a2e45;
-        --tag-bg: #1e2540;
-        --tag-text: #8ba3f5;
-        --marker: #f0b429;
-      }
-
-      body {
-        font-family: "Inter", "Noto Sans JP", system-ui, sans-serif;
-        background: var(--bg);
-        color: var(--text);
-        line-height: 1.75;
-        font-size: 15px;
-      }
-
-      /* Layout */
-      .layout {
-        display: flex;
-        min-height: 100vh;
-      }
-
-      nav {
-        position: sticky;
-        top: 0;
-        height: 100vh;
-        width: 240px;
-        flex-shrink: 0;
-        background: var(--surface);
-        border-right: 1px solid var(--border);
-        overflow-y: auto;
-        padding: 28px 0;
-      }
-
-      nav .nav-title {
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        color: var(--text-muted);
-        padding: 0 20px 12px;
-      }
-
-      nav a {
-        display: block;
-        padding: 6px 20px;
-        color: var(--text-muted);
-        text-decoration: none;
-        font-size: 13px;
-        border-left: 2px solid transparent;
-        transition:
-          color 0.15s,
-          border-color 0.15s;
-      }
-
-      nav a:hover {
-        color: var(--text);
-        border-left-color: var(--accent-dim);
-      }
-
-      nav a.active {
-        color: var(--accent);
-        border-left-color: var(--accent);
-      }
-
-      nav .nav-section {
-        margin-top: 16px;
-      }
-
-      main {
-        flex: 1;
-        min-width: 0;
-        padding: 56px 64px;
-        max-width: 900px;
-      }
-
-      /* Header */
-      .page-header {
-        margin-bottom: 48px;
-        padding-bottom: 32px;
-        border-bottom: 1px solid var(--border);
-      }
-
-      .page-header .eyebrow {
-        font-size: 12px;
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--accent);
-        margin-bottom: 10px;
-      }
-
-      h1 {
-        font-size: 30px;
-        font-weight: 700;
-        color: var(--text-heading);
-        letter-spacing: -0.02em;
-        line-height: 1.2;
-      }
-
-      /* Sections */
-      section {
-        margin-bottom: 56px;
-      }
-
-      h2 {
-        font-size: 18px;
-        font-weight: 700;
-        color: var(--text-heading);
-        margin-bottom: 16px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid var(--border);
-        letter-spacing: -0.01em;
-      }
-
-      h3 {
-        font-size: 15px;
-        font-weight: 600;
-        color: var(--text-heading);
-        margin: 24px 0 10px;
-      }
-
-      p {
-        margin-bottom: 14px;
-        color: var(--text);
-      }
-
-      /* Directory tree */
-      .dir-tree {
-        background: var(--code-bg);
-        border: 1px solid var(--code-border);
-        border-radius: 8px;
-        overflow: hidden;
-      }
-
-      .dir-item {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 12px;
-        padding: 10px 20px;
-        border-bottom: 1px solid var(--code-border);
-        align-items: start;
-      }
-
-      .dir-item:last-child {
-        border-bottom: none;
-      }
-
-      .dir-item:hover {
-        background: var(--surface-2);
-      }
-
-      .dir-path {
-        font-family: "JetBrains Mono", "Fira Code", monospace;
-        font-size: 13px;
-        color: var(--accent);
-        white-space: nowrap;
-      }
-
-      .dir-desc {
-        font-size: 13px;
-        color: var(--text-muted);
-        padding-top: 1px;
-      }
-
-      /* Lifecycle steps */
-      .lifecycle {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-
-      .lifecycle-step {
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-        padding: 10px 14px;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-      }
-
-      .step-num {
-        width: 22px;
-        height: 22px;
-        background: var(--accent-dim);
-        color: var(--accent);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 11px;
-        font-weight: 700;
-        flex-shrink: 0;
-        margin-top: 1px;
-      }
-
-      .step-body {
-        flex: 1;
-      }
-
-      .step-label {
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--text-heading);
-        margin-bottom: 4px;
-      }
-
-      .step-chain {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-        align-items: center;
-      }
-
-      .chain-item {
-        font-family: "JetBrains Mono", "Fira Code", monospace;
-        font-size: 12px;
-        background: var(--tag-bg);
-        color: var(--tag-text);
-        padding: 2px 8px;
-        border-radius: 4px;
-        border: 1px solid var(--accent-dim);
-      }
-
-      .chain-arrow {
-        color: var(--text-muted);
-        font-size: 12px;
-      }
-
-      /* Responsibility cards */
-      .resp-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-      }
-
-      @media (max-width: 700px) {
-        .resp-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-
-      .resp-card {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 16px 18px;
-      }
-
-      .resp-card.allowed {
-        border-top: 2px solid #4caf8a;
-      }
-      .resp-card.denied {
-        border-top: 2px solid #e05b5b;
-      }
-
-      .resp-card-title {
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 0.07em;
-        text-transform: uppercase;
-        margin-bottom: 10px;
-      }
-
-      .allowed .resp-card-title {
-        color: #4caf8a;
-      }
-      .denied .resp-card-title {
-        color: #e05b5b;
-      }
-
-      .resp-list {
-        list-style: none;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-
-      .resp-list li {
-        font-size: 13px;
-        color: var(--text);
-        padding-left: 16px;
-        position: relative;
-      }
-
-      .allowed .resp-list li::before {
-        content: "✓";
-        position: absolute;
-        left: 0;
-        color: #4caf8a;
-        font-weight: 700;
-      }
-
-      .denied .resp-list li::before {
-        content: "✗";
-        position: absolute;
-        left: 0;
-        color: #e05b5b;
-        font-weight: 700;
-      }
-
-      /* Code blocks */
-      pre {
-        background: var(--code-bg);
-        border: 1px solid var(--code-border);
-        border-radius: 8px;
-        padding: 18px 20px;
-        overflow-x: auto;
-        margin: 16px 0;
-      }
-
-      code {
-        font-family: "JetBrains Mono", "Fira Code", monospace;
-        font-size: 13px;
-        line-height: 1.6;
-        color: #b0bce8;
-      }
-
-      p code,
-      li code {
-        background: var(--tag-bg);
-        color: var(--tag-text);
-        padding: 1px 6px;
-        border-radius: 3px;
-        font-size: 12.5px;
-      }
-
-      /* Callout */
-      .callout {
-        background: var(--surface);
-        border-left: 3px solid var(--marker);
-        border-radius: 0 6px 6px 0;
-        padding: 12px 16px;
-        margin: 16px 0;
-        font-size: 13.5px;
-        color: var(--text);
-      }
-
-      .callout strong {
-        color: var(--marker);
-      }
-
-      /* Diff rules */
-      .diff-list {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        margin: 12px 0;
-      }
-
-      .diff-item {
-        display: flex;
-        gap: 10px;
-        align-items: flex-start;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 10px 14px;
-        font-size: 13px;
-      }
-
-      .diff-bullet {
-        width: 6px;
-        height: 6px;
-        background: var(--accent-dim);
-        border-radius: 50%;
-        flex-shrink: 0;
-        margin-top: 7px;
-      }
-
-      /* Mermaid */
-      .mermaid-block {
-        background: var(--code-bg);
-        border: 1px solid var(--code-border);
-        border-radius: 8px;
-        padding: 16px 18px;
-        overflow-x: auto;
-        margin: 16px 0;
-      }
-
-      /* Test section */
-      .test-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 14px;
-      }
-
-      @media (max-width: 700px) {
-        .test-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-
-      .test-card {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 16px;
-      }
-
-      .test-card-title {
-        font-size: 13px;
-        font-weight: 700;
-        color: var(--accent);
-        margin-bottom: 10px;
-        font-family: "JetBrains Mono", "Fira Code", monospace;
-      }
-
-      p a {
-        color: var(--accent);
-      }
-
-      /* Port table */
-      .port-table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
-        margin: 16px 0;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        overflow: hidden;
-        font-size: 13.5px;
-      }
-
-      .port-table th,
-      .port-table td {
-        padding: 8px 16px;
-        text-align: left;
-        border-bottom: 1px solid var(--border);
-      }
-
-      .port-table th {
-        background: var(--surface-2);
-        color: var(--text-heading);
-        font-weight: 600;
-      }
-
-      .port-table td:first-child {
-        color: var(--accent);
-        font-weight: 600;
-      }
-
-      .port-table tbody tr:last-child td {
-        border-bottom: none;
-      }
-
-      .port-table td code {
-        background: var(--tag-bg);
-        color: var(--tag-text);
-        padding: 1px 6px;
-        border-radius: 3px;
-        font-size: 12.5px;
-      }
-
-      /* Rule list */
-      .rule-list {
-        padding-left: 20px;
-        margin-bottom: 14px;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-
-      .rule-list li {
-        color: var(--text);
-      }
-
-      .test-card ul {
-        list-style: none;
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-      }
-
-      .test-card li {
-        font-size: 12.5px;
-        color: var(--text-muted);
-        padding-left: 14px;
-        position: relative;
-      }
-
-      .test-card li::before {
-        content: "·";
-        position: absolute;
-        left: 4px;
-        color: var(--text-muted);
-      }
-
-      /* Link to ADR */
-      .adr-link {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        margin-top: 6px;
-        font-size: 13px;
-        color: var(--accent);
-        text-decoration: none;
-        padding: 4px 10px;
-        border: 1px solid var(--accent-dim);
-        border-radius: 4px;
-        transition: background 0.15s;
-      }
-      .adr-link:hover {
-        background: var(--tag-bg);
-      }
-    </style>
+    <link rel="stylesheet" href="assets/doc.css" />
+    <script defer src="assets/mermaid.js"></script>
   </head>
   <body>
-    <div class="layout">
-      <nav>
-        <div class="nav-title">Architecture</div>
-        <a href="#directory">ディレクトリ構成</a>
-        <a href="#dependency">ディレクトリ間の依存</a>
-        <a href="#flux">Flux を参考にした構成</a>
-        <a href="#lifecycle">Component lifecycle</a>
-        <a href="#split">実装分割</a>
-        <a href="#widget">Widget</a>
-        <a href="#focusstate">FocusState</a>
-        <a href="#component">Component</a>
-        <a href="#testing">テスト方針</a>
-        <a href="#platform">Platform境界（native/Web）</a>
-        <div class="nav-section">
-          <div class="nav-title" style="margin-top: 0">ADR</div>
-          <a href="adrs/1.html">ADR 1 — String/str 方針</a>
-          <a href="adrs/2.html">ADR 2 — Issue 保存フロー</a>
-        </div>
-      </nav>
-
-      <main>
-        <div class="page-header">
-          <div class="eyebrow">Agent 実装ガイド</div>
-          <h1>アーキテクチャ前提</h1>
-          <p
-            style="margin-top: 12px; color: var(--text-muted); font-size: 14px"
-          >
-            agent
-            がこのリポジトリを読む・変更する際の前提をまとめる。詳細な意思決定の背景は
-            <a href="adrs/1.html" class="adr-link">docs/adrs/</a> を参照する。
-          </p>
-        </div>
-
-        <!-- Directory -->
-        <section id="directory">
-          <h2>ディレクトリ構成</h2>
-          <div class="dir-tree">
-            <div class="dir-item">
-              <span class="dir-path">src/main.rs</span>
-              <span class="dir-desc"
-                >Cargo feature で native/Web の entry point を選ぶ。<code
-                  >native</code
-                >
-                と <code>web-demo</code> の同時指定、非 wasm32
-                target での <code>web-demo</code> 等、feature と target
-                が不一致なら <code>compile_error!</code> で compile
-                不能にする。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/entry/</span>
-              <span class="dir-desc">native/Web の起動処理を置く。</span>
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/stores/</span>
-              <span class="dir-desc"
-                ><code>store.rs</code> は、子 Store・子 Action
-                の統合を行う。外部からはこのファイルからエクスポートされる
-                Store と Action を公開インターフェースとして用いる。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/usecases/</span>
-              <span class="dir-desc"
-                >アプリ固有の操作を置く。Store・Client
-                の情報統合、および同期的な Dispatch や非同期タスクによる
-                Action の形成を担う。<br />
-                非同期 usecase について、同期的な Action dispatch はここで
-                即座に行い、非同期で形成する Action は Future
-                として返却する形が基本形である。Store
-                を直接書き換えず、Dispatcher::dispatch を介して Action
-                を積む。<code>runner</code> が Future を platform の
-                runtime port（native は Tokio、Web は
-                <code>spawn_local</code>）で起動し、完了 Action を
-                Dispatcher へ戻す。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/clients/</span>
-              <span class="dir-desc"
-                >外部プロセスとの通信を行う。<br />
-                <code>redmine/base.rs</code> は RedmineClient trait
-                を定義し、Redmine との通信のインターフェースを定義する。
-                <code>redmine/default.rs</code> は
-                DefaultRedmineClient（実 HTTP 実装）を定義する。<br />
-                Issue 属性の保存は <code>IssueUpdate</code>（編集した属性だけを持つ更新要求）で渡す。送信しない属性は
-                <code>None</code>、値の解除は <code>Some(None)</code>
-                で表し、API が要求する項目の省略や空文字への変換は HTTP 実装が担う。<br />
-                <code>redmine/demo/</code> は <code>DemoRedmineClient</code
-                >（実 HTTP を行わず fixture を埋め込む memory
-                mock）を定義する。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/components/</span>
-              <span class="dir-desc"
-                >TUI の画面部品を置く。app.rs は全体 component と popup stack
-                を統括する。issue/ はIssue取得状態を解決する外側componentを
-                置き、issue/detail/
-                は読み込み済みIssueの詳細画面とその子componentを置く。*_popup/
-                は popup component を置く。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/platform/</span>
-              <span class="dir-desc"
-                >native/Web の platform adapter を置く。<br />
-                input（<code>InputEvent</code>）、runtime（<code
-                  >BackgroundSpawner</code
-                >）、host（<code>PlatformHost</code>）、editor（<code
-                  >TextEditor</code
-                >）の各 port。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/runner/</span>
-              <span class="dir-desc"
-                >native/Web で共有する application lifecycle を置く。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/entities/</span>
-              <span class="dir-desc"
-                >Redmine 由来の永続的な domain entity を置く。<code>IssueAggregate::with_property_diffs</code>
-                は、Issue 属性の差分を適用した値か、競合した差分を返す。差分の
-                <code>before</code>/<code>after</code>
-                を現在値へ置き換える処理とあわせて、Store と usecase から共用する。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/vos/</span>
-              <span class="dir-desc"
-                >ID、差分、journal detail などの value object を置く。<code>issue_property_diff.rs</code>
-                は同じ属性への複数の差分の集約を持つ。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/widgets/</span>
-              <span class="dir-desc"
-                >複数 component から使う汎用 widget を置く。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/libs/</span>
-              <span class="dir-desc"
-                >YAML読み込みなど、外部表現から domain data
-                へ変換する補助処理を置く。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/logging.rs</span>
-              <span class="dir-desc"
-                ><code>initialize_logging</code>（native は
-                file、Web は browser console）と
-                <code>trace_dbg!</code> などの補助マクロを置く。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/test_support.rs</span>
-              <span class="dir-desc"
-                >snapshot rendering や test fixture を置く。</span
-              >
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">src/snapshots/</span>
-              <span class="dir-desc">insta snapshot を置く。</span>
-            </div>
-            <div class="dir-item">
-              <span class="dir-path">docs/adrs/</span>
-              <span class="dir-desc">アーキテクチャ判断の記録を置く。</span>
-            </div>
-          </div>
-        </section>
-
-        <!-- Dependency -->
-        <section id="dependency">
-          <h2>ディレクトリ間の依存</h2>
-          <p>
-            矢印は依存する側から依存される側への向き。上の層は下の層に依存してよく（層を飛ばしてもよい）、下の層から上の層への依存はない。層内の依存は個別の矢印で表す。
-          </p>
-          <p>
-            <code>src/clients/</code> のうち <code>usecases</code>
-            が使うのは <code>redmine/base.rs</code> の
-            <code>RedmineClient</code> trait
-            などのインターフェース定義だけで、これを application
-            に置く。実装（<code>default.rs</code> の
-            <code>DefaultRedmineClient</code>、<code>demo/</code> の
-            <code>DemoRedmineClient</code>）と外部表現の変換（<code
-              >src/libs/</code
-            >）は <code>adapter</code>
-            に置き、実装は起動処理が組み立てて渡す。
-          </p>
-          <p>
-            例として、<code
-              >runner</code
-            >
-            は <code>components</code>・<code>usecases</code>・<code
-              >stores</code
-            >・<code>clients</code>・<code>vos</code> に、<code
-              >platform</code
-            >
-            は completion を <code>Action</code> として dispatch
-            するため <code>stores</code> に依存する。
-          </p>
-          <pre class="mermaid mermaid-block">
-flowchart TD
+    <main>
+<h1>Agent 実装ガイド</h1>
+<p>この文書は、agent が本リポジトリを読む・変更する際のアーキテクチャ前提をまとめる。
+詳細な意思決定の背景は <code>docs/adrs/</code> を参照する。</p>
+<h2 id="directory">ディレクトリ構成</h2>
+<ul>
+<li><code>src/main.rs</code>
+<ul>
+<li>Cargo feature で native/Web の entry point を選ぶ。feature と target が不一致（<code>native</code> と <code>web-demo</code> の同時指定、非 wasm32 target での <code>web-demo</code> 等）なら <code>compile_error!</code> で compile 不能にする。</li>
+</ul>
+</li>
+<li><code>src/entry/</code>
+<ul>
+<li>native/Web の起動処理を置く。</li>
+</ul>
+</li>
+<li><code>src/stores/</code>
+<ul>
+<li><code>store.rs</code> は、子 Store ・子 Action の統合を行う。外部からはこのファイルからエクスポートされる Store と Action を公開インターフェースとして用いる。</li>
+<li><code>terminal_image.rs</code> は、terminal への画像表示に使う <code>ratatui-image</code> と <code>image</code> の型を包む。native 版だけがこれらに依存し、Web デモでは値を作れない型にする。</li>
+</ul>
+</li>
+<li><code>src/usecases/</code>
+<ul>
+<li>アプリ固有の操作を置く。Store・Client の情報統合、および同期的な Dispatch や非同期タスクによる Action の形成を担う。</li>
+<li>非同期 usecase について、同期的な Action dispatch はここで即座に行い、非同期の処理は <code>Option&lt;UsecaseTask&gt;</code> として返却する形が基本形である。<code>UsecaseTask</code> は完了 Action を <code>UsecaseOutput</code> に入れて返す Future で、非同期の処理がない場合は <code>None</code> を返す。完了後に別の Usecase を起動するときは、Future の中で起動せず、<code>UsecaseOutput::requests</code> に後続の <code>UsecaseRequest</code> を入れて返す。保存の失敗など一度だけ起きたことは、<code>UsecaseOutput::events</code> に <code>UsecaseEvent</code> として入れて返す。Usecase はイベントの受け取り手を知らず、イベントを契機に Usecase を起動することもしない。<code>Store</code> を直接書き換えず、<code>Dispatcher::dispatch</code> を介して Action を積む。<code>runner</code> が <code>UsecaseTask</code> を platform の runtime port（native は Tokio、Web は <code>spawn_local</code>）で起動し、完了 Action を Dispatcher へ戻す。</li>
+</ul>
+</li>
+<li><code>src/clients/</code>
+<ul>
+<li>外部プロセスとの通信を行う。</li>
+<li><code>redmine/base.rs</code> は <code>RedmineClient</code> trait を定義し、 Redmine との通信のインターフェースを定義する。<code>redmine/default.rs</code> は <code>DefaultRedmineClient</code>（実 HTTP 実装）を定義する。</li>
+<li>Issue 属性の保存は <code>IssueUpdate</code>（編集した属性だけを持つ更新要求）で渡す。送信しない属性は <code>None</code>、値の解除は <code>Some(None)</code> で表し、API が要求する項目の省略や空文字への変換は HTTP 実装が担う。</li>
+<li><code>redmine/demo/</code> は <code>DemoRedmineClient</code>（実 HTTP を行わず fixture を埋め込む memory mock）を定義する。</li>
+<li><code>local_file/</code> は、添付ファイルとして送るローカルファイルを読み、取得した画像を一時ファイルへ書く <code>LocalFileClient</code> trait を定義する。native 実装はファイルシステムから読み、起動処理が作るプロセスごとの一時ディレクトリ（<code>NativeTempDir</code>、終了時に削除）へ書く。Web デモ実装はどのパスにも埋め込みのサンプル画像を返し、一時ファイルは書かない。</li>
+</ul>
+</li>
+<li><code>src/components/</code>
+<ul>
+<li>TUI の画面部品を置く。</li>
+<li><code>app.rs</code> は全体 component と popup stack を統括する。</li>
+<li><code>issue/</code> はIssue取得状態を解決する外側componentを置き、<code>issue/detail/</code> は読み込み済みIssueの詳細画面とその子componentを置く。</li>
+<li><code>*_popup/</code> は popup component を置く。</li>
+</ul>
+</li>
+<li><code>src/platform/</code>
+<ul>
+<li>native/Web の platform adapter を置く。</li>
+<li>input（<code>InputEvent</code>）、runtime（<code>BackgroundSpawner</code>）、host（<code>PlatformHost</code>）、editor（<code>TextEditor</code>）の各 port。</li>
+<li>native 版の起動時に読む設定ファイル（<code>app_config</code>）と、その値から決める画像表示の可否（<code>terminal_image</code>）。</li>
+</ul>
+</li>
+<li><code>src/runner/</code>
+<ul>
+<li>native/Web で共有する application lifecycle を置く。</li>
+</ul>
+</li>
+<li><code>src/entities/</code>
+<ul>
+<li>Redmine 由来の永続的な domain entity を置く。</li>
+<li><code>IssueAggregate::with_property_diffs</code> は、Issue 属性の差分を適用した値か、競合した差分を返す。差分の <code>before</code>/<code>after</code> を現在値へ置き換える処理とあわせて、Store と usecase から共用する。</li>
+</ul>
+</li>
+<li><code>src/vos/</code>
+<ul>
+<li>ID、差分、journal detail などの value object を置く。</li>
+<li><code>issue_property_diff.rs</code> は同じ属性への複数の差分の集約を持つ。</li>
+</ul>
+</li>
+<li><code>src/widgets/</code>
+<ul>
+<li>複数 component から使う汎用 widget を置く。</li>
+</ul>
+</li>
+<li><code>src/libs/</code>
+<ul>
+<li>YAML読み込みなど、外部表現から domain data へ変換する補助処理を置く。</li>
+</ul>
+</li>
+<li><code>src/logging.rs</code>
+<ul>
+<li><code>initialize_logging</code>（native は file、Web は browser console）と <code>trace_dbg!</code> などの補助マクロを置く。</li>
+</ul>
+</li>
+<li><code>src/test_support.rs</code>
+<ul>
+<li>snapshot rendering や、テスト用のentityを組み立てる<code>sample_*</code>を置く。</li>
+</ul>
+</li>
+<li><code>src/snapshots/</code>
+<ul>
+<li>insta snapshot を置く。</li>
+</ul>
+</li>
+<li><code>docs/adrs/</code>
+<ul>
+<li>アーキテクチャ判断の記録を置く。</li>
+</ul>
+</li>
+</ul>
+<h2 id="dependency">ディレクトリ間の依存</h2>
+<p>矢印は依存する側から依存される側への向き。
+上の層は下の層に依存してよく（層を飛ばしてもよい）、下の層から上の層への依存はない。
+層内の依存は個別の矢印で表す。
+<code>src/clients/</code> のうち <code>usecases</code> が使うのは <code>redmine/base.rs</code> の <code>RedmineClient</code> trait などのインターフェース定義だけで、これを application に置く。実装（<code>default.rs</code> の <code>DefaultRedmineClient</code>、<code>demo/</code> の <code>DemoRedmineClient</code>）と外部表現の変換（<code>src/libs/</code>）は <code>adapter</code> に置き、実装は起動処理が組み立てて渡す。
+例として、<code>runner</code> は <code>components</code>・<code>usecases</code>・<code>stores</code>・<code>clients</code>・<code>vos</code> に依存する。<code>platform</code> の runtime port は完了値の型を利用側（<code>runner</code>）に指定させ、<code>stores</code> には依存しない。</p>
+<pre class="mermaid">flowchart TD
     subgraph layer_boot["起動・lifecycle"]
         main["main.rs"] --&gt; entry["src/entry/"]
         entry --&gt; runner["src/runner/"]
@@ -769,586 +146,370 @@ flowchart TD
     layer_adapter ~~~ layer_ui
     layer_app --&gt; layer_domain
 </pre>
-          <div class="callout" style="margin-top: 16px">
-            <strong>規則:</strong> <code>usecases</code> は
-            <code>components</code> に依存しない。Component から usecase
-            の関数を呼ぶことはあるが（例: app.rs が issue_popup_options や
-            redmine::{cancel_issue_upload, continue_issue_upload}
-            を呼ぶ）、逆方向の依存は発生させない。同様に
-            <code>clients</code> は <code>stores</code> にも
-            <code>usecases</code> にも依存せず、RedmineClient trait と
-            HTTP 実装（<code>DefaultRedmineClient</code
-            >）、<code>DemoRedmineClient</code> を提供する。<code
-              >DemoRedmineClient</code
-            >
-            の fixture は <code>src/libs/yaml.rs</code> の parser を使うため
-            <code>clients</code> から <code>libs</code> への依存がある。
-          </div>
-        </section>
+<p><code>usecases</code> は <code>components</code> に依存しない。
+Component は usecase の関数を呼んだり（例: <code>app.rs</code> が <code>issue_popup_options</code> を呼ぶ）、<code>UsecaseRequest</code> を作ったりするが、逆方向の依存は発生させない。Redmine の usecase は Component から呼ばず、<code>UsecaseRequest</code> で <code>runner</code> に起動を要求する。
+同様に <code>clients</code> は <code>stores</code> にも <code>usecases</code> にも依存せず、<code>RedmineClient</code> trait と HTTP 実装（<code>DefaultRedmineClient</code>）、<code>DemoRedmineClient</code>、<code>LocalFileClient</code> trait とその実装を提供する。Usecase が使う client は <code>UsecaseClients</code> にまとめ、起動処理が組み立てて <code>runner</code> に渡す。<code>DemoRedmineClient</code> の fixture は <code>src/libs/yaml.rs</code> の parser を使うため <code>clients</code> から <code>libs</code> への依存がある。</p>
+<h2 id="flux">Flux を参考にした構成</h2>
+<p>本リポジトリは厳密なFlux実装ではない。
+Action を Dispatcher へ送り、Dispatcher が Store を更新し、Store 更新後に Component を update する、という一方向データフローを基本にした構成である。</p>
+<p>Store の更新は原則として Dispatcher を介して行う。
+初期セットアップを除き、action の処理と component の <code>update</code> は交互に行う。
+これは意図した lifecycle であり、全 action を drain してから一度だけ update する設計ではない。</p>
+<p>厳密なFluxとの差分として、以下を許容する。</p>
+<ul>
+<li>Store 更新通知は pub/sub ではなく、上位層が <code>consume_action -&gt; update</code> を明示的に呼ぶ。</li>
+<li><code>Dispatcher</code> は action queue と <code>Store</code> を内部に持つ。</li>
+<li>親 <code>Store</code> は Issue と Journal の状態と更新処理を非公開の <code>IssueStore</code> に委譲する。Journal 本体は <code>IssueAggregate::journals</code> が所有し、<code>IssueStore</code> は取得済み Issue ごとに全 Journal の <code>RemoteJournalState</code>、0 件または 1 件の Local Journal、取得結果から消えた編集中 Journal の退避データ（DeletedJournal）を持つ。Journal の操作は Issue が取得済みの場合だけ受理する。</li>
+<li>Issue 詳細の取得結果は <code>Action::IssueFetchSucceeded</code> 1件で Issue、Journal、子一覧を反映する。<code>IssueStore</code> は Journal の所有関係と重複を検査してから登録し、一部だけを反映した状態を作らない。</li>
+<li><code>IssueAggregate</code> は親 Issue の ID だけを持ち、子 Issue の ID 一覧は持たない。子一覧は詳細取得で得た <code>IssueChild</code>（ID・トラッカー・題名・再帰的な子一覧）として <code>IssueStore</code> が Issue ごとに保持する。子の詳細を取得済みなら、表示には <code>IssueView</code> の値を使う。</li>
+<li>Issue 属性の状態（Synced / Edited / Uploading）は Journal の編集と下書きを含まない。Issue 属性の状態が変わっても Journal の作業は引き継ぐ。同じ Issue の upload は Issue 属性、Journal、添付ファイルの追加を合わせて1件に限り、<code>IssueStore</code> が検査する。</li>
+<li>Component と usecase は <code>IssueStore</code> を直接参照せず、親 <code>Store</code> の Issue getter を通して entity、同期状態、diff、競合情報を取得する。</li>
+<li><code>SettingsStore</code> は、画像表示の可否（<code>ImageDisplay</code>）など、起動時に決めた設定を持つ。</li>
+<li><code>ImageStore</code> は表示する画像を、取得元を表す <code>ImageKey</code> ごとに <code>Loading</code> / <code>Preparing</code> / <code>Ready</code> / <code>Failed</code> で持ち、添付ファイルなどの取得元に固有の情報は持たない。</li>
+<li>focus、cursor、scroll、render cache などの同期的な UI state は Store ではなく Component / FocusState に保持する。</li>
+<li>親子 Component 間の focus 遷移は Store / Action を経由せず、<code>process_event</code> の戻り値と <code>focus_event</code> で直接処理する。</li>
+<li>editor 起動、Redmine への非同期取得・保存などの外部副作用は、Component が <code>RequestSink</code> に要求を書き、<code>runner</code> 側で実行する。<code>RequestSink</code> は <code>runner</code> が <code>&amp;mut</code> で貸すもので、受け取るのは <code>AppComponent</code> の <code>new</code>・<code>process_event</code>・<code>handle_key_event</code> と、<code>IssueSelectPopupComponent</code> の <code>new</code>・<code>process_event</code> だけである。<code>update</code> と <code>render</code> は受け取らないため、update からは要求を発行できない。要求を Component のフィールドに溜めて後で書くことも禁止する。Redmine の Usecase は <code>UsecaseRequest</code> で要求する。<code>runner</code> は <code>start_usecase</code> で Usecase を起動し、返された <code>UsecaseTask</code> を platform の runtime port（native は Tokio、Web は <code>spawn_local</code>）で spawn して、完了 Action を Dispatcher に戻す。<code>runner</code> は要求を queue に積み、1件起動するたびに update する。Component 生成と入力に由来する要求は、その処理の直後、update の前に起動し、その後に editor を起動する。completion の後続要求は、その completion の Action を消費した update の後に起動する。そのため Usecase の起動条件は、それまでの要求と completion を反映した Store で判定できる。</li>
+<li>Usecase のイベントは、<code>runner</code> が <code>AppComponent::handle_usecase_events</code> に渡す。受け取るのは <code>AppComponent</code> だけで、購読者を登録する仕組みは持たない。<code>runner</code> は completion の Action を消費して update した後にイベントを渡し、もう一度 update する。そのためイベントを受けた Component は、同じ completion の Action を反映した Store を前提にできる。editor 中に受理した completion のイベントは、editor から戻るまで保持する。</li>
+<li>一時通知（toast）は Store に置かない。<code>AppComponent</code> が持つ <code>ToastListComponent</code> が、通知の文言を組み立てて表示し、表示経過時間で破棄する。<code>runner</code> は表示経過時間を <code>AppComponent::tick</code> で渡し、editor 中の時間は渡さない。</li>
+<li><code>create_widget(&amp;Store)</code> で Store を参照して表示用 entity を取得してよい。</li>
+</ul>
+<p>Store は、失敗または Action の不受理に見える分岐を以下に区別して扱う。</p>
+<ul>
+<li>異常系: 自プロセスの制御破綻を示す状態機械違反。<code>panic!</code> で即座に停止する。異常系を <code>Result</code> で呼び出し元へ返すのは、Flux を参考にした一方向データフローでは dispatch 時点と consume 時点が分離しておりエラーを返す先がないため採用しない。</li>
+<li>準異常系: 外部プロセスや外部データ起因の復帰可能な失敗。message を Action に載せて状態を復帰し、Usecase のイベントを通じて toast でユーザーに通知する。失敗後の再試行に必要な状態がある場合は、失敗 Action によって対象の状態機械を再試行可能な状態へ戻し、message を状態の一部として保持する。</li>
+<li>stale completion: 重複を許した非同期要求の追い越し。request ID の一致判定で破棄し、暗黙の状態判定では破棄しない。現時点でこれに該当するのは <code>ProjectIssuesStore</code> のみ。<code>IssueAction</code>、<code>JournalAction</code>、<code>AttachmentAction</code> は重複を事前条件で排除するため、想定した状態以外へ着弾した完了は stale completion として捨てず異常系として拒否する。</li>
+<li>マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。取得した Journal を取り込む際に、未送信の編集差分を取得値で置き換えないことがこれにあたる。編集中の Journal は本体だけを取得値に更新して <code>diff.before</code> を残し、サーバーの notes が <code>after</code> と同じなら Synced にする。notes の競合はその Journal を保存するときの取得で判定する。upload 中の Journal は取得値で上書きしない。取得結果から消えた編集中の Journal は元の ID と編集後の notes で退避し、同じ ID が再び現れたらサーバーの notes からの編集として戻す。退避した Journal は利用者が個別に新規投稿するか破棄する。</li>
+<li>冪等 no-op: Action 自体が冪等であることを契約として持つ正常な no-op。stale completion とマージ戦略は同じ no-op の見た目になりやすいため独立して扱う。</li>
+</ul>
+<p>Redmine への保存の完了では、取得した Issue を <code>IssueStore</code> の共通処理で Issue 本体・Journal・子一覧ごと取り込み、未送信の編集差分は残す。PUT が成功した後に確認の取得だけが失敗した場合は、PUT を繰り返さずに保存済みとして完了し、失敗の理由を残して確認の取得だけをやり直せるようにする。</p>
+<p>getter 契約は、API が表す状態と cardinality で決める。不在が示す意味が異なるため、entity の種類だけで一律には決めない。</p>
+<ul>
+<li>strict 単体取得: 存在が呼び出し元の事前条件である getter は <code>get_xxx</code> とし、参照を直接返し、不在は異常系として <code>panic!</code> する。</li>
+<li>状態・cardinality を表す <code>Option</code>: 読み込み状態、ページの未要求、0 件・1 件など、不在そのものが状態や cardinality を表す取得は <code>Option</code> を返す。<code>IssueStore</code> の単体 getter では、<code>Option</code> を返すものを <code>try_get_xxx</code> と命名する。呼び出し側が取得値の存在を特定の経路で前提する場合は、無言の <code>unwrap()</code> ではなく <code>expect(...)</code> で不変条件を説明する。</li>
+<li>master snapshot の <code>Option</code>: 起動時に一度だけ同期するマスターデータ（<code>IssueStatus</code> など）は、起動後に取得した Issue や Journal がスナップショットに存在しない ID を参照し得るため陳腐化で欠損し得る。単体のマスターデータ getter は <code>Option</code> を返し、呼び出し元は表示上の fallback で処理する。</li>
+</ul>
+<p>Issue の getter は、取得済みの本体と読み込み状態を分けて扱う。</p>
+<pre><code class="language-rust">enum IssueState { Synced, Edited, Uploading }
+enum IssueFetchState { Fetching, FetchFailed { message: String } }
 
-        <!-- Flux -->
-        <section id="flux">
-          <h2>Flux を参考にした構成</h2>
-          <p>
-            本リポジトリは厳密なFlux実装ではない。Action を Dispatcher
-            へ送り、Dispatcher が Store を更新し、Store 更新後に Component を
-            update する、という一方向データフローを基本にした構成である。
-          </p>
-          <p>
-            Store の更新は原則として Dispatcher
-            を介して行う。初期セットアップを除き、action の処理と component の
-            <code>update</code> は交互に行う。これは意図した lifecycle
-            であり、全 action を drain してから一度だけ update
-            する設計ではない。
-          </p>
-          <p
-            style="
-              color: var(--text-muted);
-              font-size: 13px;
-              margin-bottom: 10px;
-            "
-          >
-            厳密なFluxとの差分として、以下を許容する:
-          </p>
-          <div class="diff-list">
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                Store 更新通知は pub/sub ではなく、上位層が
-                <code>consume_action → update</code> を明示的に呼ぶ。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                <code>Dispatcher</code> は action queue と
-                <code>Store</code> を内部に持つ。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                親 <code>Store</code> は Issue と Journal の状態と更新処理を非公開の
-                <code>IssueStore</code> に委譲する。Journal 本体は
-                <code>IssueAggregate::journals</code> が所有し、<code>IssueStore</code>
-                は取得済み Issue ごとに全 Journal の <code>RemoteJournalState</code>、0
-                件または 1 件の Local Journal、取得結果から消えた編集中 Journal
-                の退避データ（DeletedJournal）を持つ。Journal の操作は Issue
-                が取得済みの場合だけ受理する。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                Issue 詳細の取得結果は <code>Action::IssueFetchSucceeded</code>
-                1件で Issue、Journal、子一覧を反映する。<code>IssueStore</code> は Journal
-                の所有関係と重複を検査してから登録し、一部だけを反映した状態を作らない。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                <code>IssueAggregate</code> は親 Issue の ID だけを持ち、子 Issue の ID
-                一覧は持たない。子一覧は詳細取得で得た <code>IssueChild</code>（ID・トラッカー・題名・再帰的な子一覧）として
-                <code>IssueStore</code> が Issue ごとに保持する。子の詳細を取得済みなら、表示には
-                <code>IssueView</code> の値を使う。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                Issue 属性の状態（Synced / Edited / Uploading）は Journal
-                の編集と下書きを含まない。Issue 属性の状態が変わっても Journal
-                の作業は引き継ぐ。同じ Issue の upload は Issue 属性と Journal
-                を合わせて1件に限り、<code>IssueStore</code> が検査する。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                Component と usecase は <code>IssueStore</code>
-                を直接参照せず、親 <code>Store</code> の Issue getter を通して
-                entity、同期状態、diff、競合情報を取得する。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                focus、cursor、scroll、render cache などの同期的な UI state は
-                Store ではなく Component / FocusState に保持する。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                親子 Component 間の focus 遷移は Store / Action
-                を経由せず、<code>process_event</code> の戻り値と
-                <code>focus_event</code> で直接処理する。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                editor 起動、Redmine への非同期取得・保存などの外部副作用は
-                <code>AppEffect</code> として Component から取り出し、
-                <code>runner</code> 側で実行する。Redmine 関連の AppEffect
-                は usecases::redmine の関数を platform の runtime port（native
-                は Tokio、Web は <code>spawn_local</code>）で spawn し、完了
-                Action を Dispatcher に戻す。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                <code>create_widget(&amp;Store)</code> で Store を参照して表示用
-                entity を取得してよい。
-              </div>
-            </div>
-          </div>
-          <p>
-            Store は、失敗または Action の不受理に見える分岐を以下に区別して扱う。
-          </p>
-          <div class="diff-list">
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                異常系: 自プロセスの制御破綻を示す状態機械違反。
-                <code>panic!</code> で即座に停止する。異常系を <code>Result</code>
-                で呼び出し元へ返すのは、Flux を参考にした一方向データフローでは
-                dispatch 時点と consume 時点が分離しておりエラーを返す先がないため採用しない。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                準異常系: 外部プロセスや外部データ起因の復帰可能な失敗。
-                message を Action に載せ、状態復帰と notice によるユーザー通知を行う。
-                失敗後の再試行に必要な状態がある場合は、失敗 Action によって対象の状態機械を再試行可能な状態へ戻し、
-                message を状態の一部として保持する。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                stale completion: 重複を許した非同期要求の追い越し。
-                request ID の一致判定で破棄し、暗黙の状態判定では破棄しない。
-                現時点でこれに該当するのは <code>ProjectIssuesStore</code> のみ。
-                <code>IssueAction</code> と <code>JournalAction</code> は重複を事前条件で排除するため、
-                想定した状態以外へ着弾した完了は stale completion として捨てず異常系として拒否する。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                マージ戦略: サーバー由来のデータをローカルへ取り込む際、ローカル編集を保護するために更新を適用しない意図的な no-op。
-                取得した Journal を取り込む際に、未送信の編集差分を取得値で置き換えないことがこれにあたる。編集中の
-                Journal は本体だけを取得値に更新して <code>diff.before</code>
-                を残し、サーバーの notes が <code>after</code> と同じなら Synced にする。notes
-                の競合はその Journal を保存するときの取得で判定する。upload 中の Journal
-                は取得値で上書きしない。取得結果から消えた編集中の Journal は元の ID と編集後の
-                notes で退避し、同じ ID が再び現れたらサーバーの notes
-                からの編集として戻す。退避した Journal は利用者が個別に新規投稿するか破棄する。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                冪等 no-op: 同じ <code>NoticeId</code> の再追加など、Action
-                自体が冪等であることを契約として持つ正常な no-op。
-                stale completion とマージ戦略は同じ no-op の見た目になりやすいため独立して扱う。
-              </div>
-            </div>
-          </div>
-          <p>
-            Redmine への保存の完了では、取得した Issue を <code>IssueStore</code>
-            の共通処理で Issue 本体・Journal・子一覧ごと取り込み、未送信の編集差分は残す。PUT
-            が成功した後に確認の取得だけが失敗した場合は、PUT を繰り返さずに保存済みとして完了する。
-          </p>
-          <p>
-            getter 契約は、API が表す状態と cardinality で決める。不在が示す意味が異なるため、
-            entity の種類だけで一律には決めない。
-          </p>
-          <div class="diff-list">
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                strict 単体取得: 存在が呼び出し元の事前条件である getter は参照を直接返し、不在は異常系として
-                <code>panic!</code> する。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                状態・cardinality を表す <code>Option</code>: 未取得・取得中・取得失敗、ページの未要求、0
-                件・1 件など、不在そのものが状態や cardinality を表す取得は
-                <code>Option</code> を返す。呼び出し側が取得値の存在を特定の経路で前提する場合は、
-                無言の <code>unwrap()</code> ではなく <code>expect(...)</code> で不変条件を説明する。
-              </div>
-            </div>
-            <div class="diff-item">
-              <div class="diff-bullet"></div>
-              <div>
-                master snapshot の <code>Option</code>: 起動時に一度だけ同期するマスターデータ（<code>IssueStatus</code>
-                など）は、起動後に取得した Issue や Journal がスナップショットに存在しない ID を参照し得るため陳腐化で欠損し得る。
-                単体のマスターデータ getter は <code>Option</code> を返し、呼び出し元は表示上の fallback で処理する。
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Lifecycle -->
-        <section id="lifecycle">
-          <h2>Component lifecycle</h2>
-          <p>Component は以下の lifecycle を前提に実装する。</p>
-          <div class="lifecycle">
-            <div class="lifecycle-step">
-              <div class="step-num">1</div>
-              <div class="step-body">
-                <div class="step-label">Store action 処理時</div>
-                <div class="step-chain">
-                  <span class="chain-item">Dispatcher::consume_action</span>
-                  <span class="chain-arrow">→</span>
-                  <span class="chain-item">Store 更新</span>
-                  <span class="chain-arrow">→</span>
-                  <span class="chain-item">Component::update</span>
-                  <span class="chain-arrow">→</span>
-                  <span class="chain-item">Component::create_widget</span>
-                  <span class="chain-arrow">→</span>
-                  <span class="chain-item">Widget::render</span>
-                </div>
-              </div>
-            </div>
-            <div class="lifecycle-step">
-              <div class="step-num">2</div>
-              <div class="step-body">
-                <div class="step-label">同期的なキーイベント処理時</div>
-                <div class="step-chain">
-                  <span class="chain-item">Component::process_event</span>
-                  <span class="chain-arrow">→</span>
-                  <span class="chain-item"
-                    >action dispatch / popup / effect</span
-                  >
-                  <span class="chain-arrow">→</span>
-                  <span class="chain-item">Component::update</span>
-                  <span class="chain-arrow">→</span>
-                  <span class="chain-item">create_widget</span>
-                  <span class="chain-arrow">→</span>
-                  <span class="chain-item">Widget::render</span>
-                </div>
-              </div>
-            </div>
-            <div class="lifecycle-step">
-              <div class="step-num">3</div>
-              <div class="step-body">
-                <div class="step-label">
-                  他 Component のキーイベント処理による focus 遷移時
-                </div>
-                <div class="step-chain">
-                  <span class="chain-item">focused child::process_event</span>
-                  <span class="chain-arrow">→</span>
-                  <span class="chain-item">parent →別child::focus_event</span>
-                  <span class="chain-arrow">→</span>
-                  <span class="chain-item">Component::update</span>
-                  <span class="chain-arrow">→</span>
-                  <span class="chain-item">create_widget</span>
-                  <span class="chain-arrow">→</span>
-                  <span class="chain-item">Widget::render</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="callout" style="margin-top: 16px">
-            <strong>規則:</strong> <code>create_widget</code> は
-            <code>Widget</code> を実装した concrete struct を返す。<code
-              >Option&lt;Widget&gt;</code
-            >
-            にはしない。
-          </div>
-          <div class="callout">
-            <strong>規則:</strong>
-            <code>create_widget(&amp;Store)</code> は許容する。主な用途は Store
-            から描画に必要な entity を取得すること。幅依存の buffer、markdown
-            render cache、scroll/focus 補正などの重い派生状態は
-            <code>update</code> 側で扱う。
-          </div>
-          <div class="callout">
-            <strong>不変条件:</strong> <code>src/components/issue/</code> 配下の
-            component では、<code>create_widget</code> 時点で対象 issue が Store
-            に存在することを設計上の不変条件とする。無言の
-            <code>unwrap()</code> ではなく、不変条件を説明する
-            <code>expect(...)</code> を使う。
-          </div>
-          <pre><code>let (issue, _) = store
-    .get_issue(self.id)
-    .expect("PropertyComponent requires its issue to exist in Store");</code></pre>
-        </section>
-
-        <!-- Split -->
-        <section id="split">
-          <h2>Component の実装分割</h2>
-          <p>
-            Component は原則として
-            <code>widget.rs</code>、<code>focus_state.rs</code>、<code
-              >component.rs</code
-            >
-            に分割する。focus を持たない component では
-            <code>focus_state.rs</code> を省略してよい。
-          </p>
-        </section>
-
-        <!-- Widget -->
-        <section id="widget">
-          <h2>Widget</h2>
-          <p>
-            Widget は表示に直接関わるデータのみを受け取り、各 frame での render
-            を行う。
-          </p>
-          <div class="resp-grid">
-            <div class="resp-card allowed">
-              <div class="resp-card-title">責務あり</div>
-              <ul class="resp-list">
-                <li><code>ratatui::widgets::Widget</code> を実装する</li>
-                <li>
-                  <code>render(self, area, buf)</code> で Buffer へ描画する
-                </li>
-                <li>
-                  表示に必要な文字列、数値、選択状態、focus状態、事前計算済み
-                  buffer を受け取る
-                </li>
-                <li>layout と style を決める</li>
-                <li>snapshot test の対象になる表示を作る</li>
-                <li>
-                  <code>line_count</code>
-                  など表示に密接な計算メソッドを持ってよい
-                </li>
-              </ul>
-            </div>
-            <div class="resp-card denied">
-              <div class="resp-card-title">責務なし</div>
-              <ul class="resp-list">
-                <li>crossterm key event の解釈</li>
-                <li>Store action の dispatch</li>
-                <li>focus 遷移の決定</li>
-                <li>外部I/O</li>
-                <li>重い永続データ取得</li>
-                <li>Component や FocusState と同じ計算の重複</li>
-              </ul>
-            </div>
-          </div>
-        </section>
-
-        <!-- FocusState -->
-        <section id="focusstate">
-          <h2>FocusState</h2>
-          <p>
-            FocusState
-            はキー入力とその処理に関わるデータのみを持つ。フォーカス位置計算、カーソル表示位置計算、focus
-            入退場の同期処理を行う。
-          </p>
-          <div class="resp-grid">
-            <div class="resp-card allowed">
-              <div class="resp-card-title">責務あり</div>
-              <ul class="resp-list">
-                <li><code>process_event</code> で key event を解釈する</li>
-                <li>
-                  <code>focus_event</code> で親 component からの focus
-                  入退場を処理する
-                </li>
-                <li>
-                  <code>update</code> で focus
-                  可能範囲・幅・高さ・行数などを最新状態へ補正する
-                </li>
-                <li>cursor position を返す</li>
-                <li>
-                  上下左右移動、境界到達、編集開始などを
-                  <code>EventProcessResult</code> として返す
-                </li>
-                <li>
-                  戻り値 <code>Option&lt;EventProcessResult&gt;</code>
-                  は、<code>None</code>
-                  をイベントを解釈しなかった(未処理)、<code>Some(Handled)</code>
-                  をイベントを使ったが親への要求はない、それ以外を親への要求とする。端で動かなかった場合も、解釈したキーなら
-                  <code>Some(Handled)</code> を返す。Component も同じ意味で返す
-                </li>
-                <li>
-                  親は子の <code>Handled</code> をそのまま
-                  <code>Handled</code> で返す。子の
-                  <code>CursorLeavedFrom*</code>
-                  を受けて隣の子へフォーカスを移したら
-                  <code>Handled</code> を返す。移せない場合、中間の親は
-                  <code>CursorLeavedFrom*</code>
-                  を外へ返し、最上位の Component(<code>IssueDetailComponent</code>)は
-                  <code>Handled</code> を返す。<code>AppComponent</code>
-                  はどの Component も使わなかった <code>q</code>
-                  だけでアプリを終了する
-                </li>
-              </ul>
-            </div>
-            <div class="resp-card denied">
-              <div class="resp-card-title">責務なし</div>
-              <ul class="resp-list">
-                <li>Store 参照</li>
-                <li>Widget 生成</li>
-                <li>entity の保持</li>
-                <li>表示文字列の組み立て</li>
-                <li>action dispatch</li>
-              </ul>
-            </div>
-          </div>
-        </section>
-
-        <!-- Component -->
-        <section id="component">
-          <h2>Component</h2>
-          <p>
-            Component は Widget と FocusState を統括し、lifecycle
-            に関わるメソッドをある程度統一した形式で公開する。
-          </p>
-          <div class="resp-card allowed" style="margin-bottom: 14px">
-            <div class="resp-card-title">責務あり</div>
-            <ul class="resp-list">
-              <li><code>new</code> で component 固有 state を初期化する</li>
-              <li>
-                <code>process_event</code> で FocusState や子 component へ event
-                を委譲し、親へ返す同期イベントを決める
-              </li>
-              <li><code>focus_event</code> で親からの focus 遷移を受け取る</li>
-              <li>
-                <code>update</code> で Store や entity から component
-                state、FocusState、render cache を更新する
-              </li>
-              <li><code>create_widget</code> で Widget を構築する</li>
-              <li>
-                子 component を持つ場合は、子の process_event / focus_event /
-                update / create_widget を統括する
-              </li>
-            </ul>
-          </div>
-          <div class="callout">
-            <strong>注意:</strong> Component は Store から entity を取得して
-            Widget に参照を渡してよい。ただし、Component field に frame をまたぐ
-            entity 参照を保持しない。entity の owned copy を field
-            に持つ場合は、Store との二重管理と clone cost
-            が妥当かを先に検討する。
-          </div>
-        </section>
-
-        <!-- Testing -->
-        <section id="testing">
-          <h2>テスト方針</h2>
-          <p>Widget、FocusState、Component は責務ごとにテストする。</p>
-          <div class="test-grid">
-            <div class="test-card">
-              <div class="test-card-title">Widget test</div>
-              <ul>
-                <li>render結果の snapshot</li>
-                <li>layout、clip、wrap、style、focus表示</li>
-                <li>line_count など表示計算</li>
-                <li>Store や Dispatcher に依存させない</li>
-                <li>必要な表示データを直接渡す</li>
-              </ul>
-            </div>
-            <div class="test-card">
-              <div class="test-card-title">FocusState test</div>
-              <ul>
-                <li>key event による focus/cursor 移動</li>
-                <li>境界到達時の EventProcessResult</li>
-                <li>解釈したキーで Some(_)、解釈しないキーで None を返すこと</li>
-                <li>focus_event による入退場</li>
-                <li>update による範囲補正</li>
-                <li>unfocused 時に入力を無視すること</li>
-                <li>Widget や Store に依存させない</li>
-              </ul>
-            </div>
-            <div class="test-card">
-              <div class="test-card-title">Component test</div>
-              <ul>
-                <li>
-                  process_event 後に create_widget の表示状態へ反映されること
-                </li>
-                <li>
-                  focus_event 後に Widget の focus 表示と cursor
-                  位置が一致すること
-                </li>
-                <li>
-                  update 後に FocusState の補正・Widget の表示・line count
-                  が整合すること
-                </li>
-                <li>
-                  子→親の EventProcessResult と親→別子の focus_event
-                  がつながること
-                </li>
-                <li>必要に応じて Store fixture を使ってよい</li>
-                <li>表示の最終確認には snapshot test を使う</li>
-              </ul>
-            </div>
-          </div>
-        </section>
-
-        <!-- Platform boundary -->
-        <section id="platform">
-          <h2>Platform境界（native/Web）</h2>
-          <p>
-            GitHub Pages向けWebデモをRatzilla
-            <code>DomBackend</code>で配信するため、Store、Component、Widget、entity、value
-            object、Redmine usecaseの状態遷移をnative/Webで共有し、platform差はアプリケーションの入口と外部副作用のadapterへ閉じ込める。設計根拠は
-            <a href="adrs/010.html">ADR 10</a> を参照する。
-          </p>
-          <pre class="mermaid mermaid-block">
-flowchart TD
+fn get_issue(&amp;self, id: IssueId) -&gt; (IssueView&lt;'_&gt;, IssueState);
+fn try_get_issue_state(&amp;self, id: IssueId) -&gt; Option&lt;IssueState&gt;;
+fn try_get_issue_fetch_state(&amp;self, id: IssueId) -&gt; Option&lt;IssueFetchState&gt;;
+</code></pre>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>内部状態</th>
+<th><code>try_get_issue_state</code></th>
+<th><code>try_get_issue_fetch_state</code></th>
+<th><code>get_issue</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>未登録</td>
+<td><code>None</code></td>
+<td><code>None</code></td>
+<td>panic</td>
+</tr>
+<tr>
+<td>Fetching</td>
+<td><code>None</code></td>
+<td><code>Some(Fetching)</code></td>
+<td>panic</td>
+</tr>
+<tr>
+<td>FetchFailed</td>
+<td><code>None</code></td>
+<td><code>Some(FetchFailed)</code></td>
+<td>panic</td>
+</tr>
+<tr>
+<td>Synced / Edited / Uploading</td>
+<td><code>Some(..)</code></td>
+<td><code>None</code></td>
+<td>表示値と状態</td>
+</tr>
+</tbody>
+</table>
+</div>
+<ul>
+<li>本体の存在が不変条件である経路は <code>get_issue</code> を直接使い、不在を事前検査して処理をスキップしない。</li>
+<li>子 Issue や親 Issue の表示など不在が正常な経路では、<code>try_get_issue_state(id).is_some()</code> を確認してから <code>get_issue</code> を使う。</li>
+<li>未登録は両方の状態 getter が <code>None</code> の場合であり、<code>try_get_issue_fetch_state</code> の <code>None</code> だけで判定しない。</li>
+</ul>
+<p><code>IssueStore</code> が保持する <code>IssueAggregate</code> はサーバーから取得した基準値であり、Issue 属性の編集 Action では変更しない。編集は、その時点の表示値を <code>before</code> にした <code>IssuePropertyDiff</code> を編集した順に追加して表す。差し引きで変更がなくなった場合は Synced へ戻す。</p>
+<p><code>get_issue</code> が返す <code>IssueView</code> は、属性ごとに最後の diff の <code>after</code>、diff がなければ基準値を Store の寿命で参照する。保存時に送る値は <code>IssueAggregate::with_property_diffs</code> で同じ規則により求める。</p>
+<h2 id="lifecycle">Component lifecycle</h2>
+<p>Component は以下の lifecycle を前提に実装する。</p>
+<ol>
+<li>Store action 処理時
+<ul>
+<li><code>Dispatcher::consume_action</code></li>
+<li><code>Store</code> 更新</li>
+<li><code>Component::update</code></li>
+<li><code>Component::create_widget</code></li>
+<li><code>Widget::render</code></li>
+</ul>
+</li>
+<li>同期的なキーイベント処理時
+<ul>
+<li><code>Component::process_event</code></li>
+<li>必要に応じて action dispatch、popup open/close、<code>RequestSink</code> への要求</li>
+<li><code>Component::update</code></li>
+<li><code>Component::create_widget</code></li>
+<li><code>Widget::render</code></li>
+</ul>
+</li>
+<li>他 Component のキーイベント処理による focus 遷移時
+<ul>
+<li>focused child の <code>process_event</code></li>
+<li>parent が別 child の <code>focus_event</code> を呼ぶ</li>
+<li><code>Component::update</code></li>
+<li><code>Component::create_widget</code></li>
+<li><code>Widget::render</code></li>
+</ul>
+</li>
+</ol>
+<p><code>create_widget</code> は <code>Widget</code> を実装した concrete struct を返す。
+<code>Option&lt;Widget&gt;</code> にはしない。</p>
+<p><code>create_widget(&amp;Store)</code> は許容する。
+主な用途は Store から描画に必要な entity を取得することである。
+幅依存の buffer、markdown render cache、scroll/focus 補正などの重い派生状態は <code>update</code> 側で扱う。</p>
+<p><code>src/components/issue/detail/</code> 配下の component では、<code>create_widget</code> 時点で対象 issue が Store に存在することを設計上の不変条件とする。
+外側の <code>src/components/issue/IssueComponent</code> は未取得、取得中、取得失敗も扱い、この不変条件を満たす状態でだけ detail component を生成する。
+この不変条件に依存する箇所では、strict getter の <code>get_issue</code> を直接使い、不在時の panic で契約違反を検出する。</p>
+<pre><code class="language-rust">let (issue, _) = store.get_issue(self.id);
+</code></pre>
+<h2 id="split">Component の実装分割</h2>
+<p>Component は原則として <code>widget.rs</code>、<code>focus_state.rs</code>、<code>component.rs</code> に分割する。
+focus を持たない component では <code>focus_state.rs</code> を省略してよい。</p>
+<h3 id="widget">Widget</h3>
+<p>Widget は表示に直接関わるデータのみを受け取り、各 frame での render を行う。</p>
+<p>Widget の責務:</p>
+<ul>
+<li><code>ratatui::widgets::Widget</code> を実装する。</li>
+<li><code>render(self, area, buf)</code> で Buffer へ描画する。</li>
+<li>表示に必要な文字列、数値、選択状態、focus状態、事前計算済み buffer を受け取る。</li>
+<li>layout と style を決める。</li>
+<li>snapshot test の対象になる表示を作る。</li>
+</ul>
+<p>Widget に入れない責務:</p>
+<ul>
+<li>crossterm key event の解釈。</li>
+<li>Store action の dispatch。</li>
+<li>focus 遷移の決定。</li>
+<li>外部I/O。</li>
+<li>重い永続データ取得。</li>
+</ul>
+<p>Widget は必要なら <code>line_count</code> など表示に密接な計算メソッドを持ってよい。
+ただし、Component や FocusState と同じ計算を重複させない。</p>
+<h3 id="focusstate">FocusState</h3>
+<p>FocusState はキー入力とその処理に関わるデータのみを持つ。
+フォーカス位置計算、カーソル表示位置計算、focus 入退場の同期処理を行う。</p>
+<p>FocusState の責務:</p>
+<ul>
+<li><code>process_event</code> で key event を解釈する。</li>
+<li><code>focus_event</code> で親 component からの focus 入退場を処理する。</li>
+<li><code>update</code> で focus 可能範囲、幅、高さ、行数などを最新状態へ補正する。</li>
+<li>cursor position を返す。</li>
+<li>上下左右移動、境界到達、編集開始などを <code>EventProcessResult</code> として返す。</li>
+<li>戻り値<code>Option&lt;EventProcessResult&gt;</code>は、<code>None</code>をイベントを解釈しなかった（未処理）、<code>Some(Handled)</code>をイベントを使ったが親への要求はない、それ以外を親への要求とする。端で動かなかった場合も、解釈したキーなら<code>Some(Handled)</code>を返す。Componentも同じ意味で返す。</li>
+<li>親は子の<code>Handled</code>をそのまま<code>Handled</code>で返す。子の<code>CursorLeavedFrom*</code>を受けて隣の子へフォーカスを移したら<code>Handled</code>を返す。移せない場合、中間の親は<code>CursorLeavedFrom*</code>を外へ返し、最上位のComponent（<code>IssueDetailComponent</code>）は<code>Handled</code>を返す。<code>AppComponent</code>はどのComponentも使わなかった<code>q</code>だけでアプリを終了する。</li>
+</ul>
+<p>FocusState に入れない責務:</p>
+<ul>
+<li>Store 参照。</li>
+<li>Widget 生成。</li>
+<li>entity の保持。</li>
+<li>表示文字列の組み立て。</li>
+<li>action dispatch。</li>
+</ul>
+<h3 id="component">Component</h3>
+<p>Component は Widget と FocusState を統括し、lifecycle に関わるメソッドをある程度統一した形式で公開する。</p>
+<p>Component の責務:</p>
+<ul>
+<li><code>new</code> で component 固有 state を初期化する。</li>
+<li><code>process_event</code> で FocusState や子 component へ event を委譲し、親へ返す同期イベントを決める。</li>
+<li><code>focus_event</code> で親からの focus 遷移を受け取る。</li>
+<li><code>update</code> で Store や entity から component state、FocusState、render cache を更新する。</li>
+<li><code>create_widget</code> で Widget を構築する。</li>
+<li>子 component を持つ場合は、子の <code>process_event</code> / <code>focus_event</code> / <code>update</code> / <code>create_widget</code> を統括する。</li>
+</ul>
+<p>Component は Store から entity を取得して Widget に参照を渡してよい。
+ただし、Component field に frame をまたぐ entity 参照を保持しない。
+entity の owned copy を field に持つ場合は、Store との二重管理と clone cost が妥当かを先に検討する。</p>
+<h2 id="testing">テスト方針</h2>
+<p>テストは単体テスト、外部プロセスへのアダプターのテスト、E2Eの3層で構成する。内部で閉じるstruct同士の結合テストは、画面から観測できない層の間の契約に限って残す。</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>層</th>
+<th>対象</th>
+<th>実行方法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>単体テスト</td>
+<td>Store、FocusState、Widget、Component、usecase、value object、変換処理</td>
+<td><code>cargo test</code></td>
+</tr>
+<tr>
+<td>外部プロセスへのアダプターのテスト</td>
+<td><code>DefaultRedmineClient</code>とRedmine containerの契約</td>
+<td><code>cargo xtask test-redmine-client</code></td>
+</tr>
+<tr>
+<td>E2E</td>
+<td>PTY上のnativeバイナリによるユーザー操作の流れ</td>
+<td><code>cargo xtask test-e2e</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3 id="どの層でテストするか">どの層でテストするか</h3>
+<p>単体テストかどうかは、組み合わせるstructの数ではなく、テスト対象がひとつかどうかで判断する。Storeを入力として組み立て、Componentの描画、<code>process_event</code>の戻り値、発行したActionを検証するテストは、Componentを対象とする単体テストである。</p>
+<p>変更の内容ごとに、次の層でテストする。</p>
+<ul>
+<li>Store、FocusState、Widget、Component、usecase、value objectの振る舞い: 単体テスト。組み合わせや境界値はここで網羅する。</li>
+<li>Redmine APIとの送受信（requestの形式、responseの変換、Redmineがどう反映するか）: Redmine clientテスト。実際のRedmineで起こしにくい応答（5xx、壊れたJSONなど）の変換だけは、wiremockを使う単体テストにする。</li>
+<li>ユーザー操作の流れ（popupでの選択、編集、upload、競合の解決、画面の切り替えなど）: E2E。</li>
+<li>画面から観測できない層の間の契約: 結合テストとして<code>src/components/app.rs</code>と<code>src/runner/tests.rs</code>に置く。</li>
+</ul>
+<p>1件のテストが複数の性質を含む場合は、性質ごとに分けて上の層へ置く。たとえばpopupの選択肢の組み合わせは単体テストに、選んだ値がIssueに反映される流れはE2Eに置く。</p>
+<h3 id="期待値の書き方">期待値の書き方</h3>
+<p>assertの期待値はリテラルまたは<code>const</code>で書く。入力と実装が同時に誤っても検出できるよう、期待値を入力や実装の出力から取らない。</p>
+<ul>
+<li>入力と期待値で同じ<code>const</code>を使ってよい。どちらも定数のため、片方だけがずれることはない。</li>
+<li>入力のコレクションの長さ、パースしたentityのフィールド、Storeから取り出した値など、定数でない値から期待値を取らない。</li>
+<li>期待値が<code>const</code>同士の計算で決まる場合（seedのIssueが4件なので次に作成されるIDは5、など）も、コード上はリテラルで書き、計算方法をコメントに残す。</li>
+<li>型で保証されている性質（<code>Send</code>であることなど）はテストしない。</li>
+</ul>
+<h3 id="テストデータ">テストデータ</h3>
+<ul>
+<li>単体テストでは、<code>test_support</code>の<code>sample_*</code>で組み立てたentityを、<code>load_issue</code>などで詳細取得と同じActionからStoreへ渡す。テスト専用の登録Actionは作らない。テストが依存する値はテストの中か<code>sample_*</code>に書き、<code>datas/</code>のfixtureは読まない。<code>datas/</code>はDemo clientとRedmine seederの入力である。</li>
+<li>Redmine clientテストとE2Eは、テストごとに<code>datas/</code>からseedを入れ直した状態で始まる。seedには全テストで共通の土台（マスターデータ、project、role、workflowなど）だけを入れる。</li>
+<li>テスト固有のデータは、E2EではGivenの段階でRedmine APIを使って追加する。他のユーザーによる更新や競合も、APIによる更新として書く。seedの再投入はAUTO_INCREMENTもリセットするため、APIで作成したデータのIDは毎回同じになる。</li>
+</ul>
+<p>Widget、FocusState、Component は責務ごとにテストする。</p>
+<h3 id="widget-test">Widget test</h3>
+<p>Widget は単体テストを書く。</p>
+<p>確認すること:</p>
+<ul>
+<li>render結果の snapshot。</li>
+<li>layout、clip、wrap、style、focus表示。</li>
+<li><code>line_count</code> など表示計算。</li>
+</ul>
+<p>Widget test は Store や Dispatcher に依存させない。
+必要な表示データを直接渡す。</p>
+<h3 id="focusstate-test">FocusState test</h3>
+<p>FocusState は単体テストを書く。</p>
+<p>確認すること:</p>
+<ul>
+<li>key event による focus/cursor 移動。</li>
+<li>境界到達時の <code>EventProcessResult</code>。</li>
+<li>解釈したキーで<code>Some(_)</code>、解釈しないキーで<code>None</code>を返すこと。</li>
+<li><code>focus_event</code> による入退場。</li>
+<li><code>update</code> による範囲補正。</li>
+<li>unfocused 時に入力を無視すること。</li>
+</ul>
+<p>FocusState test は Widget や Store に依存させない。</p>
+<h3 id="component-test">Component test</h3>
+<p>Component は Widget と FocusState の組み合わせを、Component を対象とする単体テストで確認する。</p>
+<p>確認すること:</p>
+<ul>
+<li><code>process_event</code> 後に <code>create_widget</code> の表示状態へ反映されること。</li>
+<li><code>focus_event</code> 後に Widget の focus 表示と cursor 位置が一致すること。</li>
+<li><code>update</code> 後に FocusState の補正、Widget の表示、line count が整合すること。</li>
+<li>子 component を持つ component では、子から親への <code>EventProcessResult</code> と親から別子への <code>focus_event</code> がつながること。</li>
+</ul>
+<p>Component test では必要に応じて Store を入力として使ってよい。
+表示の最終確認には snapshot test を使う。</p>
+<h3 id="redmine-clientテスト">Redmine clientテスト</h3>
+<p><code>src/clients/redmine/default_tests/container/</code>に置き、<code>container-tests</code> featureを有効にしたときだけcompileする。<code>cargo xtask test-redmine-client</code>がDocker ComposeでRedmineを1つ起動し、各テストは開始時にseedを入れ直す。正常系と実際に起こせるエラー（401、404、422）はcontainerで検証し、wiremockは5xxや壊れたJSONなど実際のRedmineで起こしにくい応答の変換に限る。</p>
+<h3 id="e2e">E2E</h3>
+<p><code>tests/e2e/</code>に置き、<code>e2e-tests</code> featureを有効にしたときだけcompileする。<code>cargo xtask test-e2e</code>がRedmine containerを起動し、testtyでnativeバイナリをPTY上で操作する。</p>
+<ul>
+<li>シナリオはテスト関数ごとに固定し、Gherkinの<code>// Scenario:</code>、<code>// Given</code>、<code>// When</code>、<code>// Then</code>をコメントで書く。</li>
+<li>各シナリオは開始時にseedを入れ直す。シナリオ固有のデータはGivenでRedmine APIを使って追加する。</li>
+<li>結果は画面表示と、Redmine APIで取得し直した状態で検証する。リクエスト回数はE2Eで検証しない。</li>
+<li>editorは<code>VISUAL</code>に指定した<code>FakeEditor</code>で置き換える。testtyの仮想端末はcursor位置の問い合わせに応答しないため、<code>FakeEditor::finish_editing</code>が応答を書き込む。</li>
+</ul>
+<h2 id="platform">Platform境界（native/Web）</h2>
+<p>GitHub Pages向けWebデモをRatzilla <code>DomBackend</code>で配信するため、Store、Component、Widget、entity、value object、Redmine usecaseの状態遷移をnative/Webで共有し、platform差はアプリケーションの入口と外部副作用のadapterへ閉じ込める。設計根拠は<a href="adrs/010.html">ADR 10</a>を参照する。</p>
+<pre class="mermaid">flowchart TD
     input["InputEvent"] --&gt; component["Component"]
-    component --&gt;|effect| runner["App runner"]
+    component --&gt;|RequestSink| runner["App runner"]
     runner --&gt; ports["platform ports&lt;br/&gt;Redmine・Editor・Runtime・Logging"]
     ports --&gt;|completion| store["Dispatcher/Store"]
+    runner --&gt;|UsecaseEvent| component
     component --&gt; action["Action"]
     action --&gt; store
 </pre>
-          <table class="port-table">
-            <thead>
-              <tr><th>port</th><th>native</th><th>Web</th></tr>
-            </thead>
-            <tbody>
-              <tr><td>入力</td><td>crossterm</td><td>Ratzilla <code>DomBackend</code></td></tr>
-              <tr><td>Runtime</td><td>Tokio</td><td><code>spawn_local</code></td></tr>
-              <tr><td>Redmine</td><td>HTTP</td><td>memory mock</td></tr>
-              <tr><td>Editor</td><td>external editor</td><td>textarea</td></tr>
-              <tr><td>Logging</td><td>file</td><td>browser console</td></tr>
-            </tbody>
-          </table>
-          <h3>実装上の規則</h3>
-          <ul class="rule-list">
-            <li>
-              Componentはcrosstermではなく<code>src/platform/input/</code> の
-              <code>InputEvent</code>を受け取る。
-            </li>
-            <li>
-              共通層（components・widgets・stores・usecases・entities・vos）はcrossterm、Ratzilla、DOM、Tokio、filesystem、process、HTTP実装へ直接依存しない。
-            </li>
-            <li>
-              外部副作用は<code>AppEffect</code>としてrunnerに渡し、runnerがplatformのportで実行する（runtime handle や executor 固有型を Component、Store、Client
-              に渡さない）。
-            </li>
-            <li>
-              <code>InteractionMode::Editing</code>
-              中はComponentへの入力配送を止める。
-            </li>
-          </ul>
-          <p>
-            Webは <code>web-demo</code> featureとwasm32
-            targetでbuildする。ローカルでの確認手順は
-            <a href="../README.ja.md">README.ja.md</a> を参照する。GitHub
-            Pagesへの配信は <code>.github/workflows/pages.yml</code> が
-            <code>cargo xtask build-pages</code> でbuildして行う。
-          </p>
-        </section>
-      </main>
-    </div>
-    <script type="module">
-      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.16.1/+esm";
-      mermaid.initialize({
-        securityLevel: "loose",
-        theme: "dark",
-      });
-    </script>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>port</th>
+<th>native</th>
+<th>Web</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>入力</td>
+<td>crossterm</td>
+<td>Ratzilla <code>DomBackend</code></td>
+</tr>
+<tr>
+<td>Runtime</td>
+<td>Tokio</td>
+<td><code>spawn_local</code></td>
+</tr>
+<tr>
+<td>Redmine</td>
+<td>HTTP</td>
+<td>memory mock</td>
+</tr>
+<tr>
+<td>Editor</td>
+<td>external editor</td>
+<td>textarea</td>
+</tr>
+<tr>
+<td>Logging</td>
+<td>file</td>
+<td>browser console</td>
+</tr>
+<tr>
+<td>Cursor</td>
+<td>terminal cursor</td>
+<td>cursor位置のセルをreverse</td>
+</tr>
+<tr>
+<td>画像表示</td>
+<td>Kitty graphics protocol（設定で有効）</td>
+<td>常に無効</td>
+</tr>
+<tr>
+<td>一時ファイル</td>
+<td>プロセスごとの一時ディレクトリ</td>
+<td>書かない</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3 id="実装上の規則">実装上の規則</h3>
+<ul>
+<li>Componentはcrosstermではなく<code>src/platform/input/</code>の<code>InputEvent</code>を受け取る。</li>
+<li>共通層（components・widgets・stores・usecases・entities・vos）はcrossterm、Ratzilla、DOM、Tokio、filesystem、process、HTTP実装へ直接依存しない。wasm32 でbuildできない <code>ratatui-image</code> は、<code>stores/terminal_image.rs</code> の包む型からだけ使う。</li>
+<li>外部副作用は<code>RequestSink</code>への要求としてrunnerに渡し、runnerがplatformのportで実行する（runtime handle や executor 固有型を Component、Store、Client に渡さない）。</li>
+<li><code>InteractionMode::Editing</code>中はComponentへの入力配送を止める。</li>
+</ul>
+<p>Webは<code>web-demo</code> featureとwasm32 targetでbuildする。ローカルでの確認手順は<a href="../README.ja.md">README.ja.md</a>を参照する。GitHub Pagesへの配信は<code>.github/workflows/pages.yml</code>が<code>cargo xtask build-pages</code>でbuildして行う。</p>
+    </main>
   </body>
 </html>
