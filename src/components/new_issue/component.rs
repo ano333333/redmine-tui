@@ -46,6 +46,7 @@ const FIELDS: [DraftField; 12] = [
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EventProcessResult {
+    EditFieldRequested { field: DraftField },
     OpenIssueSelectPopup,
     Handled,
 }
@@ -89,6 +90,11 @@ impl NewIssueComponent {
                 self.focused_index = self.focused_index.saturating_sub(1);
             }
             KeyCode::Char('y') => return Some(EventProcessResult::OpenIssueSelectPopup),
+            KeyCode::Enter => {
+                if let Some(field) = FIELDS.get(self.focused_index) {
+                    return Some(EventProcessResult::EditFieldRequested { field: *field });
+                }
+            }
             _ => return None,
         }
         Some(EventProcessResult::Handled)
@@ -244,6 +250,19 @@ mod tests {
         }
         assert_eq!(component.focused_index, FIELDS.len());
         assert_eq!(component.process_event(&key(KeyCode::Char('x'))), None);
+    }
+
+    #[test]
+    fn enter_requests_editing_the_focused_field() {
+        let mut component = NewIssueComponent::new(ProjectId::new(1), None);
+        component.process_event(&key(KeyCode::Char('j')));
+
+        assert_eq!(
+            component.process_event(&key(KeyCode::Enter)),
+            Some(EventProcessResult::EditFieldRequested {
+                field: DraftField::Description
+            })
+        );
     }
 
     #[test]

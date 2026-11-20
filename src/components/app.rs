@@ -16,7 +16,7 @@ use crate::components::issue_property_conflict_popup::{
 use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
 use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
 use crate::components::new_issue::{
-    EventProcessResult as NewIssueEventProcessResult, NewIssueComponent,
+    DraftField, EventProcessResult as NewIssueEventProcessResult, NewIssueComponent,
 };
 use crate::components::remote_journal_conflict_popup::{
     EventProcessResult as RemoteJournalConflictEventProcessResult, RemoteJournalConflictComponent,
@@ -37,7 +37,7 @@ use crate::usecases::issue_popup_options::{
     issue_status_popup_observer, priority_popup_observer, project_popup_observer,
     start_date_popup_observer, target_version_popup_observer, tracker_popup_observer,
 };
-use crate::usecases::{UsecaseEvent, UsecaseRequest};
+use crate::usecases::{IssueCreationId, UsecaseEvent, UsecaseRequest};
 use crate::vos::{EntityIdValue, IssueId, JournalId, TimeEntityActivityId};
 
 use super::attachment_input_popup::{
@@ -71,6 +71,12 @@ enum PendingEditorContext {
     DeletedJournal {
         issue_id: IssueId,
         original_id: JournalId,
+    },
+    NewIssueSubject {
+        creation_id: IssueCreationId,
+    },
+    NewIssueDescription {
+        creation_id: IssueCreationId,
     },
 }
 
@@ -107,7 +113,14 @@ fn can_start_editing(
             store.get_deleted_journal(*issue_id, *original_id).state,
             DeletedJournalState::Pending { .. }
         ),
+        PendingEditorContext::NewIssueSubject { .. }
+        | PendingEditorContext::NewIssueDescription { .. } => true,
     }
+}
+
+/// 題名は1行のため、editorで入力した改行と連続する空白を1つの空白にまとめ、前後の空白を除く。
+fn single_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 enum PopupComponent<'a> {
@@ -375,7 +388,24 @@ impl<'a> AppComponent<'a> {
         let Some(result) = new_issue_component.process_event(&event) else {
             return false;
         };
+        let creation_id = new_issue_component.creation_id();
+        let draft = new_issue_component.draft();
         match result {
+            NewIssueEventProcessResult::EditFieldRequested { field } => {
+                let (context, initial_text) = match field {
+                    DraftField::Subject => (
+                        PendingEditorContext::NewIssueSubject { creation_id },
+                        draft.borrow().subject.clone(),
+                    ),
+                    DraftField::Description => (
+                        PendingEditorContext::NewIssueDescription { creation_id },
+                        draft.borrow().description.clone(),
+                    ),
+                    // FIXME: 残りの属性の編集popupを開く。
+                    _ => return true,
+                };
+                self.start_editing(context, initial_text, sink);
+            }
             NewIssueEventProcessResult::OpenIssueSelectPopup => {
                 self.open_issue_select_popup(None, sink);
             }
@@ -743,6 +773,24 @@ impl<'a> AppComponent<'a> {
         }
     }
 
+    /// editorの起動を要求できる状態なら、文脈を保持してeditorを起動する。
+    fn start_editing(
+        &mut self,
+        context: PendingEditorContext,
+        initial_text: String,
+        sink: &mut RequestSink,
+    ) {
+        if can_start_editing(
+            &context,
+            self.interaction_mode,
+            self.dispatcher.borrow().store(),
+        ) {
+            self.pending_editor_context = Some(context);
+            sink.request_editor(EditorRequest { initial_text });
+            self.interaction_mode = InteractionMode::Editing;
+        }
+    }
+
     fn select_issue(&mut self, issue_id: IssueId, sink: &mut RequestSink) {
         self.popup_components.pop_back();
         self.open_issue(issue_id, sink);
@@ -1015,6 +1063,27 @@ impl<'a> AppComponent<'a> {
                         notes: edited_text,
                     },
                 ));
+            }
+            Some(
+                context @ (PendingEditorContext::NewIssueSubject { creation_id }
+                | PendingEditorContext::NewIssueDescription { creation_id }),
+            ) => {
+                // editor中は入力を受け付けないため、下書きは編集を始めたときのまま表示中である。
+                let Some(MainComponent::NewIssue(new_issue_component)) = &self.main_component
+                else {
+                    return;
+                };
+                if new_issue_component.creation_id() != creation_id {
+                    return;
+                }
+                let draft = new_issue_component.draft();
+                let mut draft = draft.borrow_mut();
+                match context {
+                    PendingEditorContext::NewIssueSubject { .. } => {
+                        draft.subject = single_line(&edited_text);
+                    }
+                    _ => draft.description = edited_text,
+                }
             }
             None => {}
         }
@@ -1837,6 +1906,63 @@ mod tests {
         assert_eq!(draft.borrow().project_id, ProjectId::new(1));
         assert_eq!(draft.borrow().parent_issue_id, None);
         assert_no_requests(&mut sink);
+    }
+
+    fn app_with_draft(
+        dispatcher: Rc<RefCell<Dispatcher>>,
+        sink: &mut RequestSink,
+    ) -> AppComponent<'static> {
+        let mut app = AppComponent::new(dispatcher.clone(), None, CursorRendering::Terminal, sink);
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), sink);
+        app.process_event(key_event(KeyCode::Char('n')), dispatcher, sink);
+        app
+    }
+
+    #[test]
+    fn editor_edits_the_draft_subject_as_a_single_line() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone(), &mut sink);
+        assert_eq!(
+            sink.take_editor().map(|request| request.initial_text),
+            Some(String::new())
+        );
+        assert_eq!(app.interaction_mode(), InteractionMode::Editing);
+        app.handle_editor_response(EditorOutcome::Submitted {
+            edited_text: "  ログイン\n画面の  不具合\n".to_string(),
+        });
+
+        let draft = new_issue_component(&app).unwrap().draft();
+        assert_eq!(draft.borrow().subject, "ログイン 画面の 不具合");
+        assert_eq!(app.interaction_mode(), InteractionMode::Application);
+    }
+
+    #[test]
+    fn editor_edits_the_draft_description_from_its_current_text() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+        new_issue_component(&app)
+            .unwrap()
+            .draft()
+            .borrow_mut()
+            .description = "before".to_string();
+
+        for code in [KeyCode::Char('j'), KeyCode::Enter] {
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+        assert_eq!(
+            sink.take_editor().map(|request| request.initial_text),
+            Some("before".to_string())
+        );
+        app.handle_editor_response(EditorOutcome::Submitted {
+            edited_text: "1行目\n2行目\n".to_string(),
+        });
+
+        let draft = new_issue_component(&app).unwrap().draft();
+        assert_eq!(draft.borrow().description, "1行目\n2行目\n");
     }
 
     #[test]
