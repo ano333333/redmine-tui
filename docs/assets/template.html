@@ -1,0 +1,53 @@
+<!doctype html>
+<!--
+  docs/ 配下の HTML の骨組み。ADR の HTML はこの形で markdown から書き起こす。
+
+  - 本文は同名の .md と同じ内容にし、HTML だけの図や装飾は足さない。
+  - 見た目は docs/assets/doc.css に集め、ページごとの <style> は書かない。
+  - h2 の id は英語の見出しを kebab-case にしたものにする。
+  - 状態は "Status" の h2 の直後に .status で書く（status--accepted / --proposed / --deprecated / --superseded）。
+  - 表は <div class="table-wrap"> で包む。
+  - mermaid の図は <pre class="mermaid"> に書き、mermaid.js を読み込む（図がないページでは読み込まない）。
+  - ADR 同士のリンクは 3 桁のファイル名（009.html など）にする。
+-->
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR N — タイトル</title>
+    <link rel="stylesheet" href="../assets/doc.css" />
+    <script defer src="../assets/mermaid.js"></script>
+  </head>
+  <body>
+    <main>
+<h1>N. タイトル</h1>
+<h2 id="status">Status</h2>
+<p><span class="status status--accepted">Accepted</span></p>
+<h2 id="context">Context</h2>
+<p>本文</p>
+<h2 id="decision">Decision</h2>
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>列</th><th>列</th></tr>
+</thead>
+<tbody>
+<tr><td>値</td><td>値</td></tr>
+</tbody>
+</table>
+</div>
+<pre class="mermaid">flowchart LR
+  A --&gt; B</pre>
+<pre><code class="language-rust">fn main() {}
+</code></pre>
+<h2 id="rationale">Rationale</h2>
+<blockquote>
+<p>引用</p>
+</blockquote>
+<h2 id="consequences">Consequences</h2>
+<ul>
+<li>項目</li>
+</ul>
+    </main>
+  </body>
+</html>
