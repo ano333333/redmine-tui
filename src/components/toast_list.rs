@@ -18,6 +18,9 @@ pub struct ToastListComponent {
 impl ToastListComponent {
     pub fn push_failure(&mut self, failure: &UsecaseFailure) {
         let message = match failure {
+            UsecaseFailure::IssueCreate { reason, .. } => {
+                format!("Issueの作成に失敗しました: {reason}")
+            }
             UsecaseFailure::IssueUpload { id, reason } => {
                 format!("Issue #{id}の保存に失敗しました: {reason}")
             }
@@ -146,6 +149,17 @@ mod tests {
 
     fn render_toast_snapshot(name: &str, toast_list: &ToastListComponent) {
         render_snapshot(name, 60, 12, toast_list.create_widget());
+    }
+
+    #[test]
+    fn snapshot_issue_create_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::IssueCreate {
+            creation_id: crate::usecases::IssueCreationId::new(),
+            reason: "unprocessable entity: Subject cannot be blank".to_string(),
+        });
+
+        render_toast_snapshot("toast_list_issue_create_failure", &toast_list);
     }
 
     #[test]

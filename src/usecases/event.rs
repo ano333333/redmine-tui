@@ -1,13 +1,23 @@
+use crate::usecases::IssueCreationId;
 use crate::vos::{IssueId, JournalId};
 
 /// Usecaseで一度だけ起きたことを表す。発したUsecaseは受け取り手を知らない。
 #[derive(Clone, Debug, PartialEq)]
 pub enum UsecaseEvent {
+    IssueCreated {
+        creation_id: IssueCreationId,
+        id: IssueId,
+    },
     Failure(UsecaseFailure),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UsecaseFailure {
+    /// 添付ファイルの読み込み、upload、作成のいずれかに失敗した。
+    IssueCreate {
+        creation_id: IssueCreationId,
+        reason: String,
+    },
     IssueUpload {
         id: IssueId,
         reason: String,

@@ -897,6 +897,8 @@ impl<'a> AppComponent<'a> {
     pub fn handle_usecase_events(&mut self, events: Vec<UsecaseEvent>) {
         for event in events {
             match event {
+                // FIXME: 新規作成用Componentを作成したIssueの表示に差し替える。
+                UsecaseEvent::IssueCreated { .. } => {}
                 UsecaseEvent::Failure(failure) => self.toast_list.push_failure(&failure),
             }
         }
