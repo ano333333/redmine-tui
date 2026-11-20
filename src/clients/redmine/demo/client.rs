@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT, RedmineHttpError};
 use crate::clients::redmine::{IssueUpdate, NewIssue, RedmineClient, RedmineClientError};
 use crate::entities::{
-    Attachment, Category, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
-    ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
+    Attachment, Category, Issue, IssueAggregate, IssueChild, IssueStatus, Journal, Priority,
+    Project, ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
 };
 use crate::vos::{
     AttachmentId, EntityIdValue, IssueId, JournalDetail, JournalDetailAttachment,
@@ -87,6 +87,81 @@ impl DemoRedmineClient {
         if let Some(category_id) = category_id {
             issue.category_id = category_id;
         }
+    }
+
+    fn create_issue_in(
+        state: &mut DemoFixtureState,
+        issue: &NewIssue,
+    ) -> Result<IssueId, RedmineClientError> {
+        // Redmineは題名の欠落、存在しない親、未知のtokenを422で返す。
+        let unprocessable = || RedmineClientError::UnprocessableEntity {
+            context: RedmineHttpError {
+                method: "POST".to_string(),
+                url: "/issues.json".to_string(),
+                status_code: 422,
+                response_body: String::new(),
+            },
+        };
+        if issue.subject.trim().is_empty()
+            || issue
+                .parent_issue_id
+                .is_some_and(|parent_id| !state.issues.contains_key(&parent_id))
+            || issue
+                .uploads
+                .iter()
+                .any(|upload| !state.pending_uploads.contains_key(upload.token.as_str()))
+        {
+            return Err(unprocessable());
+        }
+        let id = IssueId::new(state.issues.keys().map(|id| id.get()).max().unwrap_or(0) + 1);
+        let author = state.users.first().expect("demo fixture has no users");
+        let (author_id, author_name) = (author.id, author.name.clone());
+        let now = chrono::Local::now();
+        let attachments = issue
+            .uploads
+            .iter()
+            .map(|upload| {
+                let pending = state
+                    .pending_uploads
+                    .remove(upload.token.as_str())
+                    .expect("tokens were checked above");
+                Self::attachment(&pending, &upload.filename, author_name.clone(), now)
+            })
+            .collect();
+        let aggregate = IssueAggregate {
+            issue: Issue {
+                id,
+                project_id: issue.project_id,
+                subject: issue.subject.clone(),
+                description: issue.description.clone().unwrap_or_default(),
+                status_id: issue
+                    .status_id
+                    .unwrap_or_else(|| state.issue_statuses.first().expect("no statuses").id),
+            },
+            author_id,
+            created_on: now,
+            updated_on: now,
+            tracker_id: issue
+                .tracker_id
+                .unwrap_or_else(|| state.trackers.first().expect("no trackers").id),
+            priority_id: issue
+                .priority_id
+                .unwrap_or_else(|| state.priorities.first().expect("no priorities").id),
+            assigned_to_id: issue.assigned_to_id,
+            target_version_id: issue.target_version_id,
+            start_date: issue.start_date,
+            due_date: issue.due_date,
+            done_ratio: issue.done_ratio.unwrap_or(0),
+            estimated_hours: issue.estimated_hours,
+            total_spent_hours: None,
+            category_id: issue.category_id,
+            parent_id: issue.parent_issue_id,
+            journals: Vec::new(),
+            attachments: Vec::new(),
+        };
+        state.issues.insert(id, aggregate);
+        state.attachments.insert(id, attachments);
+        Ok(id)
     }
 
     /// uploadしたファイルを紐付けたときにRedmineが作る添付ファイルを再現する。
@@ -203,14 +278,14 @@ impl RedmineClient for DemoRedmineClient {
 
     fn create_issue(
         &self,
-        _: &NewIssue,
+        issue: &NewIssue,
     ) -> impl std::future::Future<Output = Result<IssueId, RedmineClientError>> + Send {
-        // FIXME: デモではまだIssueを作成できない。
-        async {
-            Err(RedmineClientError::Client {
-                reason: "creating issues is not supported in the demo".to_string(),
-            })
-        }
+        // デモでは、省略した属性にRedmineの既定値の代わりにfixtureの先頭の値を使う。
+        let result = {
+            let mut state = self.state.lock().expect("demo fixture state lock poisoned");
+            Self::create_issue_in(&mut state, issue)
+        };
+        async move { result }
     }
 
     fn update_journal_notes(
@@ -488,8 +563,9 @@ mod tests {
     use std::sync::Arc;
 
     use crate::clients::local_file::demo::{DemoLocalFileClient, SAMPLE_IMAGE};
-    use crate::clients::redmine::IssueUpdate;
+    use crate::clients::redmine::base::NewIssueUpload;
     use crate::clients::redmine::demo::DemoRedmineClient;
+    use crate::clients::redmine::{IssueUpdate, NewIssue};
     use crate::clients::redmine::{RedmineClient, RedmineClientError};
     use crate::stores::{Action, Dispatcher, IssueAction, IssueState, JournalAction};
     use crate::test_support::{complete_usecase, run_usecases, usecase_clients};
@@ -689,6 +765,77 @@ mod tests {
                             filename: "note.png".to_string()
                         }
         ));
+    }
+
+    #[test]
+    fn created_issue_appears_as_a_child_with_its_uploads() {
+        let client = DemoRedmineClient::new();
+        let runtime = Builder::new_current_thread().build().unwrap();
+        let token = runtime
+            .block_on(client.upload_file("ignored.png", vec![0; 10]))
+            .unwrap();
+
+        let id = runtime
+            .block_on(client.create_issue(&NewIssue {
+                parent_issue_id: Some(IssueId::new(2)),
+                uploads: vec![NewIssueUpload {
+                    token,
+                    filename: "screen.png".to_string(),
+                }],
+                ..new_issue("子Issue")
+            }))
+            .unwrap();
+
+        let created = runtime.block_on(client.get_issue(id)).unwrap();
+        assert_eq!(created.aggregate.issue.subject, "子Issue");
+        assert_eq!(created.aggregate.parent_id, Some(IssueId::new(2)));
+        let [attachment] = created.aggregate.attachments.as_slice() else {
+            panic!("expected one attachment");
+        };
+        assert_eq!(attachment.filename, "screen.png");
+        let parent = runtime.block_on(client.get_issue(IssueId::new(2))).unwrap();
+        assert!(parent.children.iter().any(|child| child.id == id));
+    }
+
+    #[test]
+    fn creating_an_issue_without_a_subject_or_with_an_unknown_parent_is_rejected() {
+        let client = DemoRedmineClient::new();
+        let runtime = Builder::new_current_thread().build().unwrap();
+
+        let blank = runtime.block_on(client.create_issue(&new_issue(" ")));
+        let orphan = runtime.block_on(client.create_issue(&NewIssue {
+            parent_issue_id: Some(IssueId::new(999)),
+            ..new_issue("子Issue")
+        }));
+
+        assert!(matches!(
+            blank,
+            Err(RedmineClientError::UnprocessableEntity { .. })
+        ));
+        assert!(matches!(
+            orphan,
+            Err(RedmineClientError::UnprocessableEntity { .. })
+        ));
+    }
+
+    fn new_issue(subject: &str) -> NewIssue {
+        NewIssue {
+            project_id: ProjectId::new(1),
+            subject: subject.to_string(),
+            parent_issue_id: None,
+            description: None,
+            tracker_id: None,
+            status_id: None,
+            priority_id: None,
+            assigned_to_id: None,
+            target_version_id: None,
+            start_date: None,
+            due_date: None,
+            done_ratio: None,
+            estimated_hours: None,
+            category_id: None,
+            uploads: Vec::new(),
+        }
     }
 
     #[test]
