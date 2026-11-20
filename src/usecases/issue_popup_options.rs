@@ -39,17 +39,19 @@ pub fn build_issue_status_options(store: &Store) -> (Vec<(u32, String)>, usize) 
     build_select_options(issue_statuses, None, false)
 }
 
-/// TrackerPopup用のitems/focused_indexを組み立てる。
+/// TrackerPopup用のitems/focused_indexを組み立てる。`current`がNoneなら先頭にフォーカスする。
 // FIXME: projectで有効なtrackerに絞っていない。Redmineは使えないtracker_idをエラーなしで
 // 無視するため、ローカルでは変更済みに見えてしまう。
-pub fn build_tracker_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
-    let current_tracker_id = store.get_issue(issue_id).0.tracker_id();
+pub fn build_tracker_options(
+    store: &Store,
+    current: Option<TrackerId>,
+) -> (Vec<(u32, String)>, usize) {
     let trackers = store
         .get_trackers()
         .iter()
         .map(|(id, tracker)| (id.get(), tracker.name.clone()))
         .collect::<Vec<_>>();
-    build_select_options(trackers, Some(current_tracker_id.get()), true)
+    build_select_options(trackers, current.map(|id| id.get()), true)
 }
 
 /// ProjectPopup用のitems/focused_indexを組み立てる。
@@ -65,15 +67,17 @@ pub fn build_project_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, Str
     build_select_options(projects, Some(current_project_id.get()), true)
 }
 
-/// PriorityPopup用のitems/focused_indexを組み立てる。
-pub fn build_priority_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
-    let current_priority_id = store.get_issue(issue_id).0.priority_id();
+/// PriorityPopup用のitems/focused_indexを組み立てる。`current`がNoneなら先頭にフォーカスする。
+pub fn build_priority_options(
+    store: &Store,
+    current: Option<PriorityId>,
+) -> (Vec<(u32, String)>, usize) {
     let priorities = store
         .get_priorities()
         .iter()
         .map(|(id, priority)| (id.get(), priority.name.clone()))
         .collect::<Vec<_>>();
-    build_select_options(priorities, Some(current_priority_id.get()), true)
+    build_select_options(priorities, current.map(|id| id.get()), true)
 }
 
 /// AssignedToPopup用のitems/focused_indexを組み立てる。
@@ -110,14 +114,13 @@ pub fn build_target_version_options(
 
 /// DoneRatioPopup用のitems/focused_indexを組み立てる。
 ///
-/// 選択肢は0,10,...,100の固定11件。
-pub fn build_done_ratio_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
-    let current_done_ratio = store.get_issue(issue_id).0.done_ratio();
+/// 選択肢は0,10,...,100の固定11件。`current`がNoneなら先頭にフォーカスする。
+pub fn build_done_ratio_options(current: Option<u16>) -> (Vec<(u32, String)>, usize) {
     let done_ratios = (0..=100)
         .step_by(10)
         .map(|ratio| (ratio, ratio.to_string()))
         .collect::<Vec<_>>();
-    build_select_options(done_ratios, Some(u32::from(current_done_ratio)), false)
+    build_select_options(done_ratios, current.map(u32::from), false)
 }
 
 /// CategoryPopup用のitems/focused_indexを組み立てる。
@@ -394,7 +397,8 @@ mod tests {
     fn tracker_options_are_sorted_and_focus_the_current_tracker() {
         let dispatcher = loaded_dispatcher();
 
-        let (items, focused_index) = build_tracker_options(dispatcher.store(), 3.into());
+        let (items, focused_index) =
+            build_tracker_options(dispatcher.store(), Some(TrackerId::new(3)));
 
         assert_eq!(
             items,
@@ -405,6 +409,15 @@ mod tests {
             ]
         );
         assert_eq!(focused_index, 2);
+    }
+
+    #[test]
+    fn tracker_options_focus_the_first_item_without_a_current_tracker() {
+        let dispatcher = loaded_dispatcher();
+
+        let (_, focused_index) = build_tracker_options(dispatcher.store(), None);
+
+        assert_eq!(focused_index, 0);
     }
 
     #[test]
@@ -425,14 +438,10 @@ mod tests {
 
     #[test]
     fn priority_options_are_sorted_and_focus_the_current_priority() {
-        let mut dispatcher = loaded_dispatcher();
-        dispatcher.dispatch(IssueAction::UpdatePriority {
-            id: 3.into(),
-            priority_id: PriorityId::new(3),
-        });
-        dispatcher.consume_action();
+        let dispatcher = loaded_dispatcher();
 
-        let (items, focused_index) = build_priority_options(dispatcher.store(), 3.into());
+        let (items, focused_index) =
+            build_priority_options(dispatcher.store(), Some(PriorityId::new(3)));
 
         assert_eq!(
             items,
@@ -505,9 +514,7 @@ mod tests {
 
     #[test]
     fn done_ratio_options_are_fixed_steps_of_ten() {
-        let dispatcher = loaded_dispatcher();
-
-        let (items, _) = build_done_ratio_options(dispatcher.store(), 3.into());
+        let (items, _) = build_done_ratio_options(None);
 
         assert_eq!(
             items,
@@ -529,14 +536,7 @@ mod tests {
 
     #[test]
     fn done_ratio_options_focus_the_current_value() {
-        let mut dispatcher = loaded_dispatcher();
-        dispatcher.dispatch(IssueAction::UpdateDoneRatio {
-            id: 3.into(),
-            done_ratio: 30,
-        });
-        dispatcher.consume_action();
-
-        let (_, focused_index) = build_done_ratio_options(dispatcher.store(), 3.into());
+        let (_, focused_index) = build_done_ratio_options(Some(30));
 
         assert_eq!(focused_index, 3);
     }

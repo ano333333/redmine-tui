@@ -407,8 +407,12 @@ impl<'a> AppComponent<'a> {
                 );
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenTrackerPopup) => {
-                let (items, focused_index) =
-                    build_tracker_options(dispatcher.borrow().store(), issue_id);
+                let (items, focused_index) = {
+                    let dispatcher = dispatcher.borrow();
+                    let store = dispatcher.store();
+                    let current = store.get_issue(issue_id).0.tracker_id();
+                    build_tracker_options(store, Some(current))
+                };
                 self.push_select_box_popup(
                     &items,
                     focused_index,
@@ -419,8 +423,12 @@ impl<'a> AppComponent<'a> {
             // FIXME: 子Issueを持つ親Issueの優先度・開始日・期日・進捗率は子から計算され、Redmineは更新を
             // エラーなしで無視する。親Issueでも編集できるため、ローカルでは変更済みに見えてしまう。
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenPriorityPopup) => {
-                let (items, focused_index) =
-                    build_priority_options(dispatcher.borrow().store(), issue_id);
+                let (items, focused_index) = {
+                    let dispatcher = dispatcher.borrow();
+                    let store = dispatcher.store();
+                    let current = store.get_issue(issue_id).0.priority_id();
+                    build_priority_options(store, Some(current))
+                };
                 self.push_select_box_popup(
                     &items,
                     focused_index,
@@ -481,8 +489,13 @@ impl<'a> AppComponent<'a> {
                     ))));
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenDoneRatioPopup) => {
-                let (items, focused_index) =
-                    build_done_ratio_options(dispatcher.borrow().store(), issue_id);
+                let current = dispatcher
+                    .borrow()
+                    .store()
+                    .get_issue(issue_id)
+                    .0
+                    .done_ratio();
+                let (items, focused_index) = build_done_ratio_options(Some(current));
                 self.push_select_box_popup(
                     &items,
                     focused_index,
