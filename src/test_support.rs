@@ -9,7 +9,7 @@ use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, widgets::Wi
 
 use crate::clients::local_file::{LocalFileClient, LocalFileError};
 use crate::clients::redmine::base::FetchedIssue;
-use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError};
+use crate::clients::redmine::{IssueUpdate, NewIssue, RedmineClient, RedmineClientError};
 use crate::entities::{
     Attachment, Category, Issue, IssueAggregate, IssueChild, IssueStatus, Journal, Priority,
     Project, ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
@@ -114,6 +114,13 @@ pub trait RedmineClientStub {
         _: &IssueUpdate,
     ) -> impl Future<Output = Result<(), RedmineClientError>> + Send {
         async { unreachable!("unexpected update_issue") }
+    }
+
+    fn create_issue(
+        &self,
+        _: &NewIssue,
+    ) -> impl Future<Output = Result<IssueId, RedmineClientError>> + Send {
+        async { unreachable!("unexpected create_issue") }
     }
 
     fn update_journal_notes(
@@ -235,6 +242,13 @@ impl<T: RedmineClientStub> RedmineClient for T {
         update: &IssueUpdate,
     ) -> impl Future<Output = Result<(), RedmineClientError>> + Send {
         RedmineClientStub::update_issue(self, issue_id, update)
+    }
+
+    fn create_issue(
+        &self,
+        issue: &NewIssue,
+    ) -> impl Future<Output = Result<IssueId, RedmineClientError>> + Send {
+        RedmineClientStub::create_issue(self, issue)
     }
 
     fn update_journal_notes(

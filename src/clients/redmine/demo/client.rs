@@ -2,7 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
 use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT, RedmineHttpError};
-use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError};
+use crate::clients::redmine::{IssueUpdate, NewIssue, RedmineClient, RedmineClientError};
 use crate::entities::{
     Attachment, Category, IssueAggregate, IssueChild, IssueStatus, Journal, Priority, Project,
     ProjectIssuesPage, TargetVersion, TimeEntityActivity, Tracker, User,
@@ -177,6 +177,18 @@ impl RedmineClient for DemoRedmineClient {
             }
         };
         async move { result }
+    }
+
+    fn create_issue(
+        &self,
+        _: &NewIssue,
+    ) -> impl std::future::Future<Output = Result<IssueId, RedmineClientError>> + Send {
+        // FIXME: デモではまだIssueを作成できない。
+        async {
+            Err(RedmineClientError::Client {
+                reason: "creating issues is not supported in the demo".to_string(),
+            })
+        }
     }
 
     fn update_journal_notes(
