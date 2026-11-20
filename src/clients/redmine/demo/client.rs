@@ -89,6 +89,28 @@ impl DemoRedmineClient {
         }
     }
 
+    /// uploadしたファイルを紐付けたときにRedmineが作る添付ファイルを再現する。
+    ///
+    /// Content-Typeとダウンロード先は固定のモック値とする。
+    fn attachment(
+        upload: &PendingUpload,
+        filename: &str,
+        author: String,
+        created_on: chrono::DateTime<chrono::Local>,
+    ) -> Attachment {
+        Attachment {
+            id: upload.id,
+            filename: filename.to_string(),
+            filesize: upload.filesize,
+            content_type: Some("image/png".to_string()),
+            description: String::new(),
+            content_url: format!("/attachments/download/{}/{filename}", upload.id.get()),
+            thumbnailable: false,
+            author,
+            created_on,
+        }
+    }
+
     /// 実Redmineの`include=children`と同じく、子孫を再帰的に含む子一覧をID順で返す。
     fn children_of(
         issues: &std::collections::BTreeMap<IssueId, IssueAggregate>,
@@ -289,7 +311,6 @@ impl RedmineClient for DemoRedmineClient {
         filename: &str,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send {
         // デモでは、Redmineが紐付け時に作る添付ファイルと、その追加を記録したJournalを再現する。
-        // Content-Typeとダウンロード先は固定のモック値とする。
         let result = {
             let mut state = self.state.lock().expect("demo fixture state lock poisoned");
             let url = format!("/issues/{}.json", issue_id.get());
@@ -307,20 +328,7 @@ impl RedmineClient for DemoRedmineClient {
                     .attachments
                     .entry(issue_id)
                     .or_default()
-                    .push(Attachment {
-                        id: upload.id,
-                        filename: filename.to_string(),
-                        filesize: upload.filesize,
-                        content_type: Some("image/png".to_string()),
-                        description: String::new(),
-                        content_url: format!(
-                            "/attachments/download/{}/{filename}",
-                            upload.id.get()
-                        ),
-                        thumbnailable: false,
-                        author: user.clone(),
-                        created_on: now,
-                    });
+                    .push(Self::attachment(&upload, filename, user.clone(), now));
                 let next_journal_id = state
                     .journals
                     .values()
