@@ -128,8 +128,13 @@ enum PopupComponent<'a> {
     },
 }
 
+/// popupの下に表示する画面。
+enum MainComponent {
+    Issue(IssueComponent),
+}
+
 pub struct AppComponent<'a> {
-    issue_component: Option<IssueComponent>,
+    main_component: Option<MainComponent>,
     // popup追加の際は末尾に追加する、先頭要素が最奥に表示される
     popup_components: VecDeque<Rc<RefCell<PopupComponent<'a>>>>,
     dispatcher: Rc<RefCell<Dispatcher>>,
@@ -147,7 +152,7 @@ impl<'a> AppComponent<'a> {
         sink: &mut RequestSink,
     ) -> Self {
         let mut app = AppComponent {
-            issue_component: None,
+            main_component: None,
             popup_components: VecDeque::new(),
             dispatcher,
             pending_editor_context: None,
@@ -177,7 +182,7 @@ impl<'a> AppComponent<'a> {
         if self.popup_components.back().is_some() {
             return self.process_popup_event(event, dispatcher, sink);
         }
-        if self.issue_component.is_some() {
+        if self.issue_component().is_some() {
             return self.process_issue_event(event, dispatcher, sink);
         }
         false
@@ -359,12 +364,12 @@ impl<'a> AppComponent<'a> {
         sink: &mut RequestSink,
     ) -> bool {
         let (result, issue_id) = {
+            let app_dispatcher = self.dispatcher.clone();
             let issue_component = self
-                .issue_component
-                .as_mut()
+                .issue_component_mut()
                 .expect("caller checked that IssueComponent exists");
             (
-                issue_component.process_event(event, self.dispatcher.clone()),
+                issue_component.process_event(event, app_dispatcher),
                 issue_component.issue_id(),
             )
         };
@@ -695,6 +700,20 @@ impl<'a> AppComponent<'a> {
         true
     }
 
+    fn issue_component(&self) -> Option<&IssueComponent> {
+        match &self.main_component {
+            Some(MainComponent::Issue(issue_component)) => Some(issue_component),
+            None => None,
+        }
+    }
+
+    fn issue_component_mut(&mut self) -> Option<&mut IssueComponent> {
+        match &mut self.main_component {
+            Some(MainComponent::Issue(issue_component)) => Some(issue_component),
+            None => None,
+        }
+    }
+
     fn select_issue(&mut self, issue_id: IssueId, sink: &mut RequestSink) {
         self.popup_components.pop_back();
         self.open_issue(issue_id, sink);
@@ -711,7 +730,7 @@ impl<'a> AppComponent<'a> {
         let parent_id = {
             let dispatcher = self.dispatcher.borrow();
             let store = dispatcher.store();
-            self.issue_component = Some(IssueComponent::new(store, issue_id));
+            self.main_component = Some(MainComponent::Issue(IssueComponent::new(store, issue_id)));
             store
                 .try_get_issue_state(issue_id)
                 .and_then(|_| store.get_issue(issue_id).0.parent_id())
@@ -779,7 +798,7 @@ impl<'a> AppComponent<'a> {
         self.open_issue_property_conflict_popup_if_needed(store);
         self.open_remote_journal_conflict_popups_if_needed(store);
 
-        if let Some(issue_component) = &mut self.issue_component {
+        if let Some(issue_component) = self.issue_component_mut() {
             issue_component.update(dispatcher, store, (area.width, area.height));
         }
 
@@ -802,7 +821,7 @@ impl<'a> AppComponent<'a> {
     }
 
     fn open_issue_property_conflict_popup_if_needed(&mut self, store: &Store) {
-        if let Some(issue_component) = &self.issue_component
+        if let Some(issue_component) = self.issue_component()
             && let Some((server_issue, conflicts)) =
                 store.try_get_issue_upload_conflict(issue_component.issue_id())
             && !self.popup_components.iter().any(|popup| {
@@ -826,7 +845,7 @@ impl<'a> AppComponent<'a> {
     }
 
     fn open_remote_journal_conflict_popups_if_needed(&mut self, store: &Store) {
-        if let Some(issue_component) = &self.issue_component {
+        if let Some(issue_component) = self.issue_component() {
             let issue_id = issue_component.issue_id();
             for entry in store.get_remote_journals(issue_id) {
                 let journal_id = entry.journal.id;
@@ -866,7 +885,7 @@ impl<'a> AppComponent<'a> {
 
     /// Componentをframeのarea範囲内に描画する。
     pub fn render(&self, store: &Store, frame: &mut Frame, area: Rect) {
-        if let Some(issue_component) = &self.issue_component {
+        if let Some(issue_component) = self.issue_component() {
             issue_component.render(store, frame, area);
         }
         self.render_popup_component(frame, area, store);
@@ -1027,7 +1046,7 @@ impl<'a> AppComponent<'a> {
                     component.cursor_position(area)
                 }
             }
-        } else if let Some(issue_component) = &self.issue_component {
+        } else if let Some(issue_component) = self.issue_component() {
             issue_component.calc_cursor_position(store, area)
         } else {
             None
@@ -1439,10 +1458,7 @@ mod tests {
             &mut sink,
         );
 
-        assert_eq!(
-            app.issue_component.as_ref().unwrap().issue_id(),
-            IssueId::new(3)
-        );
+        assert_eq!(app.issue_component().unwrap().issue_id(), IssueId::new(3));
         assert_eq!(app.interaction_mode(), InteractionMode::Application);
         assert_eq!(
             sink.take_usecases(),
@@ -1499,10 +1515,7 @@ mod tests {
             &mut sink,
         );
 
-        assert_eq!(
-            app.issue_component.as_ref().unwrap().issue_id(),
-            IssueId::new(42)
-        );
+        assert_eq!(app.issue_component().unwrap().issue_id(), IssueId::new(42));
         assert_eq!(
             sink.take_usecases(),
             [UsecaseRequest::FetchIssue {
@@ -1570,7 +1583,7 @@ mod tests {
             app.process_event(key_event(code), dispatcher.clone(), &mut sink);
         }
 
-        assert!(app.issue_component.is_none());
+        assert!(app.issue_component().is_none());
         assert!(app.popup_components.is_empty());
         assert_no_requests(&mut sink);
     }
