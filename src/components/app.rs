@@ -37,7 +37,9 @@ use crate::usecases::issue_popup_options::{
     issue_status_popup_observer, priority_popup_observer, project_popup_observer,
     start_date_popup_observer, target_version_popup_observer, tracker_popup_observer,
 };
-use crate::usecases::{IssueCreationId, UsecaseEvent, UsecaseRequest};
+use crate::usecases::{
+    DraftAttachment, IssueCreationId, NewIssueDraft, UsecaseEvent, UsecaseRequest,
+};
 use crate::vos::{EntityIdValue, IssueId, JournalId, TimeEntityActivityId};
 
 use super::attachment_input_popup::{
@@ -123,9 +125,17 @@ fn single_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// 添付入力popupで入力したファイルの送り先。
+enum AttachmentDestination {
+    /// 取得済みのIssueへすぐに添付する。
+    Issue(IssueId),
+    /// 下書きに積み、作成と同時に添付する。
+    Draft(Rc<RefCell<NewIssueDraft>>),
+}
+
 enum PopupComponent<'a> {
     AttachmentInput {
-        issue_id: IssueId,
+        destination: AttachmentDestination,
         component: AttachmentInputPopupComponent<'a>,
     },
     SelectBox(SelectBoxPopupComponent<'a>),
@@ -221,7 +231,7 @@ impl<'a> AppComponent<'a> {
             .clone();
         match &mut *(popup_component_rc.borrow_mut()) {
             PopupComponent::AttachmentInput {
-                issue_id,
+                destination,
                 component,
             } => {
                 let Some(result) = component.process_event(event) else {
@@ -229,11 +239,21 @@ impl<'a> AppComponent<'a> {
                 };
                 match result {
                     AttachmentInputPopupEventProcessResult::Entered { filename, path } => {
-                        sink.request_usecase(UsecaseRequest::StartAttachmentUpload {
-                            issue_id: *issue_id,
-                            filename,
-                            path,
-                        });
+                        match destination {
+                            AttachmentDestination::Issue(issue_id) => {
+                                sink.request_usecase(UsecaseRequest::StartAttachmentUpload {
+                                    issue_id: *issue_id,
+                                    filename,
+                                    path,
+                                });
+                            }
+                            AttachmentDestination::Draft(draft) => {
+                                draft
+                                    .borrow_mut()
+                                    .attachments
+                                    .push(DraftAttachment { filename, path });
+                            }
+                        }
                         self.popup_components.pop_back();
                     }
                     AttachmentInputPopupEventProcessResult::Canceled => {
@@ -440,6 +460,9 @@ impl<'a> AppComponent<'a> {
                     }
                 };
                 self.start_editing(context, initial_text, sink);
+            }
+            NewIssueEventProcessResult::AddAttachmentRequested => {
+                self.push_attachment_input_popup(AttachmentDestination::Draft(draft));
             }
             NewIssueEventProcessResult::OpenIssueSelectPopup => {
                 self.open_issue_select_popup(None, sink);
@@ -653,12 +676,7 @@ impl<'a> AppComponent<'a> {
             IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::AddAttachmentRequested { issue_id },
             ) => {
-                self.popup_components.push_back(Rc::new(RefCell::new(
-                    PopupComponent::AttachmentInput {
-                        issue_id,
-                        component: AttachmentInputPopupComponent::new(),
-                    },
-                )));
+                self.push_attachment_input_popup(AttachmentDestination::Issue(issue_id));
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::StartIssueUpload) => {
                 sink.request_usecase(UsecaseRequest::StartIssueUpload { id: issue_id });
@@ -874,6 +892,14 @@ impl<'a> AppComponent<'a> {
 
     fn close_issue_select_popup(&mut self) {
         self.popup_components.pop_back();
+    }
+
+    fn push_attachment_input_popup(&mut self, destination: AttachmentDestination) {
+        self.popup_components
+            .push_back(Rc::new(RefCell::new(PopupComponent::AttachmentInput {
+                destination,
+                component: AttachmentInputPopupComponent::new(),
+            })));
     }
 
     /// SelectBoxPopupComponentを構築し、popup stackへ積む。
@@ -2053,6 +2079,37 @@ mod tests {
     }
 
     #[test]
+    fn attachment_input_on_a_draft_adds_the_file_to_the_draft_without_uploading() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+        for _ in 0..20 {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone(), &mut sink);
+        }
+
+        for code in [KeyCode::Enter]
+            .into_iter()
+            .chain("a.png".chars().map(KeyCode::Char))
+            .chain([KeyCode::Tab])
+            .chain("/tmp/a.png".chars().map(KeyCode::Char))
+            .chain([KeyCode::Enter])
+        {
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+
+        assert!(app.popup_components.is_empty());
+        let draft = new_issue_component(&app).unwrap().draft();
+        assert_eq!(
+            draft.borrow().attachments,
+            vec![DraftAttachment {
+                filename: "a.png".to_string(),
+                path: std::path::PathBuf::from("/tmp/a.png"),
+            }]
+        );
+        assert_no_requests(&mut sink);
+    }
+
+    #[test]
     fn selecting_an_issue_from_a_draft_discards_the_draft() {
         let mut sink = RequestSink::default();
         let dispatcher = loaded_dispatcher();
@@ -2276,7 +2333,7 @@ mod tests {
         sink.take_usecases();
         app.popup_components
             .push_back(Rc::new(RefCell::new(PopupComponent::AttachmentInput {
-                issue_id: 3.into(),
+                destination: AttachmentDestination::Issue(3.into()),
                 component: AttachmentInputPopupComponent::new(),
             })));
         for code in "a.png"

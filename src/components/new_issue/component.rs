@@ -55,6 +55,7 @@ const FIELDS: [DraftField; 12] = [
 #[derive(Debug, PartialEq, Eq)]
 pub enum EventProcessResult {
     EditFieldRequested { field: DraftField },
+    AddAttachmentRequested,
     OpenIssueSelectPopup,
     Handled,
 }
@@ -111,9 +112,10 @@ impl NewIssueComponent {
             }
             KeyCode::Char('y') => return Some(EventProcessResult::OpenIssueSelectPopup),
             KeyCode::Enter => {
-                if let Some(field) = FIELDS.get(self.focused_index) {
-                    return Some(EventProcessResult::EditFieldRequested { field: *field });
-                }
+                return Some(match FIELDS.get(self.focused_index) {
+                    Some(field) => EventProcessResult::EditFieldRequested { field: *field },
+                    None => EventProcessResult::AddAttachmentRequested,
+                });
             }
             _ => return None,
         }
@@ -212,7 +214,11 @@ impl NewIssueComponent {
                 .iter()
                 .map(|field| (label(*field), display_value(*field, &draft, store)))
                 .collect(),
-            attachments: Vec::new(),
+            attachments: draft
+                .attachments
+                .iter()
+                .map(|attachment| attachment.filename.clone())
+                .collect(),
             focused_index: self.focused_index,
         }
     }
@@ -341,6 +347,10 @@ mod tests {
             component.process_event(&key(KeyCode::Char('j')));
         }
         assert_eq!(component.focused_index, FIELDS.len());
+        assert_eq!(
+            component.process_event(&key(KeyCode::Enter)),
+            Some(EventProcessResult::AddAttachmentRequested)
+        );
         assert_eq!(component.process_event(&key(KeyCode::Char('x'))), None);
     }
 

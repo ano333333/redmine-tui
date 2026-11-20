@@ -17,7 +17,7 @@ pub struct NewIssueWidget<'a> {
     pub parent: Option<(IssueId, &'a str)>,
     /// 編集できる項目のラベルと表示値。添付ファイルの追加行の前に並ぶ。
     pub fields: Vec<(&'static str, String)>,
-    pub attachments: Vec<&'a str>,
+    pub attachments: Vec<String>,
     /// `fields`の後に添付ファイルの追加行を数えたindex。
     pub focused_index: usize,
 }
@@ -112,7 +112,7 @@ mod tests {
                 project: "Sample Project",
                 parent: Some((IssueId::new(3), "親のIssue")),
                 fields: fields(),
-                attachments: vec!["screen.png", "log.txt"],
+                attachments: vec!["screen.png".to_string(), "log.txt".to_string()],
                 focused_index: 1,
             },
         );
