@@ -8,7 +8,7 @@ mod request;
 mod task;
 
 pub use clients::UsecaseClients;
-pub use event::{UsecaseEvent, UsecaseFailure};
-pub use new_issue::IssueCreationId;
+pub use event::{IssueCreateFailure, UsecaseEvent, UsecaseFailure};
+pub use new_issue::{DraftAttachment, IssueCreationId, NewIssueDraft};
 pub use request::{UsecaseRequest, start_usecase};
 pub use task::{UsecaseOutput, UsecaseTask};

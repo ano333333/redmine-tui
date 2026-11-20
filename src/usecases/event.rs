@@ -11,12 +11,19 @@ pub enum UsecaseEvent {
     Failure(UsecaseFailure),
 }
 
+/// Issueの作成で失敗した段階。
+#[derive(Clone, Debug, PartialEq)]
+pub enum IssueCreateFailure {
+    AttachmentFileRead { filename: String, reason: String },
+    AttachmentFileUpload { filename: String, reason: String },
+    Create { reason: String },
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum UsecaseFailure {
-    /// 添付ファイルの読み込み、upload、作成のいずれかに失敗した。
     IssueCreate {
         creation_id: IssueCreationId,
-        reason: String,
+        cause: IssueCreateFailure,
     },
     IssueUpload {
         id: IssueId,

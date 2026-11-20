@@ -1,4 +1,4 @@
-use crate::usecases::UsecaseFailure;
+use crate::usecases::{IssueCreateFailure, UsecaseFailure};
 use crate::vos::IssueId;
 use crate::widgets::ToastWidget;
 
@@ -18,9 +18,17 @@ pub struct ToastListComponent {
 impl ToastListComponent {
     pub fn push_failure(&mut self, failure: &UsecaseFailure) {
         let message = match failure {
-            UsecaseFailure::IssueCreate { reason, .. } => {
-                format!("Issueの作成に失敗しました: {reason}")
-            }
+            UsecaseFailure::IssueCreate { cause, .. } => match cause {
+                IssueCreateFailure::AttachmentFileRead { filename, reason } => {
+                    format!("新しいIssueへ添付する{filename}を読み込めませんでした: {reason}")
+                }
+                IssueCreateFailure::AttachmentFileUpload { filename, reason } => {
+                    format!("新しいIssueへ添付する{filename}の送信に失敗しました: {reason}")
+                }
+                IssueCreateFailure::Create { reason } => {
+                    format!("Issueの作成に失敗しました: {reason}")
+                }
+            },
             UsecaseFailure::IssueUpload { id, reason } => {
                 format!("Issue #{id}の保存に失敗しました: {reason}")
             }
@@ -156,10 +164,39 @@ mod tests {
         let mut toast_list = ToastListComponent::default();
         toast_list.push_failure(&UsecaseFailure::IssueCreate {
             creation_id: crate::usecases::IssueCreationId::new(),
-            reason: "unprocessable entity: Subject cannot be blank".to_string(),
+            cause: IssueCreateFailure::Create {
+                reason: "unprocessable entity: Subject cannot be blank".to_string(),
+            },
         });
 
         render_toast_snapshot("toast_list_issue_create_failure", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_issue_create_attachment_failures() {
+        let mut toast_list = ToastListComponent::default();
+        for cause in [
+            IssueCreateFailure::AttachmentFileRead {
+                filename: "screen.png".to_string(),
+                reason: "failed to read /tmp/screen.png: not found".to_string(),
+            },
+            IssueCreateFailure::AttachmentFileUpload {
+                filename: "screen.png".to_string(),
+                reason: "network error: offline".to_string(),
+            },
+        ] {
+            toast_list.push_failure(&UsecaseFailure::IssueCreate {
+                creation_id: crate::usecases::IssueCreationId::new(),
+                cause,
+            });
+        }
+
+        render_snapshot(
+            "toast_list_issue_create_attachment_failures",
+            60,
+            20,
+            toast_list.create_widget(),
+        );
     }
 
     #[test]

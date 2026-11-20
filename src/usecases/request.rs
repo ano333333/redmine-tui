@@ -10,13 +10,13 @@ use crate::stores::ImageKey;
 use crate::usecases::image::prepare_image;
 use crate::usecases::redmine::{
     cancel_issue_upload, cancel_remote_journal_upload, confirm_attachment_upload,
-    confirm_issue_upload, continue_issue_upload, continue_remote_journal_upload,
+    confirm_issue_upload, continue_issue_upload, continue_remote_journal_upload, create_issue,
     download_attachment_image, download_attachment_original, fetch_issue,
     fetch_project_issues_page, put_attachment_upload, put_issue_upload,
     retry_issue_upload_confirmation, start_attachment_upload, start_deleted_journal_upload,
     start_issue_upload, start_local_journal_upload, start_remote_journal_upload,
 };
-use crate::usecases::{UsecaseClients, UsecaseTask};
+use crate::usecases::{IssueCreationId, NewIssueDraft, UsecaseClients, UsecaseTask};
 use crate::vos::{AttachmentId, IssueId, IssuePropertyDiff, JournalId, ProjectId, UploadToken};
 
 /// runnerに起動を依頼するRedmine Usecase。1つのvariantが1つのUsecaseに対応する。
@@ -30,6 +30,10 @@ pub enum UsecaseRequest {
     FetchProjectIssuesPage {
         project_id: ProjectId,
         page: NonZeroUsize,
+    },
+    CreateIssue {
+        creation_id: IssueCreationId,
+        draft: NewIssueDraft,
     },
     StartIssueUpload {
         id: IssueId,
@@ -120,6 +124,9 @@ where
         }
         UsecaseRequest::FetchProjectIssuesPage { project_id, page } => {
             fetch_project_issues_page(dispatcher, client, project_id, page)
+        }
+        UsecaseRequest::CreateIssue { creation_id, draft } => {
+            create_issue(clients, creation_id, draft)
         }
         UsecaseRequest::StartIssueUpload { id } => start_issue_upload(dispatcher, client, id),
         UsecaseRequest::CancelIssueUpload { id } => {
