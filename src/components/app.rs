@@ -807,6 +807,21 @@ impl<'a> AppComponent<'a> {
             ) => {
                 self.open_issue(id, sink);
             }
+            IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::CreateChildRequested { parent_id },
+            ) => {
+                // 子は親と同じプロジェクトに作る。
+                let project_id = dispatcher
+                    .borrow()
+                    .store()
+                    .get_issue(parent_id)
+                    .0
+                    .project_id();
+                self.main_component = Some(MainComponent::NewIssue(NewIssueComponent::new(
+                    project_id,
+                    Some(parent_id),
+                )));
+            }
             // 子Componentがキーを解釈済みで、App側に要求はない。
             IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::ComputedPropertyNotEditable { issue_id, property },
@@ -2249,6 +2264,39 @@ mod tests {
             &sink.take_usecases()[..],
             [UsecaseRequest::CreateIssue { .. }]
         ));
+    }
+
+    #[test]
+    fn add_child_row_opens_a_draft_of_a_child_in_the_parent_project() {
+        let mut sink = RequestSink::default();
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        crate::test_support::dispatch_loaded_issue(
+            &mut dispatcher.borrow_mut(),
+            crate::test_support::sample_closed_child_issue(),
+        );
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(2.into()),
+            CursorRendering::Terminal,
+            &mut sink,
+        );
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        // 子もJournalもないIssue 2では、12回のjで子一覧の追加行に届く(IssueDetailComponentのテストと同じ)。
+        for _ in 0..12 {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone(), &mut sink);
+            app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        }
+        sink.take_usecases();
+
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone(), &mut sink);
+
+        let draft = new_issue_component(&app)
+            .expect("the child draft should replace the issue")
+            .draft();
+        let parent_project_id = dispatcher.borrow().store().get_issue(2).0.project_id();
+        assert_eq!(draft.borrow().project_id, parent_project_id);
+        assert_eq!(draft.borrow().parent_issue_id, Some(IssueId::new(2)));
+        assert_no_requests(&mut sink);
     }
 
     #[test]
