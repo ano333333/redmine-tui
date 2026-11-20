@@ -38,7 +38,7 @@ use crate::usecases::issue_popup_options::{
     start_date_popup_observer, target_version_popup_observer, tracker_popup_observer,
 };
 use crate::usecases::{
-    DraftAttachment, IssueCreationId, NewIssueDraft, UsecaseEvent, UsecaseRequest,
+    DraftAttachment, IssueCreationId, NewIssueDraft, UsecaseEvent, UsecaseFailure, UsecaseRequest,
 };
 use crate::vos::{EntityIdValue, IssueId, JournalId, TimeEntityActivityId};
 
@@ -460,6 +460,13 @@ impl<'a> AppComponent<'a> {
                     }
                 };
                 self.start_editing(context, initial_text, sink);
+            }
+            NewIssueEventProcessResult::SubmitRequested => {
+                let draft = draft.borrow().clone();
+                sink.request_usecase(UsecaseRequest::CreateIssue { creation_id, draft });
+            }
+            NewIssueEventProcessResult::SubjectRequired => {
+                self.toast_list.push_new_issue_subject_required();
             }
             NewIssueEventProcessResult::AddAttachmentRequested => {
                 self.push_attachment_input_popup(AttachmentDestination::Draft(draft));
@@ -1057,13 +1064,41 @@ impl<'a> AppComponent<'a> {
         self.toast_list.tick(elapsed);
     }
 
-    pub fn handle_usecase_events(&mut self, events: Vec<UsecaseEvent>) {
+    pub fn handle_usecase_events(&mut self, events: Vec<UsecaseEvent>, store: &Store) {
         for event in events {
             match event {
-                // FIXME: 新規作成用Componentを作成したIssueの表示に差し替える。
-                UsecaseEvent::IssueCreated { .. } => {}
-                UsecaseEvent::Failure(failure) => self.toast_list.push_failure(&failure),
+                // 作成中に別のIssueへ移っていれば、作成した下書きはもう表示していない。
+                UsecaseEvent::IssueCreated { creation_id, id } => {
+                    if self.new_issue_component_mut(creation_id).is_some() {
+                        self.main_component =
+                            Some(MainComponent::Issue(IssueComponent::new(store, id)));
+                    }
+                }
+                UsecaseEvent::Failure(failure) => {
+                    if let UsecaseFailure::IssueCreate { creation_id, .. } = &failure
+                        && let Some(new_issue_component) =
+                            self.new_issue_component_mut(*creation_id)
+                    {
+                        new_issue_component.finish_submitting();
+                    }
+                    self.toast_list.push_failure(&failure);
+                }
             }
+        }
+    }
+
+    /// 表示中の新規作成画面が`creation_id`の下書きなら返す。
+    fn new_issue_component_mut(
+        &mut self,
+        creation_id: IssueCreationId,
+    ) -> Option<&mut NewIssueComponent> {
+        match &mut self.main_component {
+            Some(MainComponent::NewIssue(new_issue_component))
+                if new_issue_component.creation_id() == creation_id =>
+            {
+                Some(new_issue_component)
+            }
+            _ => None,
         }
     }
 
@@ -2107,6 +2142,113 @@ mod tests {
             }]
         );
         assert_no_requests(&mut sink);
+    }
+
+    fn ctrl_key(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::control()))
+    }
+
+    /// 題名を入れた下書きの作成を要求し、その`creation_id`を返す。
+    fn submit_draft(
+        app: &mut AppComponent<'_>,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+        sink: &mut RequestSink,
+    ) -> IssueCreationId {
+        new_issue_component(app)
+            .unwrap()
+            .draft()
+            .borrow_mut()
+            .subject = "新しいIssue".to_string();
+        app.process_event(ctrl_key(KeyCode::Char('s')), dispatcher, sink);
+        match &sink.take_usecases()[..] {
+            [UsecaseRequest::CreateIssue { creation_id, draft }] => {
+                assert_eq!(draft.subject, "新しいIssue");
+                *creation_id
+            }
+            requests => panic!("expected one CreateIssue request, got {requests:?}"),
+        }
+    }
+
+    #[test]
+    fn ctrl_s_on_a_draft_without_subject_tells_that_the_subject_is_required() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+
+        app.process_event(ctrl_key(KeyCode::Char('s')), dispatcher.clone(), &mut sink);
+
+        assert_no_requests(&mut sink);
+        assert_eq!(
+            app.toast_list.create_widget().messages,
+            ["題名を入力してから作成してください"]
+        );
+    }
+
+    #[test]
+    fn created_event_replaces_the_submitted_draft_with_the_created_issue() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+        let creation_id = submit_draft(&mut app, dispatcher.clone(), &mut sink);
+
+        app.handle_usecase_events(
+            vec![UsecaseEvent::IssueCreated {
+                creation_id,
+                id: IssueId::new(99),
+            }],
+            dispatcher.borrow().store(),
+        );
+
+        assert_eq!(app.issue_component().unwrap().issue_id(), IssueId::new(99));
+    }
+
+    #[test]
+    fn created_event_of_a_discarded_draft_is_ignored() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+        let creation_id = submit_draft(&mut app, dispatcher.clone(), &mut sink);
+        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone(), &mut sink);
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), &mut sink);
+        app.process_event(key_event(KeyCode::Char('n')), dispatcher.clone(), &mut sink);
+
+        app.handle_usecase_events(
+            vec![UsecaseEvent::IssueCreated {
+                creation_id,
+                id: IssueId::new(99),
+            }],
+            dispatcher.borrow().store(),
+        );
+
+        assert!(new_issue_component(&app).is_some());
+    }
+
+    #[test]
+    fn create_failure_lets_the_submitted_draft_be_edited_again_and_tells_it() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+        let creation_id = submit_draft(&mut app, dispatcher.clone(), &mut sink);
+
+        app.handle_usecase_events(
+            vec![UsecaseEvent::Failure(UsecaseFailure::IssueCreate {
+                creation_id,
+                cause: crate::usecases::IssueCreateFailure::Create {
+                    reason: "offline".to_string(),
+                },
+            })],
+            dispatcher.borrow().store(),
+        );
+
+        assert_eq!(
+            app.toast_list.create_widget().messages,
+            ["Issueの作成に失敗しました: offline"]
+        );
+        app.process_event(ctrl_key(KeyCode::Char('s')), dispatcher.clone(), &mut sink);
+        assert!(matches!(
+            &sink.take_usecases()[..],
+            [UsecaseRequest::CreateIssue { .. }]
+        ));
     }
 
     #[test]

@@ -54,8 +54,13 @@ const FIELDS: [DraftField; 12] = [
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EventProcessResult {
-    EditFieldRequested { field: DraftField },
+    EditFieldRequested {
+        field: DraftField,
+    },
     AddAttachmentRequested,
+    /// 題名のある下書きの作成を要求する。要求したComponentは作成中になる。
+    SubmitRequested,
+    SubjectRequired,
     OpenIssueSelectPopup,
     Handled,
 }
@@ -79,6 +84,8 @@ pub struct NewIssueComponent {
     draft: Rc<RefCell<NewIssueDraft>>,
     /// `FIELDS`の後に添付ファイルの追加行を数えたindex。
     focused_index: usize,
+    /// 作成の完了を待つ間は、下書きの編集と再度の作成を受け付けない。
+    submitting: bool,
 }
 
 impl NewIssueComponent {
@@ -90,7 +97,13 @@ impl NewIssueComponent {
                 parent_issue_id,
             ))),
             focused_index: 0,
+            submitting: false,
         }
+    }
+
+    /// 作成に失敗した下書きを、編集と再度の作成を受け付ける状態に戻す。
+    pub fn finish_submitting(&mut self) {
+        self.submitting = false;
     }
 
     pub fn creation_id(&self) -> IssueCreationId {
@@ -111,6 +124,17 @@ impl NewIssueComponent {
                 self.focused_index = self.focused_index.saturating_sub(1);
             }
             KeyCode::Char('y') => return Some(EventProcessResult::OpenIssueSelectPopup),
+            KeyCode::Char('s') if key.modifiers.is_control() => {
+                if self.submitting {
+                    return Some(EventProcessResult::Handled);
+                }
+                if self.draft.borrow().subject.trim().is_empty() {
+                    return Some(EventProcessResult::SubjectRequired);
+                }
+                self.submitting = true;
+                return Some(EventProcessResult::SubmitRequested);
+            }
+            KeyCode::Enter if self.submitting => {}
             KeyCode::Enter => {
                 return Some(match FIELDS.get(self.focused_index) {
                     Some(field) => EventProcessResult::EditFieldRequested { field: *field },
@@ -220,6 +244,7 @@ impl NewIssueComponent {
                 .map(|attachment| attachment.filename.clone())
                 .collect(),
             focused_index: self.focused_index,
+            submitting: self.submitting,
         }
     }
 
@@ -449,6 +474,52 @@ mod tests {
         drop(draft);
         let (current, _) = component.date_popup(DraftField::DueDate);
         assert_eq!(current, Some(date));
+    }
+
+    fn ctrl_s() -> InputEvent {
+        InputEvent::Key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::control()))
+    }
+
+    #[test]
+    fn ctrl_s_requires_a_subject_before_submitting() {
+        let mut component = NewIssueComponent::new(ProjectId::new(1), None);
+        component.draft().borrow_mut().subject = "  ".to_string();
+
+        assert_eq!(
+            component.process_event(&ctrl_s()),
+            Some(EventProcessResult::SubjectRequired)
+        );
+        assert!(!component.submitting);
+    }
+
+    #[test]
+    fn submitting_draft_ignores_edits_until_the_creation_fails() {
+        let mut component = NewIssueComponent::new(ProjectId::new(1), None);
+        component.draft().borrow_mut().subject = "新しいIssue".to_string();
+
+        assert_eq!(
+            component.process_event(&ctrl_s()),
+            Some(EventProcessResult::SubmitRequested)
+        );
+        assert_eq!(
+            component.process_event(&ctrl_s()),
+            Some(EventProcessResult::Handled)
+        );
+        assert_eq!(
+            component.process_event(&key(KeyCode::Enter)),
+            Some(EventProcessResult::Handled)
+        );
+        assert_eq!(
+            component.process_event(&key(KeyCode::Char('y'))),
+            Some(EventProcessResult::OpenIssueSelectPopup)
+        );
+
+        component.finish_submitting();
+
+        assert!(matches!(
+            component.process_event(&key(KeyCode::Enter)),
+            Some(EventProcessResult::EditFieldRequested { .. })
+        ));
     }
 
     #[test]

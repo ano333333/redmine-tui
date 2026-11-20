@@ -10,6 +10,7 @@ use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED, SECTION_BAR};
 /// ラベル列の表示幅(全角換算)。値はこの位置から始まる。
 const LABEL_WIDTH: usize = 14;
 const HINT: &str = "Enter: 編集  Ctrl+S: 作成  y: Issue選択";
+const SUBMITTING_HINT: &str = "作成中…  y: Issue選択";
 
 /// 新規作成の下書きを、項目ごとの1行と添付ファイルの一覧で描画する。
 pub struct NewIssueWidget<'a> {
@@ -20,6 +21,7 @@ pub struct NewIssueWidget<'a> {
     pub attachments: Vec<String>,
     /// `fields`の後に添付ファイルの追加行を数えたindex。
     pub focused_index: usize,
+    pub submitting: bool,
 }
 
 impl Widget for NewIssueWidget<'_> {
@@ -68,7 +70,12 @@ impl Widget for NewIssueWidget<'_> {
             );
         }
         if area.height > 0 {
-            Paragraph::new(Line::from(HINT).fg(MUTED)).render(
+            let hint = if self.submitting {
+                SUBMITTING_HINT
+            } else {
+                HINT
+            };
+            Paragraph::new(Line::from(hint).fg(MUTED)).render(
                 Rect::new(area.x, area.y + area.height - 1, area.width, 1),
                 buf,
             );
@@ -114,6 +121,7 @@ mod tests {
                 fields: fields(),
                 attachments: vec!["screen.png".to_string(), "log.txt".to_string()],
                 focused_index: 1,
+                submitting: false,
             },
         );
     }
@@ -130,6 +138,24 @@ mod tests {
                 fields: fields(),
                 attachments: Vec::new(),
                 focused_index: 3,
+                submitting: false,
+            },
+        );
+    }
+
+    #[test]
+    fn snapshot_submitting_issue_draft() {
+        render_snapshot(
+            "new_issue_submitting_draft",
+            60,
+            12,
+            NewIssueWidget {
+                project: "Sample Project",
+                parent: None,
+                fields: fields(),
+                attachments: Vec::new(),
+                focused_index: 0,
+                submitting: true,
             },
         );
     }

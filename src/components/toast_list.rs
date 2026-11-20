@@ -79,6 +79,10 @@ impl ToastListComponent {
         ));
     }
 
+    pub fn push_new_issue_subject_required(&mut self) {
+        self.push("題名を入力してから作成してください".to_string());
+    }
+
     pub fn push_computed_property_not_editable(&mut self, issue_id: IssueId, property: &str) {
         self.push(format!(
             "Issue #{issue_id}の{property}は子Issueから計算されるため編集できません"

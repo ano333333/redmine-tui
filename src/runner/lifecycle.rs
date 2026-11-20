@@ -91,7 +91,7 @@ pub(crate) fn deliver_usecase_events(
     if events.is_empty() {
         return;
     }
-    app_component.handle_usecase_events(std::mem::take(events));
+    app_component.handle_usecase_events(std::mem::take(events), dispatcher.borrow().store());
     app_component.update(dispatcher.clone(), dispatcher.borrow().store(), area);
 }
 
