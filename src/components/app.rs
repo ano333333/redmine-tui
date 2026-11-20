@@ -15,6 +15,9 @@ use crate::components::issue_property_conflict_popup::{
 };
 use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
 use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
+use crate::components::new_issue::{
+    EventProcessResult as NewIssueEventProcessResult, NewIssueComponent,
+};
 use crate::components::remote_journal_conflict_popup::{
     EventProcessResult as RemoteJournalConflictEventProcessResult, RemoteJournalConflictComponent,
 };
@@ -131,6 +134,7 @@ enum PopupComponent<'a> {
 /// popupの下に表示する画面。
 enum MainComponent {
     Issue(IssueComponent),
+    NewIssue(NewIssueComponent),
 }
 
 pub struct AppComponent<'a> {
@@ -182,10 +186,11 @@ impl<'a> AppComponent<'a> {
         if self.popup_components.back().is_some() {
             return self.process_popup_event(event, dispatcher, sink);
         }
-        if self.issue_component().is_some() {
-            return self.process_issue_event(event, dispatcher, sink);
+        match &self.main_component {
+            Some(MainComponent::Issue(_)) => self.process_issue_event(event, dispatcher, sink),
+            Some(MainComponent::NewIssue(_)) => self.process_new_issue_event(event, sink),
+            None => false,
         }
-        false
     }
 
     /// 最前面のpopupへイベントを渡し、結果に応じてpopup stackを更新する。
@@ -294,6 +299,12 @@ impl<'a> AppComponent<'a> {
                     IssueSelectPopupEventProcessResult::Selected { issue_id } => {
                         self.select_issue(issue_id, sink);
                     }
+                    IssueSelectPopupEventProcessResult::CreateRequested { project_id } => {
+                        self.popup_components.pop_back();
+                        self.main_component = Some(MainComponent::NewIssue(
+                            NewIssueComponent::new(project_id, None),
+                        ));
+                    }
                     IssueSelectPopupEventProcessResult::Quited => {
                         self.close_issue_select_popup();
                     }
@@ -351,6 +362,24 @@ impl<'a> AppComponent<'a> {
                     RemoteJournalConflictEventProcessResult::Handled => {}
                 }
             }
+        }
+        true
+    }
+
+    /// NewIssueComponentへイベントを渡し、結果に応じてpopupを開く。
+    /// NewIssueComponentがイベントを使った場合にtrueを返す。
+    fn process_new_issue_event(&mut self, event: InputEvent, sink: &mut RequestSink) -> bool {
+        let Some(MainComponent::NewIssue(new_issue_component)) = &mut self.main_component else {
+            unreachable!("caller checked that NewIssueComponent exists");
+        };
+        let Some(result) = new_issue_component.process_event(&event) else {
+            return false;
+        };
+        match result {
+            NewIssueEventProcessResult::OpenIssueSelectPopup => {
+                self.open_issue_select_popup(None, sink);
+            }
+            NewIssueEventProcessResult::Handled => {}
         }
         true
     }
@@ -703,14 +732,14 @@ impl<'a> AppComponent<'a> {
     fn issue_component(&self) -> Option<&IssueComponent> {
         match &self.main_component {
             Some(MainComponent::Issue(issue_component)) => Some(issue_component),
-            None => None,
+            Some(MainComponent::NewIssue(_)) | None => None,
         }
     }
 
     fn issue_component_mut(&mut self) -> Option<&mut IssueComponent> {
         match &mut self.main_component {
             Some(MainComponent::Issue(issue_component)) => Some(issue_component),
-            None => None,
+            Some(MainComponent::NewIssue(_)) | None => None,
         }
     }
 
@@ -885,8 +914,14 @@ impl<'a> AppComponent<'a> {
 
     /// Componentをframeのarea範囲内に描画する。
     pub fn render(&self, store: &Store, frame: &mut Frame, area: Rect) {
-        if let Some(issue_component) = self.issue_component() {
-            issue_component.render(store, frame, area);
+        match &self.main_component {
+            Some(MainComponent::Issue(issue_component)) => {
+                issue_component.render(store, frame, area)
+            }
+            Some(MainComponent::NewIssue(new_issue_component)) => {
+                new_issue_component.render(store, frame, area)
+            }
+            None => {}
         }
         self.render_popup_component(frame, area, store);
         // popupより後に描画して最前面へ重ねる。toastはfocusを持たずcursor位置も変えない。
@@ -1772,6 +1807,64 @@ mod tests {
             }]
         );
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+    }
+
+    fn new_issue_component<'b>(app: &'b AppComponent<'_>) -> Option<&'b NewIssueComponent> {
+        match &app.main_component {
+            Some(MainComponent::NewIssue(new_issue_component)) => Some(new_issue_component),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn n_on_issue_select_popup_opens_a_draft_in_the_focused_project() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            None,
+            CursorRendering::Terminal,
+            &mut sink,
+        );
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), &mut sink);
+
+        app.process_event(key_event(KeyCode::Char('n')), dispatcher.clone(), &mut sink);
+
+        assert!(app.popup_components.is_empty());
+        let draft = new_issue_component(&app)
+            .expect("the draft should replace the main component")
+            .draft();
+        assert_eq!(draft.borrow().project_id, ProjectId::new(1));
+        assert_eq!(draft.borrow().parent_issue_id, None);
+        assert_no_requests(&mut sink);
+    }
+
+    #[test]
+    fn selecting_an_issue_from_a_draft_discards_the_draft() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            None,
+            CursorRendering::Terminal,
+            &mut sink,
+        );
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), &mut sink);
+        app.process_event(key_event(KeyCode::Char('n')), dispatcher.clone(), &mut sink);
+
+        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone(), &mut sink);
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), &mut sink);
+        app.process_event(key_event(KeyCode::Char('q')), dispatcher.clone(), &mut sink);
+        assert!(new_issue_component(&app).is_some());
+
+        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone(), &mut sink);
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), &mut sink);
+        for code in [KeyCode::Char('l'), KeyCode::Enter] {
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+
+        assert!(new_issue_component(&app).is_none());
+        assert_eq!(app.issue_component().unwrap().issue_id(), IssueId::new(1));
     }
 
     #[test]

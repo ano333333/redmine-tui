@@ -44,6 +44,12 @@ const FIELDS: [DraftField; 12] = [
     DraftField::Category,
 ];
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum EventProcessResult {
+    OpenIssueSelectPopup,
+    Handled,
+}
+
 /// Issueの新規作成画面。下書きを持ち、作成の要求とその結果を`creation_id`で対応付ける。
 pub struct NewIssueComponent {
     creation_id: IssueCreationId,
@@ -73,20 +79,19 @@ impl NewIssueComponent {
         self.draft.clone()
     }
 
-    /// 項目間のフォーカス移動を処理する。イベントを使った場合にtrueを返す。
-    pub fn process_event(&mut self, event: &InputEvent) -> bool {
+    pub fn process_event(&mut self, event: &InputEvent) -> Option<EventProcessResult> {
         let InputEvent::Key(key) = event;
         match key.code {
             KeyCode::Char('j') => {
                 self.focused_index = (self.focused_index + 1).min(FIELDS.len());
-                true
             }
             KeyCode::Char('k') => {
                 self.focused_index = self.focused_index.saturating_sub(1);
-                true
             }
-            _ => false,
+            KeyCode::Char('y') => return Some(EventProcessResult::OpenIssueSelectPopup),
+            _ => return None,
         }
+        Some(EventProcessResult::Handled)
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> NewIssueWidget<'a> {
@@ -229,13 +234,26 @@ mod tests {
     fn focus_moves_between_fields_and_the_add_attachment_row_within_bounds() {
         let mut component = NewIssueComponent::new(ProjectId::new(1), None);
 
-        assert!(component.process_event(&key(KeyCode::Char('k'))));
+        assert_eq!(
+            component.process_event(&key(KeyCode::Char('k'))),
+            Some(EventProcessResult::Handled)
+        );
         assert_eq!(component.focused_index, 0);
         for _ in 0..20 {
             component.process_event(&key(KeyCode::Char('j')));
         }
         assert_eq!(component.focused_index, FIELDS.len());
-        assert!(!component.process_event(&key(KeyCode::Char('x'))));
+        assert_eq!(component.process_event(&key(KeyCode::Char('x'))), None);
+    }
+
+    #[test]
+    fn y_requests_the_issue_select_popup() {
+        let mut component = NewIssueComponent::new(ProjectId::new(1), None);
+
+        assert_eq!(
+            component.process_event(&key(KeyCode::Char('y'))),
+            Some(EventProcessResult::OpenIssueSelectPopup)
+        );
     }
 
     #[test]
