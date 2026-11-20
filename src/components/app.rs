@@ -401,8 +401,22 @@ impl<'a> AppComponent<'a> {
                         PendingEditorContext::NewIssueDescription { creation_id },
                         draft.borrow().description.clone(),
                     ),
-                    // FIXME: 残りの属性の編集popupを開く。
-                    _ => return true,
+                    field => {
+                        let select_box = {
+                            let dispatcher = self.dispatcher.borrow();
+                            new_issue_component.select_box(dispatcher.store(), field)
+                        };
+                        // FIXME: 日付と予定工数の編集popupを開く。
+                        if let Some(select_box) = select_box {
+                            self.push_select_box_popup(
+                                &select_box.items,
+                                select_box.focused_index,
+                                true,
+                                select_box.observer,
+                            );
+                        }
+                        return true;
+                    }
                 };
                 self.start_editing(context, initial_text, sink);
             }
@@ -1963,6 +1977,31 @@ mod tests {
 
         let draft = new_issue_component(&app).unwrap().draft();
         assert_eq!(draft.borrow().description, "1行目\n2行目\n");
+    }
+
+    #[test]
+    fn select_box_popup_sets_the_draft_tracker() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+
+        for code in [
+            KeyCode::Char('j'),
+            KeyCode::Char('j'),
+            KeyCode::Enter,
+            KeyCode::Char('j'),
+            KeyCode::Enter,
+        ] {
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+
+        assert!(app.popup_components.is_empty());
+        let draft = new_issue_component(&app).unwrap().draft();
+        assert_eq!(
+            draft.borrow().tracker_id,
+            Some(crate::vos::TrackerId::new(2))
+        );
+        assert_no_requests(&mut sink);
     }
 
     #[test]

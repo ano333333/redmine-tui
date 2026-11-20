@@ -7,8 +7,15 @@ use ratatui::widgets::Widget;
 
 use crate::platform::input::{InputEvent, KeyCode};
 use crate::stores::Store;
+use crate::usecases::issue_popup_options::{
+    build_assigned_to_options, build_category_options, build_done_ratio_options,
+    build_issue_status_options, build_priority_options, build_target_version_options,
+    build_tracker_options,
+};
 use crate::usecases::{IssueCreationId, NewIssueDraft};
-use crate::vos::{IssueId, ProjectId};
+use crate::vos::{
+    CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
+};
 
 use super::NewIssueWidget;
 
@@ -49,6 +56,13 @@ pub enum EventProcessResult {
     EditFieldRequested { field: DraftField },
     OpenIssueSelectPopup,
     Handled,
+}
+
+/// select boxで値を選ぶ項目の、選択肢・フォーカス位置・確定値を下書きへ書き戻すobserver。
+pub struct DraftSelectBox {
+    pub items: Vec<(u32, String)>,
+    pub focused_index: usize,
+    pub observer: Box<dyn FnMut(Option<u32>)>,
 }
 
 /// Issueの新規作成画面。下書きを持ち、作成の要求とその結果を`creation_id`で対応付ける。
@@ -98,6 +112,50 @@ impl NewIssueComponent {
             _ => return None,
         }
         Some(EventProcessResult::Handled)
+    }
+
+    /// `field`がselect boxで値を選ぶ項目なら、その選択肢を返す。
+    ///
+    /// 「選択なし」は値の解除か、Redmineの既定値に戻すことを表す。
+    pub fn select_box(&self, store: &Store, field: DraftField) -> Option<DraftSelectBox> {
+        let draft = self.draft.borrow();
+        let project_id = draft.project_id;
+        let ((items, focused_index), apply): (_, fn(&mut NewIssueDraft, Option<u32>)) = match field
+        {
+            DraftField::Tracker => (
+                build_tracker_options(store, draft.tracker_id),
+                |draft, id| draft.tracker_id = id.map(TrackerId::new),
+            ),
+            DraftField::Status => (build_issue_status_options(store), |draft, id| {
+                draft.status_id = id.map(IssueStatusId::new)
+            }),
+            DraftField::Priority => (
+                build_priority_options(store, draft.priority_id),
+                |draft, id| draft.priority_id = id.map(PriorityId::new),
+            ),
+            DraftField::AssignedTo => (
+                build_assigned_to_options(store, draft.assigned_to_id),
+                |draft, id| draft.assigned_to_id = id.map(UserId::new),
+            ),
+            DraftField::TargetVersion => (
+                build_target_version_options(store, project_id, draft.target_version_id),
+                |draft, id| draft.target_version_id = id.map(TargetVersionId::new),
+            ),
+            DraftField::DoneRatio => (build_done_ratio_options(draft.done_ratio), |draft, id| {
+                draft.done_ratio = id.map(|ratio| ratio as u16)
+            }),
+            DraftField::Category => (
+                build_category_options(store, project_id, draft.category_id),
+                |draft, id| draft.category_id = id.map(CategoryId::new),
+            ),
+            _ => return None,
+        };
+        let shared = self.draft.clone();
+        Some(DraftSelectBox {
+            items,
+            focused_index,
+            observer: Box::new(move |id| apply(&mut shared.borrow_mut(), id)),
+        })
     }
 
     pub fn create_widget<'a>(&self, store: &'a Store) -> NewIssueWidget<'a> {
@@ -217,7 +275,6 @@ mod tests {
     use crate::stores::Dispatcher;
     use crate::test_support::sample_issue_aggregate;
     use crate::test_support::{dispatch_loaded_issue, dispatch_sample_masters, render_snapshot};
-    use crate::vos::{PriorityId, TrackerId, UserId};
 
     fn key(code: KeyCode) -> InputEvent {
         InputEvent::Key(KeyEvent::new(code, KeyModifiers::none()))
@@ -263,6 +320,68 @@ mod tests {
                 field: DraftField::Description
             })
         );
+    }
+
+    #[test]
+    fn select_box_observers_write_the_selection_back_to_the_draft() {
+        let dispatcher = loaded_dispatcher();
+        let component = NewIssueComponent::new(ProjectId::new(1), None);
+
+        for field in [
+            DraftField::Tracker,
+            DraftField::Status,
+            DraftField::Priority,
+            DraftField::AssignedTo,
+            DraftField::TargetVersion,
+            DraftField::DoneRatio,
+            DraftField::Category,
+        ] {
+            let mut select_box = component
+                .select_box(dispatcher.store(), field)
+                .unwrap_or_else(|| panic!("{field:?} should be selected from a select box"));
+            (select_box.observer)(Some(1));
+        }
+
+        let draft = component.draft();
+        let draft = draft.borrow();
+        assert_eq!(draft.tracker_id, Some(TrackerId::new(1)));
+        assert_eq!(draft.status_id, Some(IssueStatusId::new(1)));
+        assert_eq!(draft.priority_id, Some(PriorityId::new(1)));
+        assert_eq!(draft.assigned_to_id, Some(UserId::new(1)));
+        assert_eq!(draft.target_version_id, Some(TargetVersionId::new(1)));
+        assert_eq!(draft.done_ratio, Some(1));
+        assert_eq!(draft.category_id, Some(CategoryId::new(1)));
+    }
+
+    #[test]
+    fn select_box_none_returns_the_field_to_the_server_default() {
+        let dispatcher = loaded_dispatcher();
+        let component = NewIssueComponent::new(ProjectId::new(1), None);
+        component.draft().borrow_mut().tracker_id = Some(TrackerId::new(2));
+
+        let mut select_box = component
+            .select_box(dispatcher.store(), DraftField::Tracker)
+            .unwrap();
+        assert_eq!(select_box.focused_index, 1);
+        (select_box.observer)(None);
+
+        assert_eq!(component.draft().borrow().tracker_id, None);
+    }
+
+    #[test]
+    fn text_and_input_fields_have_no_select_box() {
+        let dispatcher = loaded_dispatcher();
+        let component = NewIssueComponent::new(ProjectId::new(1), None);
+
+        for field in [
+            DraftField::Subject,
+            DraftField::Description,
+            DraftField::StartDate,
+            DraftField::DueDate,
+            DraftField::EstimatedHours,
+        ] {
+            assert!(component.select_box(dispatcher.store(), field).is_none());
+        }
     }
 
     #[test]
