@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use chrono::{DateTime, Local};
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::widgets::Widget;
 
 use crate::platform::input::{InputEvent, KeyCode};
@@ -17,6 +17,7 @@ use crate::usecases::{IssueCreationId, NewIssueDraft};
 use crate::vos::{
     CategoryId, IssueId, IssueStatusId, PriorityId, ProjectId, TargetVersionId, TrackerId, UserId,
 };
+use crate::widgets::VerticalScrollWidgetState;
 
 use super::NewIssueWidget;
 
@@ -86,6 +87,7 @@ pub struct NewIssueComponent {
     focused_index: usize,
     /// 作成の完了を待つ間は、下書きの編集と再度の作成を受け付けない。
     submitting: bool,
+    scroll_state: VerticalScrollWidgetState,
 }
 
 impl NewIssueComponent {
@@ -98,7 +100,23 @@ impl NewIssueComponent {
             ))),
             focused_index: 0,
             submitting: false,
+            scroll_state: VerticalScrollWidgetState::new(),
         }
+    }
+
+    /// フォーカス行が本文の表示範囲に入るよう、スクロール量を更新する。renderが後続する。
+    pub fn update(&mut self, height: u16) {
+        let draft = self.draft.borrow();
+        let focused_row = NewIssueWidget::focused_row(
+            draft.parent_issue_id.is_some(),
+            FIELDS.len(),
+            draft.attachments.len(),
+            self.focused_index,
+        );
+        self.scroll_state.update(
+            Position::new(0, focused_row),
+            NewIssueWidget::body_height(height),
+        );
     }
 
     /// 作成に失敗した下書きを、編集と再度の作成を受け付ける状態に戻す。
@@ -219,7 +237,7 @@ impl NewIssueComponent {
         )
     }
 
-    pub fn create_widget<'a>(&self, store: &'a Store) -> NewIssueWidget<'a> {
+    pub fn create_widget<'a>(&'a self, store: &'a Store) -> NewIssueWidget<'a> {
         let draft = self.draft.borrow();
         let parent = draft.parent_issue_id.map(|id| {
             let subject = store
@@ -229,6 +247,7 @@ impl NewIssueComponent {
             (id, subject)
         });
         NewIssueWidget {
+            scroll_state: &self.scroll_state,
             project: store
                 .get_project(draft.project_id)
                 .map(|project| project.name.as_str())
@@ -520,6 +539,30 @@ mod tests {
             component.process_event(&key(KeyCode::Enter)),
             Some(EventProcessResult::EditFieldRequested { .. })
         ));
+    }
+
+    #[test]
+    fn snapshot_draft_scrolls_to_the_focused_add_attachment_row() {
+        let dispatcher = loaded_dispatcher();
+        let mut component = NewIssueComponent::new(ProjectId::new(1), Some(IssueId::new(3)));
+        component.draft().borrow_mut().attachments = ["a.png", "b.png", "c.png"]
+            .map(|filename| crate::usecases::DraftAttachment {
+                filename: filename.to_string(),
+                path: std::path::PathBuf::from(format!("/tmp/{filename}")),
+            })
+            .into();
+        for _ in 0..FIELDS.len() {
+            component.process_event(&key(KeyCode::Char('j')));
+        }
+
+        component.update(12);
+
+        render_snapshot(
+            "new_issue_component_scrolls_to_add_attachment",
+            60,
+            12,
+            component.create_widget(dispatcher.store()),
+        );
     }
 
     #[test]

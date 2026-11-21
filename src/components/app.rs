@@ -958,8 +958,14 @@ impl<'a> AppComponent<'a> {
         self.open_issue_property_conflict_popup_if_needed(store);
         self.open_remote_journal_conflict_popups_if_needed(store);
 
-        if let Some(issue_component) = self.issue_component_mut() {
-            issue_component.update(dispatcher, store, (area.width, area.height));
+        match &mut self.main_component {
+            Some(MainComponent::Issue(issue_component)) => {
+                issue_component.update(dispatcher, store, (area.width, area.height));
+            }
+            Some(MainComponent::NewIssue(new_issue_component)) => {
+                new_issue_component.update(area.height);
+            }
+            None => {}
         }
 
         for popup_component in &self.popup_components {
