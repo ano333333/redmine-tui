@@ -74,7 +74,8 @@ pub type HoursObserver = Box<dyn FnMut(Option<f64>)>;
 /// select boxで値を選ぶ項目の、選択肢・フォーカス位置・確定値を下書きへ書き戻すobserver。
 pub struct DraftSelectBox {
     pub items: Vec<(u32, String)>,
-    pub focused_index: usize,
+    /// `items`のうち現在値の位置。Noneは、現在値がなく「選択なし」にフォーカスすることを表す。
+    pub focused_index: Option<usize>,
     pub observer: Box<dyn FnMut(Option<u32>)>,
 }
 
@@ -170,15 +171,26 @@ impl NewIssueComponent {
     pub fn select_box(&self, store: &Store, field: DraftField) -> Option<DraftSelectBox> {
         let draft = self.draft.borrow();
         let project_id = draft.project_id;
+        let has_current = match field {
+            DraftField::Tracker => draft.tracker_id.is_some(),
+            DraftField::Status => draft.status_id.is_some(),
+            DraftField::Priority => draft.priority_id.is_some(),
+            DraftField::AssignedTo => draft.assigned_to_id.is_some(),
+            DraftField::TargetVersion => draft.target_version_id.is_some(),
+            DraftField::DoneRatio => draft.done_ratio.is_some(),
+            DraftField::Category => draft.category_id.is_some(),
+            _ => return None,
+        };
         let ((items, focused_index), apply): (_, fn(&mut NewIssueDraft, Option<u32>)) = match field
         {
             DraftField::Tracker => (
                 build_tracker_options(store, draft.tracker_id),
                 |draft, id| draft.tracker_id = id.map(TrackerId::new),
             ),
-            DraftField::Status => (build_issue_status_options(store), |draft, id| {
-                draft.status_id = id.map(IssueStatusId::new)
-            }),
+            DraftField::Status => (
+                build_issue_status_options(store, draft.status_id),
+                |draft, id| draft.status_id = id.map(IssueStatusId::new),
+            ),
             DraftField::Priority => (
                 build_priority_options(store, draft.priority_id),
                 |draft, id| draft.priority_id = id.map(PriorityId::new),
@@ -203,7 +215,7 @@ impl NewIssueComponent {
         let shared = self.draft.clone();
         Some(DraftSelectBox {
             items,
-            focused_index,
+            focused_index: has_current.then_some(focused_index),
             observer: Box::new(move |id| apply(&mut shared.borrow_mut(), id)),
         })
     }
@@ -443,6 +455,41 @@ mod tests {
     }
 
     #[test]
+    fn select_box_focuses_the_none_choice_while_the_field_is_unset() {
+        let dispatcher = loaded_dispatcher();
+        let component = NewIssueComponent::new(ProjectId::new(1), None);
+
+        for field in [
+            DraftField::Tracker,
+            DraftField::Status,
+            DraftField::Priority,
+            DraftField::AssignedTo,
+            DraftField::TargetVersion,
+            DraftField::DoneRatio,
+            DraftField::Category,
+        ] {
+            let select_box = component.select_box(dispatcher.store(), field).unwrap();
+            assert_eq!(select_box.focused_index, None, "{field:?}");
+        }
+    }
+
+    #[test]
+    fn status_select_box_focuses_the_current_status() {
+        let dispatcher = loaded_dispatcher();
+        let component = NewIssueComponent::new(ProjectId::new(1), None);
+        component.draft().borrow_mut().status_id = Some(IssueStatusId::new(4));
+
+        let select_box = component
+            .select_box(dispatcher.store(), DraftField::Status)
+            .unwrap();
+
+        let focused = select_box
+            .focused_index
+            .map(|index| select_box.items[index].0);
+        assert_eq!(focused, Some(4));
+    }
+
+    #[test]
     fn select_box_none_returns_the_field_to_the_server_default() {
         let dispatcher = loaded_dispatcher();
         let component = NewIssueComponent::new(ProjectId::new(1), None);
@@ -451,7 +498,7 @@ mod tests {
         let mut select_box = component
             .select_box(dispatcher.store(), DraftField::Tracker)
             .unwrap();
-        assert_eq!(select_box.focused_index, 1);
+        assert_eq!(select_box.focused_index, Some(1));
         (select_box.observer)(None);
 
         assert_eq!(component.draft().borrow().tracker_id, None);

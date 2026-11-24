@@ -27,16 +27,19 @@ fn build_select_options(
     (entries, focused_index)
 }
 
-/// IssueStatusPopup用のitems/focused_indexを組み立てる。
+/// IssueStatusPopup用のitems/focused_indexを組み立てる。`current`がNoneなら先頭にフォーカスする。
 // FIXME: workflowで許可された遷移先に絞っていない。Redmineは許可されないstatus_idをエラーなしで
 // 無視するため、ローカルでは変更済みに見えてしまう。
-pub fn build_issue_status_options(store: &Store) -> (Vec<(u32, String)>, usize) {
+pub fn build_issue_status_options(
+    store: &Store,
+    current: Option<IssueStatusId>,
+) -> (Vec<(u32, String)>, usize) {
     let issue_statuses = store
         .get_issue_statuses()
         .iter()
         .map(|(id, status)| (id.get(), status.name.clone()))
         .collect::<Vec<_>>();
-    build_select_options(issue_statuses, None, false)
+    build_select_options(issue_statuses, current.map(|id| id.get()), false)
 }
 
 /// TrackerPopup用のitems/focused_indexを組み立てる。`current`がNoneなら先頭にフォーカスする。
@@ -377,7 +380,7 @@ mod tests {
     fn issue_status_options_are_not_sorted_and_focus_the_first_item() {
         let dispatcher = loaded_dispatcher();
 
-        let (mut items, focused_index) = build_issue_status_options(dispatcher.store());
+        let (mut items, focused_index) = build_issue_status_options(dispatcher.store(), None);
 
         assert_eq!(focused_index, 0);
         items.sort_by_key(|(id, _)| *id);

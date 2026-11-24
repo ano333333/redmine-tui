@@ -36,6 +36,20 @@ impl<'a> SelectBoxPopupComponent<'a> {
         }
     }
 
+    /// 先頭の「選択なし」にフォーカスする。
+    ///
+    /// # Panics
+    ///
+    /// 「選択なし」を含めずに作った場合にpanicする。
+    pub fn focus_none_choice(mut self) -> Self {
+        assert!(
+            matches!(self.items.first(), Some((None, _))),
+            "the popup has no none choice"
+        );
+        self.focused_index = 0;
+        self
+    }
+
     pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         let InputEvent::Key(key) = event;
         match key.code {
@@ -140,6 +154,24 @@ mod tests {
             ]
         );
         assert_eq!(widget.focused_index, 2);
+    }
+
+    #[test]
+    fn focus_none_choice_focuses_the_leading_none_choice() {
+        let selected_id = Rc::new(RefCell::new(None));
+        let selected_dispatcher = Rc::new(RefCell::new(None));
+        let component =
+            component_with_observer(1, true, selected_id, selected_dispatcher).focus_none_choice();
+
+        assert_eq!(component.create_widget().focused_index, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "the popup has no none choice")]
+    fn focus_none_choice_rejects_a_popup_without_the_none_choice() {
+        let selected_id = Rc::new(RefCell::new(None));
+        let selected_dispatcher = Rc::new(RefCell::new(None));
+        component_with_observer(1, false, selected_id, selected_dispatcher).focus_none_choice();
     }
 
     #[test]

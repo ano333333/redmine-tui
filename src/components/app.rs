@@ -449,12 +449,19 @@ impl<'a> AppComponent<'a> {
                             new_issue_component.select_box(dispatcher.store(), field)
                         };
                         if let Some(select_box) = select_box {
-                            self.push_select_box_popup(
+                            let popup = SelectBoxPopupComponent::new(
                                 &select_box.items,
-                                select_box.focused_index,
+                                select_box.focused_index.unwrap_or(0),
                                 true,
                                 select_box.observer,
                             );
+                            let popup = if select_box.focused_index.is_none() {
+                                popup.focus_none_choice()
+                            } else {
+                                popup
+                            };
+                            self.popup_components
+                                .push_back(Rc::new(RefCell::new(PopupComponent::SelectBox(popup))));
                         }
                         return true;
                     }
@@ -527,7 +534,7 @@ impl<'a> AppComponent<'a> {
                 IssueDetailEventProcessResult::OpenIssueStatusPopup,
             ) => {
                 let (items, focused_index) =
-                    build_issue_status_options(dispatcher.borrow().store());
+                    build_issue_status_options(dispatcher.borrow().store(), None);
                 self.push_select_box_popup(
                     &items,
                     focused_index,
@@ -2088,6 +2095,7 @@ mod tests {
         let dispatcher = loaded_dispatcher();
         let mut app = app_with_draft(dispatcher.clone(), &mut sink);
 
+        // 未設定のトラッカーでは「選択なし」にフォーカスするため、jで先頭のBugへ移る。
         for code in [
             KeyCode::Char('j'),
             KeyCode::Char('j'),
@@ -2102,9 +2110,29 @@ mod tests {
         let draft = new_issue_component(&app).unwrap().draft();
         assert_eq!(
             draft.borrow().tracker_id,
-            Some(crate::vos::TrackerId::new(2))
+            Some(crate::vos::TrackerId::new(1))
         );
         assert_no_requests(&mut sink);
+    }
+
+    #[test]
+    fn enter_on_an_unset_draft_property_keeps_the_server_default() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+
+        for code in [
+            KeyCode::Char('j'),
+            KeyCode::Char('j'),
+            KeyCode::Enter,
+            KeyCode::Enter,
+        ] {
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+
+        assert!(app.popup_components.is_empty());
+        let draft = new_issue_component(&app).unwrap().draft();
+        assert_eq!(draft.borrow().tracker_id, None);
     }
 
     #[test]
