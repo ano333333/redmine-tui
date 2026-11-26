@@ -5,10 +5,13 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use super::focus_state::FocusedRow;
+use crate::i18n::tr;
 use crate::vos::IssueId;
 use crate::widgets::theme::{ACCENT, BADGE_BG, FOCUS_BG, MUTED};
 
-const PARENT_LABEL: &str = "親チケット ";
+fn parent_label() -> String {
+    format!("{} ", tr!("header-parent-label"))
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum TitleDecorater {
@@ -104,7 +107,7 @@ impl<'a> HeaderWidget<'a> {
     pub fn parent_id_position(&self, width: u16) -> Option<Position> {
         self.parent?;
         Some(Position::new(
-            Line::from(PARENT_LABEL).width() as u16,
+            Line::from(parent_label()).width() as u16,
             self.title_line_count(width),
         ))
     }
@@ -122,14 +125,14 @@ impl<'a> HeaderWidget<'a> {
         self.title_paragraph().line_count(width) as u16
     }
 
-    fn title_decorator_str(decorator: Option<TitleDecorater>) -> &'static str {
-        match decorator {
+    fn title_decorator_str(decorator: Option<TitleDecorater>) -> Option<String> {
+        let id = match decorator? {
             // FIXME: Nerd font対応
-            Some(TitleDecorater::Edited) => "＊未保存",
-            Some(TitleDecorater::Uploading) => "↑送信中",
-            Some(TitleDecorater::Unconfirmed) => "？未確認",
-            None => "",
-        }
+            TitleDecorater::Edited => "header-edited",
+            TitleDecorater::Uploading => "header-uploading",
+            TitleDecorater::Unconfirmed => "header-unconfirmed",
+        };
+        Some(tr!(id))
     }
 
     pub fn title_start_x(&self) -> u16 {
@@ -146,8 +149,7 @@ impl<'a> HeaderWidget<'a> {
             Span::from(" "),
         ];
 
-        let decorator = Self::title_decorator_str(self.title_decorator);
-        if !decorator.is_empty() {
+        if let Some(decorator) = Self::title_decorator_str(self.title_decorator) {
             spans.push(Span::from(decorator).fg(MUTED));
             spans.push(Span::from(" "));
         }
@@ -166,11 +168,15 @@ impl<'a> HeaderWidget<'a> {
         let parent = self.parent?;
         let (id, subject) = match parent {
             ParentIssue::Loaded { id, subject } => (id, Span::from(subject)),
-            ParentIssue::Fetching { id } => (id, Span::from("取得中…").fg(MUTED)),
-            ParentIssue::FetchFailed { id } => (id, Span::from("取得失敗").fg(MUTED)),
+            ParentIssue::Fetching { id } => {
+                (id, Span::from(tr!("header-parent-fetching")).fg(MUTED))
+            }
+            ParentIssue::FetchFailed { id } => {
+                (id, Span::from(tr!("header-parent-fetch-failed")).fg(MUTED))
+            }
         };
         let spans = vec![
-            Span::from(PARENT_LABEL).fg(MUTED),
+            Span::from(parent_label()).fg(MUTED),
             Span::from(format!("#{id}")).blue(),
             Span::from(" "),
             subject,
@@ -285,7 +291,7 @@ mod tests {
     #[test]
     fn snapshot_header_unconfirmed_title() {
         let title = "Widget snapshot baseline".to_string();
-        let width = 40;
+        let width = 50;
         let widget = HeaderWidget::new(
             42,
             &title,
