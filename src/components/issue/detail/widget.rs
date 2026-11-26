@@ -4,6 +4,7 @@ use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
+use crate::i18n::tr;
 use crate::widgets::theme::{ACCENT, SECTION_BAR};
 use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
 
@@ -131,7 +132,10 @@ impl<'a> Widget for IssueDetailWidget<'a> {
         let journals_line_count = self.journals_list.line_count(width);
 
         scroll_widget.render_widget(self.property, property_line_count);
-        scroll_widget.render_widget(SectionHeader::new("説明"), SectionHeader::LINE_COUNT);
+        scroll_widget.render_widget(
+            SectionHeader::new(tr!("property-description")),
+            SectionHeader::LINE_COUNT,
+        );
         let body_y = scroll_widget.next_widget_y();
         let body_images = self.body.images();
         scroll_widget.render_widget(self.body, body_line_count);
@@ -144,7 +148,10 @@ impl<'a> Widget for IssueDetailWidget<'a> {
         scroll_widget.render_widget(Paragraph::new(""), 1);
         scroll_widget.render_widget(self.attachments_list, attachments_line_count);
         scroll_widget.render_widget(self.children_list, children_line_count);
-        scroll_widget.render_widget(SectionHeader::new("履歴"), SectionHeader::LINE_COUNT);
+        scroll_widget.render_widget(
+            SectionHeader::new(tr!("detail-section-history")),
+            SectionHeader::LINE_COUNT,
+        );
         let journals_y = scroll_widget.next_widget_y();
         let journal_images = self.journals_list.images(width);
         scroll_widget.render_widget(self.journals_list, journals_line_count);
@@ -161,14 +168,14 @@ impl<'a> Widget for IssueDetailWidget<'a> {
 
 /// `(空行) ▌ 見出し (空行)` の3行でセクションの切れ目を示す小さなWidget。
 struct SectionHeader {
-    title: Option<&'static str>,
+    title: Option<String>,
 }
 
 impl SectionHeader {
     /// 空行 + 見出し + 空行。
     const LINE_COUNT: u16 = 3;
 
-    fn new(title: &'static str) -> Self {
+    fn new(title: String) -> Self {
         Self { title: Some(title) }
     }
 }
