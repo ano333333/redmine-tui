@@ -54,6 +54,50 @@ pub(crate) fn message(id: &str, args: Option<&FluentArgs>) -> String {
     text.into_owned()
 }
 
+/// 文言を、埋め込んだ変数の位置で区切った断片。
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Segment {
+    Text(String),
+    /// `segments`に渡した`names`の何番目の変数か。
+    Arg(usize),
+}
+
+// カタログの文言には使わない私用領域の文字で、変数の位置に目印を付ける。
+const ARG_START: char = '\u{E000}';
+const ARG_END: char = '\u{E001}';
+
+/// 変数ごとにスタイルを変えて描くために、`names`の変数の位置で文言を区切る。
+pub(crate) fn segments(id: &str, names: &[&str]) -> Vec<Segment> {
+    let mut args = FluentArgs::new();
+    for (index, name) in names.iter().enumerate() {
+        args.set(*name, format!("{ARG_START}{index}{ARG_END}"));
+    }
+    let text = message(id, Some(&args));
+    let mut segments = Vec::new();
+    let mut pieces = text.split(ARG_START);
+    let mut rest = pieces.next().unwrap_or_default();
+    loop {
+        if !rest.is_empty() {
+            segments.push(Segment::Text(rest.to_string()));
+        }
+        let Some(piece) = pieces.next() else {
+            break;
+        };
+        let (index, after) = piece
+            .split_once(ARG_END)
+            .unwrap_or_else(|| broken_marker(id));
+        segments.push(Segment::Arg(
+            index.parse().unwrap_or_else(|_| broken_marker(id)),
+        ));
+        rest = after;
+    }
+    segments
+}
+
+fn broken_marker(id: &str) -> ! {
+    panic!("message `{id}` has a broken argument marker")
+}
+
 /// `tr!("id")`、`tr!("id", name = value, ...)`の形で、`message`に変数を渡して文言を引く。
 macro_rules! tr {
     ($id:expr $(,)?) => {
@@ -81,10 +125,26 @@ fn build_bundle(language: Language) -> FluentBundle<FluentResource> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn tr_embeds_arguments_without_bidi_isolation_marks() {
         let text = tr!("toast-issue-upload-failed", id = 12, reason = "timeout");
 
         assert_eq!(text, "Failed to save issue #12: timeout");
+    }
+
+    #[test]
+    fn segments_split_the_message_at_each_argument() {
+        assert_eq!(
+            segments("journal-detail-attr-changed", &["property", "old", "new"]),
+            [
+                Segment::Arg(0),
+                Segment::Text(" changed from ".to_string()),
+                Segment::Arg(1),
+                Segment::Text(" to ".to_string()),
+                Segment::Arg(2),
+            ]
+        );
     }
 }
