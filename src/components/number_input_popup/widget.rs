@@ -5,6 +5,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 use ratatui_textarea::TextArea;
 
+use crate::i18n::tr;
 use crate::widgets::theme::{ACCENT, MUTED, TIMELINE_FG};
 
 const POPUP_WIDTH: u16 = 40;
@@ -74,14 +75,14 @@ impl Widget for NumberInputPopupWidget<'_> {
         (&textarea).render(rows[0], buf);
 
         Paragraph::new(Line::styled(
-            "Enter: 確定 / Esc: 取消 / 空欄: 未設定",
+            tr!("number-input-hint"),
             Style::default().fg(MUTED),
         ))
         .render(rows[1], buf);
 
         if self.is_invalid {
             Paragraph::new(Line::styled(
-                "数値が大きすぎます",
+                tr!("number-input-too-large"),
                 Style::default().fg(Color::Red),
             ))
             .render(rows[2], buf);
