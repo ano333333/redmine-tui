@@ -2,6 +2,7 @@ use ratatui::layout::Position;
 use ratatui::style::{Modifier, Style};
 use ratatui_textarea::{Input, Key, TextArea};
 
+use crate::i18n::tr;
 use crate::platform::input::{InputEvent, KeyCode, KeyEvent};
 use crate::stores::Store;
 use crate::vos::TimeEntityActivityId;
@@ -59,12 +60,12 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
     pub fn new(store: &Store) -> Self {
         let mut hours_textarea = TextArea::default();
         hours_textarea.set_cursor_line_style(Default::default());
-        hours_textarea.set_placeholder_text("工数を入力");
+        hours_textarea.set_placeholder_text(tr!("spent-time-hours-placeholder"));
         Self::set_textarea_cursor(&mut hours_textarea, false);
 
         let mut memo_textarea = TextArea::default();
         memo_textarea.set_cursor_line_style(Default::default());
-        memo_textarea.set_placeholder_text("メモを入力");
+        memo_textarea.set_placeholder_text(tr!("spent-time-memo-placeholder"));
         Self::set_textarea_cursor(&mut memo_textarea, false);
 
         let activities = store.get_time_entity_activities();
