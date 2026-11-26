@@ -1,6 +1,6 @@
 use crate::clients::local_file::LocalFileClient;
 use crate::clients::redmine::base::NewIssueUpload;
-use crate::clients::redmine::{NewIssue, RedmineClient};
+use crate::clients::redmine::{NewIssue, RedmineClient, RedmineClientError};
 use crate::usecases::{
     IssueCreateFailure, IssueCreationId, NewIssueDraft, UsecaseClients, UsecaseEvent,
     UsecaseFailure, UsecaseOutput, UsecaseRequest, UsecaseTask,
@@ -62,6 +62,13 @@ where
                 }],
                 events: vec![UsecaseEvent::IssueCreated { creation_id, id }],
             },
+            // 応答のステータスで分類したエラーは、Redmineが作成しなかったことを表す。通信やClientの
+            // エラーは、Redmineが作成した後に応答を受け取れなかった場合も含む。
+            Err(
+                error @ (RedmineClientError::Network { .. } | RedmineClientError::Client { .. }),
+            ) => failure(IssueCreateFailure::CreateOutcomeUnknown {
+                reason: error.to_string(),
+            }),
             Err(error) => failure(IssueCreateFailure::Create {
                 reason: error.to_string(),
             }),
@@ -313,7 +320,14 @@ mod tests {
     async fn rejected_creation_is_reported_as_a_failure() {
         let clients = clients(
             CreateStubClient {
-                create_result: Err(offline()),
+                create_result: Err(RedmineClientError::UnprocessableEntity {
+                    context: crate::clients::redmine::RedmineHttpError {
+                        method: "POST".to_string(),
+                        url: "/issues.json".to_string(),
+                        status_code: 422,
+                        response_body: r#"{"errors":["Subject cannot be blank"]}"#.to_string(),
+                    },
+                }),
                 ..CreateStubClient::new()
             },
             StubLocalFileClient::new(Ok(vec![])),
@@ -328,6 +342,31 @@ mod tests {
             &output,
             creation_id,
             IssueCreateFailure::Create {
+                reason: r#"unprocessable entity: POST /issues.json returned 422 with body: {"errors":["Subject cannot be blank"]}"#
+                    .to_string(),
+            },
+        );
+    }
+
+    #[tokio::test]
+    async fn creation_interrupted_by_the_network_is_reported_with_an_unknown_outcome() {
+        let clients = clients(
+            CreateStubClient {
+                create_result: Err(offline()),
+                ..CreateStubClient::new()
+            },
+            StubLocalFileClient::new(Ok(vec![])),
+        );
+        let creation_id = IssueCreationId::new();
+
+        let output = create_issue(clients, creation_id, draft())
+            .expect("creation always runs asynchronously")
+            .await;
+
+        assert_failure(
+            &output,
+            creation_id,
+            IssueCreateFailure::CreateOutcomeUnknown {
                 reason: "network error: offline".to_string(),
             },
         );

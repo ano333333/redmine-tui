@@ -14,9 +14,21 @@ pub enum UsecaseEvent {
 /// Issueの作成で失敗した段階。
 #[derive(Clone, Debug, PartialEq)]
 pub enum IssueCreateFailure {
-    AttachmentFileRead { filename: String, reason: String },
-    AttachmentFileUpload { filename: String, reason: String },
-    Create { reason: String },
+    AttachmentFileRead {
+        filename: String,
+        reason: String,
+    },
+    AttachmentFileUpload {
+        filename: String,
+        reason: String,
+    },
+    Create {
+        reason: String,
+    },
+    /// 通信が途中で切れるなどして、Redmineが作成したかどうか分からない。
+    CreateOutcomeUnknown {
+        reason: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

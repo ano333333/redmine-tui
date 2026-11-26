@@ -28,6 +28,9 @@ impl ToastListComponent {
                 IssueCreateFailure::Create { reason } => {
                     format!("Issueの作成に失敗しました: {reason}")
                 }
+                IssueCreateFailure::CreateOutcomeUnknown { reason } => format!(
+                    "Issueを作成できたか確認できませんでした。もう一度作成すると二重に作成されることがあるため、Issue選択で確認してください: {reason}"
+                ),
             },
             UsecaseFailure::IssueUpload { id, reason } => {
                 format!("Issue #{id}の保存に失敗しました: {reason}")
@@ -199,6 +202,24 @@ mod tests {
             "toast_list_issue_create_attachment_failures",
             60,
             20,
+            toast_list.create_widget(),
+        );
+    }
+
+    #[test]
+    fn snapshot_issue_create_outcome_unknown() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::IssueCreate {
+            creation_id: crate::usecases::IssueCreationId::new(),
+            cause: IssueCreateFailure::CreateOutcomeUnknown {
+                reason: "network error: connection reset".to_string(),
+            },
+        });
+
+        render_snapshot(
+            "toast_list_issue_create_outcome_unknown",
+            60,
+            16,
             toast_list.create_widget(),
         );
     }
