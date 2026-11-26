@@ -118,13 +118,13 @@ mod tests {
     fn view_of<'j>(
         journal: &'j Journal,
         notes: &'j str,
-        state_marker: &'static str,
+        state_marker: &str,
     ) -> RemoteJournalItemView<'j> {
         RemoteJournalItemView {
             user: &journal.user,
             updated_on: journal.updated_on.as_ref(),
             notes,
-            state_marker,
+            state_marker: state_marker.to_string(),
         }
     }
 

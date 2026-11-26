@@ -16,8 +16,6 @@ use crate::vos::JournalDetailAttachmentChange;
 use crate::widgets::gutter::{GUTTER_WIDTH, Gutter, indented_area};
 use crate::widgets::theme::FOCUS_BG;
 
-const EMPTY_NOTES_PLACEHOLDER: &str = "(none)";
-const UPDATED_ON_NONE_DISPLAY: &str = "(不明)";
 /// 縦線を引かない末尾の余白行。次のJournalとの区切りになる。
 const GUTTER_TRAILING_LINES: u16 = 1;
 
@@ -38,7 +36,7 @@ pub struct RemoteJournalItemView<'a> {
     pub updated_on: Option<&'a chrono::DateTime<chrono::Local>>,
     /// 編集開始時にも使う表示中のnotes。本文の描画自体は事前計算済みのbufferが担う。
     pub notes: &'a str,
-    pub state_marker: &'static str,
+    pub state_marker: String,
 }
 
 /// Redmineへ未登録のJournalを、作成者や更新日のない専用headerで描画するための参照。
@@ -54,11 +52,11 @@ pub enum JournalItemView<'a> {
 }
 
 /// 同期済みの場合は空文字列、未保存の状態ではヘッダーへ付加するラベルを返す。
-pub fn state_marker(state: &RemoteJournalState) -> &'static str {
+pub fn state_marker(state: &RemoteJournalState) -> String {
     match state {
-        RemoteJournalState::Synced => "",
-        RemoteJournalState::Edited { .. } => "(edited)",
-        RemoteJournalState::Uploading { .. } => "(uploading)",
+        RemoteJournalState::Synced => String::new(),
+        RemoteJournalState::Edited { .. } => tr!("journal-state-edited"),
+        RemoteJournalState::Uploading { .. } => tr!("journal-state-uploading"),
     }
 }
 
@@ -72,10 +70,10 @@ pub fn display_notes<'a>(journal_notes: &'a str, state: &'a RemoteJournalState) 
 }
 
 /// Local Journalが端末内だけにあるか、Redmineへ送信中かを示すheader labelを返す。
-pub fn local_state_marker(state: &LocalJournalState) -> &'static str {
+pub fn local_state_marker(state: &LocalJournalState) -> String {
     match state {
-        LocalJournalState::LocalOnly { .. } => "(local)",
-        LocalJournalState::Uploading => "(uploading)",
+        LocalJournalState::LocalOnly { .. } => tr!("journal-state-local"),
+        LocalJournalState::Uploading => tr!("journal-state-uploading"),
     }
 }
 
@@ -103,8 +101,10 @@ impl JournalItemWidgetState {
 
     /// notesの単独の画像の段落は、`images`で読み込んだ画像を表示し、表示できなければ代わりの文字にする。
     pub fn update_with_images(&mut self, width: u16, notes: &str, images: &MarkdownImages) {
+        let placeholder;
         let notes = if notes.is_empty() {
-            EMPTY_NOTES_PLACEHOLDER
+            placeholder = tr!("value-none");
+            placeholder.as_str()
         } else {
             notes
         };
@@ -285,17 +285,21 @@ fn detail_spans(id: &str, args: &[(&str, Span<'static>)]) -> Vec<Span<'static>> 
 }
 
 fn create_remote_header(view: &RemoteJournalItemView<'_>) -> Line<'static> {
-    let updated_on_display = view
-        .updated_on
-        .map_or(UPDATED_ON_NONE_DISPLAY.to_string(), |updated_on| {
-            updated_on.format("%Y/%m/%d").to_string()
-        });
-    let mut spans = vec![
+    let updated_on_display = view.updated_on.map_or_else(
+        || tr!("value-unknown"),
+        |updated_on| updated_on.format("%Y/%m/%d").to_string(),
+    );
+    let args = [
         Span::from(view.user.to_owned()).blue(),
-        Span::from("が"),
         Span::from(updated_on_display).blue(),
-        Span::from("に更新"),
     ];
+    let mut spans: Vec<Span<'static>> = segments("journal-header-updated", &["user", "date"])
+        .into_iter()
+        .map(|segment| match segment {
+            Segment::Text(text) => Span::from(text),
+            Segment::Arg(index) => args[index].clone(),
+        })
+        .collect();
     if !view.state_marker.is_empty() {
         // 取得済みのメタデータと区別できるよう、ローカルで遷移する未保存状態を警告色にする。
         spans.push(Span::from(format!(" {}", view.state_marker)).yellow());
@@ -305,7 +309,7 @@ fn create_remote_header(view: &RemoteJournalItemView<'_>) -> Line<'static> {
 
 fn create_local_header(view: &LocalJournalItemView<'_>) -> Line<'static> {
     Line::from(vec![
-        Span::from("ローカルコメント").blue(),
+        Span::from(tr!("journal-header-local")).blue(),
         Span::from(format!(" {}", view.state_marker)).yellow(),
     ])
 }
@@ -347,13 +351,13 @@ mod tests {
     fn view_of<'v>(
         journal: &'v Journal,
         notes: &'v str,
-        state_marker: &'static str,
+        state_marker: &str,
     ) -> RemoteJournalItemView<'v> {
         RemoteJournalItemView {
             user: &journal.user,
             updated_on: journal.updated_on.as_ref(),
             notes,
-            state_marker,
+            state_marker: state_marker.to_string(),
         }
     }
 
@@ -538,7 +542,7 @@ mod tests {
             user: &user,
             updated_on: None,
             notes: &notes,
-            state_marker: "",
+            state_marker: String::new(),
         };
         let widget = JournalItemWidget::new(view, details, &state, true);
         let line_count = widget.line_count(width);

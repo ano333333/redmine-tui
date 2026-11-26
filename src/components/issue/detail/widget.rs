@@ -385,7 +385,7 @@ mod tests {
                 user: &self.journal.user,
                 updated_on: self.journal.updated_on.as_ref(),
                 notes: &self.journal.notes,
-                state_marker: "",
+                state_marker: String::new(),
             };
             JournalsListWidget::new(
                 vec![JournalItemWidget::new(

@@ -1,5 +1,6 @@
 use ratatui::layout::Position;
 
+use crate::i18n::tr;
 use crate::platform::input::InputEvent;
 use crate::stores::{DeletedJournalEntry, DeletedJournalState};
 use crate::vos::JournalId;
@@ -58,9 +59,13 @@ impl DeletedJournalItemComponent {
         self.notes.clone_from(&entry.notes);
         self.pending = matches!(entry.state, DeletedJournalState::Pending { .. });
         self.state_marker = if self.pending {
-            format!("(deleted #{})", entry.original_id)
+            tr!("journal-state-deleted", id = entry.original_id.to_string())
         } else {
-            format!("(deleted #{}) (uploading)", entry.original_id)
+            format!(
+                "{} {}",
+                tr!("journal-state-deleted", id = entry.original_id.to_string()),
+                tr!("journal-state-uploading")
+            )
         };
         self.widget_state
             .update_with_images(width, &self.notes, images);
