@@ -1,3 +1,11 @@
+//! TUIの画面部品。
+//!
+//! FocusStateとComponentの`process_event`は`Option<EventProcessResult>`を返す。`None`は
+//! 入力を解釈しなかったこと、`Some(Handled)`は入力を使い親への要求がないことを表し、それ以外は
+//! 親への要求である。端で動けなかった場合も、解釈したキーなら`Handled`を返す。子の
+//! `CursorLeavedFrom*`を受けた親は、隣の子へfocusを移せたら`Handled`を返し、移せなければ外へ返す。
+//! ただし、画面の最上位のComponent（`IssueDetailComponent`）は外へ返さず`Handled`にする。
+
 pub mod app;
 pub mod attachment_input_popup;
 pub mod date_picker_popup;
