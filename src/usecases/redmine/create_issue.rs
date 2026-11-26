@@ -62,10 +62,12 @@ where
                 }],
                 events: vec![UsecaseEvent::IssueCreated { creation_id, id }],
             },
-            // 応答のステータスで分類したエラーは、Redmineが作成しなかったことを表す。通信やClientの
-            // エラーは、Redmineが作成した後に応答を受け取れなかった場合も含む。
+            // 4xxは、Redmineが作成しなかったことを表す。5xxは前段のproxyが返すこともあり、
+            // 通信やClientのエラーとともに、Redmineが作成した後に応答を受け取れなかった場合を含む。
             Err(
-                error @ (RedmineClientError::Network { .. } | RedmineClientError::Client { .. }),
+                error @ (RedmineClientError::Network { .. }
+                | RedmineClientError::Client { .. }
+                | RedmineClientError::InternalServerError { .. }),
             ) => failure(IssueCreateFailure::CreateOutcomeUnknown {
                 reason: error.to_string(),
             }),
@@ -343,6 +345,38 @@ mod tests {
             creation_id,
             IssueCreateFailure::Create {
                 reason: r#"unprocessable entity: POST /issues.json returned 422 with body: {"errors":["Subject cannot be blank"]}"#
+                    .to_string(),
+            },
+        );
+    }
+
+    #[tokio::test]
+    async fn gateway_timeout_on_creation_is_reported_with_an_unknown_outcome() {
+        let clients = clients(
+            CreateStubClient {
+                create_result: Err(RedmineClientError::InternalServerError {
+                    context: crate::clients::redmine::RedmineHttpError {
+                        method: "POST".to_string(),
+                        url: "/issues.json".to_string(),
+                        status_code: 504,
+                        response_body: "Gateway Timeout".to_string(),
+                    },
+                }),
+                ..CreateStubClient::new()
+            },
+            StubLocalFileClient::new(Ok(vec![])),
+        );
+        let creation_id = IssueCreationId::new();
+
+        let output = create_issue(clients, creation_id, draft())
+            .expect("creation always runs asynchronously")
+            .await;
+
+        assert_failure(
+            &output,
+            creation_id,
+            IssueCreateFailure::CreateOutcomeUnknown {
+                reason: "internal server error: POST /issues.json returned 504 with body: Gateway Timeout"
                     .to_string(),
             },
         );

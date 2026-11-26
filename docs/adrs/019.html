@@ -96,7 +96,7 @@
     CreateOutcomeUnknown { reason: String },
 }
 </code></pre>
-<p>失敗した段階を種類で分け、通知の文言は<code>ToastListComponent</code>が組み立てる（<a href="018.html">ADR 18</a>）。作成の要求が応答のステータスで拒否されたときは<code>Create</code>とする。通信やClientのエラーは、Redmineが作成した後に応答を受け取れなかった場合も含むため、<code>CreateOutcomeUnknown</code>とする。このときtoastで、再送すると二重に作成されることがあると知らせる。どちらの場合も、下書きは編集できる状態に戻す。</p>
+<p>失敗した段階を種類で分け、通知の文言は<code>ToastListComponent</code>が組み立てる（<a href="018.html">ADR 18</a>）。作成の要求が4xxで拒否されたときは<code>Create</code>とする。5xx・通信・Clientのエラーは、Redmineが作成した後に応答を受け取れなかった場合も含むため、<code>CreateOutcomeUnknown</code>とする。5xxは前段のproxyが返すこともある。このときtoastで、再送すると二重に作成されることがあると知らせる。どちらの場合も、下書きは編集できる状態に戻す。</p>
 <p><code>AppComponent::handle_usecase_events</code>は、イベントを次のように扱う。</p>
 <div class="table-wrap">
 <table>
