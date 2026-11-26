@@ -4,6 +4,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Widget};
 
+use crate::i18n::tr;
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED};
 
 pub struct SelectBoxPopupWidget<'a> {
@@ -44,7 +45,7 @@ impl Widget for SelectBoxPopupWidget<'_> {
         Clear.render(area, buf);
 
         let block = Block::default().borders(Borders::ALL).title_bottom(
-            Line::from(" j/k 移動 · Enter 決定 · q 戻る ").style(Style::default().fg(MUTED)),
+            Line::from(format!(" {} ", tr!("select-box-hint"))).style(Style::default().fg(MUTED)),
         );
         let inner = block.inner(area);
         block.render(area, buf);
