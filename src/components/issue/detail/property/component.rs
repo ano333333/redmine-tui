@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -6,6 +7,7 @@ use super::widget::PropertyWidget;
 use ratatui::layout::Position;
 
 use crate::entities::{IssueStatus, IssueView};
+use crate::i18n::tr;
 use crate::platform::input::InputEvent;
 use crate::stores::{Dispatcher, Store};
 use crate::vos::IssueId;
@@ -37,22 +39,22 @@ impl PropertyComponent {
                 EventProcessResult::OpenPriorityPopup
                     if !store.is_issue_priority_editable(self.id) =>
                 {
-                    Some("優先度")
+                    Some("property-priority")
                 }
                 EventProcessResult::OpenStartDatePopup
                     if !store.are_issue_dates_editable(self.id) =>
                 {
-                    Some("開始日")
+                    Some("property-start-date")
                 }
                 EventProcessResult::OpenDueDatePopup
                     if !store.are_issue_dates_editable(self.id) =>
                 {
-                    Some("期日")
+                    Some("property-due-date")
                 }
                 EventProcessResult::OpenDoneRatioPopup
                     if !store.is_issue_done_ratio_editable(self.id) =>
                 {
-                    Some("進捗率")
+                    Some("property-done-ratio")
                 }
                 _ => None,
             }
@@ -98,6 +100,10 @@ impl PropertyComponent {
     }
 }
 
+fn unknown<'a>() -> Cow<'a, str> {
+    tr!("value-unknown").into()
+}
+
 fn create_property_widget<'a>(
     issue: IssueView<'a>,
     store: &'a Store,
@@ -106,24 +112,20 @@ fn create_property_widget<'a>(
 ) -> PropertyWidget<'a> {
     let author = store
         .get_user(issue.author_id())
-        .map(|user| user.name.as_str())
-        .unwrap_or("(unknown)");
+        .map_or_else(unknown, |user| user.name.as_str().into());
     let assigned_to = issue
         .assigned_to_id()
         .and_then(|user_id| store.get_user(user_id))
         .map(|user| user.name.as_str());
     let priority = store
         .get_priority(issue.priority_id())
-        .map(|priority| priority.name.as_str())
-        .unwrap_or("(unknown)");
+        .map_or_else(unknown, |priority| priority.name.as_str().into());
     let project = store
         .get_project(issue.project_id())
-        .map(|project| project.name.as_str())
-        .unwrap_or("(unknown)");
+        .map_or_else(unknown, |project| project.name.as_str().into());
     let tracker = store
         .get_tracker(issue.tracker_id())
-        .map(|tracker| tracker.name.as_str())
-        .unwrap_or("(unknown)");
+        .map_or_else(unknown, |tracker| tracker.name.as_str().into());
     let target_version = issue
         .target_version_id()
         .and_then(|target_version_id| store.get_target_version(target_version_id))
@@ -131,18 +133,15 @@ fn create_property_widget<'a>(
     let category = match issue.category_id() {
         Some(category_id) => store
             .get_category(category_id)
-            .map(|category| category.name.as_str())
-            .unwrap_or("(unknown)"),
-        None => "-",
+            .map_or_else(unknown, |category| category.name.as_str().into()),
+        None => "-".into(),
     };
     PropertyWidget::new(
         issue.id(),
         author,
         issue.created_on(),
         issue.updated_on(),
-        issue_status
-            .map(|issue_status| issue_status.name.as_str())
-            .unwrap_or("(unknown)"),
+        issue_status.map_or_else(unknown, |issue_status| issue_status.name.as_str().into()),
         tracker,
         priority,
         project,
@@ -515,10 +514,10 @@ mod tests {
     #[test]
     fn process_event_e_on_derived_property_of_issue_with_children_returns_not_editable() {
         for (line, expected) in [
-            (PRIORITY_LINE, "優先度"),
-            (START_DATE_LINE, "開始日"),
-            (DUE_DATE_LINE, "期日"),
-            (DONE_RATIO_LINE, "進捗率"),
+            (PRIORITY_LINE, "property-priority"),
+            (START_DATE_LINE, "property-start-date"),
+            (DUE_DATE_LINE, "property-due-date"),
+            (DONE_RATIO_LINE, "property-done-ratio"),
         ] {
             let dispatcher = dispatcher_with_parent_issue();
 

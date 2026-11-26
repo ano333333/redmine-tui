@@ -44,7 +44,7 @@ fn open_issue_priority_conflict() -> PtySession {
     press_j(&mut session, J_PRESSES_TO_PRIORITY);
     press_keys(&mut session, &["e", "j", "Enter"]);
     wait_until(&mut session, "changing the priority to minor", |frame| {
-        property_value(frame, "優先度") == "minor"
+        property_value(frame, "Priority") == "minor"
     });
     // And 別の更新でサーバー側の優先度がcriticalになっている
     assert_eq!(
@@ -105,7 +105,7 @@ fn cancelling_an_issue_conflict_keeps_the_local_edit() {
 
     // Then popupが閉じ、ローカルの優先度はminorのまま残る
     wait_until(&mut session, "closing the conflict popup", |frame| {
-        !frame.contains(ISSUE_CONFLICT_HEADER) && property_value(frame, "優先度") == "minor"
+        !frame.contains(ISSUE_CONFLICT_HEADER) && property_value(frame, "Priority") == "minor"
     });
     // And Redmineの優先度はcritical（ID 3）のまま
     assert_eq!(server_priority_id(), 3);
@@ -121,7 +121,7 @@ fn q_cancels_an_issue_conflict() {
 
     // Then popupが閉じ、ローカルの優先度はminorのまま残る
     wait_until(&mut session, "closing the conflict popup", |frame| {
-        !frame.contains(ISSUE_CONFLICT_HEADER) && property_value(frame, "優先度") == "minor"
+        !frame.contains(ISSUE_CONFLICT_HEADER) && property_value(frame, "Priority") == "minor"
     });
     // And Redmineの優先度はcritical（ID 3）のまま
     assert_eq!(server_priority_id(), 3);

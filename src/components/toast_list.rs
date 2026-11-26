@@ -134,11 +134,12 @@ impl ToastListComponent {
         self.push(tr!("toast-new-issue-subject-required"));
     }
 
+    /// `property`は属性名のメッセージID。
     pub fn push_computed_property_not_editable(&mut self, issue_id: IssueId, property: &str) {
         self.push(tr!(
             "toast-computed-property-not-editable",
             issue_id = issue_id.to_string(),
-            property = property,
+            property = tr!(property),
         ));
     }
 
@@ -434,7 +435,7 @@ mod tests {
     #[test]
     fn snapshot_computed_property_not_editable() {
         let mut toast_list = ToastListComponent::default();
-        toast_list.push_computed_property_not_editable(IssueId::new(3), "Priority");
+        toast_list.push_computed_property_not_editable(IssueId::new(3), "property-priority");
 
         render_toast_snapshot("toast_list_computed_property_not_editable", &toast_list);
     }

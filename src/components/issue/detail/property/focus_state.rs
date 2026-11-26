@@ -41,7 +41,7 @@ pub enum EventProcessResult {
     OpenEstimatedHoursPopup,
     OpenSpentTimeInputPopup,
     OpenCategoryPopup,
-    /// 子Issueから計算される属性のpopupを開こうとした。`property`は属性の表示名である。
+    /// 子Issueから計算される属性のpopupを開こうとした。`property`は属性の表示名のメッセージIDである。
     ComputedPropertyNotEditable {
         property: &'static str,
     },
