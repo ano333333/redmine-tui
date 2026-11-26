@@ -9,6 +9,7 @@ use ratatui::widgets::{Paragraph, Widget};
 use crate::components::issue::detail::markdown_view::{
     MarkdownImagePlacement, MarkdownImages, MarkdownView,
 };
+use crate::i18n::{Segment, segments, tr};
 use crate::stores::{LocalJournalState, RemoteJournalState};
 use crate::vos::JournalDetailAttachmentChange;
 
@@ -23,7 +24,7 @@ const GUTTER_TRAILING_LINES: u16 = 1;
 /// JournalDetailをStoreで解決した、表示用の値。WidgetはStoreを知らない。
 pub enum ResolvedJournalDetail {
     Attr {
-        field_label: &'static str,
+        field_label: String,
         old_display: String,
         new_display: String,
     },
@@ -236,33 +237,51 @@ fn create_property_paragraph(
                 field_label,
                 old_display,
                 new_display,
-            } => vec![
-                Span::from("  ・ "),
-                Span::from(*field_label).bold(),
-                Span::from(" を "),
-                Span::from(old_display.clone()).italic(),
-                Span::from(" から "),
-                Span::from(new_display.clone()).italic(),
-                Span::from(" に変更"),
-            ],
+            } => detail_spans(
+                "journal-detail-attr-changed",
+                &[
+                    ("property", Span::from(field_label.clone()).bold()),
+                    ("old", Span::from(old_display.clone()).italic()),
+                    ("new", Span::from(new_display.clone()).italic()),
+                ],
+            ),
             ResolvedJournalDetail::Attachment(change) => {
-                let (filename, action) = match change {
-                    JournalDetailAttachmentChange::Added { filename } => (filename, " を追加"),
-                    JournalDetailAttachmentChange::Deleted { filename } => (filename, " を削除"),
+                let (id, filename) = match change {
+                    JournalDetailAttachmentChange::Added { filename } => {
+                        ("journal-detail-attachment-added", filename)
+                    }
+                    JournalDetailAttachmentChange::Deleted { filename } => {
+                        ("journal-detail-attachment-deleted", filename)
+                    }
                 };
-                vec![
-                    Span::from("  ・ "),
-                    Span::from("ファイル").bold(),
-                    Span::from(" "),
-                    Span::from(filename.clone()).italic(),
-                    Span::from(action),
-                ]
+                detail_spans(
+                    id,
+                    &[
+                        ("file", Span::from(tr!("journal-detail-file")).bold()),
+                        ("filename", Span::from(filename.clone()).italic()),
+                    ],
+                )
             }
         };
         lines.push(Line::from(spans).gray());
     }
     lines.push(Line::from(""));
     Paragraph::new(Text::from(lines))
+}
+
+/// 変更内容の1行。`args`の各変数を、文言の中の位置にそのスタイルで埋め込む。
+fn detail_spans(id: &str, args: &[(&str, Span<'static>)]) -> Vec<Span<'static>> {
+    let names: Vec<&str> = args.iter().map(|(name, _)| *name).collect();
+    let mut spans = vec![Span::from("  ・ ")];
+    spans.extend(
+        segments(id, &names)
+            .into_iter()
+            .map(|segment| match segment {
+                Segment::Text(text) => Span::from(text),
+                Segment::Arg(index) => args[index].1.clone(),
+            }),
+    );
+    spans
 }
 
 fn create_remote_header(view: &RemoteJournalItemView<'_>) -> Line<'static> {
@@ -340,15 +359,15 @@ mod tests {
 
     fn assigned_to_detail(old: Option<&str>, new: Option<&str>) -> ResolvedJournalDetail {
         ResolvedJournalDetail::Attr {
-            field_label: "担当者",
-            old_display: old.map(str::to_string).unwrap_or("(なし)".to_string()),
-            new_display: new.map(str::to_string).unwrap_or("(なし)".to_string()),
+            field_label: "Assignee".to_string(),
+            old_display: old.map(str::to_string).unwrap_or("(none)".to_string()),
+            new_display: new.map(str::to_string).unwrap_or("(none)".to_string()),
         }
     }
 
     fn status_detail(old: &str, new: &str) -> ResolvedJournalDetail {
         ResolvedJournalDetail::Attr {
-            field_label: "ステータス",
+            field_label: "Status".to_string(),
             old_display: old.to_string(),
             new_display: new.to_string(),
         }

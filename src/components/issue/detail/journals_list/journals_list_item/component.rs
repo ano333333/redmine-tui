@@ -1,5 +1,6 @@
 use ratatui::layout::Position;
 
+use crate::i18n::tr;
 use crate::platform::input::InputEvent;
 use crate::stores::{RemoteJournalState, RemoteJournalView, Store};
 use crate::vos::{EntityIdValue, IssueId, JournalDetail, JournalDetailAttr, JournalId};
@@ -12,8 +13,13 @@ use super::widget::{ResolvedJournalDetail, display_notes, state_marker};
 use super::{JournalItemWidget, JournalItemWidgetState};
 use crate::components::issue::detail::markdown_view::MarkdownImages;
 
-const NONE_DISPLAY: &str = "(なし)";
-const UNKNOWN_DISPLAY: &str = "(不明)";
+fn none_display() -> String {
+    tr!("value-none")
+}
+
+fn unknown_display() -> String {
+    tr!("value-unknown")
+}
 
 fn resolve_journal_details(details: &[JournalDetail], store: &Store) -> Vec<ResolvedJournalDetail> {
     details
@@ -30,55 +36,59 @@ fn resolve_journal_details(details: &[JournalDetail], store: &Store) -> Vec<Reso
 fn resolve_attr(attr: &JournalDetailAttr, store: &Store) -> ResolvedJournalDetail {
     let (field_label, old_display, new_display) = match attr {
         JournalDetailAttr::StatusId { old, new } => (
-            "ステータス",
+            "property-status",
             store
                 .get_issue_status(*old)
-                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+                .map_or(unknown_display(), |v| v.name.clone()),
             store
                 .get_issue_status(*new)
-                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+                .map_or(unknown_display(), |v| v.name.clone()),
         ),
         JournalDetailAttr::TrackerId { old, new } => (
-            "トラッカー",
+            "property-tracker",
             store
                 .get_tracker(*old)
-                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+                .map_or(unknown_display(), |v| v.name.clone()),
             store
                 .get_tracker(*new)
-                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+                .map_or(unknown_display(), |v| v.name.clone()),
         ),
         JournalDetailAttr::ProjectId { old, new } => (
-            "プロジェクト",
+            "property-project",
             store
                 .get_project(*old)
-                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+                .map_or(unknown_display(), |v| v.name.clone()),
             store
                 .get_project(*new)
-                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+                .map_or(unknown_display(), |v| v.name.clone()),
         ),
-        JournalDetailAttr::Subject { old, new } => ("件名", old.clone(), new.clone()),
-        JournalDetailAttr::Description { .. } => ("説明", "(変更あり)".into(), "(変更あり)".into()),
+        JournalDetailAttr::Subject { old, new } => ("property-subject", old.clone(), new.clone()),
+        JournalDetailAttr::Description { .. } => (
+            "property-description",
+            tr!("value-changed"),
+            tr!("value-changed"),
+        ),
         JournalDetailAttr::CategoryId { old, new } => (
-            "カテゴリ",
+            "property-category",
             resolve_optional(*old, |id| store.get_category(id).map(|v| v.name.clone())),
             resolve_optional(*new, |id| store.get_category(id).map(|v| v.name.clone())),
         ),
         JournalDetailAttr::AssignedToId { old, new } => (
-            "担当者",
+            "property-assignee",
             resolve_optional(*old, |id| store.get_user(id).map(|v| v.name.clone())),
             resolve_optional(*new, |id| store.get_user(id).map(|v| v.name.clone())),
         ),
         JournalDetailAttr::PriorityId { old, new } => (
-            "優先度",
+            "property-priority",
             store
                 .get_priority(*old)
-                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+                .map_or(unknown_display(), |v| v.name.clone()),
             store
                 .get_priority(*new)
-                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+                .map_or(unknown_display(), |v| v.name.clone()),
         ),
         JournalDetailAttr::FixedVersionId { old, new } => (
-            "対象バージョン",
+            "property-target-version",
             resolve_optional(*old, |id| {
                 store.get_target_version(id).map(|v| v.name.clone())
             }),
@@ -87,42 +97,46 @@ fn resolve_attr(attr: &JournalDetailAttr, store: &Store) -> ResolvedJournalDetai
             }),
         ),
         JournalDetailAttr::AuthorId { old, new } => (
-            "作成者",
+            "property-author",
             store
                 .get_user(*old)
-                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+                .map_or(unknown_display(), |v| v.name.clone()),
             store
                 .get_user(*new)
-                .map_or(UNKNOWN_DISPLAY.into(), |v| v.name.clone()),
+                .map_or(unknown_display(), |v| v.name.clone()),
         ),
         JournalDetailAttr::StartDate { old, new } => {
-            ("開始日", format_date(*old), format_date(*new))
+            ("property-start-date", format_date(*old), format_date(*new))
         }
-        JournalDetailAttr::DueDate { old, new } => ("期日", format_date(*old), format_date(*new)),
-        JournalDetailAttr::DoneRatio { old, new } => {
-            ("進捗率", format!("{}%", old), format!("{}%", new))
+        JournalDetailAttr::DueDate { old, new } => {
+            ("property-due-date", format_date(*old), format_date(*new))
         }
+        JournalDetailAttr::DoneRatio { old, new } => (
+            "property-done-ratio",
+            format!("{}%", old),
+            format!("{}%", new),
+        ),
         JournalDetailAttr::EstimatedHours { old, new } => (
-            "予定工数",
-            old.map_or(NONE_DISPLAY.into(), |v| format!("{}h", v)),
-            new.map_or(NONE_DISPLAY.into(), |v| format!("{}h", v)),
+            "property-estimated-hours",
+            old.map_or(none_display(), |v| format!("{}h", v)),
+            new.map_or(none_display(), |v| format!("{}h", v)),
         ),
         JournalDetailAttr::ParentId { old, new } => (
-            "親チケット",
+            "property-parent-issue",
             resolve_optional(*old, |id| Some(resolve_issue_label(id, store))),
             resolve_optional(*new, |id| Some(resolve_issue_label(id, store))),
         ),
         JournalDetailAttr::ChildId { old, new } => (
-            "子チケット",
+            "property-child-issues",
             resolve_optional(*old, |id| Some(resolve_issue_label(id, store))),
             resolve_optional(*new, |id| Some(resolve_issue_label(id, store))),
         ),
         JournalDetailAttr::IsPrivate { old, new } => {
-            ("非公開", format_bool(*old), format_bool(*new))
+            ("property-private", format_bool(*old), format_bool(*new))
         }
     };
     ResolvedJournalDetail::Attr {
-        field_label,
+        field_label: tr!(field_label),
         old_display,
         new_display,
     }
@@ -132,7 +146,7 @@ fn resolve_optional<Id: EntityIdValue>(
     id: Option<Id>,
     lookup: impl FnOnce(Id) -> Option<String>,
 ) -> String {
-    id.and_then(lookup).unwrap_or(NONE_DISPLAY.into())
+    id.and_then(lookup).unwrap_or_else(none_display)
 }
 
 fn resolve_issue_label(id: crate::vos::IssueId, store: &Store) -> String {
@@ -144,11 +158,11 @@ fn resolve_issue_label(id: crate::vos::IssueId, store: &Store) -> String {
 }
 
 fn format_date(date: Option<chrono::DateTime<chrono::Local>>) -> String {
-    date.map_or(NONE_DISPLAY.into(), |d| d.format("%Y/%m/%d").to_string())
+    date.map_or_else(none_display, |d| d.format("%Y/%m/%d").to_string())
 }
 
 fn format_bool(b: bool) -> String {
-    if b { "はい" } else { "いいえ" }.to_string()
+    tr!(if b { "value-yes" } else { "value-no" })
 }
 
 pub enum EventProcessResult {
@@ -610,7 +624,7 @@ mod tests {
         else {
             panic!("status details were not resolved as attributes");
         };
-        assert_eq!(*first_label, "ステータス");
+        assert_eq!(*first_label, "Status");
         assert_eq!(
             *first_old,
             store
@@ -619,10 +633,10 @@ mod tests {
                 .name
                 .clone()
         );
-        assert_eq!(first_new, UNKNOWN_DISPLAY);
+        assert_eq!(first_new, "(unknown)");
 
-        assert_eq!(*second_label, "ステータス");
-        assert_eq!(second_old, UNKNOWN_DISPLAY);
+        assert_eq!(*second_label, "Status");
+        assert_eq!(second_old, "(unknown)");
         assert_eq!(
             *second_new,
             store
