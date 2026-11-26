@@ -14,7 +14,7 @@ const J_PRESSES_TO_FIRST_JOURNAL_NOTES: usize = 52;
 
 const ISSUE_3_WITH_JOURNALS: &str = "/issues/3.json?include=journals";
 /// Issue競合popupの表の見出し。popupは値を名前ではなくIDで表示するため、見出しで判定する。
-const ISSUE_CONFLICT_HEADER: &str = "サーバーの値";
+const ISSUE_CONFLICT_HEADER: &str = "After edit";
 
 fn press_j(session: &mut PtySession, presses: usize) {
     for _ in 0..presses {
@@ -61,12 +61,10 @@ fn open_issue_priority_conflict() -> PtySession {
 
     // Then Issue競合popupに、優先度の編集前・編集後・サーバーの値が並ぶ
     let frame = wait_for_text(&mut session, ISSUE_CONFLICT_HEADER);
-    assert!(
-        frame.contains("編集内容とサーバー内容が競合しています。採用する方を選択してください。")
-    );
+    assert!(frame.contains("Your edits conflict with the server. Choose which to keep."));
     // FIXME: popupがIDで表示している。名前で表示するようになったら major / minor / critical に変える。
-    assert_eq!(table_row(&frame, "優先度"), vec!["優先度", "1", "2", "3"]);
-    assert!(frame.contains("キャンセル") && frame.contains("続行"));
+    assert_eq!(table_row(&frame, "Priority"), vec!["Priority", "1", "2", "3"]);
+    assert!(frame.contains("Cancel") && frame.contains("Continue"));
     session
 }
 
