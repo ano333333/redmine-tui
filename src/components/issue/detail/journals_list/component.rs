@@ -11,8 +11,9 @@ use super::journals_list_item::FocusEvent as ChildFocusEvent;
 use super::journals_list_item::JournalsListItemComponent;
 use super::local_journal_item::EventProcessResult as LocalEventProcessResult;
 use super::local_journal_item::LocalJournalItemComponent;
-use super::widget::JournalsListWidget;
+use super::widget::{JournalsListWidget, TRAILING_LINES};
 use crate::components::issue::detail::markdown_view::MarkdownImages;
+use crate::widgets::gutter::GUTTER_WIDTH;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// RemoteとLocalを同じ一覧でfocusするための、component内だけで使うidentity。
@@ -372,13 +373,16 @@ impl JournalsListComponent {
                 .local_item
                 .as_ref()
                 .map_or(0, |item| item.line_count(width))
-            + 3
+            + TRAILING_LINES
     }
 
     pub fn get_cursor_position(&self, width: u16) -> Position {
         let Some(focused_item) = self.focused_item else {
             if self.create_button_focused {
-                return Position::new(1, self.line_count(width).saturating_sub(1));
+                return Position::new(
+                    GUTTER_WIDTH,
+                    self.line_count(width).saturating_sub(TRAILING_LINES),
+                );
             }
             return Position::new(0, 0);
         };
@@ -774,7 +778,7 @@ mod tests {
         assert!(component.create_button_focused);
         assert_eq!(
             component.get_cursor_position(WIDE_WIDTH),
-            Position::new(1, 2)
+            Position::new(2, 0)
         );
 
         component.focus_event(FocusEvent::Unfocused);
@@ -782,7 +786,7 @@ mod tests {
         assert!(component.create_button_focused);
         assert_eq!(
             component.get_cursor_position(WIDE_WIDTH),
-            Position::new(1, 2)
+            Position::new(2, 0)
         );
     }
 
