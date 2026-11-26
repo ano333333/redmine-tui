@@ -63,7 +63,10 @@ fn open_issue_priority_conflict() -> PtySession {
     let frame = wait_for_text(&mut session, ISSUE_CONFLICT_HEADER);
     assert!(frame.contains("Your edits conflict with the server. Choose which to keep."));
     // FIXME: popupがIDで表示している。名前で表示するようになったら major / minor / critical に変える。
-    assert_eq!(table_row(&frame, "Priority"), vec!["Priority", "1", "2", "3"]);
+    assert_eq!(
+        table_row(&frame, "Priority"),
+        vec!["Priority", "1", "2", "3"]
+    );
     assert!(frame.contains("Cancel") && frame.contains("Continue"));
     session
 }
@@ -150,7 +153,7 @@ fn open_journal_conflict(editor: &FakeEditor) -> PtySession {
 
     // Then Journal競合popupに、ローカルとサーバーのnotesが左右に並ぶ
     let frame = wait_for_text(&mut session, "server notes");
-    assert!(frame.contains("Journal本文が競合しています。採用する方を選択してください。"));
+    assert!(frame.contains("The journal notes conflict with the server. Choose which to keep."));
     assert!(frame.contains("LOCAL") && frame.contains("REMOTE"));
     let notes_line = frame
         .lines()
@@ -160,7 +163,7 @@ fn open_journal_conflict(editor: &FakeEditor) -> PtySession {
         .find("local notes")
         .expect("local notes should be on the same line as server notes");
     assert!(local_at < notes_line.find("server notes").unwrap());
-    assert!(frame.contains("続行") && frame.contains("キャンセル"));
+    assert!(frame.contains("Continue") && frame.contains("Cancel"));
     session
 }
 

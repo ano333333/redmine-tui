@@ -4,10 +4,13 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap};
 
+use crate::i18n::tr;
 use crate::widgets::VerticalScrollWidget;
 use crate::widgets::theme::{ACCENT, FOCUS_BG};
 
-const MESSAGE: &str = "Journal本文が競合しています。採用する方を選択してください。";
+fn message() -> String {
+    tr!("journal-conflict-message")
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RemoteJournalConflictChoice {
@@ -99,7 +102,7 @@ impl RemoteJournalConflictWidget {
         let [local, server] = choice_areas(Rect::new(0, 0, width, 1));
         let choices = markdown_line_count(&self.local, local.width)
             .max(markdown_line_count(&self.server, server.width));
-        Paragraph::new(MESSAGE)
+        Paragraph::new(message())
             .line_count(width)
             .saturating_add(1)
             .saturating_add(1)
@@ -119,7 +122,7 @@ impl RemoteJournalConflictWidget {
                 RemoteJournalConflictChoice::Local => local.x,
                 RemoteJournalConflictChoice::Server => server.x,
             },
-            y: Paragraph::new(MESSAGE)
+            y: Paragraph::new(message())
                 .line_count(width)
                 .saturating_add(1)
                 .saturating_add(1) as u16,
@@ -143,7 +146,7 @@ impl Widget for RemoteJournalConflictWidget {
         if area.width == 0 || area.height == 0 {
             return;
         }
-        let message_lines = Paragraph::new(MESSAGE).line_count(area.width) as u16;
+        let message_lines = Paragraph::new(message()).line_count(area.width) as u16;
         let [local, server] = choice_areas(Rect::new(0, 0, area.width, 1));
         let choice_lines = markdown_line_count(&self.local, local.width)
             .max(markdown_line_count(&self.server, server.width)) as u16;
@@ -159,13 +162,18 @@ impl Widget for RemoteJournalConflictWidget {
             ])
             .split(area);
 
-        Paragraph::new(MESSAGE)
+        Paragraph::new(message())
             .wrap(Wrap { trim: false })
             .render(rows[0], buf);
         let [local_label, server_label] = choice_areas(rows[2]);
-        render_label("LOCAL · あなたの変更", local_label, buf, Color::LightGreen);
         render_label(
-            "REMOTE · サーバーの変更",
+            tr!("journal-conflict-local"),
+            local_label,
+            buf,
+            Color::LightGreen,
+        );
+        render_label(
+            tr!("journal-conflict-remote"),
             server_label,
             buf,
             Color::LightBlue,
@@ -201,7 +209,7 @@ fn choice_areas(area: Rect) -> [Rect; 2] {
     [cols[0], cols[2]]
 }
 
-fn render_label(text: &'static str, area: Rect, buf: &mut Buffer, color: Color) {
+fn render_label(text: String, area: Rect, buf: &mut Buffer, color: Color) {
     Paragraph::new(Line::styled(
         text,
         Style::default()
@@ -248,26 +256,26 @@ fn render_buttons(
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Fill(1),
-            Constraint::Length(10),
+            Constraint::Length(12),
             Constraint::Length(1),
             Constraint::Length(14),
         ])
         .split(area);
     render_button(
-        "続行",
+        tr!("button-continue"),
         cols[1],
         buf,
         focused_button == Some(RemoteJournalConflictButton::Continue),
     );
     render_button(
-        "キャンセル",
+        tr!("button-cancel"),
         cols[3],
         buf,
         focused_button == Some(RemoteJournalConflictButton::Cancel),
     );
 }
 
-fn render_button(text: &'static str, area: Rect, buf: &mut Buffer, focused: bool) {
+fn render_button(text: String, area: Rect, buf: &mut Buffer, focused: bool) {
     let style = if focused {
         Style::default().fg(ACCENT)
     } else {
@@ -296,7 +304,7 @@ fn button_x(button: RemoteJournalConflictButton, width: u16) -> u16 {
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Fill(1),
-            Constraint::Length(10),
+            Constraint::Length(12),
             Constraint::Length(1),
             Constraint::Length(14),
         ])
