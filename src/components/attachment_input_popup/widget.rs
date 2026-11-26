@@ -6,6 +6,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 use ratatui_textarea::TextArea;
 
 use super::component::Field;
+use crate::i18n::tr;
 use crate::widgets::theme::{ACCENT, MUTED, TIMELINE_FG};
 
 const POPUP_WIDTH: u16 = 56;
@@ -58,7 +59,7 @@ impl Widget for AttachmentInputPopupWidget<'_> {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" ファイルを添付 ")
+            .title(format!(" {} ", tr!("attachment-input-title")))
             .title_style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
             .border_style(Style::default().fg(TIMELINE_FG));
         let inner = block.inner(area);
@@ -76,28 +77,28 @@ impl Widget for AttachmentInputPopupWidget<'_> {
 
         render_field(
             self.filename,
-            "ファイル名",
+            &tr!("attachment-input-filename"),
             self.focused == Field::Filename,
             rows[0],
             buf,
         );
         render_field(
             self.path,
-            "ファイルパス",
+            &tr!("attachment-input-path"),
             self.focused == Field::Path,
             rows[1],
             buf,
         );
 
         Paragraph::new(Line::styled(
-            "Enter: 確定 / Tab: 入力欄の切替 / Esc: 取消",
+            tr!("attachment-input-hint"),
             Style::default().fg(MUTED),
         ))
         .render(rows[2], buf);
 
         if self.is_incomplete {
             Paragraph::new(Line::styled(
-                "ファイル名とファイルパスを入力してください",
+                tr!("attachment-input-required"),
                 Style::default().fg(Color::Red),
             ))
             .render(rows[3], buf);

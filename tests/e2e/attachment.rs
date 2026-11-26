@@ -29,7 +29,7 @@ fn adding_a_local_file_attaches_it_to_the_issue() {
 
     // When Enterで開いたpopupに、送る名前と読み込むパスを入力して確定する
     session.press_key("Enter").expect("failed to press Enter");
-    wait_for_text(&mut session, "ファイルを添付");
+    wait_for_text(&mut session, "Attach file");
     session
         .write_bytes(b"e2e-note.txt")
         .expect("failed to type the filename");
@@ -75,7 +75,7 @@ fn adding_a_file_over_the_upload_limit_is_rejected_before_sending() {
 
     // When popupにファイル名とパスを入力して確定する
     session.press_key("Enter").expect("failed to press Enter");
-    wait_for_text(&mut session, "ファイルを添付");
+    wait_for_text(&mut session, "Attach file");
     session
         .write_bytes(b"large.bin")
         .expect("failed to type the filename");
