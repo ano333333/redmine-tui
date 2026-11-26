@@ -2,18 +2,18 @@ use ratatui::buffer::Buffer;
 use std::cmp::min;
 
 use ratatui::layout::{Position, Rect};
-use ratatui::style::{Color, Style};
+use ratatui::style::Stylize;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Widget};
+use ratatui::widgets::{Paragraph, Widget};
 
-use crate::widgets::gutter::GUTTER_WIDTH;
-use crate::widgets::theme::{ACCENT, MUTED};
+use crate::widgets::gutter::{Gutter, indented_area};
+use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED};
 
 use super::journals_list_item::JournalItemWidget;
 use crate::components::issue::detail::markdown_view::MarkdownImagePlacement;
 
-const CREATE_BUTTON_WIDTH: u16 = 12;
-const CREATE_BUTTON_HEIGHT: u16 = 3;
+/// Journalの後に置く追加行と、縦線を引かない末尾の余白行。
+pub const TRAILING_LINES: u16 = 2;
 
 pub struct JournalsListWidget<'a> {
     widgets: Vec<JournalItemWidget<'a>>,
@@ -39,7 +39,7 @@ impl<'a> JournalsListWidget<'a> {
             .iter()
             .map(|widget| widget.line_count(width))
             .sum::<u16>()
-            + 3
+            + TRAILING_LINES
     }
 
     /// Widgetの左上から見たnotesの画像の位置。画像の行は空けて描くため、呼び出し側が画面へ直接描く。
@@ -79,30 +79,22 @@ impl Widget for JournalsListWidget<'_> {
         }
 
         if y < end_y {
-            let button_x = area.x.saturating_add(GUTTER_WIDTH.min(area.width));
-            let button_area = Rect::new(
-                button_x,
-                y,
-                area.width
-                    .saturating_sub(GUTTER_WIDTH)
-                    .min(CREATE_BUTTON_WIDTH),
-                (end_y - y).min(CREATE_BUTTON_HEIGHT),
-            );
-            let color = if !self.create_button_enabled {
-                MUTED
-            } else if self.create_button_focused {
+            let row_area = Rect::new(area.x, y, area.width, 1);
+            Gutter::line().render(row_area, buf);
+            let color = if self.create_button_enabled {
                 ACCENT
             } else {
-                Color::White
+                MUTED
             };
-            let button_style = Style::default().fg(color);
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(button_style);
-            Paragraph::new(Line::styled(" 新規作成 ", button_style))
-                .block(block)
-                .render(button_area, buf);
+            Paragraph::new(Line::from("＋ コメントを追加").fg(color))
+                .render(indented_area(row_area), buf);
+            if self.create_button_focused {
+                for x in 0..row_area.width {
+                    if let Some(cell) = buf.cell_mut((row_area.x + x, row_area.y)) {
+                        cell.set_bg(FOCUS_BG);
+                    }
+                }
+            }
         }
     }
 }
@@ -237,7 +229,7 @@ mod tests {
             false,
         )];
         let widget = JournalsListWidget::new(journals, false, true);
-        assert_eq!(widget.line_count(24), 12);
+        assert_eq!(widget.line_count(24), 11);
     }
 
     #[test]
