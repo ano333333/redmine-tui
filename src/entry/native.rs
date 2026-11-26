@@ -7,6 +7,7 @@ use crate::{
         local_file::native::{NativeLocalFileClient, NativeTempDir},
         redmine::DefaultRedmineClient,
     },
+    i18n::set_language,
     platform::app_config::app_config_from_env,
     platform::editor::native::NativeTextEditor,
     platform::host::native::{NativePlatformHost, install_panic_hook},
@@ -50,6 +51,7 @@ pub(crate) fn run() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    set_language(app_config.language);
     let temp_dir = match NativeTempDir::create() {
         Ok(temp_dir) => temp_dir,
         Err(error) => {
