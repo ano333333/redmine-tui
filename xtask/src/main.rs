@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 mod build_pages;
+mod check_locales;
 mod coverage;
 mod mutants_report;
 mod redmine_container;
@@ -32,6 +33,7 @@ fn run() -> Result<(), String> {
         "test-redmine-client" => test_redmine_client(args.collect()),
         "test-e2e" => test_e2e(args.collect()),
         "build-pages" => build_pages::build_pages(args.collect()),
+        "check-locales" => check_locales::check_locales(args.collect()),
         "coverage" => coverage::coverage(args.collect()),
         "mutants-report" => mutants_report::mutants_report(args.collect()),
         "--help" | "-h" => {
@@ -104,6 +106,7 @@ pub(crate) fn usage() -> String {
         "  cargo xtask test-redmine-client",
         "  cargo xtask test-e2e",
         "  cargo xtask build-pages --public-url URL",
+        "  cargo xtask check-locales",
         "  cargo xtask coverage [cargo llvm-cov report options (default: --html)]",
         "  cargo xtask mutants-report MUTANTS_OUT_DIR [--previous MUTANTS_OUT_DIR]",
     ]

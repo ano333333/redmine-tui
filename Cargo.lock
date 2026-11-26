@@ -4964,6 +4964,7 @@ dependencies = [
 name = "xtask"
 version = "0.1.0"
 dependencies = [
+ "fluent-syntax",
  "sha2 0.11.1",
  "yaml-rust",
 ]
