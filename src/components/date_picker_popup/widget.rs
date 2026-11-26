@@ -6,6 +6,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 use ratatui_textarea::TextArea;
 
+use crate::i18n::tr;
 use crate::widgets::monthly_calendar_widget::MonthlyCalendarWidget;
 
 const POPUP_WIDTH: u16 = 31;
@@ -87,7 +88,9 @@ impl Widget for DatePickerPopupWidget<'_> {
 
         Clear.render(area, buf);
 
-        let block = Block::default().borders(Borders::ALL).title("日付選択");
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(tr!("date-picker-title"));
         let inner = block.inner(area);
         block.render(area, buf);
 
@@ -118,21 +121,21 @@ impl Widget for DatePickerPopupWidget<'_> {
             self.year_textarea,
             input_cols[0],
             buf,
-            "年",
+            tr!("date-picker-year"),
             self.year_textarea_focused,
         );
         render_textarea(
             self.month_textarea,
             input_cols[1],
             buf,
-            "月",
+            tr!("date-picker-month"),
             self.month_textarea_focused,
         );
         render_textarea(
             self.day_textarea,
             input_cols[2],
             buf,
-            "日",
+            tr!("date-picker-day"),
             self.day_textarea_focused,
         );
 
@@ -154,7 +157,7 @@ fn render_textarea(
     textarea: &TextArea<'_>,
     area: Rect,
     buf: &mut Buffer,
-    title: &'static str,
+    title: String,
     focused: bool,
 ) {
     if area.width == 0 || area.height == 0 {
@@ -200,12 +203,17 @@ fn render_buttons(
         .split(area);
     // カレンダー表示中もキャンセルボタンの位置は変えない
     if calendar_button_visible {
-        render_button("カレンダー", cols[0], buf, calendar_button_focused);
+        render_button(
+            tr!("date-picker-calendar"),
+            cols[0],
+            buf,
+            calendar_button_focused,
+        );
     }
-    render_button("キャンセル", cols[1], buf, cancel_button_focused);
+    render_button(tr!("button-cancel"), cols[1], buf, cancel_button_focused);
 }
 
-fn render_button(label: &'static str, area: Rect, buf: &mut Buffer, focused: bool) {
+fn render_button(label: String, area: Rect, buf: &mut Buffer, focused: bool) {
     Paragraph::new(Line::from(label))
         .block(
             Block::default()
