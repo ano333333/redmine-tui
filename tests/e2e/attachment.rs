@@ -87,7 +87,7 @@ fn adding_a_file_over_the_upload_limit_is_rejected_before_sending() {
 
     // Then 読み込めなかったことが通知され、RedmineのIssue 3にはseedの添付ファイルしかない
     // 通知は端末幅の1/3で折り返すため、1行目に収まる部分で待つ。
-    wait_for_text(&mut session, "添付するファイル");
+    wait_for_text(&mut session, "Could not read the");
     let issue = redmine_get_json("/issues/3.json?include=attachments");
     let filenames: Vec<_> = issue["issue"]["attachments"]
         .as_array()

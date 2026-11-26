@@ -2229,7 +2229,7 @@ mod tests {
         assert_no_requests(&mut sink);
         assert_eq!(
             app.toast_list.create_widget().messages,
-            ["題名を入力してから作成してください"]
+            ["Enter a subject before creating the issue"]
         );
     }
 
@@ -2291,7 +2291,7 @@ mod tests {
 
         assert_eq!(
             app.toast_list.create_widget().messages,
-            ["Issueの作成に失敗しました: offline"]
+            ["Failed to create the issue: offline"]
         );
         app.process_event(ctrl_key(KeyCode::Char('s')), dispatcher.clone(), &mut sink);
         assert!(matches!(

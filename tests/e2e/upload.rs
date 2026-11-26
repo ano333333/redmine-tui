@@ -79,7 +79,7 @@ fn issue_upload_failure_shows_a_toast() {
     session.press_key("ctrl+s").expect("failed to press ctrl+s");
 
     // Then 保存前の取得が404で失敗し、Issue 2の保存に失敗したtoastが表示される
-    wait_for_text(&mut session, "Issue #2の保存に失敗しました");
+    wait_for_text(&mut session, "Failed to save issue #2");
 }
 
 // Scenario: 編集したRemote Journalのnotesをctrl+sでuploadすると、Redmineに反映される

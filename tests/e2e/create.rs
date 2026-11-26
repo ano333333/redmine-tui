@@ -93,6 +93,6 @@ fn creating_a_draft_without_subject_tells_that_the_subject_is_required() {
     session.press_key("ctrl+s").expect("failed to press ctrl+s");
 
     // Then 題名が必要なことが通知され、新規作成画面のままである
-    let frame = wait_for_text(&mut session, "題名を入力して");
+    let frame = wait_for_text(&mut session, "Enter a subject");
     assert!(frame.contains(NEW_ISSUE_HINT));
 }

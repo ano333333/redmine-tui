@@ -1,3 +1,4 @@
+use crate::i18n::tr;
 use crate::usecases::{IssueCreateFailure, UsecaseFailure};
 use crate::vos::IssueId;
 use crate::widgets::ToastWidget;
@@ -20,75 +21,124 @@ impl ToastListComponent {
         let message = match failure {
             UsecaseFailure::IssueCreate { cause, .. } => match cause {
                 IssueCreateFailure::AttachmentFileRead { filename, reason } => {
-                    format!("新しいIssueへ添付する{filename}を読み込めませんでした: {reason}")
+                    tr!(
+                        "toast-new-issue-attachment-read-failed",
+                        filename = filename.as_str(),
+                        reason = reason.as_str()
+                    )
                 }
                 IssueCreateFailure::AttachmentFileUpload { filename, reason } => {
-                    format!("新しいIssueへ添付する{filename}の送信に失敗しました: {reason}")
+                    tr!(
+                        "toast-new-issue-attachment-upload-failed",
+                        filename = filename.as_str(),
+                        reason = reason.as_str()
+                    )
                 }
                 IssueCreateFailure::Create { reason } => {
-                    format!("Issueの作成に失敗しました: {reason}")
+                    tr!("toast-issue-create-failed", reason = reason.as_str())
                 }
-                IssueCreateFailure::CreateOutcomeUnknown { reason } => format!(
-                    "Issueを作成できたか確認できませんでした。もう一度作成すると二重に作成されることがあるため、Issue選択で確認してください: {reason}"
-                ),
+                IssueCreateFailure::CreateOutcomeUnknown { reason } => {
+                    tr!("toast-issue-create-unconfirmed", reason = reason.as_str())
+                }
             },
             UsecaseFailure::IssueUpload { id, reason } => {
-                format!("Issue #{id}の保存に失敗しました: {reason}")
+                tr!(
+                    "toast-issue-upload-failed",
+                    id = id.to_string(),
+                    reason = reason.as_str()
+                )
             }
             UsecaseFailure::IssueUploadConfirm { id, reason } => {
-                format!("Issue #{id}を保存しましたが、確認の取得に失敗しました: {reason}")
+                tr!(
+                    "toast-issue-upload-unconfirmed",
+                    id = id.to_string(),
+                    reason = reason.as_str()
+                )
             }
             UsecaseFailure::RemoteJournalUpload { reason, .. } => {
-                format!("Remote Journalの保存に失敗しました: {reason}")
+                tr!(
+                    "toast-remote-journal-upload-failed",
+                    reason = reason.as_str()
+                )
             }
             UsecaseFailure::RemoteJournalUploadConfirm { journal_id, reason } => {
-                format!("Journal #{journal_id}を保存しましたが、確認の取得に失敗しました: {reason}")
+                tr!(
+                    "toast-remote-journal-upload-unconfirmed",
+                    journal_id = journal_id.to_string(),
+                    reason = reason.as_str()
+                )
             }
             UsecaseFailure::LocalJournalUpload { reason, .. } => {
-                format!("Local Journalの保存に失敗しました: {reason}")
+                tr!(
+                    "toast-local-journal-upload-failed",
+                    reason = reason.as_str()
+                )
             }
             UsecaseFailure::LocalJournalUploadConfirm { reason, .. } => {
-                format!("Local Journalを保存しましたが、確認の取得に失敗しました: {reason}")
+                tr!(
+                    "toast-local-journal-upload-unconfirmed",
+                    reason = reason.as_str()
+                )
             }
             UsecaseFailure::DeletedJournalUpload { reason, .. } => {
-                format!("削除されたJournalの投稿に失敗しました: {reason}")
+                tr!(
+                    "toast-deleted-journal-upload-failed",
+                    reason = reason.as_str()
+                )
             }
             UsecaseFailure::DeletedJournalUploadConfirm { reason, .. } => {
-                format!("削除されたJournalを投稿しましたが、確認の取得に失敗しました: {reason}")
+                tr!(
+                    "toast-deleted-journal-upload-unconfirmed",
+                    reason = reason.as_str()
+                )
             }
             UsecaseFailure::AttachmentFileRead { issue_id, reason } => {
-                format!("Issue #{issue_id}へ添付するファイルを読み込めませんでした: {reason}")
+                tr!(
+                    "toast-attachment-read-failed",
+                    issue_id = issue_id.to_string(),
+                    reason = reason.as_str()
+                )
             }
             UsecaseFailure::AttachmentFileUpload { issue_id, reason } => {
-                format!("Issue #{issue_id}へ添付するファイルの送信に失敗しました: {reason}")
+                tr!(
+                    "toast-attachment-upload-failed",
+                    issue_id = issue_id.to_string(),
+                    reason = reason.as_str()
+                )
             }
             UsecaseFailure::AttachmentAttach { issue_id, reason } => {
-                format!("Issue #{issue_id}へのファイルの添付に失敗しました: {reason}")
+                tr!(
+                    "toast-attachment-attach-failed",
+                    issue_id = issue_id.to_string(),
+                    reason = reason.as_str()
+                )
             }
-            UsecaseFailure::AttachmentAttachConfirm { issue_id, reason } => format!(
-                "Issue #{issue_id}にファイルを添付しましたが、確認の取得に失敗しました。もう一度追加すると二重に添付されます: {reason}"
+            UsecaseFailure::AttachmentAttachConfirm { issue_id, reason } => tr!(
+                "toast-attachment-attach-unconfirmed",
+                issue_id = issue_id.to_string(),
+                reason = reason.as_str()
             ),
         };
         self.push(message);
     }
 
     pub fn push_editor_failure(&mut self, error: &dyn std::fmt::Display) {
-        self.push(format!("エディタによる編集に失敗しました: {error}"));
+        self.push(tr!("toast-editor-failed", error = error.to_string()));
     }
 
     pub fn push_image_display_unavailable(&mut self, reason: &str) {
-        self.push(format!(
-            "terminalのピクセル単位の大きさを取得できないため、画像を表示しません: {reason}"
-        ));
+        self.push(tr!("toast-image-display-unavailable", reason = reason));
     }
 
     pub fn push_new_issue_subject_required(&mut self) {
-        self.push("題名を入力してから作成してください".to_string());
+        self.push(tr!("toast-new-issue-subject-required"));
     }
 
     pub fn push_computed_property_not_editable(&mut self, issue_id: IssueId, property: &str) {
-        self.push(format!(
-            "Issue #{issue_id}の{property}は子Issueから計算されるため編集できません"
+        self.push(tr!(
+            "toast-computed-property-not-editable",
+            issue_id = issue_id.to_string(),
+            property = property,
         ));
     }
 
@@ -384,7 +434,7 @@ mod tests {
     #[test]
     fn snapshot_computed_property_not_editable() {
         let mut toast_list = ToastListComponent::default();
-        toast_list.push_computed_property_not_editable(IssueId::new(3), "優先度");
+        toast_list.push_computed_property_not_editable(IssueId::new(3), "Priority");
 
         render_toast_snapshot("toast_list_computed_property_not_editable", &toast_list);
     }

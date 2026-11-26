@@ -100,8 +100,8 @@ fn priority_of_issue_with_children_shows_notice_without_popup() {
     let mut session = open_property_popup_of_issue_3(PRIORITY_LINE);
 
     // Then 編集できない理由が表示され、priority popupは開かない
-    // 通知は右上の狭い枠で折り返されるため、1行に収まる先頭部分で待つ。
-    let frame = wait_for_text(&mut session, "優先度は");
+    // 通知は右上の狭い枠で折り返されるため、1行に収まる部分で待つ。
+    let frame = wait_for_text(&mut session, "is calculated");
     assert!(!frame.contains("blocker"));
 }
 
