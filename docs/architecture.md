@@ -25,6 +25,7 @@
   - TUI の画面部品を置く。
   - `app.rs` は全体 component と popup stack を統括する。
   - `issue/` はIssue取得状態を解決する外側componentを置き、`issue/detail/` は読み込み済みIssueの詳細画面とその子componentを置く。
+  - `new_issue/` はIssueの新規作成画面を置く。
   - `*_popup/` は popup component を置く。
 - `src/platform/`
   - native/Web の platform adapter を置く。

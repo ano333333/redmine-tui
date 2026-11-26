@@ -4,6 +4,7 @@ use super::widget::IssueSelectPopupFocusColumn;
 
 pub enum EventProcessResult {
     Selected,
+    CreateRequested,
     Quited,
     ProjectChanged,
     PreviousPageRequested,
@@ -18,6 +19,7 @@ enum Action {
     MoveLeft,
     MoveRight,
     Enter,
+    Create,
     Quit,
     Retry,
 }
@@ -94,6 +96,7 @@ impl FocusState {
             KeyCode::Char('l') => Some(Action::MoveRight),
             KeyCode::Char('q') => Some(Action::Quit),
             KeyCode::Char('r') => Some(Action::Retry),
+            KeyCode::Char('n') => Some(Action::Create),
             KeyCode::Enter => Some(Action::Enter),
             _ => None,
         }
@@ -142,6 +145,7 @@ impl FocusState {
                 }
             }
             Action::Retry => return Some(EventProcessResult::RetryRequested),
+            Action::Create => return Some(EventProcessResult::CreateRequested),
         }
 
         Some(EventProcessResult::Handled)

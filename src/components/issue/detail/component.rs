@@ -70,6 +70,9 @@ pub enum EventProcessResult {
     OpenIssueRequested {
         id: IssueId,
     },
+    CreateChildRequested {
+        parent_id: IssueId,
+    },
     OpenIssueStatusPopup,
     OpenTrackerPopup,
     OpenPriorityPopup,
@@ -486,7 +489,12 @@ mod tests {
             press(KeyCode::Char('j'));
         }
 
-        assert_eq!(press(KeyCode::Enter), None);
+        assert_eq!(
+            press(KeyCode::Enter),
+            Some(EventProcessResult::CreateChildRequested {
+                parent_id: IssueId::new(2)
+            })
+        );
         press(KeyCode::Char('j'));
         assert_eq!(
             press(KeyCode::Enter),
@@ -810,6 +818,11 @@ impl IssueDetailComponent {
                     }
                     Some(ChildrenListEventProcessResult::OpenRequested { id }) => {
                         return Some(EventProcessResult::OpenIssueRequested { id });
+                    }
+                    Some(ChildrenListEventProcessResult::CreateRequested) => {
+                        return Some(EventProcessResult::CreateChildRequested {
+                            parent_id: self.id,
+                        });
                     }
                     Some(ChildrenListEventProcessResult::Handled) => {
                         return Some(EventProcessResult::Handled);

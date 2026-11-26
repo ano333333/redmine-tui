@@ -9,6 +9,7 @@ mod attachment_conversion;
 mod attachment_upload;
 #[cfg(feature = "container-tests")]
 mod container;
+mod create_issue;
 mod error_mapping;
 mod get_issue;
 mod get_project_issues;

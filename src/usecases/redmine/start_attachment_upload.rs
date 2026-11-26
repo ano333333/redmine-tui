@@ -10,11 +10,7 @@ use crate::usecases::{
 };
 use crate::vos::IssueId;
 
-/// Redmineの添付ファイルサイズ上限の設定`attachment_max_size`の既定値（5120 KB）。
-///
-/// RedmineのREST APIは設定値を返さないため、既定値に合わせる。サーバーが上限を下げている場合は
-/// Redmineが送信を422で拒否し、上げている場合はこの値を超えるファイルを送れない。
-const ATTACHMENT_MAX_BYTES: u64 = 5120 * 1024;
+use super::upload_local_file::{UploadLocalFileError, upload_local_file};
 
 /// `path`のファイルを`filename`の名前でIssueへ添付する処理を始める。
 ///
@@ -56,13 +52,9 @@ where
             filename: filename.clone(),
         });
     Some(Box::pin(async move {
-        let content = match clients
-            .local_file
-            .read_file(&path, ATTACHMENT_MAX_BYTES)
-            .await
-        {
-            Ok(content) => content,
-            Err(error) => {
+        let token = match upload_local_file(&clients, &filename, &path).await {
+            Ok(token) => token,
+            Err(UploadLocalFileError::Read(error)) => {
                 return failure_output(
                     issue_id,
                     UsecaseFailure::AttachmentFileRead {
@@ -71,10 +63,7 @@ where
                     },
                 );
             }
-        };
-        let token = match clients.redmine.upload_file(&filename, content).await {
-            Ok(token) => token,
-            Err(error) => {
+            Err(UploadLocalFileError::Upload(error)) => {
                 return failure_output(
                     issue_id,
                     UsecaseFailure::AttachmentFileUpload {

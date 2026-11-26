@@ -16,6 +16,7 @@ pub enum EventProcessResult {
     CursorLeavedFromAbove,
     CursorLeavedFromBelow,
     OpenRequested { id: IssueId },
+    CreateRequested,
     Handled,
 }
 
@@ -94,7 +95,7 @@ impl FocusState {
             }
             KeyCode::Enter => match focused_row {
                 FocusedRow::Child(id) => Some(EventProcessResult::OpenRequested { id }),
-                FocusedRow::AddRow => None,
+                FocusedRow::AddRow => Some(EventProcessResult::CreateRequested),
             },
             _ => None,
         }
@@ -194,7 +195,10 @@ mod tests {
                 y: 2
             }
         );
-        assert!(state.process_event(&key_event(KeyCode::Enter)).is_none());
+        assert!(matches!(
+            state.process_event(&key_event(KeyCode::Enter)),
+            Some(EventProcessResult::CreateRequested)
+        ));
         assert!(matches!(
             state.process_event(&key_event(KeyCode::Char('j'))),
             Some(EventProcessResult::CursorLeavedFromBelow)
@@ -364,6 +368,9 @@ mod tests {
         state.update(&[]);
 
         assert_eq!(state.focused_index(), Some(0));
-        assert!(state.process_event(&key_event(KeyCode::Enter)).is_none());
+        assert!(matches!(
+            state.process_event(&key_event(KeyCode::Enter)),
+            Some(EventProcessResult::CreateRequested)
+        ));
     }
 }

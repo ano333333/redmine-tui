@@ -16,7 +16,13 @@ use super::widget::{
 };
 
 pub enum EventProcessResult {
-    Selected { issue_id: IssueId },
+    Selected {
+        issue_id: IssueId,
+    },
+    /// フォーカス中のプロジェクトにIssueを新規作成する。
+    CreateRequested {
+        project_id: ProjectId,
+    },
     Quited,
     Handled,
 }
@@ -121,6 +127,11 @@ impl IssueSelectPopupComponent {
                 .focused_issue_id(store)
                 .map_or(EventProcessResult::Handled, |issue_id| {
                     EventProcessResult::Selected { issue_id }
+                }),
+            focus_state::EventProcessResult::CreateRequested => self
+                .focused_project_id()
+                .map_or(EventProcessResult::Handled, |project_id| {
+                    EventProcessResult::CreateRequested { project_id }
                 }),
             focus_state::EventProcessResult::Quited => EventProcessResult::Quited,
             focus_state::EventProcessResult::Handled => EventProcessResult::Handled,

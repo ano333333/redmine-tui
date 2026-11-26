@@ -5,7 +5,9 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::clients::redmine::base::{FetchedIssue, PROJECT_ISSUES_PAGE_LIMIT};
-use crate::clients::redmine::{IssueUpdate, RedmineClient, RedmineClientError, RedmineHttpError};
+use crate::clients::redmine::{
+    IssueUpdate, NewIssue, RedmineClient, RedmineClientError, RedmineHttpError,
+};
 use crate::entities::{
     Category, Issue, IssueAggregate, IssueChild, IssueStatus, Priority, Project, ProjectIssuesPage,
     TargetVersion, TimeEntityActivity, Tracker, User,
@@ -102,6 +104,41 @@ impl DefaultRedmineClient {
         }
 
         Ok(())
+    }
+
+    async fn post_json<B: Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T, RedmineClientError> {
+        let method = "POST";
+        let url = format!("{}{}", self.host_url, path);
+        let response = self
+            .http_client
+            .post(&url)
+            .header("X-Redmine-API-Key", &self.access_token)
+            .json(body)
+            .send()
+            .await
+            .map_err(map_request_error)?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let response_body = response.text().await.unwrap_or_else(|error| {
+                format!("failed to read Redmine error response body: {error}")
+            });
+            return map_response_status(
+                status,
+                RedmineHttpError {
+                    method: method.to_string(),
+                    url,
+                    status_code: status.as_u16(),
+                    response_body,
+                },
+            );
+        }
+
+        response.json().await.map_err(map_response_body_error)
     }
 
     async fn post_bytes_json<T: DeserializeOwned>(
@@ -253,6 +290,13 @@ impl RedmineClient for DefaultRedmineClient {
             &UpdateIssueRequest::from(update),
         )
         .await
+    }
+
+    async fn create_issue(&self, issue: &NewIssue) -> Result<IssueId, RedmineClientError> {
+        let response: CreateIssueResponse = self
+            .post_json("/issues.json", &CreateIssueRequest::from(issue))
+            .await?;
+        Ok(IssueId::new(response.issue.id))
     }
 
     async fn update_journal_notes(
@@ -828,6 +872,86 @@ struct UpdateIssueNotesRequest {
 #[derive(Serialize)]
 struct UpdateIssueNotes {
     notes: String,
+}
+
+#[derive(Serialize)]
+struct CreateIssueRequest {
+    issue: CreateIssue,
+}
+
+impl From<&NewIssue> for CreateIssueRequest {
+    fn from(issue: &NewIssue) -> Self {
+        let format_date = |date: DateTimeLocal| date.format("%Y-%m-%d").to_string();
+        Self {
+            issue: CreateIssue {
+                project_id: issue.project_id.get(),
+                subject: issue.subject.clone(),
+                parent_issue_id: issue.parent_issue_id.map(|id| id.get()),
+                description: issue.description.clone(),
+                tracker_id: issue.tracker_id.map(|id| id.get()),
+                status_id: issue.status_id.map(|id| id.get()),
+                priority_id: issue.priority_id.map(|id| id.get()),
+                assigned_to_id: issue.assigned_to_id.map(|id| id.get()),
+                fixed_version_id: issue.target_version_id.map(|id| id.get()),
+                start_date: issue.start_date.map(format_date),
+                due_date: issue.due_date.map(format_date),
+                done_ratio: issue.done_ratio,
+                estimated_hours: issue.estimated_hours,
+                category_id: issue.category_id.map(|id| id.get()),
+                uploads: issue
+                    .uploads
+                    .iter()
+                    .map(|upload| IssueUpload {
+                        token: upload.token.as_str().to_string(),
+                        filename: upload.filename.clone(),
+                    })
+                    .collect(),
+            },
+        }
+    }
+}
+
+/// `None`の属性は省略し、Redmineの既定値にする。
+#[derive(Serialize)]
+struct CreateIssue {
+    project_id: u32,
+    subject: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_issue_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tracker_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    assigned_to_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fixed_version_id: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    start_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    due_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    done_ratio: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimated_hours: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category_id: Option<u32>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    uploads: Vec<IssueUpload>,
+}
+
+#[derive(Deserialize)]
+struct CreateIssueResponse {
+    issue: CreatedIssue,
+}
+
+#[derive(Deserialize)]
+struct CreatedIssue {
+    id: u32,
 }
 
 #[derive(Serialize)]

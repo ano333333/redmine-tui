@@ -15,6 +15,9 @@ use crate::components::issue_property_conflict_popup::{
 };
 use crate::components::issue_select_popup::component::EventProcessResult as IssueSelectPopupEventProcessResult;
 use crate::components::issue_select_popup::component::IssueSelectPopupComponent;
+use crate::components::new_issue::{
+    DraftField, EventProcessResult as NewIssueEventProcessResult, NewIssueComponent,
+};
 use crate::components::remote_journal_conflict_popup::{
     EventProcessResult as RemoteJournalConflictEventProcessResult, RemoteJournalConflictComponent,
 };
@@ -34,7 +37,9 @@ use crate::usecases::issue_popup_options::{
     issue_status_popup_observer, priority_popup_observer, project_popup_observer,
     start_date_popup_observer, target_version_popup_observer, tracker_popup_observer,
 };
-use crate::usecases::{UsecaseEvent, UsecaseRequest};
+use crate::usecases::{
+    DraftAttachment, IssueCreationId, NewIssueDraft, UsecaseEvent, UsecaseFailure, UsecaseRequest,
+};
 use crate::vos::{EntityIdValue, IssueId, JournalId, TimeEntityActivityId};
 
 use super::attachment_input_popup::{
@@ -68,6 +73,12 @@ enum PendingEditorContext {
     DeletedJournal {
         issue_id: IssueId,
         original_id: JournalId,
+    },
+    NewIssueSubject {
+        creation_id: IssueCreationId,
+    },
+    NewIssueDescription {
+        creation_id: IssueCreationId,
     },
 }
 
@@ -104,12 +115,27 @@ fn can_start_editing(
             store.get_deleted_journal(*issue_id, *original_id).state,
             DeletedJournalState::Pending { .. }
         ),
+        PendingEditorContext::NewIssueSubject { .. }
+        | PendingEditorContext::NewIssueDescription { .. } => true,
     }
+}
+
+/// 題名は1行のため、editorで入力した改行と連続する空白を1つの空白にまとめ、前後の空白を除く。
+fn single_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// 添付入力popupで入力したファイルの送り先。
+enum AttachmentDestination {
+    /// 取得済みのIssueへすぐに添付する。
+    Issue(IssueId),
+    /// 下書きに積み、作成と同時に添付する。
+    Draft(Rc<RefCell<NewIssueDraft>>),
 }
 
 enum PopupComponent<'a> {
     AttachmentInput {
-        issue_id: IssueId,
+        destination: AttachmentDestination,
         component: AttachmentInputPopupComponent<'a>,
     },
     SelectBox(SelectBoxPopupComponent<'a>),
@@ -128,8 +154,14 @@ enum PopupComponent<'a> {
     },
 }
 
+/// popupの下に表示する画面。
+enum MainComponent {
+    Issue(IssueComponent),
+    NewIssue(NewIssueComponent),
+}
+
 pub struct AppComponent<'a> {
-    issue_component: Option<IssueComponent>,
+    main_component: Option<MainComponent>,
     // popup追加の際は末尾に追加する、先頭要素が最奥に表示される
     popup_components: VecDeque<Rc<RefCell<PopupComponent<'a>>>>,
     dispatcher: Rc<RefCell<Dispatcher>>,
@@ -147,7 +179,7 @@ impl<'a> AppComponent<'a> {
         sink: &mut RequestSink,
     ) -> Self {
         let mut app = AppComponent {
-            issue_component: None,
+            main_component: None,
             popup_components: VecDeque::new(),
             dispatcher,
             pending_editor_context: None,
@@ -177,10 +209,11 @@ impl<'a> AppComponent<'a> {
         if self.popup_components.back().is_some() {
             return self.process_popup_event(event, dispatcher, sink);
         }
-        if self.issue_component.is_some() {
-            return self.process_issue_event(event, dispatcher, sink);
+        match &self.main_component {
+            Some(MainComponent::Issue(_)) => self.process_issue_event(event, dispatcher, sink),
+            Some(MainComponent::NewIssue(_)) => self.process_new_issue_event(event, sink),
+            None => false,
         }
-        false
     }
 
     /// 最前面のpopupへイベントを渡し、結果に応じてpopup stackを更新する。
@@ -198,7 +231,7 @@ impl<'a> AppComponent<'a> {
             .clone();
         match &mut *(popup_component_rc.borrow_mut()) {
             PopupComponent::AttachmentInput {
-                issue_id,
+                destination,
                 component,
             } => {
                 let Some(result) = component.process_event(event) else {
@@ -206,11 +239,21 @@ impl<'a> AppComponent<'a> {
                 };
                 match result {
                     AttachmentInputPopupEventProcessResult::Entered { filename, path } => {
-                        sink.request_usecase(UsecaseRequest::StartAttachmentUpload {
-                            issue_id: *issue_id,
-                            filename,
-                            path,
-                        });
+                        match destination {
+                            AttachmentDestination::Issue(issue_id) => {
+                                sink.request_usecase(UsecaseRequest::StartAttachmentUpload {
+                                    issue_id: *issue_id,
+                                    filename,
+                                    path,
+                                });
+                            }
+                            AttachmentDestination::Draft(draft) => {
+                                draft
+                                    .borrow_mut()
+                                    .attachments
+                                    .push(DraftAttachment { filename, path });
+                            }
+                        }
                         self.popup_components.pop_back();
                     }
                     AttachmentInputPopupEventProcessResult::Canceled => {
@@ -289,6 +332,12 @@ impl<'a> AppComponent<'a> {
                     IssueSelectPopupEventProcessResult::Selected { issue_id } => {
                         self.select_issue(issue_id, sink);
                     }
+                    IssueSelectPopupEventProcessResult::CreateRequested { project_id } => {
+                        self.popup_components.pop_back();
+                        self.main_component = Some(MainComponent::NewIssue(
+                            NewIssueComponent::new(project_id, None),
+                        ));
+                    }
                     IssueSelectPopupEventProcessResult::Quited => {
                         self.close_issue_select_popup();
                     }
@@ -350,6 +399,93 @@ impl<'a> AppComponent<'a> {
         true
     }
 
+    /// NewIssueComponentへイベントを渡し、結果に応じてpopupを開く。
+    /// NewIssueComponentがイベントを使った場合にtrueを返す。
+    fn process_new_issue_event(&mut self, event: InputEvent, sink: &mut RequestSink) -> bool {
+        let Some(MainComponent::NewIssue(new_issue_component)) = &mut self.main_component else {
+            unreachable!("caller checked that NewIssueComponent exists");
+        };
+        let Some(result) = new_issue_component.process_event(&event) else {
+            return false;
+        };
+        let creation_id = new_issue_component.creation_id();
+        let draft = new_issue_component.draft();
+        match result {
+            NewIssueEventProcessResult::EditFieldRequested { field } => {
+                let (context, initial_text) = match field {
+                    DraftField::Subject => (
+                        PendingEditorContext::NewIssueSubject { creation_id },
+                        draft.borrow().subject.clone(),
+                    ),
+                    DraftField::Description => (
+                        PendingEditorContext::NewIssueDescription { creation_id },
+                        draft.borrow().description.clone(),
+                    ),
+                    DraftField::StartDate | DraftField::DueDate => {
+                        let (selected_date, observer) = new_issue_component.date_popup(field);
+                        self.popup_components.push_back(Rc::new(RefCell::new(
+                            PopupComponent::DatePicker(DatePickerPopupComponent::new(
+                                selected_date,
+                                observer,
+                            )),
+                        )));
+                        return true;
+                    }
+                    DraftField::EstimatedHours => {
+                        let (estimated_hours, observer) =
+                            new_issue_component.estimated_hours_popup();
+                        self.popup_components.push_back(Rc::new(RefCell::new(
+                            PopupComponent::NumberInput(NumberInputPopupComponent::new(
+                                "予定工数",
+                                estimated_hours,
+                                observer,
+                            )),
+                        )));
+                        return true;
+                    }
+                    field => {
+                        let select_box = {
+                            let dispatcher = self.dispatcher.borrow();
+                            new_issue_component.select_box(dispatcher.store(), field)
+                        };
+                        if let Some(select_box) = select_box {
+                            let popup = SelectBoxPopupComponent::new(
+                                &select_box.items,
+                                select_box.focused_index.unwrap_or(0),
+                                true,
+                                select_box.observer,
+                            );
+                            let popup = if select_box.focused_index.is_none() {
+                                popup.focus_none_choice()
+                            } else {
+                                popup
+                            };
+                            self.popup_components
+                                .push_back(Rc::new(RefCell::new(PopupComponent::SelectBox(popup))));
+                        }
+                        return true;
+                    }
+                };
+                self.start_editing(context, initial_text, sink);
+            }
+            NewIssueEventProcessResult::SubmitRequested => {
+                let draft = draft.borrow().clone();
+                sink.request_usecase(UsecaseRequest::CreateIssue { creation_id, draft });
+            }
+            NewIssueEventProcessResult::SubjectRequired => {
+                self.toast_list.push_new_issue_subject_required();
+            }
+            NewIssueEventProcessResult::AddAttachmentRequested => {
+                self.push_attachment_input_popup(AttachmentDestination::Draft(draft));
+            }
+            NewIssueEventProcessResult::OpenIssueSelectPopup => {
+                self.open_issue_select_popup(None, sink);
+            }
+            NewIssueEventProcessResult::Handled => {}
+        }
+        true
+    }
+
     /// IssueComponentへイベントを渡し、結果に応じてpopupの開閉や要求の発行を行う。
     /// IssueComponentがイベントを使った場合にtrueを返す。
     fn process_issue_event(
@@ -359,12 +495,12 @@ impl<'a> AppComponent<'a> {
         sink: &mut RequestSink,
     ) -> bool {
         let (result, issue_id) = {
+            let app_dispatcher = self.dispatcher.clone();
             let issue_component = self
-                .issue_component
-                .as_mut()
+                .issue_component_mut()
                 .expect("caller checked that IssueComponent exists");
             (
-                issue_component.process_event(event, self.dispatcher.clone()),
+                issue_component.process_event(event, app_dispatcher),
                 issue_component.issue_id(),
             )
         };
@@ -398,7 +534,7 @@ impl<'a> AppComponent<'a> {
                 IssueDetailEventProcessResult::OpenIssueStatusPopup,
             ) => {
                 let (items, focused_index) =
-                    build_issue_status_options(dispatcher.borrow().store());
+                    build_issue_status_options(dispatcher.borrow().store(), None);
                 self.push_select_box_popup(
                     &items,
                     focused_index,
@@ -407,8 +543,12 @@ impl<'a> AppComponent<'a> {
                 );
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenTrackerPopup) => {
-                let (items, focused_index) =
-                    build_tracker_options(dispatcher.borrow().store(), issue_id);
+                let (items, focused_index) = {
+                    let dispatcher = dispatcher.borrow();
+                    let store = dispatcher.store();
+                    let current = store.get_issue(issue_id).0.tracker_id();
+                    build_tracker_options(store, Some(current))
+                };
                 self.push_select_box_popup(
                     &items,
                     focused_index,
@@ -419,8 +559,12 @@ impl<'a> AppComponent<'a> {
             // FIXME: 子Issueを持つ親Issueの優先度・開始日・期日・進捗率は子から計算され、Redmineは更新を
             // エラーなしで無視する。親Issueでも編集できるため、ローカルでは変更済みに見えてしまう。
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenPriorityPopup) => {
-                let (items, focused_index) =
-                    build_priority_options(dispatcher.borrow().store(), issue_id);
+                let (items, focused_index) = {
+                    let dispatcher = dispatcher.borrow();
+                    let store = dispatcher.store();
+                    let current = store.get_issue(issue_id).0.priority_id();
+                    build_priority_options(store, Some(current))
+                };
                 self.push_select_box_popup(
                     &items,
                     focused_index,
@@ -439,8 +583,12 @@ impl<'a> AppComponent<'a> {
                 );
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenAssignedToPopup) => {
-                let (items, focused_index) =
-                    build_assigned_to_options(dispatcher.borrow().store(), issue_id);
+                let (items, focused_index) = {
+                    let dispatcher = dispatcher.borrow();
+                    let store = dispatcher.store();
+                    let current = store.get_issue(issue_id).0.assigned_to_id();
+                    build_assigned_to_options(store, current)
+                };
                 self.push_select_box_popup(
                     &items,
                     focused_index,
@@ -451,8 +599,16 @@ impl<'a> AppComponent<'a> {
             IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::OpenTargetVersionPopup,
             ) => {
-                let (items, focused_index) =
-                    build_target_version_options(dispatcher.borrow().store(), issue_id);
+                let (items, focused_index) = {
+                    let dispatcher = dispatcher.borrow();
+                    let store = dispatcher.store();
+                    let (issue, _) = store.get_issue(issue_id);
+                    build_target_version_options(
+                        store,
+                        issue.project_id(),
+                        issue.target_version_id(),
+                    )
+                };
                 self.push_select_box_popup(
                     &items,
                     focused_index,
@@ -481,8 +637,13 @@ impl<'a> AppComponent<'a> {
                     ))));
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenDoneRatioPopup) => {
-                let (items, focused_index) =
-                    build_done_ratio_options(dispatcher.borrow().store(), issue_id);
+                let current = dispatcher
+                    .borrow()
+                    .store()
+                    .get_issue(issue_id)
+                    .0
+                    .done_ratio();
+                let (items, focused_index) = build_done_ratio_options(Some(current));
                 self.push_select_box_popup(
                     &items,
                     focused_index,
@@ -491,8 +652,12 @@ impl<'a> AppComponent<'a> {
                 );
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::OpenCategoryPopup) => {
-                let (items, focused_index) =
-                    build_category_options(dispatcher.borrow().store(), issue_id);
+                let (items, focused_index) = {
+                    let dispatcher = dispatcher.borrow();
+                    let store = dispatcher.store();
+                    let (issue, _) = store.get_issue(issue_id);
+                    build_category_options(store, issue.project_id(), issue.category_id())
+                };
                 self.push_select_box_popup(
                     &items,
                     focused_index,
@@ -525,12 +690,7 @@ impl<'a> AppComponent<'a> {
             IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::AddAttachmentRequested { issue_id },
             ) => {
-                self.popup_components.push_back(Rc::new(RefCell::new(
-                    PopupComponent::AttachmentInput {
-                        issue_id,
-                        component: AttachmentInputPopupComponent::new(),
-                    },
-                )));
+                self.push_attachment_input_popup(AttachmentDestination::Issue(issue_id));
             }
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::StartIssueUpload) => {
                 sink.request_usecase(UsecaseRequest::StartIssueUpload { id: issue_id });
@@ -654,6 +814,21 @@ impl<'a> AppComponent<'a> {
             ) => {
                 self.open_issue(id, sink);
             }
+            IssueEventProcessResult::Detail(
+                IssueDetailEventProcessResult::CreateChildRequested { parent_id },
+            ) => {
+                // 子は親と同じプロジェクトに作る。
+                let project_id = dispatcher
+                    .borrow()
+                    .store()
+                    .get_issue(parent_id)
+                    .0
+                    .project_id();
+                self.main_component = Some(MainComponent::NewIssue(NewIssueComponent::new(
+                    project_id,
+                    Some(parent_id),
+                )));
+            }
             // 子Componentがキーを解釈済みで、App側に要求はない。
             IssueEventProcessResult::Detail(
                 IssueDetailEventProcessResult::ComputedPropertyNotEditable { issue_id, property },
@@ -664,6 +839,38 @@ impl<'a> AppComponent<'a> {
             IssueEventProcessResult::Detail(IssueDetailEventProcessResult::Handled) => {}
         }
         true
+    }
+
+    fn issue_component(&self) -> Option<&IssueComponent> {
+        match &self.main_component {
+            Some(MainComponent::Issue(issue_component)) => Some(issue_component),
+            Some(MainComponent::NewIssue(_)) | None => None,
+        }
+    }
+
+    fn issue_component_mut(&mut self) -> Option<&mut IssueComponent> {
+        match &mut self.main_component {
+            Some(MainComponent::Issue(issue_component)) => Some(issue_component),
+            Some(MainComponent::NewIssue(_)) | None => None,
+        }
+    }
+
+    /// editorの起動を要求できる状態なら、文脈を保持してeditorを起動する。
+    fn start_editing(
+        &mut self,
+        context: PendingEditorContext,
+        initial_text: String,
+        sink: &mut RequestSink,
+    ) {
+        if can_start_editing(
+            &context,
+            self.interaction_mode,
+            self.dispatcher.borrow().store(),
+        ) {
+            self.pending_editor_context = Some(context);
+            sink.request_editor(EditorRequest { initial_text });
+            self.interaction_mode = InteractionMode::Editing;
+        }
     }
 
     fn select_issue(&mut self, issue_id: IssueId, sink: &mut RequestSink) {
@@ -682,7 +889,7 @@ impl<'a> AppComponent<'a> {
         let parent_id = {
             let dispatcher = self.dispatcher.borrow();
             let store = dispatcher.store();
-            self.issue_component = Some(IssueComponent::new(store, issue_id));
+            self.main_component = Some(MainComponent::Issue(IssueComponent::new(store, issue_id)));
             store
                 .try_get_issue_state(issue_id)
                 .and_then(|_| store.get_issue(issue_id).0.parent_id())
@@ -714,6 +921,14 @@ impl<'a> AppComponent<'a> {
 
     fn close_issue_select_popup(&mut self) {
         self.popup_components.pop_back();
+    }
+
+    fn push_attachment_input_popup(&mut self, destination: AttachmentDestination) {
+        self.popup_components
+            .push_back(Rc::new(RefCell::new(PopupComponent::AttachmentInput {
+                destination,
+                component: AttachmentInputPopupComponent::new(),
+            })));
     }
 
     /// SelectBoxPopupComponentを構築し、popup stackへ積む。
@@ -750,8 +965,14 @@ impl<'a> AppComponent<'a> {
         self.open_issue_property_conflict_popup_if_needed(store);
         self.open_remote_journal_conflict_popups_if_needed(store);
 
-        if let Some(issue_component) = &mut self.issue_component {
-            issue_component.update(dispatcher, store, (area.width, area.height));
+        match &mut self.main_component {
+            Some(MainComponent::Issue(issue_component)) => {
+                issue_component.update(dispatcher, store, (area.width, area.height));
+            }
+            Some(MainComponent::NewIssue(new_issue_component)) => {
+                new_issue_component.update(area.height);
+            }
+            None => {}
         }
 
         for popup_component in &self.popup_components {
@@ -773,7 +994,7 @@ impl<'a> AppComponent<'a> {
     }
 
     fn open_issue_property_conflict_popup_if_needed(&mut self, store: &Store) {
-        if let Some(issue_component) = &self.issue_component
+        if let Some(issue_component) = self.issue_component()
             && let Some((server_issue, conflicts)) =
                 store.try_get_issue_upload_conflict(issue_component.issue_id())
             && !self.popup_components.iter().any(|popup| {
@@ -797,7 +1018,7 @@ impl<'a> AppComponent<'a> {
     }
 
     fn open_remote_journal_conflict_popups_if_needed(&mut self, store: &Store) {
-        if let Some(issue_component) = &self.issue_component {
+        if let Some(issue_component) = self.issue_component() {
             let issue_id = issue_component.issue_id();
             for entry in store.get_remote_journals(issue_id) {
                 let journal_id = entry.journal.id;
@@ -837,8 +1058,14 @@ impl<'a> AppComponent<'a> {
 
     /// Componentをframeのarea範囲内に描画する。
     pub fn render(&self, store: &Store, frame: &mut Frame, area: Rect) {
-        if let Some(issue_component) = &self.issue_component {
-            issue_component.render(store, frame, area);
+        match &self.main_component {
+            Some(MainComponent::Issue(issue_component)) => {
+                issue_component.render(store, frame, area)
+            }
+            Some(MainComponent::NewIssue(new_issue_component)) => {
+                new_issue_component.render(store, frame, area)
+            }
+            None => {}
         }
         self.render_popup_component(frame, area, store);
         // popupより後に描画して最前面へ重ねる。toastはfocusを持たずcursor位置も変えない。
@@ -865,11 +1092,41 @@ impl<'a> AppComponent<'a> {
         self.toast_list.tick(elapsed);
     }
 
-    pub fn handle_usecase_events(&mut self, events: Vec<UsecaseEvent>) {
+    pub fn handle_usecase_events(&mut self, events: Vec<UsecaseEvent>, store: &Store) {
         for event in events {
             match event {
-                UsecaseEvent::Failure(failure) => self.toast_list.push_failure(&failure),
+                // 作成中に別のIssueへ移っていれば、作成した下書きはもう表示していない。
+                UsecaseEvent::IssueCreated { creation_id, id } => {
+                    if self.new_issue_component_mut(creation_id).is_some() {
+                        self.main_component =
+                            Some(MainComponent::Issue(IssueComponent::new(store, id)));
+                    }
+                }
+                UsecaseEvent::Failure(failure) => {
+                    if let UsecaseFailure::IssueCreate { creation_id, .. } = &failure
+                        && let Some(new_issue_component) =
+                            self.new_issue_component_mut(*creation_id)
+                    {
+                        new_issue_component.finish_submitting();
+                    }
+                    self.toast_list.push_failure(&failure);
+                }
             }
+        }
+    }
+
+    /// 表示中の新規作成画面が`creation_id`の下書きなら返す。
+    fn new_issue_component_mut(
+        &mut self,
+        creation_id: IssueCreationId,
+    ) -> Option<&mut NewIssueComponent> {
+        match &mut self.main_component {
+            Some(MainComponent::NewIssue(new_issue_component))
+                if new_issue_component.creation_id() == creation_id =>
+            {
+                Some(new_issue_component)
+            }
+            _ => None,
         }
     }
 
@@ -930,6 +1187,27 @@ impl<'a> AppComponent<'a> {
                         notes: edited_text,
                     },
                 ));
+            }
+            Some(
+                context @ (PendingEditorContext::NewIssueSubject { creation_id }
+                | PendingEditorContext::NewIssueDescription { creation_id }),
+            ) => {
+                // editor中は入力を受け付けないため、下書きは編集を始めたときのまま表示中である。
+                let Some(MainComponent::NewIssue(new_issue_component)) = &self.main_component
+                else {
+                    return;
+                };
+                if new_issue_component.creation_id() != creation_id {
+                    return;
+                }
+                let draft = new_issue_component.draft();
+                let mut draft = draft.borrow_mut();
+                match context {
+                    PendingEditorContext::NewIssueSubject { .. } => {
+                        draft.subject = single_line(&edited_text);
+                    }
+                    _ => draft.description = edited_text,
+                }
             }
             None => {}
         }
@@ -996,7 +1274,7 @@ impl<'a> AppComponent<'a> {
                     component.cursor_position(area)
                 }
             }
-        } else if let Some(issue_component) = &self.issue_component {
+        } else if let Some(issue_component) = self.issue_component() {
             issue_component.calc_cursor_position(store, area)
         } else {
             None
@@ -1408,10 +1686,7 @@ mod tests {
             &mut sink,
         );
 
-        assert_eq!(
-            app.issue_component.as_ref().unwrap().issue_id(),
-            IssueId::new(3)
-        );
+        assert_eq!(app.issue_component().unwrap().issue_id(), IssueId::new(3));
         assert_eq!(app.interaction_mode(), InteractionMode::Application);
         assert_eq!(
             sink.take_usecases(),
@@ -1468,10 +1743,7 @@ mod tests {
             &mut sink,
         );
 
-        assert_eq!(
-            app.issue_component.as_ref().unwrap().issue_id(),
-            IssueId::new(42)
-        );
+        assert_eq!(app.issue_component().unwrap().issue_id(), IssueId::new(42));
         assert_eq!(
             sink.take_usecases(),
             [UsecaseRequest::FetchIssue {
@@ -1539,7 +1811,7 @@ mod tests {
             app.process_event(key_event(code), dispatcher.clone(), &mut sink);
         }
 
-        assert!(app.issue_component.is_none());
+        assert!(app.issue_component().is_none());
         assert!(app.popup_components.is_empty());
         assert_no_requests(&mut sink);
     }
@@ -1728,6 +2000,365 @@ mod tests {
             }]
         );
         assert_eq!(dispatcher.borrow().consume_actinos_len(), 0);
+    }
+
+    fn new_issue_component<'b>(app: &'b AppComponent<'_>) -> Option<&'b NewIssueComponent> {
+        match &app.main_component {
+            Some(MainComponent::NewIssue(new_issue_component)) => Some(new_issue_component),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn n_on_issue_select_popup_opens_a_draft_in_the_focused_project() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            None,
+            CursorRendering::Terminal,
+            &mut sink,
+        );
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), &mut sink);
+
+        app.process_event(key_event(KeyCode::Char('n')), dispatcher.clone(), &mut sink);
+
+        assert!(app.popup_components.is_empty());
+        let draft = new_issue_component(&app)
+            .expect("the draft should replace the main component")
+            .draft();
+        assert_eq!(draft.borrow().project_id, ProjectId::new(1));
+        assert_eq!(draft.borrow().parent_issue_id, None);
+        assert_no_requests(&mut sink);
+    }
+
+    fn app_with_draft(
+        dispatcher: Rc<RefCell<Dispatcher>>,
+        sink: &mut RequestSink,
+    ) -> AppComponent<'static> {
+        let mut app = AppComponent::new(dispatcher.clone(), None, CursorRendering::Terminal, sink);
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), sink);
+        app.process_event(key_event(KeyCode::Char('n')), dispatcher, sink);
+        app
+    }
+
+    #[test]
+    fn editor_edits_the_draft_subject_as_a_single_line() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone(), &mut sink);
+        assert_eq!(
+            sink.take_editor().map(|request| request.initial_text),
+            Some(String::new())
+        );
+        assert_eq!(app.interaction_mode(), InteractionMode::Editing);
+        app.handle_editor_response(EditorOutcome::Submitted {
+            edited_text: "  ログイン\n画面の  不具合\n".to_string(),
+        });
+
+        let draft = new_issue_component(&app).unwrap().draft();
+        assert_eq!(draft.borrow().subject, "ログイン 画面の 不具合");
+        assert_eq!(app.interaction_mode(), InteractionMode::Application);
+    }
+
+    #[test]
+    fn editor_edits_the_draft_description_from_its_current_text() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+        new_issue_component(&app)
+            .unwrap()
+            .draft()
+            .borrow_mut()
+            .description = "before".to_string();
+
+        for code in [KeyCode::Char('j'), KeyCode::Enter] {
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+        assert_eq!(
+            sink.take_editor().map(|request| request.initial_text),
+            Some("before".to_string())
+        );
+        app.handle_editor_response(EditorOutcome::Submitted {
+            edited_text: "1行目\n2行目\n".to_string(),
+        });
+
+        let draft = new_issue_component(&app).unwrap().draft();
+        assert_eq!(draft.borrow().description, "1行目\n2行目\n");
+    }
+
+    #[test]
+    fn select_box_popup_sets_the_draft_tracker() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+
+        // 未設定のトラッカーでは「選択なし」にフォーカスするため、jで先頭のBugへ移る。
+        for code in [
+            KeyCode::Char('j'),
+            KeyCode::Char('j'),
+            KeyCode::Enter,
+            KeyCode::Char('j'),
+            KeyCode::Enter,
+        ] {
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+
+        assert!(app.popup_components.is_empty());
+        let draft = new_issue_component(&app).unwrap().draft();
+        assert_eq!(
+            draft.borrow().tracker_id,
+            Some(crate::vos::TrackerId::new(1))
+        );
+        assert_no_requests(&mut sink);
+    }
+
+    #[test]
+    fn enter_on_an_unset_draft_property_keeps_the_server_default() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+
+        for code in [
+            KeyCode::Char('j'),
+            KeyCode::Char('j'),
+            KeyCode::Enter,
+            KeyCode::Enter,
+        ] {
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+
+        assert!(app.popup_components.is_empty());
+        let draft = new_issue_component(&app).unwrap().draft();
+        assert_eq!(draft.borrow().tracker_id, None);
+    }
+
+    #[test]
+    fn dates_and_estimated_hours_of_the_draft_open_their_input_popups() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+        // 開始日・期日・予定工数は、題名から数えて7・8・10番目の項目である。
+        for _ in 0..7 {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone(), &mut sink);
+        }
+
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone(), &mut sink);
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::DatePicker(_)
+        ));
+        app.popup_components.clear();
+        for code in [KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j')] {
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone(), &mut sink);
+
+        assert!(matches!(
+            &*app.popup_components.back().unwrap().borrow(),
+            PopupComponent::NumberInput(_)
+        ));
+    }
+
+    #[test]
+    fn attachment_input_on_a_draft_adds_the_file_to_the_draft_without_uploading() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+        for _ in 0..20 {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone(), &mut sink);
+        }
+
+        for code in [KeyCode::Enter]
+            .into_iter()
+            .chain("a.png".chars().map(KeyCode::Char))
+            .chain([KeyCode::Tab])
+            .chain("/tmp/a.png".chars().map(KeyCode::Char))
+            .chain([KeyCode::Enter])
+        {
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+
+        assert!(app.popup_components.is_empty());
+        let draft = new_issue_component(&app).unwrap().draft();
+        assert_eq!(
+            draft.borrow().attachments,
+            vec![DraftAttachment {
+                filename: "a.png".to_string(),
+                path: std::path::PathBuf::from("/tmp/a.png"),
+            }]
+        );
+        assert_no_requests(&mut sink);
+    }
+
+    fn ctrl_key(code: KeyCode) -> InputEvent {
+        InputEvent::Key(KeyEvent::new(code, KeyModifiers::control()))
+    }
+
+    /// 題名を入れた下書きの作成を要求し、その`creation_id`を返す。
+    fn submit_draft(
+        app: &mut AppComponent<'_>,
+        dispatcher: Rc<RefCell<Dispatcher>>,
+        sink: &mut RequestSink,
+    ) -> IssueCreationId {
+        new_issue_component(app)
+            .unwrap()
+            .draft()
+            .borrow_mut()
+            .subject = "新しいIssue".to_string();
+        app.process_event(ctrl_key(KeyCode::Char('s')), dispatcher, sink);
+        match &sink.take_usecases()[..] {
+            [UsecaseRequest::CreateIssue { creation_id, draft }] => {
+                assert_eq!(draft.subject, "新しいIssue");
+                *creation_id
+            }
+            requests => panic!("expected one CreateIssue request, got {requests:?}"),
+        }
+    }
+
+    #[test]
+    fn ctrl_s_on_a_draft_without_subject_tells_that_the_subject_is_required() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+
+        app.process_event(ctrl_key(KeyCode::Char('s')), dispatcher.clone(), &mut sink);
+
+        assert_no_requests(&mut sink);
+        assert_eq!(
+            app.toast_list.create_widget().messages,
+            ["題名を入力してから作成してください"]
+        );
+    }
+
+    #[test]
+    fn created_event_replaces_the_submitted_draft_with_the_created_issue() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+        let creation_id = submit_draft(&mut app, dispatcher.clone(), &mut sink);
+
+        app.handle_usecase_events(
+            vec![UsecaseEvent::IssueCreated {
+                creation_id,
+                id: IssueId::new(99),
+            }],
+            dispatcher.borrow().store(),
+        );
+
+        assert_eq!(app.issue_component().unwrap().issue_id(), IssueId::new(99));
+    }
+
+    #[test]
+    fn created_event_of_a_discarded_draft_is_ignored() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+        let creation_id = submit_draft(&mut app, dispatcher.clone(), &mut sink);
+        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone(), &mut sink);
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), &mut sink);
+        app.process_event(key_event(KeyCode::Char('n')), dispatcher.clone(), &mut sink);
+
+        app.handle_usecase_events(
+            vec![UsecaseEvent::IssueCreated {
+                creation_id,
+                id: IssueId::new(99),
+            }],
+            dispatcher.borrow().store(),
+        );
+
+        assert!(new_issue_component(&app).is_some());
+    }
+
+    #[test]
+    fn create_failure_lets_the_submitted_draft_be_edited_again_and_tells_it() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = app_with_draft(dispatcher.clone(), &mut sink);
+        let creation_id = submit_draft(&mut app, dispatcher.clone(), &mut sink);
+
+        app.handle_usecase_events(
+            vec![UsecaseEvent::Failure(UsecaseFailure::IssueCreate {
+                creation_id,
+                cause: crate::usecases::IssueCreateFailure::Create {
+                    reason: "offline".to_string(),
+                },
+            })],
+            dispatcher.borrow().store(),
+        );
+
+        assert_eq!(
+            app.toast_list.create_widget().messages,
+            ["Issueの作成に失敗しました: offline"]
+        );
+        app.process_event(ctrl_key(KeyCode::Char('s')), dispatcher.clone(), &mut sink);
+        assert!(matches!(
+            &sink.take_usecases()[..],
+            [UsecaseRequest::CreateIssue { .. }]
+        ));
+    }
+
+    #[test]
+    fn add_child_row_opens_a_draft_of_a_child_in_the_parent_project() {
+        let mut sink = RequestSink::default();
+        let dispatcher = Rc::new(RefCell::new(Dispatcher::new()));
+        crate::test_support::dispatch_loaded_issue(
+            &mut dispatcher.borrow_mut(),
+            crate::test_support::sample_closed_child_issue(),
+        );
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            Some(2.into()),
+            CursorRendering::Terminal,
+            &mut sink,
+        );
+        app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        // 子もJournalもないIssue 2では、12回のjで子一覧の追加行に届く(IssueDetailComponentのテストと同じ)。
+        for _ in 0..12 {
+            app.process_event(key_event(KeyCode::Char('j')), dispatcher.clone(), &mut sink);
+            app.update(dispatcher.clone(), dispatcher.borrow().store(), AREA);
+        }
+        sink.take_usecases();
+
+        app.process_event(key_event(KeyCode::Enter), dispatcher.clone(), &mut sink);
+
+        let draft = new_issue_component(&app)
+            .expect("the child draft should replace the issue")
+            .draft();
+        let parent_project_id = dispatcher.borrow().store().get_issue(2).0.project_id();
+        assert_eq!(draft.borrow().project_id, parent_project_id);
+        assert_eq!(draft.borrow().parent_issue_id, Some(IssueId::new(2)));
+        assert_no_requests(&mut sink);
+    }
+
+    #[test]
+    fn selecting_an_issue_from_a_draft_discards_the_draft() {
+        let mut sink = RequestSink::default();
+        let dispatcher = loaded_dispatcher();
+        let mut app = AppComponent::new(
+            dispatcher.clone(),
+            None,
+            CursorRendering::Terminal,
+            &mut sink,
+        );
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), &mut sink);
+        app.process_event(key_event(KeyCode::Char('n')), dispatcher.clone(), &mut sink);
+
+        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone(), &mut sink);
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), &mut sink);
+        app.process_event(key_event(KeyCode::Char('q')), dispatcher.clone(), &mut sink);
+        assert!(new_issue_component(&app).is_some());
+
+        app.process_event(key_event(KeyCode::Char('y')), dispatcher.clone(), &mut sink);
+        complete_initial_popup_page_fetch(&mut app, dispatcher.clone(), &mut sink);
+        for code in [KeyCode::Char('l'), KeyCode::Enter] {
+            app.process_event(key_event(code), dispatcher.clone(), &mut sink);
+        }
+
+        assert!(new_issue_component(&app).is_none());
+        assert_eq!(app.issue_component().unwrap().issue_id(), IssueId::new(1));
     }
 
     #[test]
@@ -1926,7 +2557,7 @@ mod tests {
         sink.take_usecases();
         app.popup_components
             .push_back(Rc::new(RefCell::new(PopupComponent::AttachmentInput {
-                issue_id: 3.into(),
+                destination: AttachmentDestination::Issue(3.into()),
                 component: AttachmentInputPopupComponent::new(),
             })));
         for code in "a.png"

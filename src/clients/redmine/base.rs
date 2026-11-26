@@ -96,6 +96,11 @@ pub trait RedmineClient {
         issue_id: IssueId,
         update: &IssueUpdate,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
+    /// Issueを作成し、作成したIssueのIDを返す。
+    fn create_issue(
+        &self,
+        issue: &NewIssue,
+    ) -> impl std::future::Future<Output = Result<IssueId, RedmineClientError>> + Send;
     /// Redmine上の既存Journalのnotes全体を指定値で置き換える。
     fn update_journal_notes(
         &self,
@@ -170,6 +175,35 @@ pub trait RedmineClient {
     fn get_users(
         &self,
     ) -> impl std::future::Future<Output = Result<Vec<User>, RedmineClientError>> + Send;
+}
+
+/// Issueの作成要求。
+///
+/// `None`の属性は送信せず、Redmineの既定値にする。`uploads`は[`RedmineClient::upload_file`]で
+/// 送ったファイルを、作成したIssueに添付する。
+#[derive(Clone, Debug, PartialEq)]
+pub struct NewIssue {
+    pub project_id: ProjectId,
+    pub subject: String,
+    pub parent_issue_id: Option<IssueId>,
+    pub description: Option<String>,
+    pub tracker_id: Option<TrackerId>,
+    pub status_id: Option<IssueStatusId>,
+    pub priority_id: Option<PriorityId>,
+    pub assigned_to_id: Option<UserId>,
+    pub target_version_id: Option<TargetVersionId>,
+    pub start_date: Option<DateTime<Local>>,
+    pub due_date: Option<DateTime<Local>>,
+    pub done_ratio: Option<u16>,
+    pub estimated_hours: Option<f64>,
+    pub category_id: Option<CategoryId>,
+    pub uploads: Vec<NewIssueUpload>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NewIssueUpload {
+    pub token: UploadToken,
+    pub filename: String,
 }
 
 /// Issue属性の更新要求。編集した属性だけを持つ。

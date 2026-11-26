@@ -3,6 +3,7 @@
 mod attachment;
 mod children;
 mod conflict;
+mod create;
 mod editing;
 mod issue_fetch;
 mod issue_select_popup;

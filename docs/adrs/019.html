@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 19 — Issueの新規作成と下書きの保持</title>
+    <link rel="stylesheet" href="../assets/doc.css" />
+  </head>
+  <body>
+    <main>
+<h1>19. Issueの新規作成と下書きの保持</h1>
+<h2 id="status">Status</h2>
+<p><span class="status status--accepted">Accepted</span></p>
+<h2 id="context">Context</h2>
+<p>Issueの新規作成（ANO-183）を実装する。作成を始める導線は次の2つとする。</p>
+<ul>
+<li>導線1: Issue選択popupでフォーカスしているプロジェクトに、親を持たないIssueを作る。</li>
+<li>導線2: Issue詳細の子一覧から、表示中のIssueを親とする子Issueを作る。親のプロジェクトに作る。</li>
+</ul>
+<p>関連するRedmine APIは次のとおりである。</p>
+<ul>
+<li><code>POST /issues.json</code>で作成する。<code>project_id</code>と<code>subject</code>が必須で、子Issueは<code>parent_issue_id</code>に親IDを入れる。<code>tracker_id</code>・<code>status_id</code>・<code>priority_id</code>を省略すると既定値になる。添付ファイルは<code>uploads: [{token, filename, content_type}]</code>で作成と同時に付けられる。
+<ul>
+<li>成功は201 Createdで、bodyに<code>{"issue": {...}}</code>が入る。<code>children</code>と<code>journals</code>は含まない。</li>
+<li>検証エラーは422で<code>{"errors": [...]}</code>が返る。権限（<code>add_issues</code>）がなければ403が返る。</li>
+<li>親と別プロジェクトに子を作れるかは、管理設定「プロジェクト間の親子関係」で決まる。</li>
+<li>新規作成時に選べる初期ステータスは、ワークフローの「新規チケット」遷移で絞られる（未確認）。</li>
+</ul>
+</li>
+<li><code>POST /uploads.json</code>で送ったファイルのtokenは、作成の<code>uploads</code>に入れられる。既存の<code>upload_file</code>で取得できる。</li>
+<li>作成後の取得は<code>GET /issues/{id}.json?include=children,journals,attachments</code>で、既存の<code>get_issue</code>を使う。</li>
+</ul>
+<p>現状の仕組みには、次の前提と制約がある。</p>
+<ul>
+<li>Issueの編集中の値はStoreの<code>IssueStore</code>が<code>diffs</code>として持ち、編集popupのobserverが<code>IssueAction</code>をdispatchする（<code>src/usecases/issue_popup_options.rs</code>）。選択肢の組み立ても、Storeにある取得済みIssueの値を前提にしている。</li>
+<li><code>DefaultRedmineClient</code>のHTTPヘルパーは、<code>put_empty</code>とバイナリ用の<code>post_bytes_json</code>だけである。</li>
+<li><code>AppComponent</code>は表示中のIssueを<code>issue_component: Option&lt;IssueComponent&gt;</code>で持つ。</li>
+<li>Usecaseから<code>AppComponent</code>へ一度だけ起きたことを伝える経路として、<code>UsecaseEvent</code>がある（<a href="018.html">ADR 18</a>）。</li>
+<li><code>fetch_issue</code>は未取得か取得失敗のIssueしか取得を始めない。<code>IssueStore</code>の子一覧は、詳細取得の完了と保存後の取得でしか置き換わらない。</li>
+</ul>
+<h2 id="decision">Decision</h2>
+<h3 id="下書きは新規作成用componentが持つ">下書きは新規作成用Componentが持つ</h3>
+<p>新規作成用の<code>NewIssueComponent</code>を<code>src/components/new_issue/</code>に置く。下書き<code>NewIssueDraft</code>はこのComponentが持ち、Storeには置かない。<code>NewIssueDraft</code>は作成の要求でUsecaseへ渡すため、型は<code>src/usecases/</code>に置く（<code>usecases</code>は<code>components</code>に依存しない）。</p>
+<pre><code class="language-rust">pub struct NewIssueDraft {
+    pub project_id: ProjectId,              // 導線で決まり、下書きでは変えない
+    pub parent_issue_id: Option&lt;IssueId&gt;,   // 導線2だけSome。下書きでは変えない
+    pub subject: String,
+    pub description: String,
+    pub tracker_id: Option&lt;TrackerId&gt;,      // Noneは送信せず、サーバーの既定値にする
+    pub status_id: Option&lt;IssueStatusId&gt;,   // 同上
+    pub priority_id: Option&lt;PriorityId&gt;,    // 同上
+    pub assigned_to_id: Option&lt;UserId&gt;,
+    pub target_version_id: Option&lt;TargetVersionId&gt;,
+    pub start_date: Option&lt;DateTime&lt;Local&gt;&gt;,
+    pub due_date: Option&lt;DateTime&lt;Local&gt;&gt;,
+    pub done_ratio: Option&lt;u16&gt;,
+    pub estimated_hours: Option&lt;f64&gt;,
+    pub category_id: Option&lt;CategoryId&gt;,
+    pub attachments: Vec&lt;DraftAttachment&gt;,  // { filename, path }
+}
+</code></pre>
+<ul>
+<li>編集できる属性は、プロジェクトを除いて既存のIssue詳細の編集UIと同じとする。プロジェクトは導線で決まり、トラッカー・対象バージョン・カテゴリの選択肢のもとになるため、下書きでは変えない。</li>
+<li>選択肢の組み立ては、<code>issue_popup_options</code>の<code>build_*_options</code>を、IssueのIDではなく現在値とプロジェクトIDを受け取る形に分ける。既存のIssue詳細は、Storeから現在値を読んで呼ぶ。</li>
+<li>編集popupは既存のものを使う。下書きは<code>Rc&lt;RefCell&lt;NewIssueDraft&gt;&gt;</code>で持つ。<code>NewIssueComponent</code>が下書きを書き換えるobserverを組み立て、<code>AppComponent</code>がそれを渡してpopupを開く。observerはActionをdispatchしない。</li>
+<li>題名と説明の編集は外部editorを使う。<code>PendingEditorContext</code>に新規作成用の文脈を加え、<code>handle_editor_response</code>が下書きに書き戻す。題名は1行のため、改行と連続する空白を1つの空白にまとめる。</li>
+<li>添付ファイルは、既存の<code>AttachmentInputPopupComponent</code>でファイル名とパスを受け取り、下書きに積む。ファイルは作成の要求まで読まない。</li>
+<li>題名が空白だけのときは作成を要求せず、題名が必要なことをtoastで知らせる。それ以外の検証はRedmineの422に任せる。</li>
+</ul>
+<h3 id="表示中のcomponentを切り替える">表示中のComponentを切り替える</h3>
+<p><code>AppComponent</code>は表示中の画面を、Issue詳細と新規作成のどちらか一方として持つ。</p>
+<pre><code class="language-rust">enum MainComponent {
+    Issue(IssueComponent),
+    NewIssue(NewIssueComponent),
+}
+</code></pre>
+<ul>
+<li>導線1では、Issue選択popupで<code>n</code>を押すと<code>IssueSelectPopupComponent</code>がフォーカス中のプロジェクトIDを返し、<code>AppComponent</code>がpopupを閉じて<code>NewIssueComponent</code>に差し替える。</li>
+<li>導線2では、子一覧の追加行でEnterを押すと<code>IssueDetailComponent</code>が表示中のIssueのIDを返す。<code>AppComponent</code>はStoreから親のプロジェクトIDを読み、<code>NewIssueComponent</code>に差し替える。</li>
+<li><code>NewIssueComponent</code>からもIssue選択popupを開ける。Issueを選んだら<code>IssueComponent</code>に差し替え、<code>NewIssueComponent</code>と下書きは破棄する。Webで作成完了前に別のIssueを表示したのと同じ扱いとし、確認ダイアログは今は作らない。popupを閉じただけなら下書きに戻る。</li>
+<li><code>NewIssueComponent</code>は作られるたびに、新しい<code>IssueCreationId</code>を持つ。作成の要求とその結果のイベントはこのIDを持つ。</li>
+</ul>
+<h3 id="作成はusecaseが行い結果をイベントで返す">作成はUsecaseが行い、結果をイベントで返す</h3>
+<p><code>NewIssueComponent</code>はCtrl+Sで作成の要求を結果として返し、<code>AppComponent</code>が<code>UsecaseRequest::CreateIssue { creation_id, draft }</code>を<code>RequestSink</code>に書く。要求したComponentは作成中の状態になり、編集を受け付けない。</p>
+<p><code>create_issue</code> Usecaseは、非同期の処理で次を順に行う。</p>
+<ol>
+<li>下書きの添付ファイルを<code>LocalFileClient</code>で読み、<code>upload_file</code>でtokenを取得する。この処理は既存の添付ファイルの追加と共有する。</li>
+<li><code>create_issue</code>で<code>POST /issues.json</code>を送る。添付ファイルは<code>uploads</code>に入れる。</li>
+<li>成功したら、イベント<code>UsecaseEvent::IssueCreated { creation_id, id }</code>と、後続要求<code>FetchIssue { id, with_parent: true }</code>を返す。</li>
+</ol>
+<p>いずれかに失敗したら、<code>UsecaseEvent::Failure(UsecaseFailure::IssueCreate { creation_id, cause })</code>を返す。tokenは保持せず、再送では添付ファイルを読み直して送る。</p>
+<pre><code class="language-rust">pub enum IssueCreateFailure {
+    AttachmentFileRead { filename: String, reason: String },
+    AttachmentFileUpload { filename: String, reason: String },
+    Create { reason: String },
+    CreateOutcomeUnknown { reason: String },
+}
+</code></pre>
+<p>失敗した段階を種類で分け、通知の文言は<code>ToastListComponent</code>が組み立てる（<a href="018.html">ADR 18</a>）。作成の要求が4xxで拒否されたときは<code>Create</code>とする。5xx・通信・Clientのエラーは、Redmineが作成した後に応答を受け取れなかった場合も含むため、<code>CreateOutcomeUnknown</code>とする。5xxは前段のproxyが返すこともある。このときtoastで、再送すると二重に作成されることがあると知らせる。どちらの場合も、下書きは編集できる状態に戻す。</p>
+<p><code>AppComponent::handle_usecase_events</code>は、イベントを次のように扱う。</p>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>イベント</th>
+<th>表示中が同じ<code>creation_id</code>の<code>NewIssueComponent</code></th>
+<th>それ以外</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IssueCreated</code></td>
+<td><code>IssueComponent::new(store, id)</code>に差し替える</td>
+<td>無視する</td>
+</tr>
+<tr>
+<td><code>Failure(IssueCreate)</code></td>
+<td>編集できる状態に戻し、toastを出す</td>
+<td>toastだけ出す</td>
+</tr>
+</tbody>
+</table>
+</div>
+<ul>
+<li><code>IssueCreated</code>を受けた時点で、作成したIssueはまだ取得していない。<code>IssueComponent::new</code>は未取得のIssueでも作れ、後続の<code>FetchIssue</code>が取得を始める（<a href="018.html">ADR 18</a>）。</li>
+<li><code>handle_usecase_events</code>がStoreを読むため、読み取り専用の<code>&amp;Store</code>を渡す。</li>
+<li>作成の失敗はStoreの状態に残さない。下書きは<code>NewIssueComponent</code>にあり、再送はComponentから要求し直すためである。</li>
+</ul>
+<h3 id="clientに作成のapiを足す">Clientに作成のAPIを足す</h3>
+<pre><code class="language-rust">fn create_issue(
+    &amp;self,
+    issue: &amp;NewIssue,
+) -&gt; impl Future&lt;Output = Result&lt;IssueId, RedmineClientError&gt;&gt; + Send;
+</code></pre>
+<ul>
+<li><code>NewIssue</code>は<code>IssueUpdate</code>に近いが、<code>project_id</code>・<code>subject</code>を必須とし、<code>parent_issue_id</code>と<code>uploads</code>を持つ。値の解除がないため、外側の<code>Option</code>は送信しないことだけを表す。<code>serialize_clearable</code>は使わない。</li>
+<li><code>DefaultRedmineClient</code>に、JSONを送ってJSONを受け取る<code>post_json</code>ヘルパーを足す。201の<code>{"issue": {...}}</code>から<code>id</code>だけを読む。</li>
+<li><code>DemoRedmineClient</code>は、memory上のfixtureに新しいIDでIssueを追加する。</li>
+<li>選択肢の取得には、既存の<code>/trackers.json</code>・<code>/users.json</code>などを使い、プロジェクトごとの有効なトラッカーやメンバーの取得APIは足さない。</li>
+</ul>
+<h3 id="親の子一覧は取り直さない">親の子一覧は取り直さない</h3>
+<p>導線2で子Issueを作っても、取得済みの親の子一覧は取り直さない。親を取得済みのまま子を作ると、親をIssue選択から開き直しても、親を保存するまで子一覧に作成した子は出ない。</p>
+<p>取得済みのIssueを取り直す仕組みは、子一覧だけでなくIssue全体を取り込むUsecaseとして別に整備する。親の子一覧の取り直しは、その仕組みを使って行う（Future Work）。</p>
+<h2 id="rationale">Rationale</h2>
+<p>下書きをComponentに置くのは、下書きが、Issue選択で別のIssueを選ぶと捨てる一時的な入力であり、他のComponentから読まれないためである。Storeに置くと、まだIDのないIssueを<code>IssueStore</code>のどこに置くか、破棄をどのActionで表すかを決める必要がある。focusやcursorと同じく、同期的なUI stateとしてComponentに持つ。</p>
+<p>既存の編集popupは、値を確定したときにobserverを呼ぶ形である。observerの書き込み先を下書きに変えれば、popupに手を入れずに使える。下書きを<code>Rc&lt;RefCell&lt;_&gt;&gt;</code>にするのは、popupが<code>AppComponent</code>のpopup stackにあり、<code>NewIssueComponent</code>とは別に生きるためである。</p>
+<p>作成の完了をイベントで返すのは、<a href="018.html">ADR 18</a>で決めたとおり、一度だけ起きたことをStoreの状態として残さないためである。作成の成功はStoreに何も残さず、取得は後続の<code>FetchIssue</code>に任せる。</p>
+<p><code>IssueCreationId</code>を持たせるのは、作成中に別のIssueへ移り、さらに新しい下書きを開いた場合に、古い作成の結果を新しい下書きに当てないためである。作成中のComponentがもうなければ、結果のイベントを当てる先はない。失敗のtoastは、下書きを捨てた後でも作成が失敗したことを知らせるために出す。</p>
+<p>添付ファイルを作成の<code>uploads</code>に入れるのは、作成と添付を1回のPOSTで確定できるためである。作成後に<code>attach_upload</code>で付ける2段階にすると、作成は成功して添付だけ失敗した状態を扱う必要がある。</p>
+<p>親の子一覧を今回は取り直さないのは、取得済みのIssueを取り直す仕組みを、子一覧だけの部分的なものではなくIssue全体のUsecaseとして整備したいためである。取得済みのIssueには未送信の編集やupload中の状態があり、Issue本体を取り込むにはマージ戦略や、どの契機で取り直すかを決める必要がある。これらは新規作成とは別に決める。</p>
+<h2 id="consequences">Consequences</h2>
+<ul>
+<li><code>AppComponent</code>の<code>issue_component</code>は<code>MainComponent</code>に変わる。<code>issue_component</code>を前提にした処理（入力の振り分け、update、render、cursor位置、競合popupを開く判定）は、<code>MainComponent::Issue</code>のときだけ動く。</li>
+<li><code>UsecaseEvent</code>に<code>IssueCreated</code>、<code>UsecaseFailure</code>に<code>IssueCreate</code>が加わる。<code>ToastListComponent</code>に作成の失敗の文言を足す。</li>
+<li><code>handle_usecase_events</code>が<code>&amp;Store</code>を受け取る。<a href="018.html">ADR 18</a>で、Storeを読む必要が出たら読み取り専用で渡すとしたとおりである。</li>
+<li><code>UsecaseRequest</code>に<code>CreateIssue</code>が加わる。</li>
+<li><code>issue_popup_options</code>の<code>build_*_options</code>の引数が変わる。</li>
+<li><code>RedmineClient</code>に<code>create_issue</code>が加わり、<code>DefaultRedmineClient</code>・<code>DemoRedmineClient</code>・テスト用のstubに実装が必要になる。Docker上のRedmineに対するclientテストとE2Eに、作成のケースを足す。</li>
+<li>作成に失敗すると、uploadしたファイルはどのIssueにも属さないままRedmineに残る。再送ではファイルを送り直すため、失敗するたびに残るファイルが増える。</li>
+<li>ステータスの選択肢は全ステータスで、ワークフローで許されない初期ステータスを選ぶと422になる。</li>
+<li>作成中に別のIssueへ移って作成が成功した場合、作成したIssueは自動では開かない。</li>
+<li>導線2で子Issueを作っても、取得済みの親の子一覧には、親を保存して取り直すまで作成した子が出ない。</li>
+</ul>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<ul>
+<li>下書きをStoreに置く: Componentを破棄しても下書きが残り、イベントがなくても完了を検知できる。一方で、IDのないIssueの置き場所と破棄のActionが要り、Issue選択で捨てる一時的な入力をStoreの状態遷移として扱うことになる。採用しない。</li>
+<li>作成の成功をStoreの状態で表し、<code>AppComponent::update</code>で検知する: 競合popupと同じく「すでに反応したか」の判定が要る。<a href="018.html">ADR 18</a>でイベントを作った理由そのものであり、採用しない。</li>
+<li>作成成功のActionで、Storeにある親の子一覧に<code>IssueChild</code>を1件足す: POSTのレスポンスにある<code>id</code>・<code>tracker</code>・<code>subject</code>で作れ、変更が一番少ない。ただし、別の利用者が同じ親に作った子や、作成時にRedmineが変えた内容は反映されない。サーバーの値を取り直す仕組みで扱う方が、詳細取得と同じ値を持てるため、採用しない。</li>
+<li>取得済みのIssueの子一覧だけを取り直すUsecaseを足す: 子一覧はローカルで編集しないため、置き換えても編集を失わない。ただし、取得済みのIssueを取り直す仕組みが子一覧だけの部分的なものになる。Issue全体を取り直すUsecaseとして整備したいため、採用しない。</li>
+<li>作成後に<code>attach_upload</code>で添付する: 既存の添付の仕組みをそのまま使えるが、作成だけ成功した中途半端な状態の扱いが要る。採用しない。</li>
+<li>popupの確定値を<code>EventProcessResult</code>で返し、<code>AppComponent</code>が<code>NewIssueComponent</code>に渡す: <code>Rc&lt;RefCell&lt;_&gt;&gt;</code>は要らないが、既存のpopupの戻り値をすべて変える必要がある。採用しない。</li>
+<li><code>IssueCreationId</code>を持たず、表示中が<code>NewIssueComponent</code>かどうかだけで判定する: 作成中に別のIssueを経由して新しい下書きを開くと、古い作成の結果が新しい下書きに当たる。採用しない。</li>
+<li>プロジェクトごとの有効なトラッカーや担当者候補を取得するAPIを足す: 選択肢の精度は上がるが、既存の編集UIと選択肢が食い違う。編集UIとあわせて別に検討する。</li>
+</ul>
+<h2 id="future-work">Future Work</h2>
+<ul>
+<li>取得済みのIssueを取り直すUsecaseを、Issue全体を対象として整備すること。どの契機で取り直すか、編集中・upload中のIssueにどう取り込むか、重複した取り直しの完了をどう扱うかを決める。導線2で子Issueを作ったときの親の子一覧の取り直しは、このUsecaseを使って行う。</li>
+<li>新規作成中に別のIssueを選んだときの確認ダイアログ。</li>
+<li>プロジェクトで有効なトラッカー、担当者候補、ワークフローで許される初期ステータスへの選択肢の絞り込み。</li>
+<li>422の<code>errors</code>を解析し、属性ごとに表示すること。</li>
+</ul>
+    </main>
+  </body>
+</html>

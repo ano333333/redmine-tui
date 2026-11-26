@@ -27,29 +27,34 @@ fn build_select_options(
     (entries, focused_index)
 }
 
-/// IssueStatusPopup用のitems/focused_indexを組み立てる。
+/// IssueStatusPopup用のitems/focused_indexを組み立てる。`current`がNoneなら先頭にフォーカスする。
 // FIXME: workflowで許可された遷移先に絞っていない。Redmineは許可されないstatus_idをエラーなしで
 // 無視するため、ローカルでは変更済みに見えてしまう。
-pub fn build_issue_status_options(store: &Store) -> (Vec<(u32, String)>, usize) {
+pub fn build_issue_status_options(
+    store: &Store,
+    current: Option<IssueStatusId>,
+) -> (Vec<(u32, String)>, usize) {
     let issue_statuses = store
         .get_issue_statuses()
         .iter()
         .map(|(id, status)| (id.get(), status.name.clone()))
         .collect::<Vec<_>>();
-    build_select_options(issue_statuses, None, false)
+    build_select_options(issue_statuses, current.map(|id| id.get()), false)
 }
 
-/// TrackerPopup用のitems/focused_indexを組み立てる。
+/// TrackerPopup用のitems/focused_indexを組み立てる。`current`がNoneなら先頭にフォーカスする。
 // FIXME: projectで有効なtrackerに絞っていない。Redmineは使えないtracker_idをエラーなしで
 // 無視するため、ローカルでは変更済みに見えてしまう。
-pub fn build_tracker_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
-    let current_tracker_id = store.get_issue(issue_id).0.tracker_id();
+pub fn build_tracker_options(
+    store: &Store,
+    current: Option<TrackerId>,
+) -> (Vec<(u32, String)>, usize) {
     let trackers = store
         .get_trackers()
         .iter()
         .map(|(id, tracker)| (id.get(), tracker.name.clone()))
         .collect::<Vec<_>>();
-    build_select_options(trackers, Some(current_tracker_id.get()), true)
+    build_select_options(trackers, current.map(|id| id.get()), true)
 }
 
 /// ProjectPopup用のitems/focused_indexを組み立てる。
@@ -65,71 +70,73 @@ pub fn build_project_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, Str
     build_select_options(projects, Some(current_project_id.get()), true)
 }
 
-/// PriorityPopup用のitems/focused_indexを組み立てる。
-pub fn build_priority_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
-    let current_priority_id = store.get_issue(issue_id).0.priority_id();
+/// PriorityPopup用のitems/focused_indexを組み立てる。`current`がNoneなら先頭にフォーカスする。
+pub fn build_priority_options(
+    store: &Store,
+    current: Option<PriorityId>,
+) -> (Vec<(u32, String)>, usize) {
     let priorities = store
         .get_priorities()
         .iter()
         .map(|(id, priority)| (id.get(), priority.name.clone()))
         .collect::<Vec<_>>();
-    build_select_options(priorities, Some(current_priority_id.get()), true)
+    build_select_options(priorities, current.map(|id| id.get()), true)
 }
 
-/// AssignedToPopup用のitems/focused_indexを組み立てる。
+/// AssignedToPopup用のitems/focused_indexを組み立てる。`current`がNoneなら先頭にフォーカスする。
 // FIXME: projectのassignableなmemberに絞っていない。Redmineはmember以外のassigned_to_idを
 // 422で拒否する。
-pub fn build_assigned_to_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
-    let current_assigned_to_id = store.get_issue(issue_id).0.assigned_to_id();
+pub fn build_assigned_to_options(
+    store: &Store,
+    current: Option<UserId>,
+) -> (Vec<(u32, String)>, usize) {
     let users = store
         .get_users()
         .iter()
         .map(|(id, user)| (id.get(), user.name.clone()))
         .collect::<Vec<_>>();
-    build_select_options(users, current_assigned_to_id.map(|id| id.get()), true)
+    build_select_options(users, current.map(|id| id.get()), true)
 }
 
-/// TargetVersionPopup用のitems/focused_indexを組み立てる。
+/// TargetVersionPopup用に、`project_id`の対象バージョンからitems/focused_indexを組み立てる。
+/// `current`がNoneなら先頭にフォーカスする。
 pub fn build_target_version_options(
     store: &Store,
-    issue_id: IssueId,
+    project_id: ProjectId,
+    current: Option<TargetVersionId>,
 ) -> (Vec<(u32, String)>, usize) {
-    let (issue, _) = store.get_issue(issue_id);
-    let current_target_version_id = issue.target_version_id();
     let target_versions = store
-        .get_target_versions(issue.project_id())
+        .get_target_versions(project_id)
         .into_iter()
         .map(|target_version| (target_version.id.get(), target_version.name.clone()))
         .collect::<Vec<_>>();
-    build_select_options(
-        target_versions,
-        current_target_version_id.map(|id| id.get()),
-        true,
-    )
+    build_select_options(target_versions, current.map(|id| id.get()), true)
 }
 
 /// DoneRatioPopup用のitems/focused_indexを組み立てる。
 ///
-/// 選択肢は0,10,...,100の固定11件。
-pub fn build_done_ratio_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
-    let current_done_ratio = store.get_issue(issue_id).0.done_ratio();
+/// 選択肢は0,10,...,100の固定11件。`current`がNoneなら先頭にフォーカスする。
+pub fn build_done_ratio_options(current: Option<u16>) -> (Vec<(u32, String)>, usize) {
     let done_ratios = (0..=100)
         .step_by(10)
         .map(|ratio| (ratio, ratio.to_string()))
         .collect::<Vec<_>>();
-    build_select_options(done_ratios, Some(u32::from(current_done_ratio)), false)
+    build_select_options(done_ratios, current.map(u32::from), false)
 }
 
-/// CategoryPopup用のitems/focused_indexを組み立てる。
-pub fn build_category_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
-    let (issue, _) = store.get_issue(issue_id);
-    let current_category_id = issue.category_id();
+/// CategoryPopup用に、`project_id`のカテゴリからitems/focused_indexを組み立てる。
+/// `current`がNoneなら先頭にフォーカスする。
+pub fn build_category_options(
+    store: &Store,
+    project_id: ProjectId,
+    current: Option<CategoryId>,
+) -> (Vec<(u32, String)>, usize) {
     let categories = store
-        .get_categories(issue.project_id())
+        .get_categories(project_id)
         .into_iter()
         .map(|category| (category.id.get(), category.name.clone()))
         .collect::<Vec<_>>();
-    build_select_options(categories, current_category_id.map(|id| id.get()), true)
+    build_select_options(categories, current.map(|id| id.get()), true)
 }
 
 /// IssueStatusPopupの選択結果からUpdateStatusをdispatchするobserverを組み立てる。
@@ -373,7 +380,7 @@ mod tests {
     fn issue_status_options_are_not_sorted_and_focus_the_first_item() {
         let dispatcher = loaded_dispatcher();
 
-        let (mut items, focused_index) = build_issue_status_options(dispatcher.store());
+        let (mut items, focused_index) = build_issue_status_options(dispatcher.store(), None);
 
         assert_eq!(focused_index, 0);
         items.sort_by_key(|(id, _)| *id);
@@ -394,7 +401,8 @@ mod tests {
     fn tracker_options_are_sorted_and_focus_the_current_tracker() {
         let dispatcher = loaded_dispatcher();
 
-        let (items, focused_index) = build_tracker_options(dispatcher.store(), 3.into());
+        let (items, focused_index) =
+            build_tracker_options(dispatcher.store(), Some(TrackerId::new(3)));
 
         assert_eq!(
             items,
@@ -405,6 +413,15 @@ mod tests {
             ]
         );
         assert_eq!(focused_index, 2);
+    }
+
+    #[test]
+    fn tracker_options_focus_the_first_item_without_a_current_tracker() {
+        let dispatcher = loaded_dispatcher();
+
+        let (_, focused_index) = build_tracker_options(dispatcher.store(), None);
+
+        assert_eq!(focused_index, 0);
     }
 
     #[test]
@@ -425,14 +442,10 @@ mod tests {
 
     #[test]
     fn priority_options_are_sorted_and_focus_the_current_priority() {
-        let mut dispatcher = loaded_dispatcher();
-        dispatcher.dispatch(IssueAction::UpdatePriority {
-            id: 3.into(),
-            priority_id: PriorityId::new(3),
-        });
-        dispatcher.consume_action();
+        let dispatcher = loaded_dispatcher();
 
-        let (items, focused_index) = build_priority_options(dispatcher.store(), 3.into());
+        let (items, focused_index) =
+            build_priority_options(dispatcher.store(), Some(PriorityId::new(3)));
 
         assert_eq!(
             items,
@@ -448,14 +461,10 @@ mod tests {
 
     #[test]
     fn assigned_to_options_are_sorted_and_focus_the_current_assignee() {
-        let mut dispatcher = loaded_dispatcher();
-        dispatcher.dispatch(IssueAction::UpdateAssignedTo {
-            id: 3.into(),
-            assigned_to_id: Some(UserId::new(1002)),
-        });
-        dispatcher.consume_action();
+        let dispatcher = loaded_dispatcher();
 
-        let (items, focused_index) = build_assigned_to_options(dispatcher.store(), 3.into());
+        let (items, focused_index) =
+            build_assigned_to_options(dispatcher.store(), Some(UserId::new(1002)));
 
         assert_eq!(
             items,
@@ -466,14 +475,9 @@ mod tests {
 
     #[test]
     fn assigned_to_options_focus_the_first_item_when_unassigned() {
-        let mut dispatcher = loaded_dispatcher();
-        dispatcher.dispatch(IssueAction::UpdateAssignedTo {
-            id: 3.into(),
-            assigned_to_id: None,
-        });
-        dispatcher.consume_action();
+        let dispatcher = loaded_dispatcher();
 
-        let (_, focused_index) = build_assigned_to_options(dispatcher.store(), 3.into());
+        let (_, focused_index) = build_assigned_to_options(dispatcher.store(), None);
 
         assert_eq!(focused_index, 0);
     }
@@ -490,14 +494,13 @@ mod tests {
                 })
                 .into(),
         });
-        dispatcher.dispatch(IssueAction::UpdateTargetVersion {
-            id: 3.into(),
-            target_version_id: Some(TargetVersionId::new(3)),
-        });
-        dispatcher.consume_action();
         dispatcher.consume_action();
 
-        let (items, focused_index) = build_target_version_options(dispatcher.store(), 3.into());
+        let (items, focused_index) = build_target_version_options(
+            dispatcher.store(),
+            ProjectId::new(1),
+            Some(TargetVersionId::new(3)),
+        );
 
         assert_eq!(items, vec![(1, "v1".to_string()), (3, "v3".to_string())]);
         assert_eq!(focused_index, 1);
@@ -505,9 +508,7 @@ mod tests {
 
     #[test]
     fn done_ratio_options_are_fixed_steps_of_ten() {
-        let dispatcher = loaded_dispatcher();
-
-        let (items, _) = build_done_ratio_options(dispatcher.store(), 3.into());
+        let (items, _) = build_done_ratio_options(None);
 
         assert_eq!(
             items,
@@ -529,14 +530,7 @@ mod tests {
 
     #[test]
     fn done_ratio_options_focus_the_current_value() {
-        let mut dispatcher = loaded_dispatcher();
-        dispatcher.dispatch(IssueAction::UpdateDoneRatio {
-            id: 3.into(),
-            done_ratio: 30,
-        });
-        dispatcher.consume_action();
-
-        let (_, focused_index) = build_done_ratio_options(dispatcher.store(), 3.into());
+        let (_, focused_index) = build_done_ratio_options(Some(30));
 
         assert_eq!(focused_index, 3);
     }
@@ -545,14 +539,10 @@ mod tests {
     fn category_options_are_sorted_and_focus_the_first_item_when_uncategorized() {
         let mut dispatcher = loaded_dispatcher();
         dispatch_unsorted_categories(&mut dispatcher);
-        dispatcher.dispatch(IssueAction::UpdateCategory {
-            id: 3.into(),
-            category_id: None,
-        });
-        dispatcher.consume_action();
         dispatcher.consume_action();
 
-        let (items, focused_index) = build_category_options(dispatcher.store(), 3.into());
+        let (items, focused_index) =
+            build_category_options(dispatcher.store(), ProjectId::new(1), None);
 
         assert_eq!(items, vec![(1, "c1".to_string()), (3, "c3".to_string())]);
         assert_eq!(focused_index, 0);
@@ -562,14 +552,13 @@ mod tests {
     fn category_options_focus_the_current_category() {
         let mut dispatcher = loaded_dispatcher();
         dispatch_unsorted_categories(&mut dispatcher);
-        dispatcher.dispatch(IssueAction::UpdateCategory {
-            id: 3.into(),
-            category_id: Some(CategoryId::new(3)),
-        });
-        dispatcher.consume_action();
         dispatcher.consume_action();
 
-        let (_, focused_index) = build_category_options(dispatcher.store(), 3.into());
+        let (_, focused_index) = build_category_options(
+            dispatcher.store(),
+            ProjectId::new(1),
+            Some(CategoryId::new(3)),
+        );
 
         assert_eq!(focused_index, 1);
     }

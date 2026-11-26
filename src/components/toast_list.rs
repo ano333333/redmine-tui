@@ -1,4 +1,4 @@
-use crate::usecases::UsecaseFailure;
+use crate::usecases::{IssueCreateFailure, UsecaseFailure};
 use crate::vos::IssueId;
 use crate::widgets::ToastWidget;
 
@@ -18,6 +18,20 @@ pub struct ToastListComponent {
 impl ToastListComponent {
     pub fn push_failure(&mut self, failure: &UsecaseFailure) {
         let message = match failure {
+            UsecaseFailure::IssueCreate { cause, .. } => match cause {
+                IssueCreateFailure::AttachmentFileRead { filename, reason } => {
+                    format!("新しいIssueへ添付する{filename}を読み込めませんでした: {reason}")
+                }
+                IssueCreateFailure::AttachmentFileUpload { filename, reason } => {
+                    format!("新しいIssueへ添付する{filename}の送信に失敗しました: {reason}")
+                }
+                IssueCreateFailure::Create { reason } => {
+                    format!("Issueの作成に失敗しました: {reason}")
+                }
+                IssueCreateFailure::CreateOutcomeUnknown { reason } => format!(
+                    "Issueを作成できたか確認できませんでした。もう一度作成すると二重に作成されることがあるため、Issue選択で確認してください: {reason}"
+                ),
+            },
             UsecaseFailure::IssueUpload { id, reason } => {
                 format!("Issue #{id}の保存に失敗しました: {reason}")
             }
@@ -66,6 +80,10 @@ impl ToastListComponent {
         self.push(format!(
             "terminalのピクセル単位の大きさを取得できないため、画像を表示しません: {reason}"
         ));
+    }
+
+    pub fn push_new_issue_subject_required(&mut self) {
+        self.push("題名を入力してから作成してください".to_string());
     }
 
     pub fn push_computed_property_not_editable(&mut self, issue_id: IssueId, property: &str) {
@@ -146,6 +164,64 @@ mod tests {
 
     fn render_toast_snapshot(name: &str, toast_list: &ToastListComponent) {
         render_snapshot(name, 60, 12, toast_list.create_widget());
+    }
+
+    #[test]
+    fn snapshot_issue_create_failure() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::IssueCreate {
+            creation_id: crate::usecases::IssueCreationId::new(),
+            cause: IssueCreateFailure::Create {
+                reason: "unprocessable entity: Subject cannot be blank".to_string(),
+            },
+        });
+
+        render_toast_snapshot("toast_list_issue_create_failure", &toast_list);
+    }
+
+    #[test]
+    fn snapshot_issue_create_attachment_failures() {
+        let mut toast_list = ToastListComponent::default();
+        for cause in [
+            IssueCreateFailure::AttachmentFileRead {
+                filename: "screen.png".to_string(),
+                reason: "failed to read /tmp/screen.png: not found".to_string(),
+            },
+            IssueCreateFailure::AttachmentFileUpload {
+                filename: "screen.png".to_string(),
+                reason: "network error: offline".to_string(),
+            },
+        ] {
+            toast_list.push_failure(&UsecaseFailure::IssueCreate {
+                creation_id: crate::usecases::IssueCreationId::new(),
+                cause,
+            });
+        }
+
+        render_snapshot(
+            "toast_list_issue_create_attachment_failures",
+            60,
+            20,
+            toast_list.create_widget(),
+        );
+    }
+
+    #[test]
+    fn snapshot_issue_create_outcome_unknown() {
+        let mut toast_list = ToastListComponent::default();
+        toast_list.push_failure(&UsecaseFailure::IssueCreate {
+            creation_id: crate::usecases::IssueCreationId::new(),
+            cause: IssueCreateFailure::CreateOutcomeUnknown {
+                reason: "network error: connection reset".to_string(),
+            },
+        });
+
+        render_snapshot(
+            "toast_list_issue_create_outcome_unknown",
+            60,
+            16,
+            toast_list.create_widget(),
+        );
     }
 
     #[test]

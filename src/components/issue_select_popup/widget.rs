@@ -344,7 +344,7 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
         inner.x,
         footer_y,
         inner.width,
-        "  h/l 切替   j/k 移動   Enter 開く   q 閉じる",
+        "  h/l 切替   j/k 移動   Enter 開く   n 新規作成   q 閉じる",
         Style::default().fg(MUTED),
     );
 }
