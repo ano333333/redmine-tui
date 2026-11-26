@@ -4,24 +4,23 @@ use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
+use crate::i18n::tr;
 use crate::vos::IssueId;
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED, SECTION_BAR};
 use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
 
 /// ラベル列の表示幅(全角換算)。値はこの位置から始まる。
 const LABEL_WIDTH: usize = 14;
-const HINT: &str = "Enter: 編集  Ctrl+S: 作成  y: Issue選択";
-const SUBMITTING_HINT: &str = "作成中…  y: Issue選択";
 
 /// 新規作成の下書きを、項目ごとの1行と添付ファイルの一覧で描画する。
 ///
 /// 本文はフォーカス行が見えるように縦にスクロールし、最下行にキー操作のヒントを置く。
 pub struct NewIssueWidget<'a> {
     pub scroll_state: &'a VerticalScrollWidgetState,
-    pub project: &'a str,
+    pub project: String,
     pub parent: Option<(IssueId, &'a str)>,
     /// 編集できる項目のラベルと表示値。添付ファイルの追加行の前に並ぶ。
-    pub fields: Vec<(&'static str, String)>,
+    pub fields: Vec<(String, String)>,
     pub attachments: Vec<String>,
     /// `fields`の後に添付ファイルの追加行を数えたindex。
     pub focused_index: usize,
@@ -55,12 +54,12 @@ impl NewIssueWidget<'_> {
     fn body_lines(&self) -> Vec<Line<'_>> {
         let mut lines = vec![Line::from(vec![
             Span::from(SECTION_BAR).fg(ACCENT),
-            Span::from("新しいIssue").bold(),
+            Span::from(tr!("new-issue-title")).bold(),
             Span::from(format!("  {}", self.project)).fg(MUTED),
         ])];
         if let Some((id, subject)) = self.parent {
             lines.push(Line::from(vec![
-                Span::from(pad_label("親Issue")).fg(MUTED),
+                Span::from(pad_label(&tr!("property-parent-issue"))).fg(MUTED),
                 Span::from(format!("#{id} {subject}")),
             ]));
         }
@@ -74,12 +73,12 @@ impl NewIssueWidget<'_> {
         lines.push(Line::default());
         lines.push(Line::from(vec![
             Span::from(SECTION_BAR).fg(ACCENT),
-            Span::from("添付ファイル").bold(),
+            Span::from(tr!("new-issue-attachments")).bold(),
         ]));
         for filename in &self.attachments {
             lines.push(Line::from(format!("  {filename}")));
         }
-        lines.push(Line::from("  + ファイルを追加").fg(ACCENT));
+        lines.push(Line::from(format!("  {}", tr!("add-file"))).fg(ACCENT));
         lines
     }
 }
@@ -105,11 +104,11 @@ impl Widget for NewIssueWidget<'_> {
         scroll_widget.render_widget(body, line_count);
         scroll_widget.render(body_area, buf);
         if area.height > 0 {
-            let hint = if self.submitting {
-                SUBMITTING_HINT
+            let hint = tr!(if self.submitting {
+                "new-issue-submitting-hint"
             } else {
-                HINT
-            };
+                "new-issue-hint"
+            });
             Paragraph::new(Line::from(hint).fg(MUTED)).render(
                 Rect::new(area.x, area.y + area.height - 1, area.width, 1),
                 buf,
@@ -154,11 +153,11 @@ mod tests {
     use super::*;
     use crate::test_support::render_snapshot;
 
-    fn fields() -> Vec<(&'static str, String)> {
+    fn fields() -> Vec<(String, String)> {
         vec![
-            ("題名", "ログイン画面の不具合".to_string()),
-            ("説明", "-".to_string()),
-            ("トラッカー", "(既定)".to_string()),
+            ("Subject".to_string(), "ログイン画面の不具合".to_string()),
+            ("Description".to_string(), "-".to_string()),
+            ("Tracker".to_string(), "(default)".to_string()),
         ]
     }
 
@@ -170,7 +169,7 @@ mod tests {
             14,
             NewIssueWidget {
                 scroll_state: &VerticalScrollWidgetState::new(),
-                project: "Sample Project",
+                project: "Sample Project".to_string(),
                 parent: Some((IssueId::new(3), "親のIssue")),
                 fields: fields(),
                 attachments: vec!["screen.png".to_string(), "log.txt".to_string()],
@@ -188,7 +187,7 @@ mod tests {
             12,
             NewIssueWidget {
                 scroll_state: &VerticalScrollWidgetState::new(),
-                project: "Sample Project",
+                project: "Sample Project".to_string(),
                 parent: None,
                 fields: fields(),
                 attachments: Vec::new(),
@@ -206,7 +205,7 @@ mod tests {
             12,
             NewIssueWidget {
                 scroll_state: &VerticalScrollWidgetState::new(),
-                project: "Sample Project",
+                project: "Sample Project".to_string(),
                 parent: None,
                 fields: fields(),
                 attachments: Vec::new(),
