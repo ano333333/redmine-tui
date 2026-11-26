@@ -22,7 +22,7 @@ fn the_children_list_shows_direct_children_with_their_descendant_counts() {
     let frame = wait_until(&mut session, "showing the children list", |frame| {
         frame.contains("issue1 (+1)")
     });
-    assert!(frame.contains("未取得"));
+    assert!(frame.contains("No data"));
     assert!(!frame.contains("issue4"));
 }
 
