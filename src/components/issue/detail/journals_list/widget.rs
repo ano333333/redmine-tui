@@ -6,6 +6,7 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
 
+use crate::i18n::tr;
 use crate::widgets::gutter::{Gutter, indented_area};
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED};
 
@@ -86,7 +87,7 @@ impl Widget for JournalsListWidget<'_> {
             } else {
                 MUTED
             };
-            Paragraph::new(Line::from("＋ コメントを追加").fg(color))
+            Paragraph::new(Line::from(tr!("journals-add")).fg(color))
                 .render(indented_area(row_area), buf);
             if self.create_button_focused {
                 for x in 0..row_area.width {
