@@ -4,7 +4,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 use super::{block_on, expect_error};
 use crate::clients::redmine::base::NewIssueUpload;
 use crate::clients::redmine::{DefaultRedmineClient, NewIssue, RedmineClient, RedmineClientError};
-use crate::test_support::local_datetime;
+use crate::test_support::local_date;
 use crate::vos::{IssueId, PriorityId, ProjectId, TrackerId, UploadToken, UserId};
 
 fn new_issue() -> NewIssue {
@@ -84,7 +84,7 @@ fn create_issue_sends_set_properties_parent_and_uploads() {
         tracker_id: Some(TrackerId::new(2)),
         priority_id: Some(PriorityId::new(3)),
         assigned_to_id: Some(UserId::new(1001)),
-        start_date: Some(local_datetime("2026-11-21T12:00:00+00:00")),
+        start_date: Some(local_date(2026, 11, 21)),
         done_ratio: Some(30),
         estimated_hours: Some(1.5),
         uploads: vec![NewIssueUpload {
