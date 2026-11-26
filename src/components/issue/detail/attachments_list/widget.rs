@@ -5,6 +5,7 @@ use ratatui::style::Stylize;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget};
 
+use crate::i18n::tr;
 use crate::stores::AttachmentUploadStage;
 use crate::widgets::gutter::{Gutter, indented_area};
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED, SECTION_BAR};
@@ -103,7 +104,7 @@ impl Widget for AttachmentsListWidget<'_> {
         }
         if row_area.height > 0 {
             let color = if self.add_enabled { ACCENT } else { MUTED };
-            Paragraph::new(Line::from("＋ ファイルを追加").fg(color)).render(row_area, buf);
+            Paragraph::new(Line::from(tr!("add-file")).fg(color)).render(row_area, buf);
             next_row(&mut row_area, buf);
         }
     }
@@ -113,7 +114,7 @@ fn create_header_text(attachment_count: usize) -> Text<'static> {
     Text::from(vec![
         Line::from(vec![
             Span::from(SECTION_BAR).fg(ACCENT),
-            Span::from(" 添付ファイル ").bold(),
+            Span::from(format!(" {} ", tr!("attachments-title"))).bold(),
             Span::from(attachment_count.to_string()).fg(ACCENT).bold(),
         ]),
         Line::from(""),
@@ -147,9 +148,9 @@ fn render_attachment(attachment: &AttachmentRow, area: Rect, buf: &mut Buffer) {
 
 fn render_uploading(uploading: &UploadingRow, area: Rect, buf: &mut Buffer) {
     let stage = match uploading.stage {
-        AttachmentUploadStage::Uploading => "送信中",
-        AttachmentUploadStage::Attaching => "添付中",
-        AttachmentUploadStage::Confirming => "確認中",
+        AttachmentUploadStage::Uploading => tr!("attachments-stage-uploading"),
+        AttachmentUploadStage::Attaching => tr!("attachments-stage-attaching"),
+        AttachmentUploadStage::Confirming => tr!("attachments-stage-confirming"),
     };
     Paragraph::new(Line::from(vec![
         Span::from(uploading.filename.to_string()),

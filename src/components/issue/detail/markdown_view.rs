@@ -423,10 +423,7 @@ mod tests {
             &MarkdownImages::new(&store, &attachments),
         );
 
-        assert_eq!(
-            lines(&view),
-            vec!["[img] sample.png (could not be loaded)"]
-        );
+        assert_eq!(lines(&view), vec!["[img] sample.png (could not be loaded)"]);
     }
 
     #[test]

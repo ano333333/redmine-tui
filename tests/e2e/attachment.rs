@@ -55,7 +55,7 @@ fn adding_a_local_file_attaches_it_to_the_issue() {
     );
     // seedのIssue 3は添付ファイル1件を持つため、追加後は2件になる。
     wait_for_text(&mut session, "e2e-note.txt");
-    wait_for_text(&mut session, "添付ファイル 2");
+    wait_for_text(&mut session, "Attachments 2");
 }
 
 // Scenario: Redmineの既定の上限（5120 KB）を超えるファイルは、読み込まずに追加を中止する
