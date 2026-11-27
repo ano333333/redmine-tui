@@ -15,7 +15,7 @@
 - `cargo test`: 通常のテストを実行する
 - `cargo insta test`: snapshot テストを実行する
 - `bash tests/redmine_seeder_files_test.sh`: Redmine seeder fixture の整合性を確認する
-- `cargo xtask check-locales`: 日本語のメッセージカタログが英語と同じメッセージと変数を持つかを確認する
+- `cargo xtask check-locales`: 日本語のメッセージカタログが英語と同じメッセージと変数を同じ順序で持ち、IDが重複していないかを確認する
 - `cargo xtask test-redmine-client`: Docker 上の Redmine に接続する Redmine client テストを実行する
 - `cargo xtask test-e2e`: Docker 上の Redmine に接続し、PTY 上で TUI を操作する E2E を実行する
 - `cargo xtask coverage`: 単体テストと E2E のカバレッジをまとめたレポートを作成する

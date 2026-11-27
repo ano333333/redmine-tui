@@ -36,7 +36,7 @@
 <p>文言を引く処理の失敗は、表示時に<code>unwrap</code>（<code>expect</code>）する。メッセージが見つからない（<code>get_message</code>や<code>msg.value()</code>が<code>None</code>）場合と、<code>format_pattern</code>が埋め込みの誤りを報告した場合がこれにあたる。</p>
 <ul>
 <li>これらの失敗は、カタログとコードの組み合わせで決まり、実行時の入力では変わらない。英語のカタログについては、文言を表示するwidgetとComponentのsnapshotテストで、失敗しないことを確かめる。</li>
-<li>日本語のカタログは表示のテストを持たない。代わりに、<code>cargo xtask check-locales</code>で<code>ja</code>と<code>en</code>のカタログを比べる。メッセージIDと属性の名前、各メッセージが参照する変数が一致しなければ失敗する。PRのCIでこれを実行する。</li>
+<li>日本語のカタログは表示のテストを持たない。代わりに、<code>cargo xtask check-locales</code>で<code>ja</code>と<code>en</code>のカタログを比べる。メッセージIDと属性の名前、その並び順、各メッセージが参照する変数が一致しなければ失敗する。どちらかのカタログで同じIDを2回定義した場合も失敗する。PRのCIでこれを実行する。</li>
 <li>起動時のカタログの読み込み（<code>FluentResource::try_new</code>、<code>add_resource</code>）の失敗も<code>expect</code>する。カタログは埋め込みで、<code>check-locales</code>も同じカタログを構文解析する。</li>
 </ul>
 <h3 id="言語は設定ファイルで選ぶ">言語は設定ファイルで選ぶ</h3>
@@ -76,7 +76,7 @@ tr!("toast-issue-upload-failed", id = issue_id, reason = reason)
 <p>対応言語を2つに絞り、起動中に切り替えないのは、利用者が使い分けるのは英語と日本語で、起動後に言語を変える用途がないためである。起動中に変わらないので、bundleを作り直す処理もComponentへ変更を伝える処理も要らない。</p>
 <p>Fluentを選んだのは、英語の複数形（<code>1 attachment</code>と<code>2 attachments</code>など）を、コードで分岐せずカタログで書き分けられるためである。<code>rust-i18n</code>は文字列の置換だけを持ち、複数形はコードで書き分ける必要がある。</p>
 <p>文言の取得の失敗を<code>unwrap</code>するのは、失敗がカタログの書き誤りでだけ起き、テストで見つけられるからである。<code>Result</code>を呼び出し元へ返すと、表示の処理のすべてにエラーの経路ができるが、その経路で利用者に見せられる情報はない。</p>
-<p>日本語のカタログを表示のテストで確かめないのは、snapshotとE2Eを2言語分持つ手間に見合わないためである。ただし、<code>ja</code>だけにメッセージがない、または<code>en</code>にない変数を参照していると、日本語で起動したときだけpanicする。<code>check-locales</code>は、この失敗を表示のテストなしで見つけるために置く。単体テストにせずxtaskにするのは、アプリのコードを通さずカタログのファイルだけを調べる検査だからである。</p>
+<p>日本語のカタログを表示のテストで確かめないのは、snapshotとE2Eを2言語分持つ手間に見合わないためである。ただし、<code>ja</code>だけにメッセージがない、または<code>en</code>にない変数を参照していると、日本語で起動したときだけpanicする。<code>check-locales</code>は、この失敗を表示のテストなしで見つけるために置く。並び順まで揃えるのは、日英のカタログを並べて見比べやすくするためである。単体テストにせずxtaskにするのは、アプリのコードを通さずカタログのファイルだけを調べる検査だからである。</p>
 <p>言語をプロセス全体で1つ持つのは、文言を引く箇所がComponentとwidgetの全体に散っているためである。bundleを引数で渡すと、文言を持つWidgetと、それを作る経路のすべてに引数かフィールドが増える。ratatuiの<code>Widget::render(self, area, buf)</code>は引数を足せないので、Widgetはbundleをフィールドに持つ必要がある。Storeに置いてもWidgetのフィールドは要り、Storeを受け取らない<code>handle_usecase_events</code>からtoastを作る経路には別に渡す必要がある。テストは英語だけで行うので、並列に動くテストの間で言語が食い違うこともない。</p>
 <p><code>LANG</code>を見ないのは、terminalのロケールと表示したい言語が一致するとは限らず、設定ファイルで明示するほうが挙動を予測しやすいためである。未設定を英語にするのは、テストと同じ言語で動くようにするためである。</p>
 <p>日付を言語によらず<code>%Y/%m/%d</code>にするのは、数字だけの形式は英語でも日本語でも読め、表示幅も変わらないためである。</p>

@@ -1,4 +1,4 @@
-//! 各言語のメッセージカタログが、英語のカタログと同じメッセージと変数を持つかを検査する。
+//! 各言語のメッセージカタログが、英語のカタログと同じメッセージと変数を同じ順序で持つかを検査する。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -195,6 +195,15 @@ fn compare(reference: &Catalog, target: &Catalog) -> Vec<String> {
             problems.push(format!("unexpected `{id}`"));
         }
     }
+    // 同じメッセージを持つときだけ順序を比べる。欠けや余りがあると、以降の位置がすべてずれて見えるため。
+    if problems.is_empty()
+        && let Some(((expected, _), (found, _))) = reference
+            .iter()
+            .zip(target)
+            .find(|((expected, _), (found, _))| expected != found)
+    {
+        problems.push(format!("`{found}` is out of order, expected `{expected}`"));
+    }
     problems
 }
 
@@ -238,6 +247,25 @@ mod tests {
                 "a = { $n -> \n    [one] 1つ\n   *[other] { $items }\n}\n"
             ),
             ["`a` uses variables {\"items\", \"n\"}, expected {\"item\", \"n\"}"]
+        );
+    }
+
+    #[test]
+    fn reports_the_first_message_out_of_order() {
+        assert_eq!(
+            problems("a = A\nb = B\nc = C\n", "a = エー\nc = シー\nb = ビー\n"),
+            ["`c` is out of order, expected `b`"]
+        );
+    }
+
+    #[test]
+    fn reports_attributes_out_of_order() {
+        assert_eq!(
+            problems(
+                "a = A\n    .x = X\n    .y = Y\n",
+                "a = エー\n    .y = ワイ\n    .x = エックス\n"
+            ),
+            ["`a.y` is out of order, expected `a.x`"]
         );
     }
 
