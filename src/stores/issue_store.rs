@@ -220,8 +220,8 @@ impl IssueStore {
     pub(super) fn consume_action(&mut self, action: IssueAction) {
         match action {
             IssueAction::StartFetching { id } => {
-                // UIとfetch usecaseは未登録またはFetchFailedの場合にだけこのActionを発行する。
-                // Fetchingや取得済み状態への着弾は呼び出し側の不変条件違反として拒否する。
+                // 取得を始めてよいのは未登録とFetchFailedだけである。
+                // ほかの状態への着弾は、発行側の制御破綻として拒否する。
                 match self.entries.get(&id) {
                     None | Some(IssueEntry::FetchFailed { .. }) => {}
                     entry => panic!(

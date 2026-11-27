@@ -28,7 +28,7 @@ impl<T> TokioBackgroundSpawner<T> {
         })
     }
 
-    /// event loop開始前の初期読み込みを、background taskと同じruntime上で完了まで進める。
+    /// `future`を、background taskと同じruntime上で完了まで進める。完了するまでこのthreadを止める。
     pub(crate) fn block_on<F: Future>(&self, future: F) -> F::Output {
         self.runtime.block_on(future)
     }

@@ -271,7 +271,6 @@ impl Store {
     /// 対象IssueのRemote Journal、Local Journal、退避したJournalのいずれかがupload中かを返す。
     ///
     /// 取得済みでないIssue、およびJournalがすべて待機中のIssueでは`false`を返す。
-    /// usecaseから同一Issue内のJournal upload排他を検査するために使用する。
     pub fn has_uploading_journal(&self, issue_id: impl Into<IssueId>) -> bool {
         self.issue_store.has_uploading_journal(issue_id)
     }
