@@ -16,8 +16,7 @@ impl VerticalScrollWidgetState {
         Self { offset_y: 0 }
     }
 
-    /// 現在の縦スクロール量を返す。
-    /// FIXME: テストでprivateを見るためのメソッドの必要性、スナップショットでの判定で十分か？
+    /// FIXME: スクロール量を直接検証するテストがあるため、privateな状態のアクセサが残っている。
     #[cfg(test)]
     pub fn offset_y(&self) -> u16 {
         self.offset_y

@@ -1,5 +1,4 @@
 //! Issueの取得・編集・uploadに伴う状態を保持し、Actionで遷移させる。
-//! entryのvariantで本体・差分・失敗・競合の保持可能な組合せを制限する。
 //! Actionごとの遷移前提条件は受理時に検査する。
 //! 同じIssueのuploadは、Issue属性、Journal、添付ファイルの追加を合わせて1件に限る。
 
@@ -635,7 +634,6 @@ impl IssueStore {
         }
     }
 
-    /// 初回取得の結果を、Issue本体とJournalが揃った状態で登録する。
     pub(super) fn complete_fetch(
         &mut self,
         id: IssueId,

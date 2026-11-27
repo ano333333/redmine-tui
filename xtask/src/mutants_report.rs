@@ -46,7 +46,6 @@ fn parse_args(args: Vec<String>) -> Result<Option<(String, Option<String>)>, Str
     Ok(Some((current, previous)))
 }
 
-/// `mutants.out`の`<outcome>.txt`を、`OUTCOMES`の順に1行1mutantで保持する。
 struct Outcomes {
     lists: [Vec<String>; 4],
 }

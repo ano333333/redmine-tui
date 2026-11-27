@@ -1,8 +1,4 @@
 //! native版の起動時に、実Redmineへ接続するための設定を環境変数から組み立てる。
-//!
-//! API keyは必須とし、接続先は`REDMINE_URL`を優先する。URLが未指定または空なら
-//! `REDMINE_PORT`（既定値8080）を使ったlocalhostへ接続する。実Redmineへ接続しない
-//! Webデモはこの設定を使用しない。
 
 use std::env;
 

@@ -16,7 +16,6 @@ pub(super) fn offline() -> RedmineClientError {
     }
 }
 
-/// 添付ファイル追加で使うAPIの結果を返し、送った内容を記録する。
 pub(super) struct AttachmentStubClient {
     pub(super) upload_result: Result<UploadToken, RedmineClientError>,
     pub(super) attach_result: Result<(), RedmineClientError>,
@@ -72,7 +71,6 @@ impl RedmineClientStub for AttachmentStubClient {
     }
 }
 
-/// 読み込み結果を返し、読み込んだパスと上限を記録する。
 pub(super) struct StubLocalFileClient {
     pub(super) result: Result<Vec<u8>, LocalFileError>,
     pub(super) reads: Mutex<Vec<(PathBuf, u64)>>,

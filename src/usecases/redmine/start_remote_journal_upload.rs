@@ -34,8 +34,6 @@ fn remote_journal_upload_failure_output(
     }
 }
 
-/// 編集済みのRemote Journalのuploadを開始する。
-///
 /// `StartRemoteUpload`はFutureをpollする前に同期的にqueueへ追加し、返却したFutureは
 /// uploadの完了Actionを返す。
 ///
@@ -97,8 +95,6 @@ where
     }))
 }
 
-/// 保存前の取得、対象JournalのPUT、確認の取得を順に行い、結果のActionを返す。
-///
 /// `before`を競合判定の基準にして`after`を保存する。保存前の取得から対象が消えていれば、
 /// 旧IDへPUTせず`after`を退避する。PUT成功後に確認の取得だけが失敗した場合は、PUTを
 /// 繰り返さないよう、保存前の取得値の対象notesを`after`にした値で完了させる。
@@ -275,7 +271,6 @@ pub(super) mod tests {
         journal_with_notes("remote notes")
     }
 
-    /// `journals`を持ち、子一覧の題名が`child_subject`のIssue 1の取得結果。
     pub(in crate::usecases::redmine) fn fetched(
         journals: Vec<Journal>,
         child_subject: &str,
@@ -304,7 +299,6 @@ pub(super) mod tests {
         edited_issue_with_journals(dispatcher, vec![journal()]);
     }
 
-    /// `journals`を持つIssueを登録し、そのうちJOURNAL_IDのJournalを編集する。
     fn edited_issue_with_journals(dispatcher: &mut Dispatcher, journals: Vec<Journal>) {
         let mut issue =
             sample_issue_aggregate(1, "subject", IssueStatusId::new(1), None, None, None, 0);
@@ -319,7 +313,6 @@ pub(super) mod tests {
         dispatcher.consume_action();
     }
 
-    /// GETの結果を呼び出し順に返し、PUTしたnotesを記録する。
     pub(in crate::usecases::redmine) struct StubClient {
         get_results: Mutex<VecDeque<Result<FetchedIssue, RedmineClientError>>>,
         put_result: Result<(), RedmineClientError>,

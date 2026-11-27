@@ -13,8 +13,6 @@ use crate::vos::{
 
 use super::value_conversion;
 
-/// RedmineのJournal detailレスポンスを受け取る中間DTO。
-///
 /// `old_value`と`new_value`はRedmineが省略することがあるため、ドメイン型への
 /// 変換時に空文字列へ正規化する。
 #[derive(Deserialize)]
@@ -25,8 +23,6 @@ pub(super) struct RedmineJournalDetail {
     pub(super) new_value: Option<String>,
 }
 
-/// Journal detail DTOを、対応する変更内容へ変換する。
-///
 /// `property`が`attr`と`attachment`以外のdetailは、このクライアントの変換対象外として
 /// 正常に読み飛ばし、`Ok(None)`を返す。
 pub(super) fn try_into_domain(

@@ -41,7 +41,6 @@ where
     Some(Box::pin(load_attachment_original(clients, attachment_id)))
 }
 
-/// 原画像の取得を始めた添付ファイルについて、原画像を取得して一時ファイルへ書き込む。
 pub(super) async fn load_attachment_original<C, F>(
     clients: UsecaseClients<C, F>,
     attachment_id: AttachmentId,
@@ -68,7 +67,6 @@ where
     }
 }
 
-/// 取得した画像を一時ファイルへ書き込み、前処理の後続要求を返す。
 pub(super) async fn write_image<F: LocalFileClient>(
     local_file: &F,
     key: ImageKey,
@@ -134,7 +132,6 @@ mod tests {
         }
     }
 
-    /// サムネイルを取得できず、原画像の取得へ切り替えた状態を作る。
     fn fallen_back_dispatcher() -> Rc<RefCell<Dispatcher>> {
         let mut dispatcher = image_enabled_dispatcher();
         dispatcher.dispatch(AttachmentImageAction::Start {

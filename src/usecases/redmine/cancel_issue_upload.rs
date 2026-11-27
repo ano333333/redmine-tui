@@ -1,7 +1,6 @@
 use crate::stores::{Dispatcher, IssueAction};
 use crate::vos::IssueId;
 
-/// Issueの競合情報を破棄し、アップロードをキャンセルするActionを順番にdispatchする。
 pub fn cancel_issue_upload(dispatcher: &mut Dispatcher, id: IssueId) {
     dispatcher.dispatch(IssueAction::ClearUploadConflicts { id });
     dispatcher.dispatch(IssueAction::CancelUpload { id });

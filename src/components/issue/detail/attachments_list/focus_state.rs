@@ -13,13 +13,10 @@ pub enum FocusEvent {
 pub enum EventProcessResult {
     CursorLeavedFromAbove,
     CursorLeavedFromBelow,
-    /// 末尾の追加行でEnterが押された。
     AddRequested,
     Handled,
 }
 
-/// 添付ファイルの行、追加中の行、末尾の追加行のうち、どの行にカーソルがあるかを持つ。
-///
 /// 追加行は常にあるため、行数は1以上になる。
 pub struct FocusState {
     row_count: usize,

@@ -1,3 +1,5 @@
+//! native版とWeb版のeditorを共通のsessionとして扱う。
+
 #[cfg(feature = "native")]
 pub mod native;
 #[cfg(feature = "web-demo")]
@@ -23,8 +25,6 @@ pub enum EditorOutcome {
     Failed,
 }
 
-/// platform固有のeditor sessionを開始し、同じUI thread上で完了を待つ。
-///
 /// Web実装はDOM要素やJS callbackなど`!Send`な値を保持したまま完了を待つため、返すFutureに`Send`を要求しない。
 pub trait TextEditor {
     fn edit(

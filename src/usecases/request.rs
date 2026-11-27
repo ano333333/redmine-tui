@@ -19,7 +19,6 @@ use crate::usecases::redmine::{
 use crate::usecases::{IssueCreationId, NewIssueDraft, UsecaseClients, UsecaseTask};
 use crate::vos::{AttachmentId, IssueId, IssuePropertyDiff, JournalId, ProjectId, UploadToken};
 
-/// runnerに起動を依頼するRedmine Usecase。1つのvariantが1つのUsecaseに対応する。
 #[derive(Clone, Debug, PartialEq)]
 pub enum UsecaseRequest {
     /// `with_parent`が真なら、取得したIssueの親も後続要求で取得する。
@@ -94,7 +93,6 @@ pub enum UsecaseRequest {
         attachment_id: AttachmentId,
         thumbnailable: bool,
     },
-    /// 一時ファイルへ書き込んだ画像を読み、表示用に前処理する。
     PrepareImage {
         key: ImageKey,
         path: PathBuf,
@@ -105,8 +103,6 @@ pub enum UsecaseRequest {
     },
 }
 
-/// `request`に対応するUsecaseを起動し、非同期の処理があればそのtaskを返す。
-///
 /// 起動時の同期Actionは`dispatcher`へ積むだけで消費しない。
 pub fn start_usecase<C, F>(
     request: UsecaseRequest,
@@ -219,7 +215,6 @@ mod tests {
     const ISSUE_ID: IssueId = IssueId::new(1);
     const JOURNAL_ID: JournalId = JournalId::new(10);
 
-    /// Issueの取得には`issue`を返し、PUTした内容を記録する。
     struct RecordingClient {
         issue: IssueAggregate,
         issue_updates: Mutex<Vec<IssueUpdate>>,
@@ -290,7 +285,6 @@ mod tests {
         Rc::new(RefCell::new(dispatcher))
     }
 
-    /// 要求からUsecaseを起動し、起動時の同期Actionを消費する。起動したかを返す。
     fn start(request: UsecaseRequest, dispatcher: &Rc<RefCell<Dispatcher>>) -> bool {
         let task = start_usecase(
             request,
@@ -370,7 +364,6 @@ mod tests {
         );
     }
 
-    /// 説明をローカルで編集して保存したところ、サーバーでも説明が変わっていて競合した状態。
     fn issue_conflict_dispatcher(server_issue: IssueAggregate) -> Rc<RefCell<Dispatcher>> {
         dispatcher_with(
             issue(),
@@ -458,7 +451,6 @@ mod tests {
         );
     }
 
-    /// 説明を"local description"へ編集して保存を始めた状態。
     fn uploading_dispatcher() -> Rc<RefCell<Dispatcher>> {
         dispatcher_with(
             issue(),
@@ -578,7 +570,6 @@ mod tests {
         ));
     }
 
-    /// notesをローカルで編集して保存したところ、サーバーのnotesが"server notes"に変わっていて競合した状態。
     fn remote_journal_conflict_dispatcher() -> Rc<RefCell<Dispatcher>> {
         dispatcher_with(
             issue_with_journal_notes("remote notes"),

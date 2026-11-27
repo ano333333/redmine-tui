@@ -126,7 +126,6 @@ fn single_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// 添付入力popupで入力したファイルの送り先。
 enum AttachmentDestination {
     /// 取得済みのIssueへすぐに添付する。
     Issue(IssueId),
@@ -155,7 +154,6 @@ enum PopupComponent<'a> {
     },
 }
 
-/// popupの下に表示する画面。
 enum MainComponent {
     Issue(IssueComponent),
     NewIssue(NewIssueComponent),
@@ -163,7 +161,7 @@ enum MainComponent {
 
 pub struct AppComponent<'a> {
     main_component: Option<MainComponent>,
-    // popup追加の際は末尾に追加する、先頭要素が最奥に表示される
+    // 末尾を最前面としてpopupを積み、先頭から描画する。
     popup_components: VecDeque<Rc<RefCell<PopupComponent<'a>>>>,
     dispatcher: Rc<RefCell<Dispatcher>>,
     pending_editor_context: Option<PendingEditorContext>,
@@ -195,8 +193,6 @@ impl<'a> AppComponent<'a> {
         app
     }
 
-    /// 共通の入力イベントを同期的に処理する。updateとrenderがこの順で後続する。
-    /// イベントを使った場合にtrueを返す。
     pub fn process_event(
         &mut self,
         event: InputEvent,
@@ -217,8 +213,6 @@ impl<'a> AppComponent<'a> {
         }
     }
 
-    /// 最前面のpopupへイベントを渡し、結果に応じてpopup stackを更新する。
-    /// popupがイベントを使った場合にtrueを返す。
     fn process_popup_event(
         &mut self,
         event: InputEvent,
@@ -291,7 +285,7 @@ impl<'a> AppComponent<'a> {
                         self.popup_components.push_back(popup_component);
                     }
                     SpentTimeInputPopupEventProcessResult::Submited => {
-                        // FIXME: Storeの更新
+                        // FIXME: 入力した作業時間を保存していないため、確定しても値が失われる。
                         self.popup_components.pop_back();
                     }
                     SpentTimeInputPopupEventProcessResult::Handled => {}
@@ -400,8 +394,6 @@ impl<'a> AppComponent<'a> {
         true
     }
 
-    /// NewIssueComponentへイベントを渡し、結果に応じてpopupを開く。
-    /// NewIssueComponentがイベントを使った場合にtrueを返す。
     fn process_new_issue_event(&mut self, event: InputEvent, sink: &mut RequestSink) -> bool {
         let Some(MainComponent::NewIssue(new_issue_component)) = &mut self.main_component else {
             unreachable!("caller checked that NewIssueComponent exists");
@@ -487,8 +479,6 @@ impl<'a> AppComponent<'a> {
         true
     }
 
-    /// IssueComponentへイベントを渡し、結果に応じてpopupの開閉や要求の発行を行う。
-    /// IssueComponentがイベントを使った場合にtrueを返す。
     fn process_issue_event(
         &mut self,
         event: InputEvent,
@@ -856,7 +846,6 @@ impl<'a> AppComponent<'a> {
         }
     }
 
-    /// editorの起動を要求できる状態なら、文脈を保持してeditorを起動する。
     fn start_editing(
         &mut self,
         context: PendingEditorContext,
@@ -932,7 +921,6 @@ impl<'a> AppComponent<'a> {
             })));
     }
 
-    /// SelectBoxPopupComponentを構築し、popup stackへ積む。
     fn push_select_box_popup(
         &mut self,
         items: &[(u32, String)],
@@ -961,7 +949,6 @@ impl<'a> AppComponent<'a> {
         !is_q || handled
     }
 
-    /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, dispatcher: Rc<RefCell<Dispatcher>>, store: &Store, area: Rect) {
         self.open_issue_property_conflict_popup_if_needed(store);
         self.open_remote_journal_conflict_popups_if_needed(store);
@@ -1057,7 +1044,6 @@ impl<'a> AppComponent<'a> {
         }
     }
 
-    /// Componentをframeのarea範囲内に描画する。
     pub fn render(&self, store: &Store, frame: &mut Frame, area: Rect) {
         match &self.main_component {
             Some(MainComponent::Issue(issue_component)) => {
@@ -1088,7 +1074,6 @@ impl<'a> AppComponent<'a> {
         self.interaction_mode
     }
 
-    /// 表示経過時間を進める。
     pub fn tick(&mut self, elapsed: chrono::Duration) {
         self.toast_list.tick(elapsed);
     }
@@ -1135,7 +1120,6 @@ impl<'a> AppComponent<'a> {
         self.toast_list.push_image_display_unavailable(reason);
     }
 
-    /// editorの失敗を通知し、editor contextを解放する。
     pub fn handle_editor_failure(&mut self, error: &dyn std::fmt::Display) {
         self.handle_editor_response(EditorOutcome::Failed);
         self.toast_list.push_editor_failure(error);
@@ -1917,7 +1901,6 @@ mod tests {
         assert_no_requests(&mut sink);
     }
 
-    /// updateでキャッシュしたプレビューがrenderで実際に描画されることを確認する
     #[test]
     fn startup_issue_select_popup_requests_its_initial_page_once() {
         let mut sink = RequestSink::default();
@@ -2198,7 +2181,6 @@ mod tests {
         InputEvent::Key(KeyEvent::new(code, KeyModifiers::control()))
     }
 
-    /// 題名を入れた下書きの作成を要求し、その`creation_id`を返す。
     fn submit_draft(
         app: &mut AppComponent<'_>,
         dispatcher: Rc<RefCell<Dispatcher>>,

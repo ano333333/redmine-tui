@@ -16,7 +16,6 @@ pub(super) enum UploadLocalFileError {
     Upload(RedmineClientError),
 }
 
-/// `path`のファイルを読み、`filename`の名前でRedmineへ送ってtokenを返す。
 pub(super) async fn upload_local_file<C, F>(
     clients: &UsecaseClients<C, F>,
     filename: &str,

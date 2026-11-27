@@ -1,7 +1,7 @@
 use crate::stores::{Dispatcher, JournalAction};
 use crate::vos::{IssueId, JournalId};
 
-/// Remote Journalの保存の競合を破棄し、編集を残したまま保存を取りやめる。
+/// キャンセル後もRemote Journalの編集内容は残る。
 pub fn cancel_remote_journal_upload(
     dispatcher: &mut Dispatcher,
     issue_id: IssueId,

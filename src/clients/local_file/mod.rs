@@ -1,5 +1,4 @@
-//! 添付ファイルとして送るローカルファイルの読み込みと、取得した添付ファイルの一時保存を、
-//! platform固有の実装から分離する。
+//! 添付ファイルの読み込みと一時保存をplatform固有の実装から分離する。
 
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
@@ -21,7 +20,6 @@ impl fmt::Display for LocalFileError {
     }
 }
 
-/// 各メソッドのFutureはbackground taskとして実行するため`Send`を契約とする。
 pub trait LocalFileClient {
     /// ファイルが`max_len`バイトを超える場合は、全体をメモリへ読み込まずに`LocalFileError`を返す。
     fn read_file(
@@ -47,7 +45,6 @@ pub(crate) fn too_large(path: &Path, max_len: u64) -> LocalFileError {
     }
 }
 
-/// `file_name`が、ディレクトリを含まない1つのファイル名かを返す。
 pub(crate) fn is_plain_file_name(file_name: &str) -> bool {
     let mut components = Path::new(file_name).components();
     matches!(

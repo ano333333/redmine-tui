@@ -20,7 +20,6 @@ use super::lifecycle::{handle_host_event, update};
 
 pub(crate) type EditorSession<'a> = LocalTask<'a, io::Result<EditorOutcome>>;
 
-/// Componentが`sink`に書いた要求を処理する。Usecaseの要求をすべて起動した後にeditorを起動する。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn handle_component_requests<'a, S, C, F, E, H>(
     sink: &mut RequestSink,
@@ -54,8 +53,6 @@ pub(crate) fn handle_component_requests<'a, S, C, F, E, H>(
     }
 }
 
-/// 入力をComponentへ渡し、発行された要求を起動してからComponentを更新する。
-///
 /// Usecaseが起動時にdispatchするActionを、この入力の後のupdateで反映済みにするため、
 /// updateより先に要求を起動する。アプリを続ける場合にtrueを返す。
 #[allow(clippy::too_many_arguments)]
@@ -127,10 +124,7 @@ pub(crate) fn handle_editor_failure(
     app_component.handle_editor_failure(error);
 }
 
-/// `requests`を先頭から1件ずつ起動し、起動するたびにupdateする。
-///
-/// 次の要求を起動する時点で前の要求の起動Actionを消費済みにするため、同じIssueへの
-/// `FetchIssue`が続いても、2件目は1件目の取得開始を観測して起動しない。
+/// 後続要求の起動条件を、先行要求の起動Actionを反映したStoreで判定する。
 pub(crate) fn drain_requests<S, C, F>(
     requests: &mut VecDeque<UsecaseRequest>,
     app_component: &mut AppComponent,

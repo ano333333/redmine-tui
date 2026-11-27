@@ -7,8 +7,6 @@ use crate::stores::{AttachmentAction, AttachmentUploadStage, Dispatcher};
 use crate::usecases::{UsecaseEvent, UsecaseFailure, UsecaseOutput, UsecaseRequest, UsecaseTask};
 use crate::vos::{IssueId, UploadToken};
 
-/// 送ったファイルを`filename`の名前でIssueに紐付ける。
-///
 /// 成功したら、確認の取得の後続要求を返す。失敗したら、追加状態を削除して通知する。
 /// tokenはRedmineで1回しか使えないため、紐付けを再試行しない。
 ///

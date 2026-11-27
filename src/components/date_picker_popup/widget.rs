@@ -23,7 +23,6 @@ pub struct DatePickerPopupWidget<'a> {
     calendar_button_focused: bool,
     cancel_button_focused: bool,
     display_start: DateTime<Local>,
-    /// Someの間だけカレンダーを表示する
     focused_date: Option<DateTime<Local>>,
     selected_date: Option<DateTime<Local>>,
 }
@@ -78,7 +77,7 @@ impl<'a> DatePickerPopupWidget<'a> {
 }
 
 impl Widget for DatePickerPopupWidget<'_> {
-    /// クライアント領域に対する描画(したがってClearの責務がある)
+    /// popupの下の描画が透けないよう、割り当てられた領域を消去してから描画する。
     fn render(self, area: Rect, buf: &mut Buffer) {
         let calendar_visible = self.focused_date.is_some();
         let area = Self::popup_area(area, calendar_visible);
@@ -201,7 +200,7 @@ fn render_buttons(
             Constraint::Fill(1),
         ])
         .split(area);
-    // カレンダー表示中もキャンセルボタンの位置は変えない
+    // カレンダーの開閉で操作位置が動かないよう、キャンセルボタンの位置を固定する。
     if calendar_button_visible {
         render_button(
             tr!("date-picker-calendar"),

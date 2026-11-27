@@ -18,8 +18,6 @@ const THUMBNAIL_MAX_BYTES: u64 = 4 * 1024 * 1024;
 /// SVGは`image` crateでdecodeできないため、画像の添付ファイルとして扱わない。
 const SVG_CONTENT_TYPE: &str = "image/svg+xml";
 
-/// Issue詳細の取得結果に含まれる画像の添付ファイルについて、表示に使う画像の取得要求を返す。
-///
 /// 完了したtaskからはStoreを参照できないため、取得済みかどうかでは絞らない。
 /// 取得済みの画像は、[`download_attachment_image`]が起動時に除く。
 pub(super) fn attachment_image_requests(issue: &IssueAggregate) -> Vec<UsecaseRequest> {
@@ -41,8 +39,6 @@ pub(super) fn attachment_image_requests(issue: &IssueAggregate) -> Vec<UsecaseRe
         .collect()
 }
 
-/// 添付ファイルの表示に使う画像を取得し、一時ファイルへ書き込む。
-///
 /// `thumbnailable`ならサムネイルを、そうでなければ原画像を取得する。サムネイルを取得できなければ、
 /// 原画像の取得へ切り替えて、その後続要求を返す。
 ///

@@ -9,7 +9,6 @@ use super::widget::{
 };
 use crate::platform::input::InputEvent;
 
-/// Remote Journal競合popupのキー操作結果。
 pub enum EventProcessResult {
     /// 競合解決を中止する。
     Canceled,
@@ -42,7 +41,6 @@ impl RemoteJournalConflictComponent {
         }
     }
 
-    /// 描画領域に合わせて、現在のフォーカスが見えるようスクロール状態を更新する。
     pub fn update(&mut self, area: Rect) {
         let content_area = RemoteJournalConflictPopupWidget::content_area(area);
         let cursor = self.cursor_global_position(content_area.width);
@@ -50,7 +48,6 @@ impl RemoteJournalConflictComponent {
             .update(cursor, content_area.height);
     }
 
-    /// キーイベントを処理し、popupの終了やupload再試行が必要な場合は結果を返す。
     pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         self.focus_state
             .process_event(event)
@@ -67,7 +64,6 @@ impl RemoteJournalConflictComponent {
             })
     }
 
-    /// 現在の採用値、フォーカス、スクロール状態を反映したWidgetを作成する。
     pub fn create_widget(&self, area: Rect) -> RemoteJournalConflictPopupWidget<'_> {
         let content_area = RemoteJournalConflictPopupWidget::content_area(area);
         let widget = RemoteJournalConflictWidget::new(

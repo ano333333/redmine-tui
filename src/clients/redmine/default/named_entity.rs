@@ -5,7 +5,6 @@ use serde::Deserialize;
 use crate::entities::{Priority, Project, Tracker};
 use crate::vos::{PriorityId, ProjectId, TrackerId};
 
-/// レスポンスラッパーが選択したドメイン型へ変換するための中間DTO。
 #[derive(Deserialize)]
 pub(super) struct NamedRedmineEntity {
     id: u32,

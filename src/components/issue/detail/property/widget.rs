@@ -84,7 +84,6 @@ fn is_two_column(width: u16) -> bool {
     width >= TWO_COLUMN_MIN_WIDTH
 }
 
-/// 描画領域を左右2カラム + 間の余白に割る。
 fn split_columns(area: Rect) -> std::rc::Rc<[Rect]> {
     Layout::default()
         .direction(Direction::Horizontal)
@@ -95,14 +94,12 @@ fn split_columns(area: Rect) -> std::rc::Rc<[Rect]> {
         ])
         .split(area)
         .iter()
-        // 間の余白は捨て、左右カラムだけを返す
         .enumerate()
         .filter(|(index, _)| *index != 1)
         .map(|(_, rect)| *rect)
         .collect()
 }
 
-/// 1つのカラムに項目を縦積みし、フォーカス項目だけ背景を塗る。
 fn render_column(
     fields: &[PropertyField<'_>],
     area: Rect,

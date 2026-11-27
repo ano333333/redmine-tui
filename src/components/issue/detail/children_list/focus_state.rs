@@ -48,10 +48,9 @@ impl FocusState {
         };
 
         let new_row = if ids.contains(&focused_id) {
-            // フォーカス中のIDがまだ存在する -> そのIDを維持
             FocusedRow::Child(focused_id)
         } else {
-            // なくなっていれば同じインデックス（末尾の子にclamp、子がなければ追加行）
+            // 再取得で対象が消えても、近い行から操作を続けられるよう表示位置を保つ。
             let old_index = self
                 .ids
                 .iter()
@@ -104,7 +103,6 @@ impl FocusState {
     pub fn get_cursor_position(&self) -> Position {
         let index = self.focused_index().unwrap_or(0);
         Position {
-            // 一覧は縦線の分だけ字下げされている
             x: GUTTER_WIDTH,
             y: index as u16 + HEADER_LINES,
         }

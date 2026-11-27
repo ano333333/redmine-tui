@@ -38,7 +38,6 @@ impl LocalFileClient for UnusedLocalFileClient {
     }
 }
 
-/// 透明な`width`x`height`pxのPNG。
 pub fn sample_png(width: u32, height: u32) -> Vec<u8> {
     let mut content = Vec::new();
     image::DynamicImage::new_rgba8(width, height)
@@ -50,7 +49,6 @@ pub fn sample_png(width: u32, height: u32) -> Vec<u8> {
     content
 }
 
-/// [`test_image_encoder`]で前処理した、透明な`width`x`height`pxの画像。
 pub fn sample_prepared_image(width: u32, height: u32) -> PreparedImage {
     test_image_encoder()
         .prepare(&sample_png(width, height), u32::MAX)
@@ -76,7 +74,6 @@ pub fn test_kitty_image_encoder() -> TerminalImageEncoder {
     TerminalImageEncoder::new(picker)
 }
 
-/// `id`の添付ファイルを、指定したContent-Typeとサムネイルの可否で組み立てる。
 pub fn sample_attachment(id: u32, content_type: Option<&str>, thumbnailable: bool) -> Attachment {
     Attachment {
         id: AttachmentId::new(id),
@@ -362,7 +359,7 @@ pub fn usecase_clients<C>(redmine: Arc<C>) -> UsecaseClients<C, UnusedLocalFileC
     }
 }
 
-/// 起動したUsecaseを完了まで進め、完了Actionを返す。起動しなかった場合はpanicする。
+/// Usecaseが起動しなかった場合はpanicする。
 pub async fn complete_usecase(task: Option<UsecaseTask>) -> Vec<Action> {
     task.expect("usecase should start").await.actions
 }
@@ -415,7 +412,7 @@ where
     });
 }
 
-/// Widgetを直接渡せないComponent(Frame越しに描画するもの)向けのスナップショット
+/// `Frame`越しに描画するComponentのスナップショットに使う。
 pub fn render_frame_snapshot<F>(name: &str, width: u16, height: u16, render: F)
 where
     F: FnOnce(&mut Frame<'_>),
@@ -760,14 +757,12 @@ pub fn sample_parent_issue_children() -> Vec<IssueChild> {
     ]
 }
 
-/// `sample_parent_issue`を、子一覧とともに詳細取得した状態にするAction。
 pub fn fetch_sample_parent_issue_actions(journals: Vec<Journal>) -> [Action; 2] {
     let mut issue = sample_parent_issue();
     issue.journals = journals;
     fetch_issue_actions_with_children(issue, sample_parent_issue_children())
 }
 
-/// `issue`を、子一覧なしで詳細取得した状態にするAction。
 pub fn fetch_issue_actions(issue: IssueAggregate) -> [Action; 2] {
     fetch_issue_actions_with_children(issue, vec![])
 }
@@ -787,14 +782,12 @@ fn fetch_issue_actions_with_children(
     ]
 }
 
-/// `fetch_issue_actions`をStoreへ順に適用する。
 pub fn load_issue(store: &mut Store, issue: IssueAggregate) {
     for action in fetch_issue_actions(issue) {
         store.consume_action(action);
     }
 }
 
-/// `fetch_issue_actions`をDispatcherで順に適用する。
 pub fn dispatch_loaded_issue(dispatcher: &mut Dispatcher, issue: IssueAggregate) {
     for action in fetch_issue_actions(issue) {
         dispatcher.dispatch(action);

@@ -12,8 +12,6 @@ pub const IMAGE_MAX_SIDE: u32 = 800;
 /// 前処理する画像のファイルのバイト数の上限。
 pub const IMAGE_FILE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 
-/// 読み込んだ画像のファイルを読んでdecodeし、表示用にencodeする。
-///
 /// # Panics
 ///
 /// 画像表示が無効な場合と、`key`の画像が`path`を前処理する状態でない場合にpanicする。
@@ -96,7 +94,6 @@ mod tests {
         }
     }
 
-    /// 画像表示を有効にし、`KEY`の画像が`PATH`を前処理する状態を作る。
     fn preparing_dispatcher() -> Rc<RefCell<Dispatcher>> {
         let mut dispatcher = Dispatcher::new();
         dispatcher.dispatch(SettingsAction::SetImageDisplay(ImageDisplay::Enabled {

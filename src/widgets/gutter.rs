@@ -1,5 +1,4 @@
 //! ブロックの左端に縦線を引き、本文を字下げして見せるためのヘルパー。
-//!
 //! 属性・説明・子チケット・Journal がそれぞれ同じ字下げ幅で並ぶよう、
 //! 線の見た目と幅をここに集約する。
 
@@ -13,10 +12,8 @@ use super::theme::TIMELINE_FG;
 pub const GUTTER_WIDTH: u16 = 2;
 /// ブロックの先頭に置くマーカー。Journalのように起点を示したいときに使う。
 pub const GUTTER_HEAD: &str = "●";
-/// ブロックを繋ぐ縦線。
 pub const GUTTER_LINE: &str = "│";
 
-/// 縦線の引き方。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GutterStyle {
     /// 全行を縦線で繋ぐ。属性や説明のような、起点を持たないブロック向け。
@@ -44,7 +41,6 @@ impl Gutter {
 }
 
 impl Widget for Gutter {
-    /// `area` の左端1列に縦線を描く。
     fn render(self, area: Rect, buf: &mut Buffer) {
         for y in 0..area.height {
             let symbol = match (self.style, y) {
@@ -60,7 +56,6 @@ impl Widget for Gutter {
     }
 }
 
-/// 縦線の分だけ右へ寄せた、本文用の描画領域を返す。
 pub fn indented_area(area: Rect) -> Rect {
     Rect::new(
         area.x + GUTTER_WIDTH,

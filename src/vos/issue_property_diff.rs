@@ -153,7 +153,6 @@ fn property_of(diff: &IssuePropertyDiff) -> IssueProperty {
     }
 }
 
-/// 2つのdiffが同じIssue propertyを対象にしているかを返す。
 pub fn same_issue_property(left: &IssuePropertyDiff, right: &IssuePropertyDiff) -> bool {
     property_of(left) == property_of(right)
 }

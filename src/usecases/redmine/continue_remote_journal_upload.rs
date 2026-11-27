@@ -9,8 +9,6 @@ use crate::vos::{IssueId, JournalId};
 
 use super::start_remote_journal_upload::upload_remote_journal_action;
 
-/// 競合解決後のRemote Journal uploadを継続する。
-///
 /// # Panics
 ///
 /// 対象Remote Journalが `Uploading { conflict: Some(_) }` でない場合にpanicする。

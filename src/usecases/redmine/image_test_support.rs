@@ -36,7 +36,6 @@ pub(super) fn image_enabled_dispatcher() -> Dispatcher {
     dispatcher
 }
 
-/// 添付ファイルの取得結果を返し、取得した添付ファイルを記録する。
 pub(super) struct ImageStubClient {
     pub(super) thumbnail_result: Result<Vec<u8>, RedmineClientError>,
     pub(super) content_result: Result<Vec<u8>, RedmineClientError>,

@@ -16,13 +16,8 @@ use super::widget::{
 };
 
 pub enum EventProcessResult {
-    Selected {
-        issue_id: IssueId,
-    },
-    /// フォーカス中のプロジェクトにIssueを新規作成する。
-    CreateRequested {
-        project_id: ProjectId,
-    },
+    Selected { issue_id: IssueId },
+    CreateRequested { project_id: ProjectId },
     Quited,
     Handled,
 }
@@ -78,7 +73,6 @@ impl IssueSelectPopupComponent {
         component
     }
 
-    /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, store: &Store, area: Rect) {
         let focused_issue_id = self.focused_issue_id(store);
         self.refresh_focus_counts(store);

@@ -16,8 +16,6 @@ const CATEGORY_LINE: usize = 14;
 
 const NONE_CHOICE: &str = "(None)";
 
-/// 初期popupの`position`番目のIssueの詳細を開き、`line`のpropertyでeを押す。
-///
 /// 最初のjでheaderからpropertyへ移り、以降のjで1行ずつ下がる。親Issueを持つIssueでは、
 /// 最初のjでheaderの親の行へ移るため、1回多く押す。
 fn press_e_on_property(position: usize, has_parent: bool, line: usize) -> PtySession {

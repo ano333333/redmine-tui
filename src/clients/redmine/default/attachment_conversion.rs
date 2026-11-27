@@ -8,7 +8,6 @@ use crate::vos::AttachmentId;
 
 use super::value_conversion;
 
-/// Redmineの添付ファイルレスポンスを受け取る中間DTO。
 #[derive(Deserialize)]
 pub(super) struct RedmineAttachment {
     pub(super) id: u32,

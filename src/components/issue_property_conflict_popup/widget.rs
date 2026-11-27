@@ -41,7 +41,6 @@ pub struct IssuePropertyConflictRow {
 }
 
 impl IssuePropertyConflictRow {
-    /// プレーンテキストとして描画する競合行を作成する。
     pub fn new(
         property_name: impl Into<String>,
         before: impl Into<String>,
@@ -59,7 +58,6 @@ impl IssuePropertyConflictRow {
         )
     }
 
-    /// Markdownとして描画する競合行を作成する。
     pub fn new_markdown(
         property_name: impl Into<String>,
         before: impl Into<String>,
@@ -95,12 +93,10 @@ impl IssuePropertyConflictRow {
         }
     }
 
-    /// 現在フォーカス表示されている採用元を返す。
     pub fn focused_choice(&self) -> IssuePropertyConflictFocus {
         self.focused_choice
     }
 
-    /// フォーカス表示する採用元を差し替えた行を返す。
     pub fn with_focused_choice(mut self, focused_choice: IssuePropertyConflictFocus) -> Self {
         self.focused_choice = focused_choice;
         self
@@ -113,7 +109,6 @@ pub struct IssuePropertyConflictWidget<'a> {
 }
 
 impl<'a> IssuePropertyConflictWidget<'a> {
-    /// 競合行一覧からWidgetを作成する。
     pub fn new(rows: &'a [IssuePropertyConflictRow]) -> Self {
         Self {
             rows,
@@ -121,7 +116,6 @@ impl<'a> IssuePropertyConflictWidget<'a> {
         }
     }
 
-    /// フォーカス表示するボタンを指定したWidgetを返す。
     pub fn with_focused_button(
         mut self,
         focused_button: Option<IssuePropertyConflictButton>,
@@ -130,7 +124,6 @@ impl<'a> IssuePropertyConflictWidget<'a> {
         self
     }
 
-    /// 指定幅で全体を描画するために必要な行数を返す。
     pub fn line_count(&self, width: u16) -> usize {
         if width == 0 {
             return 0;
@@ -151,7 +144,6 @@ impl<'a> IssuePropertyConflictWidget<'a> {
             .saturating_add(3)
     }
 
-    /// 指定セルの仮想バッファ上のカーソル位置を返す。
     pub fn cursor_position_for_cell(
         &self,
         row_index: usize,
@@ -165,7 +157,6 @@ impl<'a> IssuePropertyConflictWidget<'a> {
         }
     }
 
-    /// 指定ボタンの仮想バッファ上のカーソル位置を返す。
     pub fn cursor_position_for_button(
         &self,
         button: IssuePropertyConflictButton,

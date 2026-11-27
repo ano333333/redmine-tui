@@ -174,7 +174,6 @@ fn failure_removes_the_upload_at_any_stage() {
     );
 
     assert_eq!(stage(&store), None);
-    // 失敗後は次の追加を始められる。
     start(&mut store);
     assert_eq!(stage(&store), Some(AttachmentUploadStage::Uploading));
 }

@@ -68,7 +68,6 @@ impl BodyWidgetState {
 
     /// 単独の画像の段落は、`images`で読み込んだ画像を表示し、表示できなければ代わりの文字にする。
     pub fn update_with_images(&mut self, width: u16, body: &str, images: &MarkdownImages) {
-        // 本文は縦線の字下げを除いた幅で描く
         self.view
             .update(width.saturating_sub(GUTTER_WIDTH), body, images);
     }

@@ -50,7 +50,6 @@ impl<'a> Widget for ChildrenListWidget<'a> {
         );
         header_text.render(area, buf);
 
-        // 縦線と字下げは見出しの下、一覧の部分だけに掛ける
         let list_area = Rect::new(
             area.x,
             area.y + HEADER_LINES,
@@ -100,7 +99,6 @@ impl<'a> ChildrenListWidget<'a> {
     }
 
     pub fn line_count(&self) -> u16 {
-        // 見出し2行 + 子チケット + 追加行 + 縦線を引かない末尾の余白1行
         HEADER_LINES + self.children_num + 1 + GUTTER_TRAILING_LINES
     }
 }

@@ -26,8 +26,6 @@ pub struct IssuePropertyConflictComponent {
 }
 
 impl IssuePropertyConflictComponent {
-    /// サーバーの現在値と競合解決対象の差分からComponentを作成する。
-    ///
     /// 渡された差分は、サーバー現在値からローカル編集後値へ変更する候補として扱う。
     pub fn new(server_issue: IssueAggregate, diffs: Vec<IssuePropertyDiff>) -> Self {
         let selected_choices = vec![IssuePropertyConflictFocus::After; diffs.len()];
@@ -40,13 +38,11 @@ impl IssuePropertyConflictComponent {
         }
     }
 
-    /// 描画領域に合わせてスクロール状態を更新する。
     pub fn update(&mut self, area: Rect) {
         let cursor = self.cursor_global_position(area.width);
         self.vertical_scroll_state.update(cursor, area.height);
     }
 
-    /// キーイベントを処理し、popupの終了や続行が必要な場合は結果を返す。
     pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         self.focus_state
             .process_event(event)
@@ -65,7 +61,6 @@ impl IssuePropertyConflictComponent {
             })
     }
 
-    /// 現在の状態を反映したWidgetを作成する。
     pub fn create_widget(&self, area: Rect) -> VerticalScrollWidget<'_> {
         let rows = self.widget_rows();
         let widget = IssuePropertyConflictWidget::new(&rows)
@@ -79,7 +74,6 @@ impl IssuePropertyConflictComponent {
         scroll_widget
     }
 
-    /// スクロール適用後の画面上カーソル位置を返す。
     pub fn cursor_position(&self, area: Rect) -> Option<Position> {
         let cursor = self.cursor_global_position(area.width);
         let position = self

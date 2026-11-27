@@ -9,14 +9,12 @@ use crate::vos::{IssueId, JournalId};
 use super::journal_detail_conversion::{RedmineJournalDetail, try_into_domain};
 use super::value_conversion;
 
-/// RedmineのJournalレスポンスを受け取る中間DTO。
 #[derive(Deserialize)]
 pub(super) struct RedmineJournal {
     pub(super) id: u32,
     pub(super) user: RedmineJournalUser,
     pub(super) updated_on: Option<String>,
     pub(super) notes: String,
-    /// Journal JSONにネストされたIssue属性の変更履歴。
     #[serde(default)]
     pub(super) details: Vec<RedmineJournalDetail>,
 }

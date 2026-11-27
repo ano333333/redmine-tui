@@ -14,12 +14,6 @@ pub enum ImageKey {
 }
 
 /// 状態がない画像と`Failed`の画像だけが、読み込みを始められる。
-///
-/// ```text
-///  None / Failed ── Start ──▶ Loading ── Loaded ──▶ Preparing ── Prepared ──▶ Ready
-///                               │                      │
-///                               └──────── Fail ────────┴──▶ Failed
-/// ```
 #[derive(Clone, Debug)]
 pub enum ImageState {
     /// 画像のファイルを用意し、一時ファイルへ書き込んでいる。

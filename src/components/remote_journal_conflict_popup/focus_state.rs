@@ -2,13 +2,11 @@ use super::widget::RemoteJournalConflictButton;
 use crate::platform::input::{InputEvent, KeyCode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-/// Remote Journal競合popup内でフォーカスされている対象。
 pub enum FocusTarget {
     Choice(usize),
     Button(RemoteJournalConflictButton),
 }
 
-/// フォーカス状態がキー入力から生成する操作結果。
 pub enum EventProcessResult {
     Selected(usize),
     Canceled,
@@ -32,7 +30,6 @@ pub struct FocusState {
 }
 
 impl FocusState {
-    /// 選択肢数と初期選択肢のindexからフォーカス状態を作成する。
     pub fn new(choice_count: usize, initial_choice: usize) -> Self {
         Self {
             choice_count,
@@ -40,7 +37,6 @@ impl FocusState {
         }
     }
 
-    /// キーイベントをフォーカス移動または確定・キャンセル操作へ変換する。
     pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         let action = self.action_from_event(event)?;
         self.apply_action(action)

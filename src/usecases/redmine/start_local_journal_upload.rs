@@ -25,8 +25,6 @@ fn local_journal_put_failure_output(issue_id: IssueId, message: String) -> Useca
     }
 }
 
-/// PUT成功後の確認GETが失敗したときの完了値を生成する。
-///
 /// notesは投稿済みのため、下書きを削除して再試行による二重投稿を防ぐ。
 fn local_journal_fetch_failure_output(issue_id: IssueId, reason: String) -> UsecaseOutput {
     UsecaseOutput {
@@ -38,8 +36,6 @@ fn local_journal_fetch_failure_output(issue_id: IssueId, reason: String) -> Usec
     }
 }
 
-/// 未保存のLocal Journalのuploadを開始する。
-///
 /// `StartLocalUpload`はFutureをpollする前に同期的にqueueへ追加する。返却したFutureは
 /// notes追加のPUTと、その結果を確認するためのIssue GETを順に行う。
 ///
@@ -246,7 +242,6 @@ mod tests {
         local_only_dispatcher_with_journals(vec![])
     }
 
-    /// `journals`を持つIssueを登録し、notesを入力済みのLocal Journalを作成する。
     fn local_only_dispatcher_with_journals(journals: Vec<Journal>) -> Rc<RefCell<Dispatcher>> {
         let mut dispatcher = Dispatcher::new();
         let mut issue =

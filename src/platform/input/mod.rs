@@ -1,3 +1,5 @@
+//! native版とWeb版の入力をComponent共通のkey表現へ変換する。
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputEvent {
     Key(KeyEvent),

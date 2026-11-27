@@ -72,7 +72,6 @@ fn start_remote(store: &mut Store, journal_id: u32) {
     );
 }
 
-/// 現在のJournalのうち対象のnotesだけが`server_notes`に変わった取得結果で、競合を検出する。
 fn detect_conflict(store: &mut Store, journal_id: u32, server_notes: &str) {
     let journals = store
         .get_remote_journals(ISSUE_ID)
@@ -95,7 +94,6 @@ fn detect_conflict(store: &mut Store, journal_id: u32, server_notes: &str) {
     );
 }
 
-/// Issue属性の保存成功として、取得したJournalを含むIssueを取り込む。
 fn take_in_fetched_journals(store: &mut Store, journals: Vec<Journal>) {
     store.consume_action(
         IssueAction::UpdateDescription {
@@ -137,7 +135,6 @@ fn start_local(store: &mut Store) {
     );
 }
 
-/// 指定したJournalを"edited notes"へ編集したStore。
 fn edited_store(journal_ids: &[u32], edited_id: u32) -> Store {
     let mut store = store_with(journal_ids);
     edit_remote(&mut store, edited_id, "edited notes");
@@ -422,7 +419,6 @@ fn start_deleted(store: &mut Store, original_id: u32) {
     );
 }
 
-/// Journal 10を編集した後、取得結果から消えて退避されたStore。
 fn store_with_deleted_10() -> Store {
     let mut store = edited_store(&[10, 11], 10);
     take_in_fetched_journals(&mut store, vec![journal(11)]);
@@ -1182,7 +1178,6 @@ fn cancel_remote_upload_conflict_panics_when_uploading_without_a_conflict() {
     );
 }
 
-/// Journal 10の保存中に、Journal 11とIssue属性も編集したStore。
 fn uploading_store_with_other_edits() -> Store {
     let mut store = uploading_store(&[10, 11], 10);
     edit_remote(&mut store, 11, "other edit");
@@ -1196,7 +1191,6 @@ fn uploading_store_with_other_edits() -> Store {
     store
 }
 
-/// Issue本体の説明と件名が変わった取得結果。
 fn server_issue(journals: Vec<Journal>) -> IssueAggregate {
     let mut issue = issue_with_journals(ISSUE_ID, journals);
     issue.issue.subject = "server subject".to_string();
@@ -1204,7 +1198,6 @@ fn server_issue(journals: Vec<Journal>) -> IssueAggregate {
     issue
 }
 
-/// 取得結果の取り込みで、未編集のIssue属性と子一覧は取得値になり、編集中の値は残ることを確かめる。
 fn assert_issue_taken_in_with_local_edits(store: &Store) {
     let (issue, issue_state) = store.get_issue(ISSUE_ID);
     assert_eq!(issue_state, IssueState::Edited);
@@ -1471,7 +1464,6 @@ fn get_local_journal_panics_for_an_issue_without_a_local_journal() {
     store.get_local_journal(ISSUE_ID);
 }
 
-/// 対象の状態ではActionを受理できないことを、panicの文言で確かめる。
 macro_rules! remote_action_panics {
     ($($name:ident: $setup:expr, $action:expr => $expected:literal;)+) => {
         $(
@@ -1630,7 +1622,6 @@ fn child(id: u32, subject: &str) -> IssueChild {
     }
 }
 
-/// Journal 10を編集し、Issue属性も編集して保存を始めたStore。
 fn uploading_issue_store() -> Store {
     let mut store = edited_store(&[10, 11], 10);
     store.consume_action(

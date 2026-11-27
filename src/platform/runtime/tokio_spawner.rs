@@ -7,8 +7,6 @@ use tokio::{
 
 use super::{BackgroundCompletion, BackgroundSpawner, panic_message};
 
-/// native runner向けにTokio runtimeとbackground taskの完了channelを一体で所有するadapter。
-///
 /// executorとcompletionの配送経路を同じ境界に閉じ込めることで、呼び出し側へTokio固有型を
 /// 渡さずにtaskの起動から完了受理までを扱える。
 pub(crate) struct TokioBackgroundSpawner<T> {

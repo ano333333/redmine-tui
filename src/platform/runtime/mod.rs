@@ -1,3 +1,5 @@
+//! native版とWeb版に共通するtaskの起動と完了受理を提供する。
+
 use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
@@ -16,12 +18,9 @@ pub enum BackgroundCompletion<T> {
     Panicked { message: String },
 }
 
-/// background taskの起動方法と完了通知の配送を、executor固有の型から分離するport。
 pub trait BackgroundSpawner {
     type Output: Send + 'static;
 
-    /// Redmine I/Oなど、UI threadから独立して進められるtaskを起動する。
-    ///
     /// Web adapterでも同じbackground task契約を保つため、Futureの`Send + 'static`は緩めない。
     fn spawn<F>(&self, task: F)
     where
@@ -32,7 +31,6 @@ pub trait BackgroundSpawner {
 }
 
 /// UI thread上で、frame/loopごとの明示的なpollによって進めるlocal task。
-///
 /// editorのように呼び出し元から借用する非`Send` Futureを保持できるよう、
 /// `BackgroundSpawner`の`Send + 'static`契約とは分離している。
 pub struct LocalTask<'a, T> {
@@ -46,8 +44,6 @@ impl<'a, T> LocalTask<'a, T> {
         }
     }
 
-    /// taskを1回pollし、未完了なら`None`、完了時はoutputを返す。
-    ///
     /// noop wakerはtaskを再度scheduleしないため、runnerがloopごとに呼び出す必要がある。
     /// 完了後の再pollはrunnerの状態管理違反としてpanicする。
     pub fn poll_completion(&mut self) -> Option<T> {
