@@ -10,8 +10,8 @@ use fluent_syntax::parser;
 const LOCALES_DIR: &str = "locales";
 const REFERENCE_LANGUAGE: &str = "en";
 
-/// メッセージと属性（`id.attr`）ごとの、参照する変数名。
-type Catalog = BTreeMap<String, BTreeSet<String>>;
+/// メッセージと属性（`id.attr`）ごとの参照する変数名を、カタログに書かれた順に持つ。
+type Catalog = Vec<(String, BTreeSet<String>)>;
 
 pub(crate) fn check_locales(args: Vec<String>) -> Result<(), String> {
     if let Some(arg) = args.first() {
@@ -85,6 +85,16 @@ fn read_catalog(path: &Path) -> Result<Catalog, String> {
 fn parse_catalog(source: &str) -> Result<Catalog, String> {
     let resource = parser::parse(source).map_err(|(_, errors)| format!("{errors:?}"))?;
     let mut catalog = Catalog::new();
+    // fluent-bundleは同じIDの再定義を読み込みエラーにするため、上書きせずに報告する。
+    // 値を持たず属性だけのメッセージも、IDを定義したものとして数える。
+    let mut defined = BTreeSet::new();
+    let mut define = |key: String| {
+        if defined.insert(key.clone()) {
+            Ok(key)
+        } else {
+            Err(format!("`{key}` is defined more than once"))
+        }
+    };
     for entry in resource.body {
         let (id, value, attributes) = match entry {
             Entry::Message(message) => (
@@ -99,31 +109,16 @@ fn parse_catalog(source: &str) -> Result<Catalog, String> {
             ),
             _ => continue,
         };
+        let id = define(id)?;
         if let Some(value) = value {
-            insert_unique(&mut catalog, id.clone(), variables(&value))?;
+            catalog.push((id.clone(), variables(&value)));
         }
         for attribute in attributes {
-            insert_unique(
-                &mut catalog,
-                format!("{id}.{}", attribute.id.name),
-                variables(&attribute.value),
-            )?;
+            let key = define(format!("{id}.{}", attribute.id.name))?;
+            catalog.push((key, variables(&attribute.value)));
         }
     }
     Ok(catalog)
-}
-
-// fluent-bundleは同じIDの再定義を読み込みエラーにするため、上書きせずに報告する。
-fn insert_unique(
-    catalog: &mut Catalog,
-    id: String,
-    variables: BTreeSet<String>,
-) -> Result<(), String> {
-    if catalog.contains_key(&id) {
-        return Err(format!("`{id}` is defined more than once"));
-    }
-    catalog.insert(id, variables);
-    Ok(())
 }
 
 fn variables(pattern: &Pattern<&str>) -> BTreeSet<String> {
@@ -175,20 +170,28 @@ fn collect_inline(expression: &InlineExpression<&str>, names: &mut BTreeSet<Stri
 }
 
 fn compare(reference: &Catalog, target: &Catalog) -> Vec<String> {
+    let reference_variables: BTreeMap<&str, &BTreeSet<String>> = reference
+        .iter()
+        .map(|(id, variables)| (id.as_str(), variables))
+        .collect();
+    let target_variables: BTreeMap<&str, &BTreeSet<String>> = target
+        .iter()
+        .map(|(id, variables)| (id.as_str(), variables))
+        .collect();
     let mut problems = Vec::new();
-    for (id, reference_variables) in reference {
-        match target.get(id) {
+    for (id, expected) in reference {
+        match target_variables.get(id.as_str()) {
             None => problems.push(format!("missing `{id}`")),
-            Some(target_variables) if target_variables != reference_variables => {
+            Some(found) if *found != expected => {
                 problems.push(format!(
-                    "`{id}` uses variables {target_variables:?}, expected {reference_variables:?}"
+                    "`{id}` uses variables {found:?}, expected {expected:?}"
                 ));
             }
             Some(_) => {}
         }
     }
-    for id in target.keys() {
-        if !reference.contains_key(id) {
+    for (id, _) in target {
+        if !reference_variables.contains_key(id.as_str()) {
             problems.push(format!("unexpected `{id}`"));
         }
     }
@@ -235,6 +238,14 @@ mod tests {
                 "a = { $n -> \n    [one] 1つ\n   *[other] { $items }\n}\n"
             ),
             ["`a` uses variables {\"items\", \"n\"}, expected {\"item\", \"n\"}"]
+        );
+    }
+
+    #[test]
+    fn duplicate_messages_without_value_are_reported() {
+        assert_eq!(
+            parse_catalog("a = A\na =\n    .label = B\n"),
+            Err("`a` is defined more than once".to_string())
         );
     }
 
