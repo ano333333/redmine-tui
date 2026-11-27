@@ -154,7 +154,7 @@ nix develop -c trunk serve --port 8081
 - `.github/workflows/`: CI と GitHub Pages の workflow
 - `docs/architecture.md` と `docs/adrs/`: アーキテクチャガイドと意思決定記録
 
-アーキテクチャや component lifecycle を変更する前に [docs/architecture.md](docs/architecture.md) と関連 ADR を確認してください。既存 ADR は過去の判断を記録したものです。新しいアーキテクチャ判断は、過去の記録を書き換えるのではなく新しい ADR として追加してください。
+アーキテクチャを変更する前に [docs/architecture.md](docs/architecture.md) と関連 ADR を確認してください。既存 ADR は過去の判断を記録したものです。新しいアーキテクチャ判断は、過去の記録を書き換えるのではなく新しい ADR として追加してください。
 
 ## CI
 

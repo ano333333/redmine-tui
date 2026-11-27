@@ -2,6 +2,7 @@
 //!
 //! Journal本体は`IssueAggregate::journals`が所有し、ここでは本体ごとの状態、
 //! 0件または1件のLocal Journal、取得結果から消えた編集中Journalの退避データを保持する。
+//! 取得したJournalを取り込むときは、未送信のローカル編集を取得値で置き換えない。
 
 use std::collections::{HashMap, HashSet};
 

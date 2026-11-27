@@ -154,7 +154,7 @@ The demo uses `DemoRedmineClient`, which embeds fixtures and keeps edits in memo
 - `.github/workflows/`: CI and GitHub Pages workflows
 - `docs/architecture.md` and `docs/adrs/`: architecture guidance and decision records
 
-Read [docs/architecture.md](docs/architecture.md) and relevant ADRs before making architectural or component lifecycle changes. Existing ADRs record past decisions; add a new ADR when documenting a new architectural decision rather than rewriting historical records.
+Read [docs/architecture.md](docs/architecture.md) and relevant ADRs before making architectural changes. Existing ADRs record past decisions; add a new ADR when documenting a new architectural decision rather than rewriting historical records.
 
 ## CI
 
