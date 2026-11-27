@@ -100,16 +100,30 @@ fn parse_catalog(source: &str) -> Result<Catalog, String> {
             _ => continue,
         };
         if let Some(value) = value {
-            catalog.insert(id.clone(), variables(&value));
+            insert_unique(&mut catalog, id.clone(), variables(&value))?;
         }
         for attribute in attributes {
-            catalog.insert(
+            insert_unique(
+                &mut catalog,
                 format!("{id}.{}", attribute.id.name),
                 variables(&attribute.value),
-            );
+            )?;
         }
     }
     Ok(catalog)
+}
+
+// fluent-bundleは同じIDの再定義を読み込みエラーにするため、上書きせずに報告する。
+fn insert_unique(
+    catalog: &mut Catalog,
+    id: String,
+    variables: BTreeSet<String>,
+) -> Result<(), String> {
+    if catalog.contains_key(&id) {
+        return Err(format!("`{id}` is defined more than once"));
+    }
+    catalog.insert(id, variables);
+    Ok(())
 }
 
 fn variables(pattern: &Pattern<&str>) -> BTreeSet<String> {
@@ -221,6 +235,14 @@ mod tests {
                 "a = { $n -> \n    [one] 1つ\n   *[other] { $items }\n}\n"
             ),
             ["`a` uses variables {\"items\", \"n\"}, expected {\"item\", \"n\"}"]
+        );
+    }
+
+    #[test]
+    fn duplicate_messages_are_reported() {
+        assert_eq!(
+            parse_catalog("a = A\na = B\n"),
+            Err("`a` is defined more than once".to_string())
         );
     }
 
