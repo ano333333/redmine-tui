@@ -35,9 +35,6 @@ pub struct FocusState {
 impl FocusState {
     pub fn new() -> Self {
         Self {
-            // アプリ開始直後の新規作成時も、IssueポップアップでのIssue選択時も、
-            // process_eventやfocus_eventの前にupdateが呼び出されるので、
-            // ターミナル実サイズでの初期化をそこまで遅延する
             width: 0,
             height: 0,
             cursor_position: None,

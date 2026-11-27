@@ -591,7 +591,6 @@ impl IssueDetailComponent {
         i
     }
 
-    /// 共通の入力イベントを同期的に処理する。updateとrenderがこの順で後続する
     pub fn process_event(
         &mut self,
         event: InputEvent,
@@ -643,10 +642,7 @@ impl IssueDetailComponent {
             _ => {}
         }
 
-        // FIXME:
-        // process_eventでComponentのprocess_event呼び出しからその結果に基づくフォーカス処理を行っているが、
-        // Storeの更新契機で子componentからイベントが来る可能性を踏まえ、updateがフォーカス関連を含めたイベントを返すようにしたい
-        // ActionとしてStoreに流すか？(直接の親子関係があるComponent同士のイベント受け渡しにStoreを使いたくないが)
+        // FIXME: Store更新で子Componentのフォーカス対象が消える場合も、親へ遷移結果を返せる契約が必要。
         match self.focused_component {
             FocusedComponent::Header => {
                 let result = self.header.process_event(event.clone());
@@ -737,7 +733,7 @@ impl IssueDetailComponent {
                 }
             }
             FocusedComponent::Body => {
-                // FIXME: widthの受け渡し方、StoreにIssueDetailCompnent用の子Storeを作成？
+                // FIXME: 描画幅をStoreに持たせず、更新に必要なComponentへ一貫して渡す経路がない。
                 let result = self.body.process_event(event.clone());
                 match result {
                     Some(BodyEventProcessResult::CursorLeavedFromAbove { .. }) => {
@@ -909,7 +905,6 @@ impl IssueDetailComponent {
         None
     }
 
-    /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, _: Rc<RefCell<Dispatcher>>, store: &Store, frame_size: (u16, u16)) {
         (self.width, self.height) = frame_size;
         let (issue, _) = store.get_issue(self.id);
@@ -939,7 +934,6 @@ impl IssueDetailComponent {
         );
     }
 
-    /// Componentをframeのarea範囲内に描画する。
     pub fn render(&self, store: &Store, frame: &mut Frame, frame_area: Rect) {
         self.create_widget(store)
             .render(frame_area, frame.buffer_mut());

@@ -464,7 +464,6 @@ fn issue_upload_conflicts_are_retained_while_uploading() {
     assert_eq!(store.get_issue(1).1, IssueState::Uploading);
 }
 
-/// Issue 1の説明を"local body"へ編集して保存を始めた状態にする。
 fn start_description_upload(store: &mut Store) {
     sync_issue(store, 1.into());
     store.consume_action(
@@ -537,7 +536,6 @@ fn upload_put_applies_the_sent_diffs_to_the_base_and_keeps_uploading() {
     assert!(store.get_issue_property_diffs(IssueId::new(1)).is_empty());
 }
 
-/// Issue 1の説明"local body"をPUTし終え、確認の取得を待っている状態にする。
 fn put_description_upload(store: &mut Store) {
     start_description_upload(store);
     let diffs = store.get_issue_property_diffs(IssueId::new(1)).to_vec();
@@ -1441,7 +1439,6 @@ fn issue_with_description(id: u32, description: &str) -> IssueAggregate {
     issue
 }
 
-/// Issue 99の詳細取得の完了。直前に`StartFetching`が必要。
 fn fetched_issue_99() -> Action {
     Action::IssueFetchSucceeded {
         id: IssueId::new(99),

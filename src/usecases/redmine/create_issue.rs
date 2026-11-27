@@ -8,8 +8,6 @@ use crate::usecases::{
 
 use super::upload_local_file::{UploadLocalFileError, upload_local_file};
 
-/// 下書きの添付ファイルをuploadし、そのtokenを付けてIssueの作成を要求する。
-///
 /// 成功したら作成完了のイベントと、作成したIssueの取得を後続要求として返す。いずれかの段階で
 /// 失敗したら、作成の失敗を通知する。
 pub fn create_issue<C, F>(
@@ -112,7 +110,6 @@ mod tests {
     use super::super::attachment_test_support::{StubLocalFileClient, offline};
     use super::*;
 
-    /// uploadと作成の結果を返し、送った内容を記録する。
     struct CreateStubClient {
         upload_result: Result<UploadToken, RedmineClientError>,
         create_result: Result<IssueId, RedmineClientError>,

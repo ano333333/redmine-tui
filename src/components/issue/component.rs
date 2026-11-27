@@ -56,8 +56,7 @@ impl IssueComponent {
         event: InputEvent,
         dispatcher: Rc<RefCell<Dispatcher>>,
     ) -> Option<EventProcessResult> {
-        // Detail gets the first opportunity so future overlapping shortcuts keep
-        // the behavior of the currently focused, more specific component.
+        // shortcutが重複しても、focus中のより具体的なComponentの操作を優先する。
         let detail_result = self
             .detail
             .as_mut()

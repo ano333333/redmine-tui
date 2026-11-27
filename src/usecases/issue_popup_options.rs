@@ -9,10 +9,7 @@ use crate::vos::{
     TrackerId, UserId,
 };
 
-/// idと名前のentry一覧と現在値から、SelectBoxPopupComponent::new用の
-/// items(id昇順ソート、`sorted`指定時)とフォーカス箇所のindexを組み立てる。
-///
-/// 現在値が見つからない場合、及び`current_id`がNoneの場合はfocused_indexを0にする。
+/// `current_id`が一覧にない場合は、空の一覧を含めて`focused_index`を0にする。
 fn build_select_options(
     mut entries: Vec<(u32, String)>,
     current_id: Option<u32>,
@@ -27,7 +24,6 @@ fn build_select_options(
     (entries, focused_index)
 }
 
-/// IssueStatusPopup用のitems/focused_indexを組み立てる。`current`がNoneなら先頭にフォーカスする。
 // FIXME: workflowで許可された遷移先に絞っていない。Redmineは許可されないstatus_idをエラーなしで
 // 無視するため、ローカルでは変更済みに見えてしまう。
 pub fn build_issue_status_options(
@@ -42,7 +38,6 @@ pub fn build_issue_status_options(
     build_select_options(issue_statuses, current.map(|id| id.get()), false)
 }
 
-/// TrackerPopup用のitems/focused_indexを組み立てる。`current`がNoneなら先頭にフォーカスする。
 // FIXME: projectで有効なtrackerに絞っていない。Redmineは使えないtracker_idをエラーなしで
 // 無視するため、ローカルでは変更済みに見えてしまう。
 pub fn build_tracker_options(
@@ -57,7 +52,6 @@ pub fn build_tracker_options(
     build_select_options(trackers, current.map(|id| id.get()), true)
 }
 
-/// ProjectPopup用のitems/focused_indexを組み立てる。
 // FIXME: add_issues権限のあるprojectに絞っていない。Redmineは移動できないproject_idを
 // エラーなしで無視するため、ローカルでは変更済みに見えてしまう。
 pub fn build_project_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, String)>, usize) {
@@ -70,7 +64,6 @@ pub fn build_project_options(store: &Store, issue_id: IssueId) -> (Vec<(u32, Str
     build_select_options(projects, Some(current_project_id.get()), true)
 }
 
-/// PriorityPopup用のitems/focused_indexを組み立てる。`current`がNoneなら先頭にフォーカスする。
 pub fn build_priority_options(
     store: &Store,
     current: Option<PriorityId>,
@@ -83,7 +76,6 @@ pub fn build_priority_options(
     build_select_options(priorities, current.map(|id| id.get()), true)
 }
 
-/// AssignedToPopup用のitems/focused_indexを組み立てる。`current`がNoneなら先頭にフォーカスする。
 // FIXME: projectのassignableなmemberに絞っていない。Redmineはmember以外のassigned_to_idを
 // 422で拒否する。
 pub fn build_assigned_to_options(
@@ -98,8 +90,6 @@ pub fn build_assigned_to_options(
     build_select_options(users, current.map(|id| id.get()), true)
 }
 
-/// TargetVersionPopup用に、`project_id`の対象バージョンからitems/focused_indexを組み立てる。
-/// `current`がNoneなら先頭にフォーカスする。
 pub fn build_target_version_options(
     store: &Store,
     project_id: ProjectId,
@@ -113,9 +103,6 @@ pub fn build_target_version_options(
     build_select_options(target_versions, current.map(|id| id.get()), true)
 }
 
-/// DoneRatioPopup用のitems/focused_indexを組み立てる。
-///
-/// 選択肢は0,10,...,100の固定11件。`current`がNoneなら先頭にフォーカスする。
 pub fn build_done_ratio_options(current: Option<u16>) -> (Vec<(u32, String)>, usize) {
     let done_ratios = (0..=100)
         .step_by(10)
@@ -124,8 +111,6 @@ pub fn build_done_ratio_options(current: Option<u16>) -> (Vec<(u32, String)>, us
     build_select_options(done_ratios, current.map(u32::from), false)
 }
 
-/// CategoryPopup用に、`project_id`のカテゴリからitems/focused_indexを組み立てる。
-/// `current`がNoneなら先頭にフォーカスする。
 pub fn build_category_options(
     store: &Store,
     project_id: ProjectId,
@@ -139,8 +124,6 @@ pub fn build_category_options(
     build_select_options(categories, current.map(|id| id.get()), true)
 }
 
-/// IssueStatusPopupの選択結果からUpdateStatusをdispatchするobserverを組み立てる。
-///
 /// statusは必須項目のため、選択なし(None)は無視する。
 pub fn issue_status_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
@@ -156,8 +139,6 @@ pub fn issue_status_popup_observer(
     })
 }
 
-/// TrackerPopupの選択結果からUpdateTrackerをdispatchするobserverを組み立てる。
-///
 /// trackerは必須項目のため、選択なし(None)は無視する。
 // FIXME: tracker変更時、Redmineは新trackerで使えないステータスを既定ステータスへ戻すことがある。
 // upload後に再取得しないため、ローカルのステータスとずれる。
@@ -177,8 +158,6 @@ pub fn tracker_popup_observer(
     })
 }
 
-/// ProjectPopupの選択結果からUpdateProjectをdispatchするobserverを組み立てる。
-///
 /// projectは必須項目のため、選択なし(None)は無視する。現在と同じprojectを選んだ場合も、
 /// 対象バージョンとカテゴリーを消さないようdispatchしない。
 // FIXME: project移動時、Redmineは移動先で無効なtrackerを先頭のtrackerへ変え、別rootのprojectへ
@@ -210,8 +189,6 @@ pub fn project_popup_observer(
     })
 }
 
-/// PriorityPopupの選択結果からUpdatePriorityをdispatchするobserverを組み立てる。
-///
 /// priorityは必須項目のため、選択なし(None)は無視する。
 pub fn priority_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
@@ -229,7 +206,6 @@ pub fn priority_popup_observer(
     })
 }
 
-/// AssignedToPopupの選択結果からUpdateAssignedToをdispatchするobserverを組み立てる。
 pub fn assigned_to_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
@@ -244,7 +220,6 @@ pub fn assigned_to_popup_observer(
     })
 }
 
-/// TargetVersionPopupの選択結果からUpdateTargetVersionをdispatchするobserverを組み立てる。
 pub fn target_version_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
@@ -259,8 +234,6 @@ pub fn target_version_popup_observer(
     })
 }
 
-/// DoneRatioPopupの選択結果からUpdateDoneRatioをdispatchするobserverを組み立てる。
-///
 /// 選択なし(None)はキャンセルとして扱い、dispatchしない。
 pub fn done_ratio_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
@@ -280,7 +253,6 @@ pub fn done_ratio_popup_observer(
     })
 }
 
-/// CategoryPopupの選択結果からUpdateCategoryをdispatchするobserverを組み立てる。
 pub fn category_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
@@ -295,12 +267,10 @@ pub fn category_popup_observer(
     })
 }
 
-/// EstimatedHoursPopup用の現在値を取得する。
 pub fn current_estimated_hours(store: &Store, issue_id: IssueId) -> Option<f64> {
     store.get_issue(issue_id).0.estimated_hours()
 }
 
-/// EstimatedHoursPopupの入力結果からUpdateEstimatedHoursをdispatchするobserverを組み立てる。
 pub fn estimated_hours_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
@@ -315,17 +285,14 @@ pub fn estimated_hours_popup_observer(
     })
 }
 
-/// StartDatePopup用の現在値(選択済み開始日)を取得する。
 pub fn current_start_date(store: &Store, issue_id: IssueId) -> Option<DateTime<Local>> {
     store.get_issue(issue_id).0.start_date()
 }
 
-/// DueDatePopup用の現在値(選択済み期日)を取得する。
 pub fn current_due_date(store: &Store, issue_id: IssueId) -> Option<DateTime<Local>> {
     store.get_issue(issue_id).0.due_date()
 }
 
-/// StartDatePopupの選択結果からUpdateStartDateをdispatchするobserverを組み立てる。
 pub fn start_date_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,
@@ -340,7 +307,6 @@ pub fn start_date_popup_observer(
     })
 }
 
-/// DueDatePopupの選択結果からUpdateDueDateをdispatchするobserverを組み立てる。
 pub fn due_date_popup_observer(
     dispatcher: Rc<RefCell<Dispatcher>>,
     issue_id: IssueId,

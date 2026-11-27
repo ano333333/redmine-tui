@@ -67,9 +67,7 @@ pub enum EventProcessResult {
     Handled,
 }
 
-/// 選んだ日付を下書きへ書き戻すobserver。
 pub type DateObserver = Box<dyn FnMut(DateTime<Local>)>;
-/// 入力した工数を下書きへ書き戻すobserver。
 pub type HoursObserver = Box<dyn FnMut(Option<f64>)>;
 
 /// select boxで値を選ぶ項目の、選択肢・フォーカス位置・確定値を下書きへ書き戻すobserver。
@@ -106,7 +104,7 @@ impl NewIssueComponent {
         }
     }
 
-    /// フォーカス行が本文の表示範囲に入るよう、スクロール量を更新する。renderが後続する。
+    /// フォーカス行が本文の表示範囲に入るよう、スクロール量を更新する。
     pub fn update(&mut self, height: u16) {
         let draft = self.draft.borrow();
         let focused_row = NewIssueWidget::focused_row(
@@ -166,8 +164,6 @@ impl NewIssueComponent {
         Some(EventProcessResult::Handled)
     }
 
-    /// `field`がselect boxで値を選ぶ項目なら、その選択肢を返す。
-    ///
     /// 「選択なし」は値の解除か、Redmineの既定値に戻すことを表す。
     pub fn select_box(&self, store: &Store, field: DraftField) -> Option<DraftSelectBox> {
         let draft = self.draft.borrow();
@@ -221,8 +217,6 @@ impl NewIssueComponent {
         })
     }
 
-    /// 開始日か期日の現在値と、選んだ日付を下書きへ書き戻すobserverを返す。
-    ///
     /// # Panics
     ///
     /// `field`が開始日でも期日でもない場合にpanicする。
@@ -241,7 +235,6 @@ impl NewIssueComponent {
         }
     }
 
-    /// 予定工数の現在値と、入力値を下書きへ書き戻すobserverを返す。
     pub fn estimated_hours_popup(&self) -> (Option<f64>, HoursObserver) {
         let draft = self.draft.clone();
         (

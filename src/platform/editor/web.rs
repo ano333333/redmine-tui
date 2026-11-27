@@ -12,7 +12,6 @@ use wasm_bindgen::{JsCast, closure::Closure};
 
 use super::{EditorOutcome, EditorRequest, TextEditor};
 
-/// Web editor の入力欄と表示領域を DOM 上で管理する。
 struct TextareaOverlay {
     container: web_sys::Element,
     textarea: web_sys::HtmlTextAreaElement,
@@ -92,7 +91,6 @@ impl TextareaOverlay {
     }
 }
 
-/// textarea overlay の編集結果を非同期に返す Web editor。
 pub struct WebTextEditor;
 
 impl TextEditor for WebTextEditor {

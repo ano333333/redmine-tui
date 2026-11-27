@@ -499,7 +499,6 @@ fn start_edited_journal_upload(dispatcher: &mut Dispatcher, issue_id: u32, notes
     dispatcher.consume_action();
 }
 
-/// `start_edited_journal_upload`の編集を保存した後に取得するIssue。
 fn saved_journal_issue(issue_id: u32) -> IssueAggregate {
     let mut issue = sample_issue_aggregate(
         issue_id,
@@ -899,7 +898,6 @@ fn press_ctrl_s(
     sink.take_usecases()
 }
 
-/// completionを`completions`件受理する。runと同じく、各completionのActionを消費してから後続要求を起動する。
 fn route_completions_with_follow_ups<C>(
     spawner: &TokioBackgroundSpawner<UsecaseOutput>,
     completions: usize,
@@ -987,7 +985,6 @@ fn issue_upload_failure_routes_worker_actions_to_store_and_retry_clears_failure(
     );
 }
 
-// Remote保存前GETの失敗がfocusを奪わないtoastになり、同じ入力位置から再保存できることを検証する。
 // FIXME: E2Eで良い粒度なので移行する
 #[test]
 fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
@@ -1040,7 +1037,6 @@ fn remote_preflight_get_failure_shows_a_non_focusing_toast_and_retry_succeeds() 
     assert_eq!(client.uploaded_journal_notes.lock().unwrap().len(), 1);
 }
 
-// Remote PUTの失敗をtoastで通知した後もfocusを維持し、再保存でSyncedへ戻ることを検証する。
 #[test]
 fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
@@ -1073,7 +1069,6 @@ fn remote_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     ));
 }
 
-// Local PUTの失敗をtoastで通知した後もfocusを維持し、再保存を完了できることを検証する。
 #[test]
 fn local_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
@@ -1109,7 +1104,6 @@ fn local_put_failure_shows_a_non_focusing_toast_and_retry_succeeds() {
     assert_eq!(*client.get_requests.lock().unwrap(), 1);
 }
 
-// Local PUT成功後の確認GET失敗では保存済みと通知し、下書きを消して再投稿させないことを検証する。
 #[test]
 fn local_confirmation_get_failure_tells_that_the_notes_were_saved_and_removes_the_draft() {
     let spawner = TokioBackgroundSpawner::new().unwrap();
@@ -1254,7 +1248,6 @@ struct RunnerHost {
     times: RefCell<VecDeque<Duration>>,
     events: VecDeque<io::Result<Option<HostEvent>>>,
     draws: Vec<DrawRecord>,
-    /// editorを起動した時点の、Issue 2の取得状態。
     issue_2_fetch_states_at_suspend: Vec<Option<stores::IssueFetchState>>,
 }
 

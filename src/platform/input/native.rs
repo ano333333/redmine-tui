@@ -5,7 +5,6 @@ use crossterm::event::{
 
 use super::*;
 
-/// crosstermのキー入力をplatform非依存の入力へ変換する。
 pub fn convert_key(key: CrosstermKeyEvent) -> Option<InputEvent> {
     match key.code {
         CrosstermKeyCode::Char(c) => {

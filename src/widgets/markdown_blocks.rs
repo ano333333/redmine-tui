@@ -4,7 +4,6 @@ use std::ops::Range;
 
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
-/// 本文の一部。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MarkdownBlock<'a> {
     /// tui-markdownで描く文章。
@@ -81,7 +80,6 @@ fn standalone_images(markdown: &str) -> Vec<(Range<usize>, String, String)> {
     images
 }
 
-/// 段落の中身が画像1つだけかを、イベントを受け取りながら調べる。
 struct ParagraphScan {
     range: Range<usize>,
     image: Option<(String, String)>,

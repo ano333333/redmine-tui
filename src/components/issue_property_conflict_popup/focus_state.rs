@@ -37,7 +37,6 @@ pub struct FocusState {
 }
 
 impl FocusState {
-    /// フォーカス可能な行数から初期フォーカス状態を作成する。
     pub fn new(row_count: usize) -> Self {
         Self {
             row_count,
@@ -49,18 +48,15 @@ impl FocusState {
         }
     }
 
-    /// キーイベントをフォーカス移動または確定イベントへ変換する。
     pub fn process_event(&mut self, event: InputEvent) -> Option<EventProcessResult> {
         let action = self.action_from_event(event)?;
         self.apply_action(action)
     }
 
-    /// 現在フォーカスされている対象を返す。
     pub fn target(&self) -> FocusTarget {
         self.target
     }
 
-    /// 現在フォーカスされているボタンを返す。
     pub fn focused_button(&self) -> Option<IssuePropertyConflictButton> {
         match self.target {
             FocusTarget::Cell { .. } => None,

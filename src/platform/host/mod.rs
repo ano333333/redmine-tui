@@ -1,6 +1,4 @@
 //! 共通runnerから入力、描画、単調時計、editor切り替えを利用するためのplatform境界。
-//!
-//! runnerはこのtraitだけに依存し、nativeのterminalとWebのDOM backendの違いを扱わない。
 
 use std::{future::Future, io, time::Duration};
 
@@ -22,7 +20,6 @@ pub enum HostEvent {
     Ignored,
 }
 
-/// カーソルをterminalに表示させるか、アプリがbufferへ代替を描画するか。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorRendering {
     #[cfg_attr(not(feature = "native"), allow(dead_code))]
@@ -32,8 +29,6 @@ pub enum CursorRendering {
     Emulated,
 }
 
-/// 共通runnerが一つのloopでnative/Webを駆動するために必要なplatform操作。
-///
 /// editorのFutureはeditorへの参照を完了まで保持するため、editorはhostに所有させず
 /// runnerへ別引数で渡す。これにより編集中もhostを可変借用して待機・復帰できる。
 pub trait PlatformHost {

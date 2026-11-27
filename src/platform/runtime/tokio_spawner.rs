@@ -7,8 +7,6 @@ use tokio::{
 
 use super::{BackgroundCompletion, BackgroundSpawner, panic_message};
 
-/// native runner向けにTokio runtimeとbackground taskの完了channelを一体で所有するadapter。
-///
 /// executorとcompletionの配送経路を同じ境界に閉じ込めることで、呼び出し側へTokio固有型を
 /// 渡さずにtaskの起動から完了受理までを扱える。
 pub(crate) struct TokioBackgroundSpawner<T> {
@@ -30,7 +28,7 @@ impl<T> TokioBackgroundSpawner<T> {
         })
     }
 
-    /// event loop開始前の初期読み込みを、background taskと同じruntime上で完了まで進める。
+    /// `future`を、background taskと同じruntime上で完了まで進める。完了するまでこのthreadを止める。
     pub(crate) fn block_on<F: Future>(&self, future: F) -> F::Output {
         self.runtime.block_on(future)
     }

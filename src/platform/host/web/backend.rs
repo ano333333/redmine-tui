@@ -1,4 +1,4 @@
-//! Ratzilla の `DomBackend` のラッパー
+//! Ratzillaの`DomBackend`を補正し、resizeと全角文字の表示崩れを防ぐ。
 
 use std::{
     cell::{Cell, RefCell},

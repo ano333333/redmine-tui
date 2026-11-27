@@ -51,7 +51,6 @@ pub fn spawn_app_with_config(name: &str, config: &str) -> PtySession {
         .expect("failed to start redmine-tui in a PTY")
 }
 
-/// 一時ディレクトリを`temp_root`の下に作るよう、`TMPDIR`を指定して起動する。
 pub fn spawn_app_with_temp_root(temp_root: &Path) -> PtySession {
     PtySessionBuilder::new(env!("CARGO_BIN_EXE_redmine-tui-draft"))
         .size(TERMINAL_WIDTH, TERMINAL_HEIGHT)
@@ -244,7 +243,7 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// Issue選択popupの見出し。popupが閉じたことは、これが画面から消えたことで判定する。
+/// popupが閉じたことは、この見出しが画面から消えたことで判定する。
 pub const POPUP_HEADER: &str = "PROJECTS";
 
 pub fn wait_for_popup_to_close(session: &mut PtySession) -> String {
@@ -266,8 +265,6 @@ pub fn open_issue_from_initial_popup(session: &mut PtySession, position: usize) 
     wait_for_popup_to_close(session)
 }
 
-/// 詳細画面で`label`の直後に表示されている値を返す。
-///
 /// propertyは2列で表示されるため、同じ行の次の項目との区切り（2つ以上の空白）までを値とする。
 pub fn property_value(frame: &str, label: &str) -> String {
     let line = frame

@@ -13,7 +13,6 @@ pub struct ToastWidget {
 }
 
 impl ToastWidget {
-    /// 表示順に並んだ通知メッセージからWidgetを作る。
     pub fn new(messages: Vec<String>) -> Self {
         Self { messages }
     }

@@ -188,8 +188,6 @@ impl<'a> IssueSelectPopupWidget<'a> {
         }
     }
 
-    /// クライアント領域から、issueのプレビューを描画するカラムの幅を求める。
-    /// IssueSelectPopupWidgetStateのキャッシュ更新に使う。
     pub fn preview_width(area: Rect) -> u16 {
         let area = Self::popup_area(area);
         let inner = Block::default().borders(Borders::ALL).inner(area);
@@ -219,7 +217,6 @@ impl<'a> IssueSelectPopupWidget<'a> {
 }
 
 impl Widget for IssueSelectPopupWidget<'_> {
-    /// クライアント領域に対する描画(したがってClearの責務がある)
     fn render(self, area: Rect, buf: &mut Buffer) {
         render_issue_select_popup(self, area, buf);
     }

@@ -37,7 +37,7 @@ impl NativeTextEditor {
 }
 
 impl TextEditor for NativeTextEditor {
-    /// 返すFutureはwakerを登録しないため、完了まで定期的にpollするrunnerでのみ使用する。
+    /// 返すFutureはwakerを登録しないため、完了するまで呼び出し側が定期的にpollする必要がある。
     fn edit(
         &self,
         request: EditorRequest,

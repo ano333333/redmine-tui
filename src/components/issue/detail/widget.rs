@@ -166,13 +166,11 @@ impl<'a> Widget for IssueDetailWidget<'a> {
     }
 }
 
-/// `(空行) ▌ 見出し (空行)` の3行でセクションの切れ目を示す小さなWidget。
 struct SectionHeader {
     title: Option<String>,
 }
 
 impl SectionHeader {
-    /// 空行 + 見出し + 空行。
     const LINE_COUNT: u16 = 3;
 
     fn new(title: String) -> Self {

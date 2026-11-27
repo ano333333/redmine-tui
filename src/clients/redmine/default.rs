@@ -269,7 +269,6 @@ impl RedmineClient for DefaultRedmineClient {
             ))
             .await?;
 
-        // Issue変換でresponse.issue全体を消費するため、子一覧を先に分離する。
         let children = std::mem::take(&mut response.issue.children)
             .into_iter()
             .map(IssueChild::from)

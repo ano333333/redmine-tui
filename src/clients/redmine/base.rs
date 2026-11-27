@@ -79,9 +79,6 @@ pub struct FetchedIssue {
 }
 
 /// Redmineとの通信をplatform固有の実装から分離する境界。
-///
-/// 各メソッドのFutureはbackground taskとして実行するため`Send`を契約とする。
-/// 実装は、awaitをまたいで非`Send`な値を保持してはならない。
 pub trait RedmineClient {
     fn get_categories(
         &self,
@@ -96,7 +93,6 @@ pub trait RedmineClient {
         issue_id: IssueId,
         update: &IssueUpdate,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
-    /// Issueを作成し、作成したIssueのIDを返す。
     fn create_issue(
         &self,
         issue: &NewIssue,
@@ -115,8 +111,6 @@ pub trait RedmineClient {
         issue_id: IssueId,
         notes: &str,
     ) -> impl std::future::Future<Output = Result<(), RedmineClientError>> + Send;
-    /// ファイル本体をRedmineへ送り、Issueへ紐付けるためのtokenを返す。
-    ///
     /// 送ったファイルは、[`Self::attach_upload`]で紐付けるまでどのIssueにも属さない。
     fn upload_file(
         &self,

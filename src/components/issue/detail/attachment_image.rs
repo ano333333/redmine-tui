@@ -3,7 +3,6 @@
 use crate::entities::Attachment;
 use crate::stores::{ImageState, PreparedImage, Store};
 
-/// 参照先の画像の表示状態。
 #[derive(Clone, Debug)]
 pub enum AttachmentImageView {
     Ready(PreparedImage),
@@ -14,8 +13,6 @@ pub enum AttachmentImageView {
     Unavailable,
 }
 
-/// `dest`をIssueの添付ファイルのファイル名と照合し、その添付ファイルの表示に使う画像の状態を返す。
-///
 /// Redmineと同じく、ファイル名は大文字小文字を区別せずに照合し、同名なら後に添付したものを使う。
 /// パスやURLを含む参照先は添付ファイルとして扱わない。
 pub fn resolve_attachment_image(

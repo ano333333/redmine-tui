@@ -9,8 +9,6 @@ use crate::stores::{Dispatcher, IssueAction, IssueState};
 use crate::usecases::{UsecaseEvent, UsecaseFailure, UsecaseOutput, UsecaseRequest, UsecaseTask};
 use crate::vos::{EntityIdValue, IssueId, IssuePropertyDiff};
 
-/// 編集済みのIssueのuploadを開始する。
-///
 /// 呼び出し時に状態を検証し、`StartUpload`を同期的にqueueへ追加してproperty diffをsnapshotする。
 /// 返却したtaskは保存前の取得を行う。PUTと確認の取得は、それぞれ前の段階の完了Actionを
 /// 適用した後に後続要求として起動する。
@@ -19,7 +17,7 @@ use crate::vos::{EntityIdValue, IssueId, IssuePropertyDiff};
 ///
 /// Issueが未登録、またはEdited以外の場合にpanicする。
 ///
-/// FIXME: trackerを変更するとステータスが自動でデフォルトに戻る？Issueの読み直しが必要な可能性
+/// FIXME: trackerを変更すると、Redmineがstatusを既定値に戻す可能性がある。その場合は保存後にIssueを読み直す必要がある。
 pub fn start_issue_upload<C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     client: Arc<C>,
@@ -47,8 +45,6 @@ where
     Some(Box::pin(preflight_issue_upload(client, id, diffs)))
 }
 
-/// 保存前の取得で`diffs`がサーバーの値と競合しないかを確かめる。
-///
 /// 競合した場合は、取得したJournalと子一覧とともに競合を返し、PUTしない。競合しなければ、
 /// 取得結果を基準値にする完了Actionと、`diffs`をPUTする後続要求を返す。`diffs`は
 /// 競合の続行で作った再試行用のdiffの場合があり、Storeのdiffとは限らないため、要求に載せて運ぶ。
@@ -96,8 +92,6 @@ where
     }
 }
 
-/// 保存前の取得を終えたIssueの属性`diffs`をPUTする。
-///
 /// 成功したら、送信したdiffを基準値へ確定する完了Actionと、確認の取得の後続要求を返す。
 ///
 /// # Panics
@@ -293,7 +287,6 @@ mod tests {
         }
     }
 
-    /// GETの結果を呼び出し順に返し、PUTした更新要求を記録する。
     struct StubClient {
         get_results: Mutex<VecDeque<Result<FetchedIssue, RedmineClientError>>>,
         put_result: Result<(), RedmineClientError>,
@@ -339,7 +332,6 @@ mod tests {
             .collect()
     }
 
-    /// 説明を"server"から"local"へ編集して保存を始めた状態。
     fn uploading_dispatcher() -> Rc<RefCell<Dispatcher>> {
         let mut dispatcher = Dispatcher::new();
         crate::test_support::dispatch_loaded_issue(&mut dispatcher, issue("server"));

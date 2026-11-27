@@ -8,10 +8,7 @@ use crate::stores::{Dispatcher, ProjectIssuesAction, ProjectIssuesRequestId};
 use crate::usecases::UsecaseTask;
 use crate::vos::ProjectId;
 
-/// プロジェクト別Issueページの取得を、新しいrequest IDで開始する。
-///
-/// StartLoadingは同期的にqueueへ追加し、返却したFutureは同じrequest IDを持つ
-/// LoadSucceededまたはLoadFailedを返す。
+/// 開始Actionはtaskをpollする前にqueueへ追加し、完了Actionまで同じ新しいrequest IDを使う。
 pub fn fetch_project_issues_page<C>(
     dispatcher: Rc<RefCell<Dispatcher>>,
     client: Arc<C>,

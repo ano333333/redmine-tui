@@ -30,7 +30,6 @@ pub(crate) fn handle_host_event(
     }
 }
 
-/// 受理したcompletionのActionをdispatchし、後続要求を`requests`、イベントを`events`の末尾に積む。
 pub(crate) fn move_worker_action<S: BackgroundSpawner<Output = UsecaseOutput>>(
     spawner: &S,
     dispatcher: Rc<RefCell<Dispatcher>>,
@@ -81,7 +80,6 @@ pub(crate) fn update(
     }
 }
 
-/// `events`を受理順に`AppComponent`へ渡し、イベントで変わったComponentへStoreを反映する。
 pub(crate) fn deliver_usecase_events(
     events: &mut Vec<UsecaseEvent>,
     app_component: &mut AppComponent,

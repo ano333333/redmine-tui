@@ -10,9 +10,9 @@ use crate::vos::TimeEntityActivityId;
 use super::widget::SpentTimeInputPopupWidget;
 
 pub enum EventProcessResult {
-    Submited,
+    Submitted,
     OpenTimeEntityActivitiesPopup,
-    Quited,
+    Canceled,
     Handled,
 }
 
@@ -48,8 +48,6 @@ enum Action {
 
 pub struct SpentTimeInputPopupComponent<'a> {
     activity_id: TimeEntityActivityId,
-    // AppComponentがこのstructを保持するためTextareaを'statisで持つ。
-    // enum PopupComponentの定義を参照。
     hours_textarea: TextArea<'a>,
     memo_textarea: TextArea<'a>,
     focused_field: FocusField,
@@ -104,9 +102,6 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
         )
     }
 
-    /// クライアント領域全体に対するカーソル位置
-    ///
-    /// * `area` - クライアント領域
     pub fn cursor_position(&self, area: ratatui::layout::Rect) -> Option<Position> {
         let popup_area = SpentTimeInputPopupWidget::popup_area(area);
         match self.focused_field {
@@ -114,7 +109,7 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
                 x: popup_area.x + 2,
                 y: popup_area.y + 2,
             }),
-            // ratatui_textarea::TextAreaが表示するカーソルをそのまま使用する
+            // TextAreaの入力欄ではWidget自身がカーソルを描画するため、terminal cursorは返さない。
             _ => None,
         }
     }
@@ -168,7 +163,7 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
 
     fn process_action(&mut self, action: Option<Action>) -> Option<EventProcessResult> {
         match action {
-            Some(Action::Quit) => Some(EventProcessResult::Quited),
+            Some(Action::Quit) => Some(EventProcessResult::Canceled),
             Some(Action::Focus(field)) => {
                 self.focus(field);
                 Some(EventProcessResult::Handled)
@@ -184,7 +179,7 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
                     self.toggle_input_mode(EditableField::Memo);
                     Some(EventProcessResult::Handled)
                 }
-                FocusField::Submit => Some(EventProcessResult::Submited),
+                FocusField::Submit => Some(EventProcessResult::Submitted),
             },
             Some(Action::InputKey(key)) => {
                 match self.input_mode {
@@ -248,13 +243,11 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
         }
     }
 
-    /// `ratatui_textarea::TextArea`に入力中か否かに合わせてcursor/cursor_line styleを設定する
     fn set_textarea_cursor(textarea: &mut TextArea, entering: bool) {
         textarea.set_cursor_style(Self::cursor_style(entering));
         textarea.set_cursor_line_style(Self::cursor_line_style(entering));
     }
 
-    /// `ratatui_textarea::TextArea`の`set_cursor_style()`に指定する`Style`
     fn cursor_style(entering: bool) -> Style {
         if entering {
             Style::default().add_modifier(Modifier::REVERSED)
@@ -263,7 +256,6 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
         }
     }
 
-    /// `ratatui_textarea::TextArea`の`set_cursor_line_style()`に指定する`Style`
     fn cursor_line_style(entering: bool) -> Style {
         if entering {
             Style::default().add_modifier(Modifier::UNDERLINED)
@@ -538,19 +530,19 @@ mod tests {
 
         let result = component.process_event(key_event(KeyCode::Enter));
 
-        assert!(matches!(result, Some(EventProcessResult::Submited)));
+        assert!(matches!(result, Some(EventProcessResult::Submitted)));
         assert_eq!(component.focused_field, FocusField::Submit);
         assert_eq!(component.input_mode, InputMode::Navigating);
     }
 
     #[test]
-    fn q_while_navigating_returns_quited() {
+    fn q_while_navigating_returns_canceled() {
         let store = store_with_time_entity_activities();
         let mut component = SpentTimeInputPopupComponent::new(&store);
 
         let result = component.process_event(key_event(KeyCode::Char('q')));
 
-        assert!(matches!(result, Some(EventProcessResult::Quited)));
+        assert!(matches!(result, Some(EventProcessResult::Canceled)));
     }
 
     #[test]
@@ -572,13 +564,13 @@ mod tests {
 
         let mut component = SpentTimeInputPopupComponent::new(&store);
         let esc_result = component.process_event(key_event(KeyCode::Esc));
-        assert!(matches!(esc_result, Some(EventProcessResult::Quited)));
+        assert!(matches!(esc_result, Some(EventProcessResult::Canceled)));
 
         let mut component = SpentTimeInputPopupComponent::new(&store);
         let ctrl_c_result = component.process_event(key_event_with_modifiers(
             KeyCode::Char('c'),
             KeyModifiers::control(),
         ));
-        assert!(matches!(ctrl_c_result, Some(EventProcessResult::Quited)));
+        assert!(matches!(ctrl_c_result, Some(EventProcessResult::Canceled)));
     }
 }

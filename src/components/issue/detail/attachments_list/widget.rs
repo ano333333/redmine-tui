@@ -27,7 +27,6 @@ pub struct UploadingRow<'a> {
     pub stage: AttachmentUploadStage,
 }
 
-/// 添付ファイルの行の後に、追加中のファイルがあればその行を、最後に追加行を描画する。
 pub struct AttachmentsListWidget<'a> {
     attachments: Vec<AttachmentRow<'a>>,
     uploading: Option<UploadingRow<'a>>,
@@ -60,7 +59,6 @@ impl<'a> AttachmentsListWidget<'a> {
     }
 }
 
-/// 添付ファイル + 追加中の行 + 追加行。
 pub fn row_count(attachment_count: usize, uploading: bool) -> usize {
     attachment_count + usize::from(uploading) + 1
 }

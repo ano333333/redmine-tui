@@ -13,8 +13,6 @@ use super::journal_state::{
 use crate::entities::{IssueAggregate, IssueChild, Journal, LocalJournal};
 use crate::vos::{IssueId, JournalId, JournalNotesDiff};
 
-/// 取得済みIssueのJournalの状態更新を表すAction。
-///
 /// 対象Issueが取得済みでない場合はpanicする。
 pub enum JournalAction {
     /// 空のLocal Journalを未保存状態で作成する。
@@ -191,8 +189,6 @@ impl JournalAction {
     }
 }
 
-/// 取得済みIssueが持つ全Remote Journalの状態、0件または1件のLocal Journal、退避データ。
-///
 /// `remote`は`IssueAggregate::journals`の各Journalについて、Syncedも含めて必ず1件ずつ持つ。
 /// `deleted`は退避した順に並び、元のIDは`remote`とも互いとも重複しない。
 #[derive(Debug)]
@@ -226,7 +222,6 @@ impl IssueJournalStates {
         &self.deleted
     }
 
-    /// Remote JournalまたはLocal Journalのいずれかがupload中かを返す。
     pub(super) fn has_uploading(&self) -> bool {
         self.has_uploading_except(None)
     }
@@ -245,8 +240,6 @@ impl IssueJournalStates {
             })
     }
 
-    /// 取得したJournal一覧を現在の本体と状態へ取り込み、新しい本体の一覧を返す。
-    ///
     /// 取得結果から消えた編集中のJournalは退避し、退避済みの元IDが再び現れたら
     /// サーバーのnotesから退避したnotesへの編集として復帰させる。
     pub(super) fn merge_fetched(
@@ -422,7 +415,6 @@ impl IssueJournalStates {
     }
 
     /// JournalActionを適用する。`journals`は対象Issueが所有するJournal本体の一覧である。
-    ///
     /// Issue属性のupload中かどうかと、Journalの所有関係は呼び出し側で検査済みとする。
     pub(super) fn consume_action(&mut self, journals: &mut Vec<Journal>, action: JournalAction) {
         match action {

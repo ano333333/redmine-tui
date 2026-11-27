@@ -14,7 +14,6 @@ use crate::widgets::markdown_blocks::{MarkdownBlock, split_image_blocks};
 const LOADING_SUFFIX: &str = "markdown-image-loading";
 const FAILED_SUFFIX: &str = "markdown-image-failed";
 
-/// Markdownの画像の参照先を解決するための、Issueの添付ファイルと読み込んだ画像。
 pub struct MarkdownImages<'a> {
     source: Option<(&'a Store, &'a [Attachment])>,
 }
@@ -47,7 +46,6 @@ impl<'a> MarkdownImages<'a> {
     }
 }
 
-/// 画像の位置と、表示する幅に合わせた画像。
 #[derive(Clone, Debug)]
 pub struct MarkdownImagePlacement {
     pub position: Position,
@@ -71,7 +69,6 @@ struct RenderedInput {
     images: Vec<ImageInput>,
 }
 
-/// 画像の段落の表示に関わる状態。読み込みが進んだら描き直す。
 enum ImageInput {
     Ready(PreparedImage),
     Loading,

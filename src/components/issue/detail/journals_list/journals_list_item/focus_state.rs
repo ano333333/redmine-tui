@@ -75,7 +75,7 @@ impl FocusState {
         match &mut self.focused_position {
             None => {}
             Some(FocusedPosition::Detail(index)) => {
-                // NOTE: (現実的かはともかく)今回のupdateでpropertyリストが消えた場合は未実装
+                // propertyが全件消えた場合のフォーカス先は未定義で、Detail(0)のまま残る。
                 if *index >= property_count {
                     *index = property_count.saturating_sub(1);
                 }
@@ -104,7 +104,6 @@ impl FocusState {
             KeyCode::Char('k') => Some(Action::MoveUp),
             KeyCode::Char('h') => Some(Action::MoveLeft),
             KeyCode::Char('l') => Some(Action::MoveRight),
-            // 本文編集はNotes位置にフォーカスがある場合のみ許可する(Detail位置では無視)
             KeyCode::Char('e')
                 if matches!(self.focused_position, Some(FocusedPosition::Notes(_))) =>
             {
@@ -165,7 +164,6 @@ impl FocusState {
                     position.x += 1;
                 }
             }
-            // Notes位置の場合のみaction_from_eventで発生するが、防御的にDetail位置では何もしない
             Action::Edit => {
                 if matches!(focused_position, FocusedPosition::Notes(_)) {
                     return Some(EventProcessResult::Edit);

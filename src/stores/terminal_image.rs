@@ -23,7 +23,6 @@ use ratatui_image::{
 #[cfg(feature = "native")]
 const DECODE_MAX_ALLOC: u64 = 128 * 1024 * 1024;
 
-/// terminalのフォントサイズと対応protocolを持ち、画像を表示用に変換する。
 #[cfg(feature = "native")]
 #[derive(Clone, Debug)]
 pub struct TerminalImageEncoder(Picker);

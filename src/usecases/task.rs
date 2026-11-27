@@ -4,7 +4,6 @@ use std::pin::Pin;
 use crate::stores::Action;
 use crate::usecases::{UsecaseEvent, UsecaseRequest};
 
-/// runnerがbackgroundで実行したUsecaseの完了値。
 pub struct UsecaseOutput {
     pub actions: Vec<Action>,
     pub requests: Vec<UsecaseRequest>,

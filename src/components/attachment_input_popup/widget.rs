@@ -48,7 +48,7 @@ impl<'a> AttachmentInputPopupWidget<'a> {
 }
 
 impl Widget for AttachmentInputPopupWidget<'_> {
-    /// クライアント領域に対する描画(したがってClearの責務がある)
+    /// popupの下の描画が透けないよう、割り当てられた領域を消去してから描画する。
     fn render(self, area: Rect, buf: &mut Buffer) {
         let area = Self::popup_area(area);
         if area.width < 3 || area.height < 3 {

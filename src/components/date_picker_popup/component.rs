@@ -8,7 +8,6 @@ use super::widget::DatePickerPopupWidget;
 pub enum EventProcessResult {
     Entered,
     Canceled,
-    /// popupを開いたまま、イベントを内部で処理した
     Handled,
 }
 
@@ -212,7 +211,7 @@ impl<'a> DatePickerPopupComponent<'a> {
         }
     }
 
-    // Calendarは開閉で出入りするため、Tab順に含めない
+    // Calendarにはカレンダーボタンからだけ入り、閉じるとボタンへ戻るため、Tabの移動先に含めない。
     fn focus_next(&mut self) {
         self.focused_field = match self.focused_field {
             FocusField::Year => FocusField::Month,
@@ -267,7 +266,7 @@ impl<'a> DatePickerPopupComponent<'a> {
 
     fn open_calendar(&mut self) {
         self.focused_field = FocusField::Calendar;
-        // 入力欄が日付として不正な場合は、前回カレンダーで見ていた日付から始める
+        // 不正な入力でカレンダーの基準日まで失わないよう、有効な入力だけを反映する。
         if let Some(input_date) = self.input_date() {
             self.focused_date = input_date;
             self.display_start = recent_sunday(input_date);

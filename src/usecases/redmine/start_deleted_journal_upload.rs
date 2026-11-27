@@ -10,8 +10,8 @@ use crate::vos::{EntityIdValue, IssueId, JournalId};
 
 /// 取得結果から消えて退避したJournalを、新規Journalとして投稿し始める。
 ///
-/// `StartDeletedUpload`はFutureをpollする前に同期的にqueueへ追加する。返却したFutureは
-/// notes追加のPUTと、その結果を確認するためのIssue GETを順に行う。元の投稿者や日時は送らない。
+/// `StartDeletedUpload`はtaskをpollする前にqueueへ追加する。投稿にはnotesだけを使い、
+/// 元の投稿者や日時は送らない。
 ///
 /// # Panics
 ///

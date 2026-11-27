@@ -90,7 +90,6 @@ impl JournalsListComponent {
                 KeyCode::Enter if self.local_item.is_none() => {
                     Some(EventProcessResult::CreateLocalJournalRequested)
                 }
-                // Local Journalがある間は作成ボタンが無効なので、押下を消費するだけにする
                 KeyCode::Enter => Some(EventProcessResult::Handled),
                 KeyCode::Char('k') => {
                     let Some(item) = self
@@ -242,7 +241,6 @@ impl JournalsListComponent {
             }
             FocusEvent::CursorEnteredFromBelow { x } => {
                 self.create_button_focused = true;
-                // 作成buttonのcursor位置は固定なので、遷移元の横位置は引き継がない。
                 let _ = x;
             }
         }
@@ -279,8 +277,7 @@ impl JournalsListComponent {
         let focused_index = self.focused_item.and_then(|item| self.item_index(item));
         for (index, entry) in entries.iter().enumerate() {
             let journal_id = entry.journal.id;
-            // 新しいJournalが末尾以外に追加することはないと考え、
-            // journalがself.items[index]に来るまでself.itemsの要素を間引く
+            // 新しいJournalは末尾にだけ追加される前提で、対応しない旧要素を除く。
             while index < self.items.len() && journal_id.get() != self.items[index].id {
                 self.items.remove(index);
             }

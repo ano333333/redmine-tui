@@ -12,8 +12,6 @@ use crate::vos::IssueId;
 
 use super::upload_local_file::{UploadLocalFileError, upload_local_file};
 
-/// `path`のファイルを`filename`の名前でIssueへ添付する処理を始める。
-///
 /// `StartUpload`を同期的にqueueへ追加する。返却したtaskはファイルを読み込んでRedmineへ送り、
 /// 成功したらtokenを載せた紐付けの後続要求を返す。読み込みか送信に失敗したら、追加状態を
 /// 削除して通知する。

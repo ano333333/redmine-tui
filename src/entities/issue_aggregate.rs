@@ -9,7 +9,6 @@ use crate::vos::{
 /// 詳細用のIssueエンティティ。
 #[derive(Debug, Clone)]
 pub struct IssueAggregate {
-    /// 一覧表示に必要な情報を保持する軽量なIssueエンティティ。
     pub issue: Issue,
     pub author_id: UserId,
     pub created_on: DateTime<Local>,
@@ -100,7 +99,6 @@ impl IssueAggregate {
         }
     }
 
-    /// diffの`before`を、このIssueの現在値に置き換えたdiffを返す。
     pub fn with_value_as_before(&self, diff: &IssuePropertyDiff) -> IssuePropertyDiff {
         let mut resolved = diff.clone();
         match &mut resolved {
@@ -121,7 +119,6 @@ impl IssueAggregate {
         resolved
     }
 
-    /// diffの`after`を、このIssueの現在値に置き換えたdiffを返す。
     pub fn with_value_as_after(&self, diff: &IssuePropertyDiff) -> IssuePropertyDiff {
         let mut resolved = diff.clone();
         match &mut resolved {

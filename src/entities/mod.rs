@@ -33,7 +33,7 @@ mod issue_aggregate_export_tests {
     use super::IssueAggregate;
 
     #[test]
-    // 意図的に最小。entitiesルートからIssueAggregateがexportされていることを確認するだけ。
+    // re-exportの存在だけを確認するため、値の生成や振る舞いは検査しない。
     fn exports_issue_aggregate() {
         fn accepts_issue_aggregate(_: IssueAggregate) {}
         let _ = accepts_issue_aggregate;

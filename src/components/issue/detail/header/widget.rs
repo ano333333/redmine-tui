@@ -41,7 +41,6 @@ impl<'a> Widget for HeaderWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let title_line_count = self.title_line_count(area.width);
 
-        // ID・マーカー・タイトルを1行に詰め、縦の空行を捨てる(コンパクト型)
         if title_line_count > 0 {
             let title_area = Rect::new(area.x, area.y, area.width, title_line_count);
             self.title_paragraph().render(title_area, buf);

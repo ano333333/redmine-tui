@@ -44,7 +44,6 @@ impl ChildrenListComponent {
     }
 
     pub fn line_count(&self, store: &Store) -> u16 {
-        // 見出し2行 + 子チケット + 追加行 + 末尾の余白1行
         2 + (store.get_issue_children(self.id).len() as u16) + 1 + 1
     }
 

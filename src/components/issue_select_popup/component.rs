@@ -16,14 +16,9 @@ use super::widget::{
 };
 
 pub enum EventProcessResult {
-    Selected {
-        issue_id: IssueId,
-    },
-    /// フォーカス中のプロジェクトにIssueを新規作成する。
-    CreateRequested {
-        project_id: ProjectId,
-    },
-    Quited,
+    Selected { issue_id: IssueId },
+    CreateRequested { project_id: ProjectId },
+    Canceled,
     Handled,
 }
 
@@ -78,7 +73,6 @@ impl IssueSelectPopupComponent {
         component
     }
 
-    /// Storeの更新を取得しComponentの状態を更新する。renderが後続する。
     pub fn update(&mut self, store: &Store, area: Rect) {
         let focused_issue_id = self.focused_issue_id(store);
         self.refresh_focus_counts(store);
@@ -133,7 +127,7 @@ impl IssueSelectPopupComponent {
                 .map_or(EventProcessResult::Handled, |project_id| {
                     EventProcessResult::CreateRequested { project_id }
                 }),
-            focus_state::EventProcessResult::Quited => EventProcessResult::Quited,
+            focus_state::EventProcessResult::Canceled => EventProcessResult::Canceled,
             focus_state::EventProcessResult::Handled => EventProcessResult::Handled,
             focus_state::EventProcessResult::ProjectChanged => {
                 if let Some(project_id) = self.focused_project_id() {
@@ -1196,14 +1190,14 @@ mod tests {
     }
 
     #[test]
-    fn process_event_q_returns_quited() {
+    fn process_event_q_returns_canceled() {
         let mut sink = RequestSink::default();
         let store = store();
         let mut component = IssueSelectPopupComponent::new(&store, Some(1.into()), &mut sink);
 
         let result = component.process_event(key_event(KeyCode::Char('q')), &store, &mut sink);
 
-        assert!(matches!(result, Some(EventProcessResult::Quited)));
+        assert!(matches!(result, Some(EventProcessResult::Canceled)));
     }
 
     #[test]

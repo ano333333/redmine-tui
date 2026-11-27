@@ -7,22 +7,6 @@ use crate::vos::{AttachmentId, IssueId};
 /// 1つの段階が、Redmineへの1つのリクエストに対応する。
 ///
 /// `None`は追加中でないことを表す。`FailUpload`はどの段階からも`None`へ戻す。
-///
-/// ```text
-///    ┌──────┐      StartUpload           ┌───────────┐
-///    │ None │ ─────────────────────────▶ │ Uploading │
-///    └──────┘ ◀──────────┐               └───────────┘
-///       ▲                │                     │ UploadSucceeded
-///       │                │ FailUpload          ▼
-///       │                ├────────────── ┌───────────┐
-///       │                │               │ Attaching │
-///       │                │               └───────────┘
-///       │                │                     │ AttachSucceeded
-///       │                │                     ▼
-///       │                └────────────── ┌────────────┐
-///       └─────────────────────────────── │ Confirming │
-///               ConfirmSucceeded         └────────────┘
-/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AttachmentUploadStage {
     /// ファイル本体を送っている。

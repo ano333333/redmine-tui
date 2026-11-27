@@ -11,7 +11,7 @@ const ISSUE_3_TRACKER: &str = "Support";
 /// Issue 2の詳細にだけ表示されるtracker名。
 const ISSUE_2_TRACKER: &str = "Feature";
 
-/// popupを開き、Issue一覧を読み込み終えるまで待つ。読み込み前のキー入力は一覧に届かない。
+/// Issue一覧の読み込み前に送ったキー入力は、一覧には届かない。
 fn open_popup(session: &mut testty::session::PtySession) {
     session.press_key("y").expect("failed to press y");
     wait_until(session, "loading the issue list in the popup", |frame| {
