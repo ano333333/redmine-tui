@@ -29,7 +29,7 @@ fn adding_a_local_file_attaches_it_to_the_issue() {
 
     // When Enterで開いたpopupに、送る名前と読み込むパスを入力して確定する
     session.press_key("Enter").expect("failed to press Enter");
-    wait_for_text(&mut session, "ファイルを添付");
+    wait_for_text(&mut session, "Attach file");
     session
         .write_bytes(b"e2e-note.txt")
         .expect("failed to type the filename");
@@ -55,7 +55,7 @@ fn adding_a_local_file_attaches_it_to_the_issue() {
     );
     // seedのIssue 3は添付ファイル1件を持つため、追加後は2件になる。
     wait_for_text(&mut session, "e2e-note.txt");
-    wait_for_text(&mut session, "添付ファイル 2");
+    wait_for_text(&mut session, "Attachments 2");
 }
 
 // Scenario: Redmineの既定の上限（5120 KB）を超えるファイルは、読み込まずに追加を中止する
@@ -75,7 +75,7 @@ fn adding_a_file_over_the_upload_limit_is_rejected_before_sending() {
 
     // When popupにファイル名とパスを入力して確定する
     session.press_key("Enter").expect("failed to press Enter");
-    wait_for_text(&mut session, "ファイルを添付");
+    wait_for_text(&mut session, "Attach file");
     session
         .write_bytes(b"large.bin")
         .expect("failed to type the filename");
@@ -87,7 +87,7 @@ fn adding_a_file_over_the_upload_limit_is_rejected_before_sending() {
 
     // Then 読み込めなかったことが通知され、RedmineのIssue 3にはseedの添付ファイルしかない
     // 通知は端末幅の1/3で折り返すため、1行目に収まる部分で待つ。
-    wait_for_text(&mut session, "添付するファイル");
+    wait_for_text(&mut session, "Could not read the");
     let issue = redmine_get_json("/issues/3.json?include=attachments");
     let filenames: Vec<_> = issue["issue"]["attachments"]
         .as_array()

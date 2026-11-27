@@ -21,6 +21,7 @@ use crate::components::new_issue::{
 use crate::components::remote_journal_conflict_popup::{
     EventProcessResult as RemoteJournalConflictEventProcessResult, RemoteJournalConflictComponent,
 };
+use crate::i18n::tr;
 use crate::platform::editor::{EditorOutcome, EditorRequest, InteractionMode};
 use crate::platform::host::CursorRendering;
 use crate::platform::input::{InputEvent, KeyCode};
@@ -436,7 +437,7 @@ impl<'a> AppComponent<'a> {
                             new_issue_component.estimated_hours_popup();
                         self.popup_components.push_back(Rc::new(RefCell::new(
                             PopupComponent::NumberInput(NumberInputPopupComponent::new(
-                                "予定工数",
+                                tr!("property-estimated-hours"),
                                 estimated_hours,
                                 observer,
                             )),
@@ -672,7 +673,7 @@ impl<'a> AppComponent<'a> {
                     current_estimated_hours(dispatcher.borrow().store(), issue_id);
                 self.popup_components.push_back(Rc::new(RefCell::new(
                     PopupComponent::NumberInput(NumberInputPopupComponent::new(
-                        "予定工数",
+                        tr!("property-estimated-hours"),
                         estimated_hours,
                         estimated_hours_popup_observer(dispatcher.clone(), issue_id),
                     )),
@@ -2229,7 +2230,7 @@ mod tests {
         assert_no_requests(&mut sink);
         assert_eq!(
             app.toast_list.create_widget().messages,
-            ["題名を入力してから作成してください"]
+            ["Enter a subject before creating the issue"]
         );
     }
 
@@ -2291,7 +2292,7 @@ mod tests {
 
         assert_eq!(
             app.toast_list.create_widget().messages,
-            ["Issueの作成に失敗しました: offline"]
+            ["Failed to create the issue: offline"]
         );
         app.process_event(ctrl_key(KeyCode::Char('s')), dispatcher.clone(), &mut sink);
         assert!(matches!(

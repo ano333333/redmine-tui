@@ -1,5 +1,6 @@
 use ratatui::layout::Position;
 
+use crate::i18n::tr;
 use crate::platform::input::InputEvent;
 use crate::stores::{LocalJournalEntry, LocalJournalState};
 
@@ -20,7 +21,7 @@ pub enum EventProcessResult {
 /// Local Journalの表示内容、本文の描画cache、focus状態を保持するcomponent。
 pub struct LocalJournalItemComponent {
     notes: String,
-    state_marker: &'static str,
+    state_marker: String,
     comment_line_count: u16,
     editable: bool,
     focus_state: FocusState,
@@ -31,7 +32,7 @@ impl LocalJournalItemComponent {
     pub fn new() -> Self {
         Self {
             notes: String::new(),
-            state_marker: "(local)",
+            state_marker: tr!("journal-state-local"),
             comment_line_count: 0,
             editable: false,
             focus_state: FocusState::new(),
@@ -91,7 +92,7 @@ impl LocalJournalItemComponent {
         JournalItemWidget::new(
             LocalJournalItemView {
                 notes: &self.notes,
-                state_marker: self.state_marker,
+                state_marker: &self.state_marker,
             },
             vec![],
             &self.widget_state,

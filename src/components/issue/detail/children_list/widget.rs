@@ -6,6 +6,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use crate::entities::{IssueStatus, IssueStatusExt};
+use crate::i18n::tr;
 use crate::vos::IssueId;
 use crate::widgets::gutter::{Gutter, indented_area};
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED, SECTION_BAR};
@@ -111,10 +112,15 @@ fn create_header_text(
 ) -> Text<'static> {
     let child_header_title = Line::from(vec![
         Span::from(SECTION_BAR).fg(ACCENT),
-        Span::from(" 子チケット ").bold(),
+        Span::from(format!(" {} ", tr!("children-title"))).bold(),
         Span::from(format!("{child_all_num}")).fg(ACCENT).bold(),
         Span::from(format!(
-            "  未完了 {child_incomplete_num} / 完了 {child_complete_num}"
+            "  {}",
+            tr!(
+                "children-summary",
+                incomplete = child_incomplete_num,
+                complete = child_complete_num
+            )
         ))
         .fg(MUTED),
     ]);
@@ -152,10 +158,11 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
     create_title_widget(child.subject, child.descendant_count).render(cols[2], buffer);
     match &child.detail {
         Some(detail) => {
-            let status_name = detail
-                .issue_status
-                .map_or("(不明)", |issue_status| issue_status.name.as_str());
-            create_status_widget(status_name).render(cols[4], buffer);
+            let status_name = detail.issue_status.map_or_else(
+                || tr!("children-status-unknown"),
+                |issue_status| issue_status.name.clone(),
+            );
+            create_status_widget(&status_name).render(cols[4], buffer);
             create_person_in_charge_widget(detail.assigned_to_name).render(cols[6], buffer);
             create_start_date_widget(&detail.start_date).render(cols[8], buffer);
             create_due_widget(&detail.due_date).render(cols[10], buffer);
@@ -175,7 +182,7 @@ fn render_children_issue(child: &ChildIssueRow, area: Rect, buffer: &mut Buffer,
 
 fn render_add_row(area: Rect, buffer: &mut Buffer, focused: bool) {
     let row = Rect::new(area.x, area.y, area.width, area.height.min(1));
-    Paragraph::new(Line::from("＋ 子チケットを追加").fg(ACCENT)).render(row, buffer);
+    Paragraph::new(Line::from(tr!("children-add")).fg(ACCENT)).render(row, buffer);
     if focused {
         for x in 0..row.width {
             if let Some(cell) = buffer.cell_mut((row.x + x, row.y)) {
@@ -207,7 +214,7 @@ fn create_status_widget(status: &str) -> Paragraph<'static> {
 }
 
 fn create_unloaded_status_widget() -> Paragraph<'static> {
-    Paragraph::new(Text::from("未取得")).style(Style::default().fg(Color::Gray))
+    Paragraph::new(Text::from(tr!("children-unfetched"))).style(Style::default().fg(Color::Gray))
 }
 
 fn create_person_in_charge_widget(person_in_charge: Option<&str>) -> Paragraph<'static> {
@@ -215,7 +222,9 @@ fn create_person_in_charge_widget(person_in_charge: Option<&str>) -> Paragraph<'
         Some(p) => {
             Paragraph::new(Text::from(p.to_string())).style(Style::default().fg(Color::Blue))
         }
-        None => Paragraph::new(Text::from("(なし)")).style(Style::default().fg(Color::Gray)),
+        None => {
+            Paragraph::new(Text::from(tr!("value-none"))).style(Style::default().fg(Color::Gray))
+        }
     }
 }
 

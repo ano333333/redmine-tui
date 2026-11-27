@@ -45,7 +45,7 @@ fn ctrl_s_uploads_the_edited_issue() {
     press_j(&mut session, J_PRESSES_TO_PRIORITY);
     press_keys(&mut session, &["e", "j", "Enter"]);
     wait_until(&mut session, "changing the priority to minor", |frame| {
-        property_value(frame, "優先度") == "minor"
+        property_value(frame, "Priority") == "minor"
     });
 
     // When journal一覧の外でctrl+sを押す
@@ -67,7 +67,7 @@ fn issue_upload_failure_shows_a_toast() {
     press_j(&mut session, J_PRESSES_TO_PRIORITY);
     press_keys(&mut session, &["e", "j", "Enter"]);
     wait_until(&mut session, "changing the priority to minor", |frame| {
-        property_value(frame, "優先度") == "minor"
+        property_value(frame, "Priority") == "minor"
     });
     // And 編集後に、Issue 2がRedmineから削除されている
     assert_eq!(
@@ -79,7 +79,7 @@ fn issue_upload_failure_shows_a_toast() {
     session.press_key("ctrl+s").expect("failed to press ctrl+s");
 
     // Then 保存前の取得が404で失敗し、Issue 2の保存に失敗したtoastが表示される
-    wait_for_text(&mut session, "Issue #2の保存に失敗しました");
+    wait_for_text(&mut session, "Failed to save issue #2");
 }
 
 // Scenario: 編集したRemote Journalのnotesをctrl+sでuploadすると、Redmineに反映される

@@ -5,6 +5,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 use ratatui_textarea::TextArea;
 
+use crate::i18n::tr;
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED, TIMELINE_FG};
 
 pub struct SpentTimeInputPopupWidget<'a> {
@@ -62,7 +63,7 @@ impl Widget for SpentTimeInputPopupWidget<'_> {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" 実績工数 ")
+            .title(format!(" {} ", tr!("spent-time-title")))
             .title_style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
             .border_style(Style::default().fg(TIMELINE_FG));
         let inner = block.inner(area);
@@ -89,7 +90,7 @@ impl Widget for SpentTimeInputPopupWidget<'_> {
         let activity = Paragraph::new(Line::from(self.activity)).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" ACTIVITY ")
+                .title(format!(" {} ", tr!("spent-time-activity")))
                 .border_style(Self::border_style(self.activity_focused)),
         );
         activity.render(summary[0], buf);
@@ -98,7 +99,7 @@ impl Widget for SpentTimeInputPopupWidget<'_> {
         hours.set_block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" HOURS ")
+                .title(format!(" {} ", tr!("spent-time-hours")))
                 .border_style(Self::border_style(self.hours_textarea_focused)),
         );
         (&hours).render(summary[1], buf);
@@ -107,7 +108,7 @@ impl Widget for SpentTimeInputPopupWidget<'_> {
         memo.set_block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" MEMO ")
+                .title(format!(" {} ", tr!("spent-time-memo")))
                 .border_style(Self::border_style(self.memo_textarea_focused)),
         );
         (&memo).render(rows[1], buf);
@@ -121,11 +122,11 @@ impl Widget for SpentTimeInputPopupWidget<'_> {
             ])
             .split(rows[2]);
         Paragraph::new(Line::styled(
-            "Enter: edit / h,j,k,l: move",
+            tr!("spent-time-hint"),
             Style::default().fg(MUTED),
         ))
         .render(rows[2], buf);
-        let button = Paragraph::new(Line::from(" SAVE ")).block(
+        let button = Paragraph::new(Line::from(format!(" {} ", tr!("spent-time-save")))).block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Self::border_style(self.submit_button_focused)),

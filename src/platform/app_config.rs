@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::i18n::Language;
+
 const XDG_CONFIG_HOME_ENV: &str = "XDG_CONFIG_HOME";
 const HOME_ENV: &str = "HOME";
 const CONFIG_FILE_PATH: &str = "redmine-tui/config.toml";
@@ -15,17 +17,32 @@ const CONFIG_FILE_PATH: &str = "redmine-tui/config.toml";
 pub(crate) struct AppConfig {
     /// 利用者が画像表示を有効にしたか。terminalが対応しているかは含まない。
     pub(crate) image_enabled: bool,
+    pub(crate) language: Language,
 }
 
 #[derive(Deserialize)]
 struct ConfigFile {
     image: Option<ImageSection>,
+    ui: Option<UiSection>,
 }
 
 #[derive(Deserialize)]
 struct ImageSection {
     #[serde(default)]
     enable: bool,
+}
+
+#[derive(Deserialize)]
+struct UiSection {
+    language: Option<LanguageSetting>,
+}
+
+#[derive(Deserialize)]
+enum LanguageSetting {
+    #[serde(rename = "en")]
+    English,
+    #[serde(rename = "ja")]
+    Japanese,
 }
 
 /// 設定ファイルがない場合は既定値を返す。ファイルはあるのに読めない場合はエラーにする。
@@ -58,6 +75,10 @@ fn parse_app_config(content: &str) -> Result<AppConfig, String> {
     let file: ConfigFile = toml::from_str(content).map_err(|error| error.to_string())?;
     Ok(AppConfig {
         image_enabled: file.image.is_some_and(|image| image.enable),
+        language: match file.ui.and_then(|ui| ui.language) {
+            None | Some(LanguageSetting::English) => Language::English,
+            Some(LanguageSetting::Japanese) => Language::Japanese,
+        },
     })
 }
 
@@ -128,5 +149,24 @@ mod tests {
     #[test]
     fn enable_with_wrong_type_is_an_error() {
         assert!(parse_app_config("[image]\nenable = \"yes\"\n").is_err());
+    }
+
+    #[test]
+    fn ui_language_ja_selects_japanese() {
+        let config = parse_app_config("[ui]\nlanguage = \"ja\"\n").unwrap();
+
+        assert_eq!(config.language, Language::Japanese);
+    }
+
+    #[test]
+    fn missing_ui_language_selects_english() {
+        let config = parse_app_config("[ui]\n").unwrap();
+
+        assert_eq!(config.language, Language::English);
+    }
+
+    #[test]
+    fn unsupported_ui_language_is_an_error() {
+        assert!(parse_app_config("[ui]\nlanguage = \"fr\"\n").is_err());
     }
 }

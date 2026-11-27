@@ -93,6 +93,16 @@
 <li><code>initialize_logging</code>（native は file、Web は browser console）と <code>trace_dbg!</code> などの補助マクロを置く。</li>
 </ul>
 </li>
+<li><code>src/i18n.rs</code>
+<ul>
+<li>起動時に選んだ言語のメッセージカタログから、表示する文言を引く <code>tr!</code> を置く。</li>
+</ul>
+</li>
+<li><code>locales/</code>
+<ul>
+<li>英語と日本語のメッセージカタログ（Fluent の <code>.ftl</code>）を置く。</li>
+</ul>
+</li>
 <li><code>src/test_support.rs</code>
 <ul>
 <li>snapshot rendering や、テスト用のentityを組み立てる<code>sample_*</code>を置く。</li>
@@ -130,6 +140,9 @@
     subgraph layer_ui["UI・platform"]
         components["src/components/"] --&gt; widgets["src/widgets/"]
         components --&gt; platform["src/platform/"]
+        components --&gt; i18n["src/i18n.rs"]
+        widgets --&gt; i18n
+        platform --&gt; i18n
     end
 
     subgraph layer_app["application"]

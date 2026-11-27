@@ -4,8 +4,13 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Paragraph, Widget, Wrap};
 
+use crate::i18n::tr;
+
 const FOCUS_BG: Color = Color::Rgb(0x1A, 0x33, 0x22);
-const MESSAGE: &str = "編集内容とサーバー内容が競合しています。採用する方を選択してください。";
+
+fn message() -> String {
+    tr!("property-conflict-message")
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IssuePropertyConflictFocus {
@@ -131,7 +136,7 @@ impl<'a> IssuePropertyConflictWidget<'a> {
             return 0;
         }
 
-        let message_line_count = Paragraph::new(MESSAGE).line_count(width);
+        let message_line_count = Paragraph::new(message()).line_count(width);
         let row_line_count = self
             .rows
             .iter()
@@ -183,7 +188,7 @@ impl<'a> IssuePropertyConflictWidget<'a> {
             .take(row_index)
             .map(|row| row_line_count(row, width))
             .sum::<usize>();
-        Paragraph::new(MESSAGE)
+        Paragraph::new(message())
             .line_count(width)
             .saturating_add(1)
             .saturating_add(1)
@@ -197,7 +202,7 @@ impl Widget for IssuePropertyConflictWidget<'_> {
             return;
         }
 
-        let message_line_count = Paragraph::new(MESSAGE).line_count(area.width) as u16;
+        let message_line_count = Paragraph::new(message()).line_count(area.width) as u16;
         let mut row_constraints = Vec::with_capacity(self.rows.len() + 5);
         row_constraints.push(Constraint::Length(message_line_count));
         row_constraints.push(Constraint::Length(1));
@@ -214,7 +219,7 @@ impl Widget for IssuePropertyConflictWidget<'_> {
             .constraints(row_constraints)
             .split(area);
 
-        Paragraph::new(MESSAGE)
+        Paragraph::new(message())
             .wrap(Wrap { trim: false })
             .render(row_areas[0], buf);
 
@@ -236,13 +241,13 @@ fn render_header(area: Rect, buf: &mut Buffer) {
     }
 
     let cols = column_areas(area);
-    render_header_cell("プロパティ名", cols[0], buf);
-    render_header_cell("編集前の値", cols[1], buf);
-    render_header_cell("編集後の値", cols[2], buf);
-    render_header_cell("サーバーの値", cols[3], buf);
+    render_header_cell(tr!("property-conflict-name"), cols[0], buf);
+    render_header_cell(tr!("property-conflict-before"), cols[1], buf);
+    render_header_cell(tr!("property-conflict-after"), cols[2], buf);
+    render_header_cell(tr!("property-conflict-server"), cols[3], buf);
 }
 
-fn render_header_cell(text: &'static str, area: Rect, buf: &mut Buffer) {
+fn render_header_cell(text: String, area: Rect, buf: &mut Buffer) {
     if area.width == 0 || area.height == 0 {
         return;
     }
@@ -363,20 +368,20 @@ fn render_buttons(
         .split(area);
 
     render_button(
-        "キャンセル",
+        tr!("button-cancel"),
         cols[1],
         buf,
         focused_button == Some(IssuePropertyConflictButton::Cancel),
     );
     render_button(
-        "続行",
+        tr!("button-continue"),
         cols[3],
         buf,
         focused_button == Some(IssuePropertyConflictButton::Continue),
     );
 }
 
-fn render_button(text: &'static str, area: Rect, buf: &mut Buffer, focused: bool) {
+fn render_button(text: String, area: Rect, buf: &mut Buffer, focused: bool) {
     if area.width == 0 || area.height == 0 {
         return;
     }

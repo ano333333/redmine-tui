@@ -73,7 +73,7 @@ fn tracker_popup_excludes_none_and_changes_the_tracker() {
     press_keys(&mut session, &["k", "Enter"]);
 
     // Then trackerがFeatureになる
-    wait_for_property(&mut session, "トラッカー", "Feature");
+    wait_for_property(&mut session, "Tracker", "Feature");
 }
 
 // Scenario: priorityのpopupは選択なしを含まず、選んだpriorityに変わる
@@ -90,7 +90,7 @@ fn priority_popup_excludes_none_and_changes_the_priority() {
     press_keys(&mut session, &["j", "Enter"]);
 
     // Then priorityがminorになる
-    wait_for_property(&mut session, "優先度", "minor");
+    wait_for_property(&mut session, "Priority", "minor");
 }
 
 // Scenario: 子Issueを持つIssueの優先度は、popupを開かずに編集できない理由を表示する
@@ -100,8 +100,8 @@ fn priority_of_issue_with_children_shows_notice_without_popup() {
     let mut session = open_property_popup_of_issue_3(PRIORITY_LINE);
 
     // Then 編集できない理由が表示され、priority popupは開かない
-    // 通知は右上の狭い枠で折り返されるため、1行に収まる先頭部分で待つ。
-    let frame = wait_for_text(&mut session, "優先度は");
+    // 通知は右上の狭い枠で折り返されるため、1行に収まる部分で待つ。
+    let frame = wait_for_text(&mut session, "is calculated");
     assert!(!frame.contains("blocker"));
 }
 
@@ -116,8 +116,8 @@ fn project_popup_moves_the_issue_and_clears_the_category() {
     press_keys(&mut session, &["j", "Enter"]);
 
     // Then projectが変わり、categoryが外れる
-    wait_for_property(&mut session, "プロジェクト", "Sample Project 2");
-    wait_for_property(&mut session, "カテゴリー", "-");
+    wait_for_property(&mut session, "Project", "Sample Project 2");
+    wait_for_property(&mut session, "Category", "-");
 }
 
 // Scenario: 予定工数を数値で入力できる
@@ -130,7 +130,7 @@ fn estimated_hours_popup_changes_the_estimated_hours() {
     press_keys(&mut session, &["2", ".", "5", "Enter"]);
 
     // Then 予定工数が2.5 hになる
-    wait_for_property(&mut session, "予定工数", "2.5 h");
+    wait_for_property(&mut session, "Estimate", "2.5 h");
 }
 
 // Scenario: categoryのpopupは選択なしを含み、選ぶとcategoryが外れる
@@ -148,7 +148,7 @@ fn category_popup_includes_none_and_clears_the_category() {
     press_keys(&mut session, &["k", "Enter"]);
 
     // Then categoryが外れる
-    wait_for_property(&mut session, "カテゴリー", "-");
+    wait_for_property(&mut session, "Category", "-");
 }
 
 // Scenario: 開始日と期日を日付選択popupで変更できる
@@ -164,12 +164,12 @@ fn date_picker_changes_the_start_date_and_the_due_date() {
     press_keys(&mut session, &pick_next_day);
 
     // Then 開始日が翌日になる
-    wait_for_property(&mut session, "開始日", "2025/12/10");
+    wait_for_property(&mut session, "Start date", "2025/12/10");
 
     // When 期日（2025/12/19）のpopupを開き、翌日を選ぶ
     press_keys(&mut session, &["j", "e"]);
     press_keys(&mut session, &pick_next_day);
 
     // Then 期日が翌日になる
-    wait_for_property(&mut session, "期日", "2025/12/20");
+    wait_for_property(&mut session, "Due date", "2025/12/20");
 }

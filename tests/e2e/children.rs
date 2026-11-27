@@ -22,7 +22,7 @@ fn the_children_list_shows_direct_children_with_their_descendant_counts() {
     let frame = wait_until(&mut session, "showing the children list", |frame| {
         frame.contains("issue1 (+1)")
     });
-    assert!(frame.contains("未取得"));
+    assert!(frame.contains("No data"));
     assert!(!frame.contains("issue4"));
 }
 
@@ -60,7 +60,7 @@ fn the_header_shows_the_parent_issue_by_fetching_it_and_enter_opens_it() {
 
     // Then 題名の下に、取得したIssue 3の題名が出る。seedのIssue 3の題名は「issue1(長…)」で始まる
     wait_until(&mut session, "showing the parent issue", |frame| {
-        frame.contains("親チケット #3 issue1(長")
+        frame.contains("Parent #3 issue1(長")
     });
 
     // When 題名から親の行へ移り、Enterを押す

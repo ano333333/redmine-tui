@@ -1638,7 +1638,7 @@ fn continuing_an_issue_conflict_does_not_reopen_the_conflict_popup() {
         dispatcher.borrow_mut().consume_action();
     }
     let mut app = journal_upload_app(dispatcher.clone());
-    assert!(rendered_without_spaces(&app, dispatcher.clone()).contains("続行"));
+    assert!(rendered_without_spaces(&app, dispatcher.clone()).contains("Continue"));
     let spawner = CompletionSpawner::from_completions(vec![]);
     let client = Arc::new(IssueUploadClient::new(server_issue));
     let mut host = RunnerHost::new(dispatcher.clone());
@@ -1662,7 +1662,7 @@ fn continuing_an_issue_conflict_does_not_reopen_the_conflict_popup() {
     }
 
     assert_eq!(spawner.spawned.get(), 1);
-    assert!(!rendered_without_spaces(&app, dispatcher.clone()).contains("続行"));
+    assert!(!rendered_without_spaces(&app, dispatcher.clone()).contains("Continue"));
 }
 
 /// 保存前の取得はすぐ返し、PUTと確認の取得はそれぞれのgateにpermitを足すまで完了しない。

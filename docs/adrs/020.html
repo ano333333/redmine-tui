@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADR 20 — 表示文言の多言語化</title>
+    <link rel="stylesheet" href="../assets/doc.css" />
+  </head>
+  <body>
+    <main>
+<h1>20. 表示文言の多言語化</h1>
+<h2 id="status">Status</h2>
+<p><span class="status status--accepted">Accepted</span></p>
+<h2 id="context">Context</h2>
+<p>画面の文言は、Componentとwidgetのコードに日本語で直接書かれている。ボタン、popupのタイトル、toastの文言（<code>src/components/toast_list.rs</code>）がこれにあたる。表示言語を切り替える手段はない（ANO-15）。</p>
+<p>現状の仕組みには、次の前提がある。</p>
+<ul>
+<li>Usecaseは表示の文言を持たない。失敗は<code>UsecaseEvent</code>で意味だけを返し、文言は<code>ToastListComponent</code>が組み立てる（<a href="018.html">ADR 18</a>）。そのため、翻訳する文言はComponentとwidgetに集まっている。</li>
+<li>native版は起動時に<code>$XDG_CONFIG_HOME/redmine-tui/config.toml</code>（なければ<code>~/.config/redmine-tui/config.toml</code>）を<code>app_config</code>で読む。今は<code>[image] enable</code>だけを持ち、読めないファイルは起動エラーにする。Web版は設定ファイルを読まない。</li>
+<li>表示する日付は、どこも<code>%Y/%m/%d</code>で組み立てている。</li>
+<li>単体テストのsnapshotとE2Eは、日本語の文言を前提にしている。</li>
+<li>日本語の文字は全角で、英語より表示幅が広い。</li>
+</ul>
+<h2 id="decision">Decision</h2>
+<h3 id="対応言語は英語と日本語にする">対応言語は英語と日本語にする</h3>
+<p>対応する言語は英語（<code>en</code>）と日本語（<code>ja</code>）の2つとする。言語は起動時に1つ決め、起動中は切り替えない。</p>
+<h3 id="fluentのメッセージカタログを使う">Fluentのメッセージカタログを使う</h3>
+<p>文言は<a href="https://projectfluent.org/">Fluent</a>の<code>.ftl</code>に書き、<code>fluent-bundle</code>で引く。</p>
+<ul>
+<li>カタログは<code>locales/en/main.ftl</code>と<code>locales/ja/main.ftl</code>に置き、<code>include_str!</code>でバイナリへ埋め込む。native版とWeb版で同じカタログを使う。</li>
+<li>bundleは<code>set_use_isolating(false)</code>で作る。Fluentは埋め込んだ値の前後に双方向分離文字（U+2068、U+2069）を入れるのが既定で、terminalでは表示幅が崩れる。</li>
+<li>メッセージIDは画面の部品と用途で名付ける（例: <code>toast-issue-upload-failed</code>）。英語の文をそのままIDにしない。</li>
+<li>Redmineから取得した値（tracker名、status名、Issueの題名など）と、Clientのエラーなどの外部由来の説明（<code>reason</code>）は翻訳しない。ログと、起動前に標準エラー出力へ出すメッセージも翻訳しない。</li>
+</ul>
+<h3 id="文言の取得に失敗したらunwrapする">文言の取得に失敗したら<code>unwrap</code>する</h3>
+<p>文言を引く処理の失敗は、表示時に<code>unwrap</code>（<code>expect</code>）する。メッセージが見つからない（<code>get_message</code>や<code>msg.value()</code>が<code>None</code>）場合と、<code>format_pattern</code>が埋め込みの誤りを報告した場合がこれにあたる。</p>
+<ul>
+<li>これらの失敗は、カタログとコードの組み合わせで決まり、実行時の入力では変わらない。英語のカタログについては、文言を表示するwidgetとComponentのsnapshotテストで、失敗しないことを確かめる。</li>
+<li>日本語のカタログは表示のテストを持たない。代わりに、<code>cargo xtask check-locales</code>で<code>ja</code>と<code>en</code>のカタログを比べる。メッセージIDと属性の名前、その並び順、各メッセージが参照する変数が一致しなければ失敗する。どちらかのカタログで同じIDを2回定義した場合も失敗する。PRのCIでこれを実行する。</li>
+<li>起動時のカタログの読み込み（<code>FluentResource::try_new</code>、<code>add_resource</code>）の失敗も<code>expect</code>する。カタログは埋め込みで、<code>check-locales</code>も同じカタログを構文解析する。</li>
+</ul>
+<h3 id="言語は設定ファイルで選ぶ">言語は設定ファイルで選ぶ</h3>
+<p>native版は<code>config.toml</code>の<code>[ui] language</code>で言語を選ぶ。</p>
+<pre><code class="language-toml">[ui]
+language = "ja"
+</code></pre>
+<ul>
+<li>値は<code>"en"</code>か<code>"ja"</code>とする。項目がなければ英語にする。</li>
+<li>それ以外の値は、今の設定ファイルの読み込み失敗と同じく起動エラーにする。</li>
+<li>環境変数<code>LANG</code>は見ない。</li>
+<li>Web版は英語に固定する。</li>
+</ul>
+<h3 id="選んだ言語はプロセス全体で1つ持つ">選んだ言語はプロセス全体で1つ持つ</h3>
+<p>起動処理が言語を決め、runnerを起動する前にプロセス全体で1つの値として設定する。文言を引く関数は引数に言語もbundleも取らず、設定された言語のbundleを使う。設定されていなければ英語を使う。</p>
+<pre><code class="language-rust">// src/i18n.rs
+pub(crate) fn set_language(language: Language);
+pub(crate) fn message(id: &amp;str, args: Option&lt;&amp;FluentArgs&gt;) -&gt; String;
+
+// 呼び出し側は`message`を包むマクロを使う
+tr!("toast-issue-upload-failed", id = issue_id, reason = reason)
+</code></pre>
+<ul>
+<li>bundleは<code>fluent_bundle::concurrent::FluentBundle</code>で作り、<code>OnceLock</code>に置く。</li>
+<li><code>set_language</code>は1度だけ呼ぶ。テストは呼ばず、英語で動く。</li>
+<li><code>src/i18n.rs</code>はどの層からも使ってよい。ただし、Usecaseは文言を持たないため使わない。</li>
+</ul>
+<h3 id="日付と数値の表示形式は変えない">日付と数値の表示形式は変えない</h3>
+<p>日付は言語によらず今の<code>%Y/%m/%d</code>で表示する。数値も今の表示のままにする。</p>
+<h3 id="テストは英語だけで行う">テストは英語だけで行う</h3>
+<p>単体テストとE2Eは英語で行う。日本語の表示は、上に書いた<code>check-locales</code>だけで扱う。</p>
+<ul>
+<li>今の日本語のsnapshotは、英語の文言で取り直す。</li>
+<li>E2Eは設定ファイルに<code>language</code>を書かず、英語の文言を前提にする。</li>
+</ul>
+<h2 id="rationale">Rationale</h2>
+<p>対応言語を2つに絞り、起動中に切り替えないのは、利用者が使い分けるのは英語と日本語で、起動後に言語を変える用途がないためである。起動中に変わらないので、bundleを作り直す処理もComponentへ変更を伝える処理も要らない。</p>
+<p>Fluentを選んだのは、英語の複数形（<code>1 attachment</code>と<code>2 attachments</code>など）を、コードで分岐せずカタログで書き分けられるためである。<code>rust-i18n</code>は文字列の置換だけを持ち、複数形はコードで書き分ける必要がある。</p>
+<p>文言の取得の失敗を<code>unwrap</code>するのは、失敗がカタログの書き誤りでだけ起き、テストで見つけられるからである。<code>Result</code>を呼び出し元へ返すと、表示の処理のすべてにエラーの経路ができるが、その経路で利用者に見せられる情報はない。</p>
+<p>日本語のカタログを表示のテストで確かめないのは、snapshotとE2Eを2言語分持つ手間に見合わないためである。ただし、<code>ja</code>だけにメッセージがない、または<code>en</code>にない変数を参照していると、日本語で起動したときだけpanicする。<code>check-locales</code>は、この失敗を表示のテストなしで見つけるために置く。並び順まで揃えるのは、日英のカタログを並べて見比べやすくするためである。単体テストにせずxtaskにするのは、アプリのコードを通さずカタログのファイルだけを調べる検査だからである。</p>
+<p>言語をプロセス全体で1つ持つのは、文言を引く箇所がComponentとwidgetの全体に散っているためである。bundleを引数で渡すと、文言を持つWidgetと、それを作る経路のすべてに引数かフィールドが増える。ratatuiの<code>Widget::render(self, area, buf)</code>は引数を足せないので、Widgetはbundleをフィールドに持つ必要がある。Storeに置いてもWidgetのフィールドは要り、Storeを受け取らない<code>handle_usecase_events</code>からtoastを作る経路には別に渡す必要がある。テストは英語だけで行うので、並列に動くテストの間で言語が食い違うこともない。</p>
+<p><code>LANG</code>を見ないのは、terminalのロケールと表示したい言語が一致するとは限らず、設定ファイルで明示するほうが挙動を予測しやすいためである。未設定を英語にするのは、テストと同じ言語で動くようにするためである。</p>
+<p>日付を言語によらず<code>%Y/%m/%d</code>にするのは、数字だけの形式は英語でも日本語でも読め、表示幅も変わらないためである。</p>
+<h2 id="consequences">Consequences</h2>
+<ul>
+<li>Componentとwidgetに直接書いた文言は、<code>tr!</code>の呼び出しに置き換わる。<code>ToastListComponent</code>の失敗の種類ごとの文言も、<code>.ftl</code>のメッセージになる。</li>
+<li>文言を追加するときは、<code>en</code>と<code>ja</code>の両方のカタログに書く。片方だけに書くと、CIの<code>check-locales</code>が失敗する。</li>
+<li>日本語の文言の表示崩れ（全角による幅の超過、切り詰め）は、自動テストでは見つからない。日本語で起動して手で確かめる。</li>
+<li>既定の言語が英語になるため、設定ファイルを書いていない利用者の表示は、今の日本語から英語に変わる。</li>
+<li>snapshotとE2Eの期待値は、日本語から英語に置き換わる。</li>
+<li><code>AppConfig</code>に言語の項目が加わる。</li>
+<li><code>docs/architecture.md</code>のディレクトリ構成に<code>src/i18n.rs</code>と<code>locales/</code>を加え、依存の図に<code>i18n</code>を置く。</li>
+</ul>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<ul>
+<li><code>rust-i18n</code>を使う: マクロ1つとYAMLで導入できるが、複数形をカタログで書き分けられない。採用しない。</li>
+<li>bundleを引数で渡す: テストごとに言語を変えられるが、テストは英語だけで行うため、その利点を使わない。文言を持つWidgetと、それを作る経路のすべてに引数かフィールドが増えるため、採用しない。</li>
+<li>bundleを<code>SettingsStore</code>に置く: <code>update</code>と<code>render</code>はStoreを受け取るが、Widgetと<code>handle_usecase_events</code>はStoreを受け取らない。Widgetにbundleのフィールドを足し、<code>handle_usecase_events</code>にStoreを渡す必要があるため、採用しない。</li>
+<li>文言の取得の失敗を<code>Result</code>で返し、メッセージIDを代わりに表示する: panicはしないが、誤りに気づくのが表示を見たときになる。テストで見つけられる失敗に実行時の経路を足すことになるため、採用しない。</li>
+<li>日本語のsnapshotも取る: 日本語の表示崩れも自動で見つけられるが、snapshotが2倍になり、文言を変えるたびに両方を見直す必要がある。採用しない。</li>
+<li><code>LANG</code>から言語を決める: 設定なしで日本語になるが、terminalのロケールと表示したい言語が一致するとは限らない。採用しない。</li>
+<li>日付を言語ごとの形式で表示する: 英語で<code>Nov 27, 2026</code>のような形式にすると、表示幅が言語で変わり、列の幅を言語ごとに決める必要がある。採用しない。</li>
+</ul>
+    </main>
+  </body>
+</html>

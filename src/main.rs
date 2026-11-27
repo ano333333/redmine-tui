@@ -14,6 +14,7 @@ mod clients;
 mod components;
 mod entities;
 mod entry;
+mod i18n;
 mod libs;
 mod logging;
 mod platform;

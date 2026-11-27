@@ -1,6 +1,7 @@
 use ratatui::layout::{Position, Rect, Size};
 
 use crate::entities::IssueAggregate;
+use crate::i18n::tr;
 use crate::platform::input::InputEvent;
 use crate::vos::{EntityIdValue, IssuePropertyDiff};
 use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
@@ -236,7 +237,7 @@ fn option_id_diff_text(
 
 fn option_id_text(id: Option<impl EntityIdValue>) -> String {
     id.map(|id| id.get().to_string())
-        .unwrap_or_else(|| "(なし)".to_string())
+        .unwrap_or_else(|| tr!("value-none"))
 }
 
 fn option_diff_text<T: ToString>(
@@ -255,25 +256,25 @@ fn option_text<T: ToString>(value: &Option<T>) -> String {
     value
         .as_ref()
         .map(ToString::to_string)
-        .unwrap_or_else(|| "(なし)".to_string())
+        .unwrap_or_else(|| tr!("value-none"))
 }
 
-fn property_name(diff: &IssuePropertyDiff) -> &'static str {
-    match diff {
-        IssuePropertyDiff::Subject(_) => "題名",
-        IssuePropertyDiff::ProjectId(_) => "プロジェクト",
-        IssuePropertyDiff::TrackerId(_) => "トラッカー",
-        IssuePropertyDiff::StatusId(_) => "ステータス",
-        IssuePropertyDiff::PriorityId(_) => "優先度",
-        IssuePropertyDiff::AssignedToId(_) => "担当者",
-        IssuePropertyDiff::TargetVersionId(_) => "対象バージョン",
-        IssuePropertyDiff::StartDate(_) => "開始日",
-        IssuePropertyDiff::DueDate(_) => "期日",
-        IssuePropertyDiff::DoneRatio(_) => "進捗率",
-        IssuePropertyDiff::EstimatedHours(_) => "予定工数",
-        IssuePropertyDiff::CategoryId(_) => "カテゴリ",
-        IssuePropertyDiff::Description(_) => "説明",
-    }
+fn property_name(diff: &IssuePropertyDiff) -> String {
+    tr!(match diff {
+        IssuePropertyDiff::Subject(_) => "property-subject",
+        IssuePropertyDiff::ProjectId(_) => "property-project",
+        IssuePropertyDiff::TrackerId(_) => "property-tracker",
+        IssuePropertyDiff::StatusId(_) => "property-status",
+        IssuePropertyDiff::PriorityId(_) => "property-priority",
+        IssuePropertyDiff::AssignedToId(_) => "property-assignee",
+        IssuePropertyDiff::TargetVersionId(_) => "property-target-version",
+        IssuePropertyDiff::StartDate(_) => "property-start-date",
+        IssuePropertyDiff::DueDate(_) => "property-due-date",
+        IssuePropertyDiff::DoneRatio(_) => "property-done-ratio",
+        IssuePropertyDiff::EstimatedHours(_) => "property-estimated-hours",
+        IssuePropertyDiff::CategoryId(_) => "property-category",
+        IssuePropertyDiff::Description(_) => "property-description",
+    })
 }
 
 #[cfg(test)]

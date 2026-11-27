@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use super::detail::IssueDetailWidget;
+use crate::i18n::tr;
 
 pub(crate) enum IssueWidget<'a> {
     Fetching,
@@ -28,10 +29,10 @@ impl<'a> IssueWidget<'a> {
 impl Widget for IssueWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         match self {
-            Self::Fetching => Paragraph::new("表示中です").render(area, buf),
+            Self::Fetching => Paragraph::new(tr!("issue-fetching")).render(area, buf),
             Self::FetchFailed { message } => Paragraph::new(Text::from(vec![
                 Line::from(message),
-                Line::from("r で再試行"),
+                Line::from(tr!("issue-retry-hint")),
             ]))
             .render(area, buf),
             Self::Detail(widget) => widget.render(area, buf),

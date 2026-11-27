@@ -51,9 +51,13 @@ REDMINE_URL=https://redmine.example.com REDMINE_API_KEY=<your-api-key> cargo run
 ```toml
 [image]
 enable = true
+
+[ui]
+language = "ja"
 ```
 
 - `image.enable`: 添付画像を terminal 内に表示する（任意。既定値は `false`）。Kitty graphics protocol に対応した terminal でだけ有効にしてください。アプリは terminal を確かめないため、非対応の terminal では表示が崩れます。terminal がピクセル単位の大きさを返さない場合は、通知を表示し、画像を表示しません。
+- `ui.language`: 画面の表示言語（任意。`"en"` か `"ja"`、既定値は `"en"`）。
 
 ## 基本操作
 

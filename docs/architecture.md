@@ -45,6 +45,10 @@
   - YAML読み込みなど、外部表現から domain data へ変換する補助処理を置く。
 - `src/logging.rs`
   - `initialize_logging`（native は file、Web は browser console）と `trace_dbg!` などの補助マクロを置く。
+- `src/i18n.rs`
+  - 起動時に選んだ言語のメッセージカタログから、表示する文言を引く `tr!` を置く。
+- `locales/`
+  - 英語と日本語のメッセージカタログ（Fluent の `.ftl`）を置く。
 - `src/test_support.rs`
   - snapshot rendering や、テスト用のentityを組み立てる`sample_*`を置く。
 - `src/snapshots/`
@@ -76,6 +80,9 @@ flowchart TD
     subgraph layer_ui["UI・platform"]
         components["src/components/"] --> widgets["src/widgets/"]
         components --> platform["src/platform/"]
+        components --> i18n["src/i18n.rs"]
+        widgets --> i18n
+        platform --> i18n
     end
 
     subgraph layer_app["application"]

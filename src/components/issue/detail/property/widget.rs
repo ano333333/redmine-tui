@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use chrono::{DateTime, Local};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -5,6 +7,7 @@ use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
+use crate::i18n::tr;
 use crate::vos::IssueId;
 use crate::widgets::gutter::{GUTTER_WIDTH, Gutter, indented_area};
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED};
@@ -24,13 +27,13 @@ const GUTTER_TRAILING_LINES: u16 = 1;
 
 pub struct PropertyWidget<'a> {
     id: IssueId,
-    author: &'a str,
+    author: Cow<'a, str>,
     created_on: DateTime<Local>,
     updated_on: DateTime<Local>,
-    status: &'a str,
-    tracker: &'a str,
-    priority: &'a str,
-    project: &'a str,
+    status: Cow<'a, str>,
+    tracker: Cow<'a, str>,
+    priority: Cow<'a, str>,
+    project: Cow<'a, str>,
     person_in_charge: Option<&'a str>,
     target_version: Option<&'a str>,
     start_date: Option<DateTime<Local>>,
@@ -38,7 +41,7 @@ pub struct PropertyWidget<'a> {
     progress: u16,
     planned_hours: Option<f64>,
     total_spent_hours: Option<f64>,
-    category: &'a str,
+    category: Cow<'a, str>,
     focused_y: Option<u16>,
 }
 
@@ -134,13 +137,13 @@ impl<'a> PropertyWidget<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: impl Into<IssueId>,
-        author: &'a str,
+        author: impl Into<Cow<'a, str>>,
         created_on: DateTime<Local>,
         updated_on: DateTime<Local>,
-        status: &'a str,
-        tracker: &'a str,
-        priority: &'a str,
-        project: &'a str,
+        status: impl Into<Cow<'a, str>>,
+        tracker: impl Into<Cow<'a, str>>,
+        priority: impl Into<Cow<'a, str>>,
+        project: impl Into<Cow<'a, str>>,
         person_in_charge: Option<&'a str>,
         target_version: Option<&'a str>,
         start_date: Option<DateTime<Local>>,
@@ -148,18 +151,18 @@ impl<'a> PropertyWidget<'a> {
         progress: u16,
         planned_hours: Option<f64>,
         total_spent_hours: Option<f64>,
-        category: &'a str,
+        category: impl Into<Cow<'a, str>>,
         focused_y: Option<u16>,
     ) -> Self {
         Self {
             id: id.into(),
-            author,
+            author: author.into(),
             created_on,
             updated_on,
-            status,
-            tracker,
-            priority,
-            project,
+            status: status.into(),
+            tracker: tracker.into(),
+            priority: priority.into(),
+            project: project.into(),
             person_in_charge,
             target_version,
             start_date,
@@ -167,7 +170,7 @@ impl<'a> PropertyWidget<'a> {
             progress,
             planned_hours,
             total_spent_hours,
-            category,
+            category: category.into(),
             focused_y,
         }
     }
@@ -211,21 +214,25 @@ impl<'a> PropertyWidget<'a> {
         };
 
         vec![
-            PropertyField::text("作成者", self.author),
-            PropertyField::text("作成日", format_date(&Some(self.created_on))),
-            PropertyField::text("更新日", format_date(&Some(self.updated_on))),
-            PropertyField::styled("ステータス", self.status, Style::default().blue().bold()),
-            PropertyField::text("トラッカー", self.tracker),
-            PropertyField::text("優先度", self.priority),
-            PropertyField::text("プロジェクト", self.project),
-            PropertyField::styled("担当者", person, Style::default().blue()),
-            PropertyField::text("対象バージョン", target_version),
-            PropertyField::text("開始日", format_date(&self.start_date)),
-            PropertyField::text("期日", format_date(&self.due)),
+            PropertyField::text("property-author", self.author.as_ref()),
+            PropertyField::text("property-created-on", format_date(&Some(self.created_on))),
+            PropertyField::text("property-updated-on", format_date(&Some(self.updated_on))),
+            PropertyField::styled(
+                "property-status",
+                self.status.as_ref(),
+                Style::default().blue().bold(),
+            ),
+            PropertyField::text("property-tracker", self.tracker.as_ref()),
+            PropertyField::text("property-priority", self.priority.as_ref()),
+            PropertyField::text("property-project", self.project.as_ref()),
+            PropertyField::styled("property-assignee", person, Style::default().blue()),
+            PropertyField::text("property-target-version", target_version),
+            PropertyField::text("property-start-date", format_date(&self.start_date)),
+            PropertyField::text("property-due-date", format_date(&self.due)),
             PropertyField::progress(self.progress),
-            PropertyField::text("予定工数", format!("{planned_hours} h")),
-            PropertyField::text("実績工数", format!("{total_spent_hours} h")),
-            PropertyField::text("カテゴリー", self.category),
+            PropertyField::text("property-estimated-hours", format!("{planned_hours} h")),
+            PropertyField::text("property-spent-hours", format!("{total_spent_hours} h")),
+            PropertyField::text("property-category", self.category.as_ref()),
         ]
     }
 }
@@ -236,6 +243,7 @@ impl<'a> PropertyWidget<'a> {
 /// 行の作り方ごと保持する。
 enum PropertyField<'a> {
     Text {
+        /// 属性名のメッセージID。
         label: &'a str,
         value: String,
         style: Style,
@@ -273,7 +281,7 @@ impl<'a> PropertyField<'a> {
                 value,
                 style,
             } => Line::from(vec![
-                Span::from(pad_label(label)).fg(MUTED),
+                Span::from(pad_label(&tr!(label))).fg(MUTED),
                 Span::from(value.as_str()).style(*style),
             ]),
             Self::Progress { progress } => progress_line(*progress),
@@ -306,7 +314,7 @@ fn progress_line<'a>(progress: u16) -> Line<'a> {
     const BAR_LEN: u16 = 12;
     let filled = (progress.min(100) * BAR_LEN / 100) as usize;
     Line::from(vec![
-        Span::from(pad_label("進捗率")).fg(MUTED),
+        Span::from(pad_label(&tr!("property-done-ratio"))).fg(MUTED),
         Span::from(format!("{progress:>3}%  ")),
         Span::from("━".repeat(filled)).fg(ACCENT),
         Span::from("─".repeat(BAR_LEN as usize - filled)).fg(MUTED),

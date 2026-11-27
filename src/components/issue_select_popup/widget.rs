@@ -7,6 +7,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 
+use crate::i18n::tr;
 use crate::vos::{IssueId, ProjectId};
 use crate::widgets::theme::{ACCENT, BADGE_BG, FOCUS_BG, MUTED, SECTION_BAR, TIMELINE_FG};
 use crate::widgets::{VerticalScrollWidget, VerticalScrollWidgetState};
@@ -243,9 +244,9 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
     }
 
     let columns = split_columns(inner);
-    render_section_header(buf, columns[0], inner.y, "PROJECTS");
-    render_section_header(buf, columns[1], inner.y, "ISSUES");
-    render_section_header(buf, columns[2], inner.y, "PREVIEW");
+    render_section_header(buf, columns[0], inner.y, &tr!("issue-select-projects"));
+    render_section_header(buf, columns[1], inner.y, &tr!("issue-select-issues"));
+    render_section_header(buf, columns[2], inner.y, &tr!("issue-select-preview"));
     render_column_separators(inner, &columns, buf);
 
     let body_height = inner.height.saturating_sub(2) as usize;
@@ -301,11 +302,11 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
     } else {
         let message = match widget.issue_column_state {
             IssueSelectPopupIssueColumnState::Unloaded => None,
-            IssueSelectPopupIssueColumnState::Loading => Some("読込中です".to_string()),
+            IssueSelectPopupIssueColumnState::Loading => Some(tr!("issue-select-loading")),
             IssueSelectPopupIssueColumnState::Failed { message, .. } => {
-                Some(format!("{message}\nr で再試行"))
+                Some(format!("{message}\n{}", tr!("issue-select-retry-hint")))
             }
-            IssueSelectPopupIssueColumnState::LoadedEmpty => Some("Issueはありません".to_string()),
+            IssueSelectPopupIssueColumnState::LoadedEmpty => Some(tr!("issue-select-empty")),
             IssueSelectPopupIssueColumnState::Loaded => None,
         };
         if let Some(message) = message {
@@ -344,7 +345,7 @@ fn render_issue_select_popup(widget: IssueSelectPopupWidget<'_>, area: Rect, buf
         inner.x,
         footer_y,
         inner.width,
-        "  h/l 切替   j/k 移動   Enter 開く   n 新規作成   q 閉じる",
+        &format!("  {}", tr!("issue-select-hint")),
         Style::default().fg(MUTED),
     );
 }

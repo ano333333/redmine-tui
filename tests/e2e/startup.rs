@@ -80,7 +80,7 @@ fn image_display_without_the_terminal_pixel_size_shows_a_notice() {
 
     // Then 画像を表示しないことが通知され、そのまま操作を続けられる
     // 通知は端末幅の1/3で折り返すため、1行目に収まる部分で待つ。
-    wait_for_text(&mut session, "terminalのピクセル単位");
+    wait_for_text(&mut session, "Images are not shown");
     wait_for_text(&mut session, "issue2");
     session.press_key("q").expect("failed to close the popup");
 }

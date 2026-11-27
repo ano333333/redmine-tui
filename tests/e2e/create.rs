@@ -4,7 +4,7 @@ use crate::support::{
 };
 
 /// 新規作成画面のヒント行。作成画面が閉じたことは、これが画面から消えたことで判定する。
-const NEW_ISSUE_HINT: &str = "Ctrl+S: 作成";
+const NEW_ISSUE_HINT: &str = "Ctrl+S: create";
 // Issue 4の詳細で子Issueの追加行へ移るjの回数。editing.rsのLocal Journal作成ボタンの1つ手前。
 const J_PRESSES_TO_ISSUE_4_ADD_CHILD_ROW: usize = 12;
 
@@ -93,6 +93,6 @@ fn creating_a_draft_without_subject_tells_that_the_subject_is_required() {
     session.press_key("ctrl+s").expect("failed to press ctrl+s");
 
     // Then 題名が必要なことが通知され、新規作成画面のままである
-    let frame = wait_for_text(&mut session, "題名を入力して");
+    let frame = wait_for_text(&mut session, "Enter a subject");
     assert!(frame.contains(NEW_ISSUE_HINT));
 }

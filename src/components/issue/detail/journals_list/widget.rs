@@ -6,6 +6,7 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Widget};
 
+use crate::i18n::tr;
 use crate::widgets::gutter::{Gutter, indented_area};
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED};
 
@@ -86,7 +87,7 @@ impl Widget for JournalsListWidget<'_> {
             } else {
                 MUTED
             };
-            Paragraph::new(Line::from("＋ コメントを追加").fg(color))
+            Paragraph::new(Line::from(tr!("journals-add")).fg(color))
                 .render(indented_area(row_area), buf);
             if self.create_button_focused {
                 for x in 0..row_area.width {
@@ -117,13 +118,13 @@ mod tests {
     fn view_of<'j>(
         journal: &'j Journal,
         notes: &'j str,
-        state_marker: &'static str,
+        state_marker: &str,
     ) -> RemoteJournalItemView<'j> {
         RemoteJournalItemView {
             user: &journal.user,
             updated_on: journal.updated_on.as_ref(),
             notes,
-            state_marker,
+            state_marker: state_marker.to_string(),
         }
     }
 
@@ -140,15 +141,15 @@ mod tests {
 
     fn assigned_to_detail() -> ResolvedJournalDetail {
         ResolvedJournalDetail::Attr {
-            field_label: "担当者",
-            old_display: "(なし)".to_string(),
+            field_label: "Assignee".to_string(),
+            old_display: "(none)".to_string(),
             new_display: "bob".to_string(),
         }
     }
 
     fn status_detail() -> ResolvedJournalDetail {
         ResolvedJournalDetail::Attr {
-            field_label: "ステータス",
+            field_label: "Status".to_string(),
             old_display: "新規".to_string(),
             new_display: "進行中".to_string(),
         }

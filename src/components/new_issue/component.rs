@@ -6,6 +6,7 @@ use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::widgets::Widget;
 
+use crate::i18n::tr;
 use crate::platform::input::{InputEvent, KeyCode};
 use crate::stores::Store;
 use crate::usecases::issue_popup_options::{
@@ -262,8 +263,7 @@ impl NewIssueComponent {
             scroll_state: &self.scroll_state,
             project: store
                 .get_project(draft.project_id)
-                .map(|project| project.name.as_str())
-                .unwrap_or("(unknown)"),
+                .map_or_else(|| tr!("value-unknown"), |project| project.name.clone()),
             parent,
             fields: FIELDS
                 .iter()
@@ -284,30 +284,30 @@ impl NewIssueComponent {
     }
 }
 
-fn label(field: DraftField) -> &'static str {
-    match field {
-        DraftField::Subject => "題名",
-        DraftField::Description => "説明",
-        DraftField::Tracker => "トラッカー",
-        DraftField::Status => "ステータス",
-        DraftField::Priority => "優先度",
-        DraftField::AssignedTo => "担当者",
-        DraftField::TargetVersion => "対象バージョン",
-        DraftField::StartDate => "開始日",
-        DraftField::DueDate => "期日",
-        DraftField::DoneRatio => "進捗率",
-        DraftField::EstimatedHours => "予定工数",
-        DraftField::Category => "カテゴリー",
-    }
+fn label(field: DraftField) -> String {
+    tr!(match field {
+        DraftField::Subject => "property-subject",
+        DraftField::Description => "property-description",
+        DraftField::Tracker => "property-tracker",
+        DraftField::Status => "property-status",
+        DraftField::Priority => "property-priority",
+        DraftField::AssignedTo => "property-assignee",
+        DraftField::TargetVersion => "property-target-version",
+        DraftField::StartDate => "property-start-date",
+        DraftField::DueDate => "property-due-date",
+        DraftField::DoneRatio => "property-done-ratio",
+        DraftField::EstimatedHours => "property-estimated-hours",
+        DraftField::Category => "property-category",
+    })
 }
 
-/// 項目の表示値。値のない項目は`-`、Redmineの既定値にする項目は`(既定)`と表示する。
+/// 項目の表示値。値のない項目は`-`、Redmineの既定値にする項目は`value-default`の文言で表示する。
 fn display_value(field: DraftField, draft: &NewIssueDraft, store: &Store) -> String {
     fn or_dash(value: Option<String>) -> String {
         value.unwrap_or_else(|| "-".to_string())
     }
     fn or_default(value: Option<String>) -> String {
-        value.unwrap_or_else(|| "(既定)".to_string())
+        value.unwrap_or_else(|| tr!("value-default"))
     }
     let date = |date: Option<chrono::DateTime<chrono::Local>>| {
         or_dash(date.map(|date| date.format("%Y/%m/%d").to_string()))
@@ -317,7 +317,11 @@ fn display_value(field: DraftField, draft: &NewIssueDraft, store: &Store) -> Str
         DraftField::Description => or_dash(draft.description.lines().next().map(|line| {
             match draft.description.lines().count() {
                 1 => line.to_string(),
-                count => format!("{line} (全{count}行)"),
+                count => tr!(
+                    "new-issue-description-lines",
+                    first_line = line,
+                    count = count
+                ),
             }
         })),
         DraftField::Tracker => or_default(

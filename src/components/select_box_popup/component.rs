@@ -1,3 +1,4 @@
+use crate::i18n::tr;
 use crate::platform::input::{InputEvent, KeyCode};
 
 use super::SelectBoxPopupWidget;
@@ -7,8 +8,6 @@ pub enum EventProcessResult {
     Quited,
     Handled,
 }
-
-const NONE_CHOICE_LABEL: &str = "選択なし(None)";
 
 pub struct SelectBoxPopupComponent<'a> {
     items: Vec<(Option<u32>, String)>,
@@ -25,7 +24,7 @@ impl<'a> SelectBoxPopupComponent<'a> {
     ) -> Self {
         let mut popup_items = Vec::with_capacity(items.len() + usize::from(include_none));
         if include_none {
-            popup_items.push((None, NONE_CHOICE_LABEL.to_string()));
+            popup_items.push((None, tr!("select-box-none-choice")));
         }
         popup_items.extend(items.iter().map(|(id, name)| (Some(*id), name.clone())));
 
@@ -147,7 +146,7 @@ mod tests {
         assert_eq!(
             widget.items,
             [
-                (None, "選択なし(None)".to_string()),
+                (None, "No selection (None)".to_string()),
                 (Some(1), "New".to_string()),
                 (Some(2), "Doing".to_string()),
                 (Some(3), "Done".to_string())

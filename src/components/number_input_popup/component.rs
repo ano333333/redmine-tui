@@ -19,7 +19,7 @@ enum Action {
 
 /// 0以上の数値を1つ入力するpopup。空欄での確定は値なし(None)として扱う。
 pub struct NumberInputPopupComponent<'a> {
-    title: &'static str,
+    title: String,
     textarea: TextArea<'a>,
     is_invalid: bool,
     observer: Box<dyn FnMut(Option<f64>) + 'a>,
@@ -27,7 +27,7 @@ pub struct NumberInputPopupComponent<'a> {
 
 impl<'a> NumberInputPopupComponent<'a> {
     pub fn new(
-        title: &'static str,
+        title: String,
         value: Option<f64>,
         observer: Box<dyn FnMut(Option<f64>) + 'a>,
     ) -> Self {
@@ -54,7 +54,7 @@ impl<'a> NumberInputPopupComponent<'a> {
     }
 
     pub fn create_widget<'b>(&'b self) -> NumberInputPopupWidget<'b> {
-        NumberInputPopupWidget::new(self.title, &self.textarea, self.is_invalid)
+        NumberInputPopupWidget::new(&self.title, &self.textarea, self.is_invalid)
     }
 
     fn interpret_key_event(&self, key: KeyEvent) -> Option<Action> {
@@ -158,7 +158,7 @@ mod tests {
         entered: Rc<RefCell<Option<Option<f64>>>>,
     ) -> NumberInputPopupComponent<'static> {
         NumberInputPopupComponent::new(
-            "予定工数",
+            "Estimate".to_string(),
             value,
             Box::new(move |value| {
                 *entered.borrow_mut() = Some(value);

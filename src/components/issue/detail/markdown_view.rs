@@ -7,11 +7,12 @@ use ratatui::widgets::{Paragraph, Widget, Wrap};
 
 use super::attachment_image::{AttachmentImageView, resolve_attachment_image};
 use crate::entities::Attachment;
+use crate::i18n::tr;
 use crate::stores::{ImageDisplay, PreparedImage, Store, TerminalImageEncoder};
 use crate::widgets::markdown_blocks::{MarkdownBlock, split_image_blocks};
 
-const LOADING_SUFFIX: &str = "（読み込み中）";
-const FAILED_SUFFIX: &str = "（読み込めませんでした）";
+const LOADING_SUFFIX: &str = "markdown-image-loading";
+const FAILED_SUFFIX: &str = "markdown-image-failed";
 
 /// Markdownの画像の参照先を解決するための、Issueの添付ファイルと読み込んだ画像。
 pub struct MarkdownImages<'a> {
@@ -258,10 +259,11 @@ fn paragraph(text: Text<'_>) -> Paragraph<'_> {
 }
 
 /// tui-markdownの`ImageFallback::AltText`の文字に、画像の状態を付ける。
+/// `suffix`は末尾に付ける文言のメッセージID。
 fn fallback<'a>(source: &'a str, suffix: Option<&'static str>) -> Text<'a> {
     let mut text = tui_markdown::from_str(source);
     if let (Some(suffix), Some(line)) = (suffix, text.lines.last_mut()) {
-        line.spans.push(Span::from(suffix));
+        line.spans.push(Span::from(tr!(suffix)));
     }
     text
 }
@@ -397,7 +399,7 @@ mod tests {
             &MarkdownImages::new(&store, &attachments),
         );
 
-        assert_eq!(lines(&view), vec!["[img] sample.png（読み込み中）"]);
+        assert_eq!(lines(&view), vec!["[img] sample.png (loading)"]);
         assert!(view.images().is_empty());
     }
 
@@ -421,10 +423,7 @@ mod tests {
             &MarkdownImages::new(&store, &attachments),
         );
 
-        assert_eq!(
-            lines(&view),
-            vec!["[img] sample.png（読み込めませんでした）"]
-        );
+        assert_eq!(lines(&view), vec!["[img] sample.png (could not be loaded)"]);
     }
 
     #[test]
