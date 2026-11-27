@@ -5,7 +5,7 @@ use super::widget::IssueSelectPopupFocusColumn;
 pub enum EventProcessResult {
     Selected,
     CreateRequested,
-    Quited,
+    Canceled,
     ProjectChanged,
     PreviousPageRequested,
     NextPageRequested,
@@ -137,7 +137,7 @@ impl FocusState {
                 }
             }
             Action::Quit => {
-                return Some(EventProcessResult::Quited);
+                return Some(EventProcessResult::Canceled);
             }
             Action::Enter => {
                 if self.focused_project_issue_count() > 0 {
@@ -411,12 +411,12 @@ mod tests {
     }
 
     #[test]
-    fn process_event_q_returns_quited() {
+    fn process_event_q_returns_canceled() {
         let mut state = state_focused_on(0, 0);
 
         let result = state.process_event(key_event(KeyCode::Char('q')));
 
-        assert!(matches!(result, Some(EventProcessResult::Quited)));
+        assert!(matches!(result, Some(EventProcessResult::Canceled)));
     }
 
     #[test]

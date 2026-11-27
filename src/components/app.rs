@@ -263,7 +263,7 @@ impl<'a> AppComponent<'a> {
                 };
                 match result {
                     SelectBoxPopupEventProcessResult::Entered
-                    | SelectBoxPopupEventProcessResult::Quited => {
+                    | SelectBoxPopupEventProcessResult::Canceled => {
                         self.popup_components.pop_back();
                     }
                     SelectBoxPopupEventProcessResult::Handled => {}
@@ -274,7 +274,7 @@ impl<'a> AppComponent<'a> {
                     return false;
                 };
                 match result {
-                    SpentTimeInputPopupEventProcessResult::Quited => {
+                    SpentTimeInputPopupEventProcessResult::Canceled => {
                         self.popup_components.pop_back();
                     }
                     SpentTimeInputPopupEventProcessResult::OpenTimeEntityActivitiesPopup => {
@@ -284,7 +284,7 @@ impl<'a> AppComponent<'a> {
                         );
                         self.popup_components.push_back(popup_component);
                     }
-                    SpentTimeInputPopupEventProcessResult::Submited => {
+                    SpentTimeInputPopupEventProcessResult::Submitted => {
                         // FIXME: 入力した作業時間を保存していないため、確定しても値が失われる。
                         self.popup_components.pop_back();
                     }
@@ -333,7 +333,7 @@ impl<'a> AppComponent<'a> {
                             NewIssueComponent::new(project_id, None),
                         ));
                     }
-                    IssueSelectPopupEventProcessResult::Quited => {
+                    IssueSelectPopupEventProcessResult::Canceled => {
                         self.close_issue_select_popup();
                     }
                     IssueSelectPopupEventProcessResult::Handled => {}

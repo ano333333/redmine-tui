@@ -10,9 +10,9 @@ use crate::vos::TimeEntityActivityId;
 use super::widget::SpentTimeInputPopupWidget;
 
 pub enum EventProcessResult {
-    Submited,
+    Submitted,
     OpenTimeEntityActivitiesPopup,
-    Quited,
+    Canceled,
     Handled,
 }
 
@@ -163,7 +163,7 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
 
     fn process_action(&mut self, action: Option<Action>) -> Option<EventProcessResult> {
         match action {
-            Some(Action::Quit) => Some(EventProcessResult::Quited),
+            Some(Action::Quit) => Some(EventProcessResult::Canceled),
             Some(Action::Focus(field)) => {
                 self.focus(field);
                 Some(EventProcessResult::Handled)
@@ -179,7 +179,7 @@ impl<'a> SpentTimeInputPopupComponent<'a> {
                     self.toggle_input_mode(EditableField::Memo);
                     Some(EventProcessResult::Handled)
                 }
-                FocusField::Submit => Some(EventProcessResult::Submited),
+                FocusField::Submit => Some(EventProcessResult::Submitted),
             },
             Some(Action::InputKey(key)) => {
                 match self.input_mode {
@@ -530,19 +530,19 @@ mod tests {
 
         let result = component.process_event(key_event(KeyCode::Enter));
 
-        assert!(matches!(result, Some(EventProcessResult::Submited)));
+        assert!(matches!(result, Some(EventProcessResult::Submitted)));
         assert_eq!(component.focused_field, FocusField::Submit);
         assert_eq!(component.input_mode, InputMode::Navigating);
     }
 
     #[test]
-    fn q_while_navigating_returns_quited() {
+    fn q_while_navigating_returns_canceled() {
         let store = store_with_time_entity_activities();
         let mut component = SpentTimeInputPopupComponent::new(&store);
 
         let result = component.process_event(key_event(KeyCode::Char('q')));
 
-        assert!(matches!(result, Some(EventProcessResult::Quited)));
+        assert!(matches!(result, Some(EventProcessResult::Canceled)));
     }
 
     #[test]
@@ -564,13 +564,13 @@ mod tests {
 
         let mut component = SpentTimeInputPopupComponent::new(&store);
         let esc_result = component.process_event(key_event(KeyCode::Esc));
-        assert!(matches!(esc_result, Some(EventProcessResult::Quited)));
+        assert!(matches!(esc_result, Some(EventProcessResult::Canceled)));
 
         let mut component = SpentTimeInputPopupComponent::new(&store);
         let ctrl_c_result = component.process_event(key_event_with_modifiers(
             KeyCode::Char('c'),
             KeyModifiers::control(),
         ));
-        assert!(matches!(ctrl_c_result, Some(EventProcessResult::Quited)));
+        assert!(matches!(ctrl_c_result, Some(EventProcessResult::Canceled)));
     }
 }

@@ -5,7 +5,7 @@ use super::SelectBoxPopupWidget;
 
 pub enum EventProcessResult {
     Entered,
-    Quited,
+    Canceled,
     Handled,
 }
 
@@ -69,7 +69,7 @@ impl<'a> SelectBoxPopupComponent<'a> {
                 (self.observer)(id);
                 Some(EventProcessResult::Entered)
             }
-            KeyCode::Char('q') => Some(EventProcessResult::Quited),
+            KeyCode::Char('q') => Some(EventProcessResult::Canceled),
             _ => None,
         }
     }
@@ -263,14 +263,14 @@ mod tests {
     }
 
     #[test]
-    fn process_event_q_returns_quited() {
+    fn process_event_q_returns_canceled() {
         let selected_id = Rc::new(RefCell::new(None));
         let selected_dispatcher = Rc::new(RefCell::new(None));
         let mut component = component_with_observer(1, false, selected_id, selected_dispatcher);
 
         let result = component.process_event(key_event(KeyCode::Char('q')));
 
-        assert!(matches!(result, Some(EventProcessResult::Quited)));
+        assert!(matches!(result, Some(EventProcessResult::Canceled)));
         assert_eq!(component.create_widget().focused_index, 1);
     }
 }
