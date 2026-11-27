@@ -3772,7 +3772,6 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "walkdir",
- "yaml-rust",
 ]
 
 [[package]]
@@ -4235,9 +4234,9 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tui-markdown"
-version = "0.3.11"
+version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cbd479859da89c70663630e3e455895038d337ccfeed132f2108fa89647c45c"
+checksum = "2cfb7c11a39510870d32639a98de09d95cd68f1be22a5526617d26c39de07a22"
 dependencies = [
  "ansi-to-tui",
  "itertools 0.15.0",
