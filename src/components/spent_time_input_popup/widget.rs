@@ -2,7 +2,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 use ratatui_textarea::TextArea;
 
 use crate::i18n::tr;
@@ -73,12 +73,20 @@ impl Widget for SpentTimeInputPopupWidget<'_> {
             return;
         }
 
+        let hint = Paragraph::new(Line::styled(
+            tr!("spent-time-hint"),
+            Style::default().fg(MUTED),
+        ))
+        .wrap(Wrap { trim: true });
+        let hint_height = hint.line_count(inner.width) as u16;
+
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3),
                 Constraint::Fill(1),
                 Constraint::Length(3),
+                Constraint::Length(hint_height),
             ])
             .split(inner);
 
@@ -121,17 +129,13 @@ impl Widget for SpentTimeInputPopupWidget<'_> {
                 Constraint::Length(1),
             ])
             .split(rows[2]);
-        Paragraph::new(Line::styled(
-            tr!("spent-time-hint"),
-            Style::default().fg(MUTED),
-        ))
-        .render(rows[2], buf);
         let button = Paragraph::new(Line::from(format!(" {} ", tr!("spent-time-save")))).block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Self::border_style(self.submit_button_focused)),
         );
         button.render(actions[1], buf);
+        hint.render(rows[3], buf);
     }
 }
 
