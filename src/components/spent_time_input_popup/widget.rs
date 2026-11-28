@@ -2,11 +2,16 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget, Wrap};
 use ratatui_textarea::TextArea;
 
 use crate::i18n::tr;
 use crate::widgets::theme::{ACCENT, FOCUS_BG, MUTED, TIMELINE_FG};
+
+const SUMMARY_HEIGHT: u16 = 3;
+/// 枠の2行と入力1行。
+const MEMO_MIN_HEIGHT: u16 = 3;
+const ACTIONS_HEIGHT: u16 = 3;
 
 pub struct SpentTimeInputPopupWidget<'a> {
     activity: &'a str,
@@ -41,7 +46,15 @@ impl<'a> SpentTimeInputPopupWidget<'a> {
 
     pub fn popup_area(area: Rect) -> Rect {
         let width = area.width.saturating_mul(4) / 5;
-        let height = area.height.saturating_mul(3) / 5;
+        // 端末が低くても、MEMOの入力行とヒント全体が収まる高さまで広げる。
+        let min_height = 2
+            + SUMMARY_HEIGHT
+            + MEMO_MIN_HEIGHT
+            + ACTIONS_HEIGHT
+            + Self::hint().line_count(width.saturating_sub(2)) as u16;
+        let height = (area.height.saturating_mul(3) / 5)
+            .max(min_height)
+            .min(area.height);
         Rect {
             x: area.x + area.width.saturating_sub(width) / 2,
             y: area.y + area.height.saturating_sub(height) / 2,
@@ -73,12 +86,16 @@ impl Widget for SpentTimeInputPopupWidget<'_> {
             return;
         }
 
+        let hint = Self::hint();
+        let hint_height = hint.line_count(inner.width) as u16;
+
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),
-                Constraint::Fill(1),
-                Constraint::Length(3),
+                Constraint::Length(SUMMARY_HEIGHT),
+                Constraint::Min(MEMO_MIN_HEIGHT),
+                Constraint::Length(ACTIONS_HEIGHT),
+                Constraint::Length(hint_height),
             ])
             .split(inner);
 
@@ -121,21 +138,25 @@ impl Widget for SpentTimeInputPopupWidget<'_> {
                 Constraint::Length(1),
             ])
             .split(rows[2]);
-        Paragraph::new(Line::styled(
-            tr!("spent-time-hint"),
-            Style::default().fg(MUTED),
-        ))
-        .render(rows[2], buf);
         let button = Paragraph::new(Line::from(format!(" {} ", tr!("spent-time-save")))).block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Self::border_style(self.submit_button_focused)),
         );
         button.render(actions[1], buf);
+        hint.render(rows[3], buf);
     }
 }
 
 impl<'a> SpentTimeInputPopupWidget<'a> {
+    fn hint() -> Paragraph<'static> {
+        Paragraph::new(Line::styled(
+            tr!("spent-time-hint"),
+            Style::default().fg(MUTED),
+        ))
+        .wrap(Wrap { trim: true })
+    }
+
     fn border_style(focused: bool) -> Style {
         if focused {
             Style::default().fg(ACCENT).bg(FOCUS_BG)
@@ -154,6 +175,14 @@ mod tests {
         let mut textarea = TextArea::default();
         textarea.insert_str(value);
         textarea
+    }
+
+    #[test]
+    fn popup_area_does_not_exceed_a_terminal_lower_than_the_minimum_height() {
+        // 30x10では最小の高さ13行（枠2+概要3+MEMO3+SAVE3+折り返したヒント2）が収まらない。
+        let area = SpentTimeInputPopupWidget::popup_area(Rect::new(0, 0, 30, 10));
+
+        assert_eq!(area, Rect::new(3, 0, 24, 10));
     }
 
     #[test]
